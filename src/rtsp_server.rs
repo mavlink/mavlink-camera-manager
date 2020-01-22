@@ -1,8 +1,7 @@
-extern crate gstreamer;
-extern crate gstreamer_rtsp_server;
+use glib;
+use gstreamer;
+use gstreamer_rtsp_server;
 use gstreamer_rtsp_server::prelude::*;
-
-extern crate glib;
 
 use crate::gstreamer_runner;
 
