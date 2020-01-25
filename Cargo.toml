@@ -1,7 +1,7 @@
 [package]
-name = "ardupilot-camera-manager"
+name = "mavlink-camera-manager"
 version = "0.1.0"
-description = "Ardupilot Camera Manager"
+description = "Mavlink Camera Manager"
 license = "MIT"
 authors = ["Patrick José Pereira <patrickelectric@gmail.com>"]
 edition = "2018"
@@ -11,7 +11,7 @@ edition = "2018"
 [[bin]]
 bench = false
 path = "src/main.rs"
-name = "ardupilot-camera-manager"
+name = "mavlink-camera-manager"
 
 [dependencies]
 clap = "2"
