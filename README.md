@@ -1,4 +1,8 @@
 # Mavlink Camera Manager
+[![Build status](https://travis-ci.org/patrickelectric/mavlink-camera-manager.svg)](https://travis-ci.org/patrickelectric/mavlink-camera-manager)
+[![Cargo download](https://img.shields.io/crates/d/mavlink-camera-manager)](https://crates.io/crates/mavlink-camera-manager)
+[![Crate info](https://img.shields.io/crates/v/mavlink-camera-manager.svg)](https://crates.io/crates/mavlink-camera-manager)
+[![Documentation](https://docs.rs/mavlink-camera-manager/badge.svg)](https://docs.rs/mavlink-camera-manager)
 
 The Mavlink Camera Manager is an extensible cross-platform camera server.
 
