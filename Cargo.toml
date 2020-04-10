@@ -6,6 +6,11 @@ license = "MIT"
 authors = ["Patrick José Pereira <patrickelectric@gmail.com>"]
 edition = "2018"
 
+readme = "README.md"
+documentation = "https://github.com/patrickelectric/mavlink-camera-manager"
+homepage = "https://github.com/patrickelectric/mavlink-camera-manager"
+repository = "https://github.com/patrickelectric/mavlink-camera-manager"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [[bin]]
