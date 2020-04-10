@@ -7,7 +7,7 @@ pub struct MavlinkCameraInformation {
     component_id: u8,
     video_stream_uri: String,
     verbose: bool,
-    vehicle: Option<Arc<Box<dyn mavlink::MavConnection + Sync + Send>>>,
+    vehicle: Option<Arc<Box<dyn mavlink::MavConnection<mavlink::common::MavMessage> + Sync + Send>>>,
 }
 
 impl Default for MavlinkCameraInformation {
@@ -149,7 +149,7 @@ impl MavlinkCameraInformation {
     }
 
     pub fn run_loop(&self) {
-        let mut header = mavlink::MavHeader::get_default_header();
+        let mut header = mavlink::MavHeader::default();
         header.system_id = self.system_id;
         header.component_id = self.component_id;
 
