@@ -21,4 +21,8 @@ jobs:
     - name: Run tests
       run: |
         cargo test --verbose
+    - name: Cargo publish
+      run: |
+        cargo login $TOKEN
+        [[ "$(git describe --tags)" =~ ^[0-9]+.[0-9]+.[0-9]+$ ]] && cargo publish --allow-dirty
       
