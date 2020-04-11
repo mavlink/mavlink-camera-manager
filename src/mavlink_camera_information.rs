@@ -7,7 +7,8 @@ pub struct MavlinkCameraInformation {
     component_id: u8,
     video_stream_uri: String,
     verbose: bool,
-    vehicle: Option<Arc<Box<dyn mavlink::MavConnection<mavlink::common::MavMessage> + Sync + Send>>>,
+    vehicle:
+        Option<Arc<Box<dyn mavlink::MavConnection<mavlink::common::MavMessage> + Sync + Send>>>,
 }
 
 impl Default for MavlinkCameraInformation {
