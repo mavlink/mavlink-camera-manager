@@ -35,3 +35,19 @@ You can use your own pipeline via `--pipeline` parameter, some examples:
 - `'v4l2src device=/dev/video0 ! video/x-h264,width=1920,height=1080,type=video ! rtph264pay name=pay'`
 
 > Note that some GCS only supports video encoded with H264
+
+# How to build it
+Remember to install:
+- libgstreamer1.0-dev
+- libgstreamer-plugins-base1.0-dev
+- libgstrtspserver-1.0-dev
+
+If the compilation is failing to find one of this packages, make sure that they are visible for `pkg-config`, may be necessary to set **PKG_CONFIG_PATH** environment variable.
+
+Example:
+- export `PKG_CONFIG_PATH=/usr/local/Cellar/gst-plugins-base/1.16.2/lib/pkgconfig/`
+
+After having installed all dependencies, you'll be able to build via cargo after cloning.
+- `cargo build`
+
+If `cargo` is not available, install and configure [rustup](https://rustup.rs/).
