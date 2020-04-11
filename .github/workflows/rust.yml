@@ -1,0 +1,24 @@
+name: Rust
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install libraries
+      run: sudo apt install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-dev
+    - name: Check style
+      run: cargo fmt -- --check
+    - name: Build
+      run: cargo build --verbose
+    - name: Run tests
+      run: |
+        cargo test --verbose
+      
