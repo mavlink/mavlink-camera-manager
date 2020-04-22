@@ -3,9 +3,10 @@ use pnet;
 use regex::Regex;
 use std::thread;
 
-mod gstreamer_runner;
 mod mavlink_camera_information;
-mod rtsp_server;
+
+#[cfg(feature = "rtsp")]
+mod rtsp;
 
 fn main() {
     let matches = clap::App::new(env!("CARGO_PKG_NAME"))
@@ -63,7 +64,7 @@ fn main() {
     mavlink_camera.connect(connection_string);
     mavlink_camera.set_verbosity(verbose);
 
-    let mut rtsp = rtsp_server::RTSPServer::default();
+    let mut rtsp = rtsp::rtsp_server::RTSPServer::default();
     rtsp.set_pipeline(pipeline_string);
     rtsp.set_port(rtsp_port);
 

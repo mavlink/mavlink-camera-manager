@@ -30,5 +30,9 @@ mavlink = { version = "0.8", features = ["default", "emit-extensions"] }
 failure = "0.1"
 failure_derive = "0.1"
 glib = "0.9"
-gstreamer = "0.15"
-gstreamer-rtsp-server = "0.15"
+gstreamer = { version = "0.15", optional = true }
+gstreamer-rtsp-server = { version = "0.15", optional = true }
+
+[features]
+"rtsp" = ["gstreamer", "gstreamer-rtsp-server"]
+default = ["rtsp"] # Remove rtsp
