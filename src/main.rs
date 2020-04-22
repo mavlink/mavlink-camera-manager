@@ -23,9 +23,9 @@ fn main() {
                 .default_value("udpout:0.0.0.0:14550"),
         )
         .arg(
-            clap::Arg::with_name("pipeline")
-                .long("pipeline")
-                .value_name("GSTREAMER_PIPELINE")
+            clap::Arg::with_name("pipeline-rtsp")
+                .long("pipeline-rtsp")
+                .value_name("RTSP_GSTREAMER_PIPELINE")
                 .help("Gstreamer pipeline that ends with 'rtph264pay name=pay0'")
                 .takes_value(true)
                 .default_value("videotestsrc ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc ! rtph264pay name=pay0"),
@@ -49,7 +49,7 @@ fn main() {
 
     let verbose = matches.is_present("verbose");
     let connection_string = matches.value_of("connect").unwrap();
-    let pipeline_string = matches.value_of("pipeline").unwrap();
+    let pipeline_string = matches.value_of("pipeline-rtsp").unwrap();
     let rtsp_port = matches
         .value_of("port")
         .unwrap()
