@@ -1,8 +1,8 @@
 use clap;
-use pnet;
 use regex::Regex;
 use std::thread;
 
+mod helper;
 mod mavlink_camera_information;
 
 #[cfg(feature = "rtsp")]
@@ -45,8 +45,7 @@ fn main() {
                 .long("verbose")
                 .help("Be verbose")
                 .takes_value(false),
-        )
-        .get_matches();
+        ).get_matches();
 
     let verbose = matches.is_present("verbose");
     let connection_string = matches.value_of("connect").unwrap();
@@ -74,30 +73,25 @@ fn main() {
     // If no valid ip address is found, the first one that matches the regex is used
     let regex = Regex::new(r"192.168.(\d{1})\..+$").unwrap();
     let mut video_stream_ip = String::new();
+    let ips = helper::get_valid_ip_address();
+    for ip in ips {
+        let ip = ip.to_string();
 
-    for interface in pnet::datalink::interfaces() {
-        for interface_ip in interface.ips {
-            if !interface_ip.is_ipv4() {
-                continue;
-            }
-            let ip = interface_ip.ip().to_string();
-
-            if !regex.is_match(&ip) {
-                continue;
-            }
-
-            println!("\trtsp://{}:{}/video1", &ip, &rtsp_port);
-
-            // Check if we have a valid ip address
-            // And force update if we are inside companion ip address range
-            let capture = regex.captures(&ip).unwrap();
-            if video_stream_ip.is_empty() {
-                video_stream_ip = String::from(&ip);
-            }
-            if &capture[1] == "2" {
-                video_stream_ip = String::from(&ip);
-            }
+        if !regex.is_match(&ip) {
+            continue;
         }
+
+        // Check if we have a valid ip address
+        // And force update if we are inside companion ip address range
+        let capture = regex.captures(&ip).unwrap();
+        if video_stream_ip.is_empty() {
+            video_stream_ip = String::from(&ip);
+        }
+        if &capture[1] == "2" {
+            video_stream_ip = String::from(&ip);
+        }
+
+        println!("\trtsp://{}:{}/video1", &ip, &rtsp_port);
     }
 
     mavlink_camera.set_video_stream_uri(format!("rtsp://{}:{}/video1", video_stream_ip, rtsp_port));
