@@ -35,4 +35,4 @@ gstreamer-rtsp-server = { version = "0.15", optional = true }
 
 [features]
 "rtsp" = ["gstreamer", "gstreamer-rtsp-server"]
-default = ["rtsp"] # Remove rtsp
+default = []

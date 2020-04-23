@@ -1,6 +1,5 @@
 use clap;
 use regex::Regex;
-use std::thread;
 
 mod helper;
 mod mavlink_camera_information;
@@ -8,8 +7,26 @@ mod mavlink_camera_information;
 #[cfg(feature = "rtsp")]
 mod rtsp;
 
+#[cfg(feature = "rtsp")]
+use std::thread;
+
+#[cfg(feature = "rtsp")]
+pub fn start_rtsp_server(pipeline: &str, port: u16) {
+    thread::spawn({
+        let mut rtsp = rtsp::rtsp_server::RTSPServer::default();
+        rtsp.set_pipeline(pipeline);
+        rtsp.set_port(port);
+        move || loop {
+            rtsp.run_loop();
+        }
+    });
+}
+
+#[cfg(not(feature = "rtsp"))]
+pub fn start_rtsp_server(_pipeline: &str, _port: u16) {}
+
 fn main() {
-    let matches = clap::App::new(env!("CARGO_PKG_NAME"))
+    let mut matches = clap::App::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .author(env!("CARGO_PKG_AUTHORS"))
@@ -23,6 +40,35 @@ fn main() {
                 .default_value("udpout:0.0.0.0:14550"),
         )
         .arg(
+            clap::Arg::with_name("endpoint")
+                .long("endpoint")
+                .value_name("TYPE://IP:PORT[PATH]")
+                .long_help(
+                    "Video endpoint provided by someone.
+TYPE should be:
+\t- rtsp (Can have PATH)
+\t- udp (x264)
+\t- udp265 (x265)
+\t- mpegts (UDP MPEG)
+\t- tcp (MPEG)
+\t- tsusb (taisync)
+Example of valid arguments:
+\t- udp:://192.168.2.2:5600
+\t- rtsp://0.0.0.0:8554/video1",
+                )
+                .takes_value(true)
+                .conflicts_with_all(&["pipeline-rtsp", "port"]),
+        )
+        .arg(
+            clap::Arg::with_name("verbose")
+                .short("v")
+                .long("verbose")
+                .help("Be verbose")
+                .takes_value(false),
+        );
+
+    if cfg!(feature = "rtsp") {
+        matches = matches.arg(
             clap::Arg::with_name("pipeline-rtsp")
                 .long("pipeline-rtsp")
                 .value_name("RTSP_GSTREAMER_PIPELINE")
@@ -38,24 +84,12 @@ fn main() {
                 .help("RTSP server port")
                 .takes_value(true)
                 .default_value("8554"),
-        )
-        .arg(
-            clap::Arg::with_name("verbose")
-                .short("v")
-                .long("verbose")
-                .help("Be verbose")
-                .takes_value(false),
-        ).get_matches();
+        );
+    }
 
+    let matches = matches.get_matches();
     let verbose = matches.is_present("verbose");
     let connection_string = matches.value_of("connect").unwrap();
-    let pipeline_string = matches.value_of("pipeline-rtsp").unwrap();
-    let rtsp_port = matches
-        .value_of("port")
-        .unwrap()
-        .parse::<u16>()
-        .unwrap_or_else(|error| panic!("Invalid RTSP port: {}", error));
-
     println!("MAVLink connection string: {}", connection_string);
 
     // Create mavlink camera manager
@@ -63,44 +97,52 @@ fn main() {
     mavlink_camera.connect(connection_string);
     mavlink_camera.set_verbosity(verbose);
 
-    let mut rtsp = rtsp::rtsp_server::RTSPServer::default();
-    rtsp.set_pipeline(pipeline_string);
-    rtsp.set_port(rtsp_port);
+    // Set a default value
+    let mut video_stream_uri = format!("udp://0.0.0.0:5600");
 
-    println!("Stream will be available in:");
+    if cfg!(feature = "rtsp") {
+        let pipeline_string = matches.value_of("pipeline-rtsp").unwrap();
+        let rtsp_port = matches
+            .value_of("port")
+            .unwrap()
+            .parse::<u16>()
+            .unwrap_or_else(|error| panic!("Invalid RTSP port: {}", error));
 
-    // Look for valid ips with our use (192.168.(2).1)
-    // If no valid ip address is found, the first one that matches the regex is used
-    let regex = Regex::new(r"192.168.(\d{1})\..+$").unwrap();
-    let mut video_stream_ip = String::new();
-    let ips = helper::get_valid_ip_address();
-    for ip in ips {
-        let ip = ip.to_string();
+        start_rtsp_server(pipeline_string, rtsp_port);
 
-        if !regex.is_match(&ip) {
-            continue;
+        // Look for valid ips with our use (192.168.(2).1)
+        // If no valid ip address is found, the first one that matches the regex is used
+        let regex = Regex::new(r"192.168.(\d{1})\..+$").unwrap();
+        let mut video_stream_ip = String::new();
+        let ips = helper::get_valid_ip_address();
+
+        if ips.is_empty() {
+            video_stream_uri = format!("rtsp://0.0.0.0:{}/video1", rtsp_port);
+        } else {
+            for ip in ips {
+                let ip = ip.to_string();
+
+                if !regex.is_match(&ip) {
+                    continue;
+                }
+
+                // Check if we have a valid ip address
+                // And force update if we are inside companion ip address range
+                let capture = regex.captures(&ip).unwrap();
+                if video_stream_ip.is_empty() {
+                    video_stream_ip = String::from(&ip);
+                }
+                if &capture[1] == "2" {
+                    video_stream_ip = String::from(&ip);
+                }
+                video_stream_uri = format!("rtsp://{}:{}/video1", video_stream_ip, rtsp_port);
+            }
         }
-
-        // Check if we have a valid ip address
-        // And force update if we are inside companion ip address range
-        let capture = regex.captures(&ip).unwrap();
-        if video_stream_ip.is_empty() {
-            video_stream_ip = String::from(&ip);
-        }
-        if &capture[1] == "2" {
-            video_stream_ip = String::from(&ip);
-        }
-
-        println!("\trtsp://{}:{}/video1", &ip, &rtsp_port);
     }
 
-    mavlink_camera.set_video_stream_uri(format!("rtsp://{}:{}/video1", video_stream_ip, rtsp_port));
+    println!("Stream will be available in: {}", &video_stream_uri);
 
-    thread::spawn({
-        move || loop {
-            rtsp.run_loop();
-        }
-    });
+    mavlink_camera.set_video_stream_uri(video_stream_uri);
 
     loop {
         mavlink_camera.run_loop();
