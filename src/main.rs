@@ -98,11 +98,11 @@ fn main() {
 
     thread::spawn({
         move || loop {
-            mavlink_camera.run_loop();
+            rtsp.run_loop();
         }
     });
 
     loop {
-        rtsp.run_loop();
+        mavlink_camera.run_loop();
     }
 }
