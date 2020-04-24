@@ -20,5 +20,6 @@ jobs:
     - name: Cargo publish
       run: |
         cargo login $TOKEN
+        cargo package
         [[ "$(git describe --tags)" =~ ^[0-9]+.[0-9]+.[0-9]+$ ]] && cargo publish --allow-dirty || echo "No tag availale for this commit."
-      
+
