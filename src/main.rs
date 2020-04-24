@@ -100,6 +100,10 @@ Example of valid arguments:
     // Set a default value
     let mut video_stream_uri = format!("udp://0.0.0.0:5600");
 
+    if  matches.is_present("endpoint") {
+        video_stream_uri = matches.value_of("endpoint").unwrap().to_string();
+    }
+
     if cfg!(feature = "rtsp") {
         let pipeline_string = matches.value_of("pipeline-rtsp").unwrap();
         let rtsp_port = matches
