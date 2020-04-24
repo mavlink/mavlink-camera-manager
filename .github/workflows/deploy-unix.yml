@@ -1,0 +1,54 @@
+name: Deploy unix
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        TARGET: [x86_64-apple-darwin, arm-unknown-linux-musleabihf, x86_64-unknown-linux-musl]
+        exclude:
+        - os: macos-latest
+          TARGET: arm-unknown-linux-musleabihf
+
+        - os: macos-latest
+          TARGET: x86_64-unknown-linux-musl
+
+        - os: macos-latest
+          TARGET: i686-pc-windows-msvc
+
+        - os: ubuntu-latest
+          TARGET: x86_64-apple-darwin
+
+        - os: ubuntu-latest
+          TARGET: i686-pc-windows-msvc
+
+    steps:
+    - name: Building ${{ matrix.TARGET }}
+      run: echo "${{ matrix.TARGET }}"
+
+    - uses: actions/checkout@master
+    - uses: actions-rs/toolchain@v1.0.1
+      with:
+        toolchain: stable
+        target: ${{ matrix.TARGET }}
+        override: true
+
+    - uses: actions-rs/cargo@v1
+      with:
+        use-cross: true
+        command: build
+        args: --verbose --release --target=${{ matrix.TARGET }}
+
+    - name: Rename
+      run: cp target/${{ matrix.TARGET }}/release/mavlink-camera-manager mavlink-camera-manager-${{ matrix.TARGET }}
+
+    - uses: actions/upload-artifact@master
+      with:
+        name: mavlink-camera-manager-${{ matrix.TARGET }}
+        path: mavlink-camera-manager-${{ matrix.TARGET }}

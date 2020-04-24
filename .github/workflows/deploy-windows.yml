@@ -1,0 +1,38 @@
+name: Deploy windows
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest]
+        TARGET: [x86_64-pc-windows-msvc]
+
+    steps:
+    - uses: actions/checkout@master
+
+    - name: Install minimal stable with clippy and rustfmt
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        components: rustfmt, clippy
+
+    - name: Building ${{ matrix.TARGET }}
+      run: |
+        cargo build --verbose --release
+        ls target
+        ls target/release
+
+    - name: Rename
+      run: cp target/release/mavlink-camera-manager.exe mavlink-camera-manager-${{ matrix.TARGET }}.exe
+
+    - uses: actions/upload-artifact@master
+      with:
+        name: mavlink-camera-manager-${{ matrix.TARGET }}
+        path: mavlink-camera-manager-${{ matrix.TARGET }}.exe
