@@ -117,7 +117,7 @@ Example of valid arguments:
         let ips = helper::get_valid_ip_address();
 
         if ips.is_empty() {
-            video_stream_uri = format!("rtsp://0.0.0.0:{}/video1", rtsp_port);
+            video_stream_uri = matches.value_of("endpoint").unwrap();
         } else {
             for ip in ips {
                 let ip = ip.to_string();
