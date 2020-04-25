@@ -18,6 +18,8 @@ jobs:
       run: |
         cargo test --verbose
     - name: Cargo publish
+      env:
+        TOKEN: ${{ secrets.TOKEN }}
       run: |
         cargo package
         [[ "$(git describe --tags)" =~ ^[0-9]+.[0-9]+.[0-9]+$ ]] && cargo publish --allow-dirty --token $TOKEN || echo "No tag availale for this commit."
