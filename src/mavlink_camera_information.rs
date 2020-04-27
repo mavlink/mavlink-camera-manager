@@ -43,8 +43,8 @@ impl MavlinkCameraInformation {
     fn heartbeat_message() -> mavlink::common::MavMessage {
         mavlink::common::MavMessage::HEARTBEAT(mavlink::common::HEARTBEAT_DATA {
             custom_mode: 0,
-            mavtype: mavlink::common::MavType::MAV_TYPE_QUADROTOR,
-            autopilot: mavlink::common::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
+            mavtype: mavlink::common::MavType::MAV_TYPE_CAMERA,
+            autopilot: mavlink::common::MavAutopilot::MAV_AUTOPILOT_GENERIC,
             base_mode: mavlink::common::MavModeFlag::empty(),
             system_status: mavlink::common::MavState::MAV_STATE_STANDBY,
             mavlink_version: 0x3,
@@ -149,6 +149,17 @@ impl MavlinkCameraInformation {
         )
     }
 
+    /*
+    fn param_value(&self) -> mavlink::common::MavMessage {
+        //Send fake data
+        mavlink::common::MavMessage::CAMERA_SETTINGS(mavlink::common::CAMERA_SETTINGS_DATA {
+            time_boot_ms: 0,
+            zoomLevel: 0.0,
+            focusLevel: 0.0,
+            mode_id: mavlink::common::CameraMode::CAMERA_MODE_VIDEO,
+        })
+    }*/
+
     pub fn run_loop(&self) {
         let mut header = mavlink::MavHeader::default();
         header.system_id = self.system_id;
@@ -160,7 +171,6 @@ impl MavlinkCameraInformation {
             move || loop {
                 thread::sleep(Duration::from_secs(1));
                 let res = vehicle.send(&header, &MavlinkCameraInformation::heartbeat_message());
-
                 if res.is_err() {
                     println!("Failed to send heartbeat: {:?}", res);
                 }
@@ -213,17 +223,26 @@ impl MavlinkCameraInformation {
                                 }
                                 _ => {
                                     if self.verbose {
-                                        println!("Ignoring command: {:?}", command_long.command);
+                                        //println!("Ignoring command: {:?}", command_long.command);
                                     }
                                 }
                             }
                         },
                         // We receive a bunch of heartbeat messages, we can ignore it
                         mavlink::common::MavMessage::HEARTBEAT(_) => {},
+                        // We have nothing to provide besides the camera configuration if requested
+                        /*
+                        mavlink::common::MavMessage::PARAM_REQUEST_READ(_) => {
+                            println!("Sending parameter request read..");
+                            let res = vehicle.send(&header, &self.param_value());
+                            if res.is_err() {
+                                println!("Failed to send parameter request reply: {:?}", res);
+                            }
+                        },*/
                         // Any other message that is not a heartbeat or command_long
                         _ => {
                             if self.verbose {
-                                println!("Ignoring: {:?}", msg);
+                                println!("Ignoring: {:?} {:?}", _header, msg);
                             }
                         }
                     }
