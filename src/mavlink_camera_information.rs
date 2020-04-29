@@ -227,9 +227,9 @@ impl MavlinkCameraInformation {
                                     }
                                 }
                             }
-                        },
+                        }
                         // We receive a bunch of heartbeat messages, we can ignore it
-                        mavlink::common::MavMessage::HEARTBEAT(_) => {},
+                        mavlink::common::MavMessage::HEARTBEAT(_) => {}
                         // We have nothing to provide besides the camera configuration if requested
                         /*
                         mavlink::common::MavMessage::PARAM_REQUEST_READ(_) => {
