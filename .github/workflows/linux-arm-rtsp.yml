@@ -17,7 +17,7 @@ jobs:
             apt update
             apt search gst
             apt install -y curl
-            apt install -y gstreamer1.0-rtsp libavahi-glib-dev libavahi-core-dev
+            apt install -y libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
             export PATH="$HOME/.cargo/bin:$PATH"
             cargo build --features rtsp
