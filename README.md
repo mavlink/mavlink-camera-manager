@@ -32,7 +32,7 @@ The video should automatically popup if you are using any modern GCS, like QGrou
 You can use your own pipeline via `--pipeline-rtsp` parameter, some examples:
 - `'videotestsrc ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc ! rtph264pay name=pay0'`
 - `'rtspsrc location="rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov" latency=100 ! rtph264depay ! rtph264pay name=pay0'`
-- `'v4l2src device=/dev/video0 ! video/x-h264,width=1920,height=1080,type=video ! rtph264pay name=pay'`
+- `'v4l2src device=/dev/video0 ! video/x-h264,width=1920,height=1080,type=video ! rtph264pay name=pay0'`
 
 > Note that some GCS only supports video encoded with H264
 
