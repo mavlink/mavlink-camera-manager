@@ -160,7 +160,6 @@ impl MavlinkCameraInformation {
             move || loop {
                 thread::sleep(Duration::from_secs(1));
                 let res = vehicle.send(&header, &MavlinkCameraInformation::heartbeat_message());
-
                 if res.is_err() {
                     println!("Failed to send heartbeat: {:?}", res);
                 }
@@ -217,9 +216,9 @@ impl MavlinkCameraInformation {
                                     }
                                 }
                             }
-                        },
+                        }
                         // We receive a bunch of heartbeat messages, we can ignore it
-                        mavlink::common::MavMessage::HEARTBEAT(_) => {},
+                        mavlink::common::MavMessage::HEARTBEAT(_) => {}
                         // Any other message that is not a heartbeat or command_long
                         _ => {
                             if self.verbose {
