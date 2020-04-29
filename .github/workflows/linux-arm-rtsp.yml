@@ -20,8 +20,15 @@ jobs:
             apt install -y libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
             export PATH="$HOME/.cargo/bin:$PATH"
-            cargo build --features rtsp
+            cargo build --verbose --release --features rtsp
 
-      - name: Get the output
+      - name: Rename
         run: |
-            echo "The uname output was ${{ steps.runcmd.outputs.uname }}"
+          ls
+          ls target/
+          cp target/release/mavlink-camera-manager mavlink-camera-manager-rtsp-server-armv7
+
+      - uses: actions/upload-artifact@master
+        with:
+          name: mavlink-camera-manager-rtsp-server-armv7
+          path: mavlink-camera-manager-rtsp-server-armv7
