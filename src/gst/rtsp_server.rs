@@ -3,7 +3,7 @@ use gstreamer;
 use gstreamer_rtsp_server;
 use gstreamer_rtsp_server::prelude::*;
 
-use crate::rtsp::gstreamer_runner;
+use crate::gst::gstreamer_runner;
 
 #[derive(Clone)]
 pub struct RTSPServer {

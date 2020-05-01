@@ -4,7 +4,7 @@ mod helper;
 mod mavlink_camera_information;
 
 #[cfg(feature = "rtsp")]
-mod rtsp;
+mod gst;
 
 #[cfg(feature = "rtsp")]
 use std::thread;
@@ -12,7 +12,7 @@ use std::thread;
 #[cfg(feature = "rtsp")]
 pub fn start_rtsp_server(pipeline: &str, port: u16) {
     thread::spawn({
-        let mut rtsp = rtsp::rtsp_server::RTSPServer::default();
+        let mut rtsp = gst::rtsp_server::RTSPServer::default();
         rtsp.set_pipeline(pipeline);
         rtsp.set_port(port);
         move || loop {
