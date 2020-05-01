@@ -24,6 +24,20 @@ pub fn start_rtsp_server(pipeline: &str, port: u16) {
 #[cfg(not(feature = "rtsp"))]
 pub fn start_rtsp_server(_pipeline: &str, _port: u16) {}
 
+#[cfg(feature = "gst")]
+pub fn start_pipeline(pipeline: &str) {
+    thread::spawn({
+        let mut pipeline_runner = gst::pipeline_runner::PipelineRunner::default();
+        pipeline_runner.set_pipeline(pipeline);
+        move || loop {
+            pipeline_runner.run_loop();
+        }
+    });
+}
+
+#[cfg(not(feature = "gst"))]
+pub fn start_pipeline(_pipeline: &str) {}
+
 fn main() {
     let matches = helper::get_clap_matches();
     let verbose = matches.is_present("verbose");
@@ -80,6 +94,11 @@ fn main() {
                 video_stream_uri = format!("rtsp://{}:{}/video1", video_stream_ip, rtsp_port);
             }
         }
+    }
+
+    if cfg!(feature = "gst") {
+        let pipeline_string = matches.value_of("pipeline").unwrap();
+        start_pipeline(pipeline_string);
     }
 
     println!("Stream will be available in: {}", &video_stream_uri);
