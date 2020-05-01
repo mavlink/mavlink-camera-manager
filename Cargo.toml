@@ -32,5 +32,6 @@ gstreamer = { version = "0.15", optional = true }
 gstreamer-rtsp-server = { version = "0.15", optional = true }
 
 [features]
-rtsp = ["glib", "gstreamer", "gstreamer-rtsp-server"]
+gst = ["glib", "gstreamer"]
+rtsp = ["gst", "gstreamer-rtsp-server"]
 default = []
