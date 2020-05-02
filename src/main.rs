@@ -3,10 +3,10 @@ use regex::Regex;
 mod helper;
 mod mavlink_camera_information;
 
-#[cfg(feature = "rtsp")]
+#[cfg(feature = "gst")]
 mod gst;
 
-#[cfg(feature = "rtsp")]
+#[cfg(feature = "gst")]
 use std::thread;
 
 #[cfg(feature = "rtsp")]
