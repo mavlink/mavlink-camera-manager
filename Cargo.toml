@@ -11,11 +11,13 @@ documentation = "https://github.com/patrickelectric/mavlink-camera-manager"
 homepage = "https://github.com/patrickelectric/mavlink-camera-manager"
 repository = "https://github.com/patrickelectric/mavlink-camera-manager"
 
+default-run = "mavlink-camera-manager"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [[bin]]
 bench = false
-path = "src/main.rs"
+path = "src/main_command_line.rs"
 name = "mavlink-camera-manager"
 
 [dependencies]
