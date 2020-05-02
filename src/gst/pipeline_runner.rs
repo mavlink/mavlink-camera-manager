@@ -60,30 +60,39 @@ impl PipelineRunner {
         };
         let bus = pipeline.get_bus().unwrap();
 
-        pipeline
-            .set_state(gstreamer::State::Playing)
-            .expect("Unable to set the pipeline to the `Playing` state");
-
-        for msg in bus.iter_timed(gstreamer::CLOCK_TIME_NONE) {
-            use gstreamer::MessageView;
-
-            match msg.view() {
-                MessageView::Eos(..) => break,
-                MessageView::Error(err) => {
-                    println!(
-                        "Error from {:?}: {} ({:?})",
-                        err.get_src().map(|s| s.get_path_string()),
-                        err.get_error(),
-                        err.get_debug()
-                    );
-                    break;
-                }
-                _ => (),
+        loop {
+            let result = pipeline.set_state(gstreamer::State::Playing);
+            if result.is_err() {
+                eprintln!(
+                    "Unable to set the pipeline to the `Playing` state (check the bus for error messages)."
+                );
             }
-        }
 
-        pipeline
-            .set_state(gstreamer::State::Null)
-            .expect("Unable to set the pipeline to the `Null` state");
+            for msg in bus.iter_timed(gstreamer::CLOCK_TIME_NONE) {
+                use gstreamer::MessageView;
+
+                match msg.view() {
+                    MessageView::Eos(..) => break,
+                    MessageView::Error(err) => {
+                        print!(
+                            "Error from {:?}: {} ({:?})\n",
+                            err.get_src().map(|s| s.get_path_string()),
+                            err.get_error(),
+                            err.get_debug()
+                        );
+                        break;
+                    }
+                    _ => (),
+                }
+            }
+
+            let result = pipeline.set_state(gstreamer::State::Null);
+            if result.is_err() {
+                eprintln!("Unable to set the pipeline to the `Null` state");
+            }
+
+            // Sleep for 100ms and try again
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
     }
 }
