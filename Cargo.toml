@@ -1,6 +1,6 @@
 [package]
 name = "mavlink-camera-manager"
-version = "0.2.3"
+version = "0.2.4"
 description = "Mavlink Camera Manager"
 license = "MIT"
 authors = ["Patrick José Pereira <patrickelectric@gmail.com>"]
