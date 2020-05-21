@@ -94,9 +94,7 @@ fn main() {
                 video_stream_uri = format!("rtsp://{}:{}/video1", video_stream_ip, rtsp_port);
             }
         }
-    }
-
-    if cfg!(feature = "gst") {
+    } else if cfg!(feature = "gst") {
         let pipeline_string = matches.value_of("pipeline").unwrap();
         start_pipeline(pipeline_string);
     }
