@@ -56,15 +56,18 @@ Example of valid arguments:
         );
 
     if cfg!(feature = "gst") {
-        matches = matches.arg(
-            clap::Arg::with_name("pipeline")
-                .long("pipeline")
-                .value_name("GSTREAMER_PIPELINE")
-                .help("Gstreamer pipeline that ends with a sink type.")
-                .takes_value(true)
-                .conflicts_with_all(&["pipeline-rtsp", "port"])
-                .default_value("videotestsrc ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc ! rtph264pay ! udpsink host=0.0.0.0 port=5600"),
-        )
+        let mut arg = clap::Arg::with_name("pipeline")
+            .long("pipeline")
+            .value_name("GSTREAMER_PIPELINE")
+            .help("Gstreamer pipeline that ends with a sink type.")
+            .takes_value(true)
+            .conflicts_with_all(&["pipeline-rtsp", "port"]);
+
+        if !cfg!(feature = "rtsp") {
+            arg = arg.default_value("videotestsrc ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc ! rtph264pay ! udpsink host=0.0.0.0 port=5600");
+        }
+        // Needs: https://github.com/clap-rs/clap/issues/1406
+        matches = matches.arg(arg);
     }
 
     if cfg!(feature = "rtsp") {
