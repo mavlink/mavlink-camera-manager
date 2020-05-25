@@ -228,17 +228,7 @@ impl MavlinkCameraInformation {
                     }
                 }
                 Err(e) => {
-                    match e.kind() {
-                        std::io::ErrorKind::WouldBlock => {
-                            //no messages currently available to receive -- wait a while
-                            thread::sleep(Duration::from_secs(1));
-                            continue;
-                        }
-                        _ => {
-                            println!("recv error: {:?}", e);
-                            break;
-                        }
-                    }
+                    println!("recv error: {:?}", e);
                 }
             }
         }
