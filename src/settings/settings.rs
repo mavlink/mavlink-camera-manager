@@ -48,7 +48,7 @@ impl Settings {
             Settings::create_settings_file(file_name);
             std::fs::read_to_string(file_name).unwrap()
         });
-        let content: SettingsStruct = toml::from_str(&content.as_str()).unwrap_or_else( |_| {
+        let content: SettingsStruct = toml::from_str(&content.as_str()).unwrap_or_else(|_| {
             Settings::create_settings_file(file_name);
             let content = std::fs::read_to_string(file_name).unwrap();
             toml::from_str(&content.as_str()).unwrap()
