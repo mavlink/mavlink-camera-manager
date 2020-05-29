@@ -81,12 +81,23 @@ impl Settings {
     }
 }
 
+#[cfg(test)]
+use rand::Rng;
+
 #[test]
 fn simple_test() {
-    let mut settings = Settings::new("/tmp/test.toml");
-    Arc::make_mut(&mut settings.config_arc).header.name = "test".to_string();
-    settings.save();
+    let rand_string: String = rand::thread_rng()
+        .sample_iter(&rand::distributions::Alphanumeric)
+        .take(30)
+        .collect();
 
-    let mut settings = Settings::new("/tmp/test.toml");
-    assert!(Arc::as_ref(&settings.config_arc).header.name == "test".to_string());
+    let file_name = format!("/tmp/{}.toml", rand_string);
+    println!("Test file: {}", file_name);
+
+    let mut settings = Settings::new(&file_name);
+    Arc::make_mut(&mut settings.config_arc).header.name = "test".to_string();
+    settings.save().unwrap();
+
+    let mut settings = Settings::new(&file_name);
+    assert_eq!(Arc::as_ref(&settings.config_arc).header.name, "test".to_string());
 }
