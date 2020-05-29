@@ -70,10 +70,18 @@ impl Settings {
         return settings;
     }
 
-    pub fn create_settings_file(file_name: &str) {
+    pub fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> std::io::Result<()> {
         let mut file = std::fs::File::create(file_name).unwrap();
-        let value = toml::Value::try_from(SettingsStruct::default()).unwrap();
-        file.write_all(value.to_string().as_bytes()).unwrap();
+        let value = toml::Value::try_from(content).unwrap();
+        file.write_all(value.to_string().as_bytes())
+    }
+
+    pub fn create_settings_file(file_name: &str) -> std::io::Result<()> {
+        Settings::save_settings_to_file(file_name, &SettingsStruct::default())
+    }
+
+    pub fn save(&self) -> std::io::Result<()> {
+        Settings::save_settings_to_file(&self.file_name, Arc::as_ref(&self.config_arc))
     }
 }
 
