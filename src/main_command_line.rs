@@ -4,8 +4,10 @@ mod helper;
 mod mavlink_camera_information;
 
 #[cfg(feature = "gst")]
-use std::thread;
 mod gst;
+
+#[cfg(feature = "gst")]
+use std::thread;
 
 #[cfg(feature = "rtsp")]
 pub fn start_rtsp_server(pipeline: &str, port: u16) {
