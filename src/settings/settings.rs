@@ -8,13 +8,14 @@ use std::sync::{Arc, Once};
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct HeaderSettingsFile {
     pub name: String,
+    pub version: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct VideoConfiguration {
+pub struct VideoConfiguration {
     pub device: String,
-    pub pipeline: String,
-    pub endpoint: Option<String>,
+    pub pipeline: Option<String>,
+    pub endpoint: Option<String>, //TODO: Move to struct
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -29,6 +30,7 @@ impl Default for SettingsStruct {
         SettingsStruct {
             header: HeaderSettingsFile {
                 name: "Camera Manager".to_string(),
+                version: 0,
             },
             mavlink_endpoint: "udpout:0.0.0.0:14550".to_string(),
             videos_configuration: vec![],
@@ -61,9 +63,8 @@ impl Settings {
             return SettingsStruct::default();
         };
 
-        return toml::from_str(&result.unwrap().as_str()).unwrap_or_else(|x|{
-            SettingsStruct::default()
-        });
+        return toml::from_str(&result.unwrap().as_str())
+            .unwrap_or_else(|x| SettingsStruct::default());
     }
 
     pub fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> std::io::Result<()> {
@@ -99,5 +100,8 @@ fn simple_test() {
     settings.save().unwrap();
 
     let mut settings = Settings::new(&file_name);
-    assert_eq!(Arc::as_ref(&settings.config_arc).header.name, "test".to_string());
+    assert_eq!(
+        Arc::as_ref(&settings.config_arc).header.name,
+        "test".to_string()
+    );
 }
