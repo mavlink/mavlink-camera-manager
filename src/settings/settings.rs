@@ -5,19 +5,19 @@ use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 use std::sync::{Arc, Once};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct HeaderSettingsFile {
     pub name: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct VideoConfiguration {
     pub device: String,
     pub pipeline: String,
     pub endpoint: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct SettingsStruct {
     pub header: HeaderSettingsFile,
     pub mavlink_endpoint: String,
@@ -39,35 +39,31 @@ impl Default for SettingsStruct {
 #[derive(Debug)]
 struct Settings {
     pub file_name: String,
-    config_arc: Arc<SettingsStruct>,
+    pub config_arc: Arc<SettingsStruct>,
 }
 
 impl Settings {
     pub fn new(file_name: &str) -> Self {
-        let content = std::fs::read_to_string(file_name).unwrap_or_else(|_| {
-            Settings::create_settings_file(file_name);
-            std::fs::read_to_string(file_name).unwrap()
-        });
-        let content: SettingsStruct = toml::from_str(&content.as_str()).unwrap_or_else(|_| {
-            Settings::create_settings_file(file_name);
-            let content = std::fs::read_to_string(file_name).unwrap();
-            toml::from_str(&content.as_str()).unwrap()
-        });
-
-        println!("> {:#?}", &content);
+        let settings = Settings::load_settings_from_file(file_name);
 
         let mut settings = Settings {
             file_name: file_name.to_string(),
-            config_arc: Arc::new(content),
+            config_arc: Arc::new(settings),
         };
 
-        /*
-        Arc::make_mut(&mut settings.config_arc)
-            .merge(config::File::with_name(&settings.file_name.as_str()))
-            .unwrap_or_else(|error| panic!("Failed to load settings file: {}", error));
-        */
-
         return settings;
+    }
+
+    pub fn load_settings_from_file(file_name: &str) -> SettingsStruct {
+        let result = std::fs::read_to_string(file_name);
+
+        if (result.is_err()) {
+            return SettingsStruct::default();
+        };
+
+        return toml::from_str(&result.unwrap().as_str()).unwrap_or_else(|x|{
+            SettingsStruct::default()
+        });
     }
 
     pub fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> std::io::Result<()> {
@@ -86,9 +82,11 @@ impl Settings {
 }
 
 #[test]
-fn constructor() {
-    // Test file that does not exist
-    let settings = Settings::new("/tmp/test.toml");
-    // Test file that exist
-    let settings = Settings::new("/tmp/test.toml");
+fn simple_test() {
+    let mut settings = Settings::new("/tmp/test.toml");
+    Arc::make_mut(&mut settings.config_arc).header.name = "test".to_string();
+    settings.save();
+
+    let mut settings = Settings::new("/tmp/test.toml");
+    assert!(Arc::as_ref(&settings.config_arc).header.name == "test".to_string());
 }
