@@ -3,10 +3,9 @@ use toml;
 use serde::{Deserialize, Serialize};
 
 use std::io::prelude::*;
-use std::sync::{Arc, Once};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct HeaderSettingsFile {
+pub struct HeaderSettingsFile {
     pub name: String,
     pub version: u32,
 }
@@ -19,7 +18,7 @@ pub struct VideoConfiguration {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct SettingsStruct {
+pub struct SettingsStruct {
     pub header: HeaderSettingsFile,
     pub mavlink_endpoint: String,
     pub videos_configuration: Vec<VideoConfiguration>,
@@ -38,8 +37,8 @@ impl Default for SettingsStruct {
     }
 }
 
-#[derive(Debug)]
-struct Settings {
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Settings {
     pub file_name: String,
     pub config: SettingsStruct,
 }
@@ -99,6 +98,6 @@ fn simple_test() {
     settings.config.header.name = "test".to_string();
     settings.save().unwrap();
 
-    let mut settings = Settings::new(&file_name);
+    let settings = Settings::new(&file_name);
     assert_eq!(settings.config.header.name, "test".to_string());
 }
