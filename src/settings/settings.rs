@@ -41,7 +41,7 @@ impl Default for SettingsStruct {
 #[derive(Debug)]
 struct Settings {
     pub file_name: String,
-    pub config_arc: Arc<SettingsStruct>,
+    pub config: SettingsStruct,
 }
 
 impl Settings {
@@ -50,7 +50,7 @@ impl Settings {
 
         let mut settings = Settings {
             file_name: file_name.to_string(),
-            config_arc: Arc::new(settings),
+            config: settings,
         };
 
         return settings;
@@ -78,7 +78,7 @@ impl Settings {
     }
 
     pub fn save(&self) -> std::io::Result<()> {
-        Settings::save_settings_to_file(&self.file_name, Arc::as_ref(&self.config_arc))
+        Settings::save_settings_to_file(&self.file_name, &self.config)
     }
 }
 
@@ -96,12 +96,9 @@ fn simple_test() {
     println!("Test file: {}", file_name);
 
     let mut settings = Settings::new(&file_name);
-    Arc::make_mut(&mut settings.config_arc).header.name = "test".to_string();
+    settings.config.header.name = "test".to_string();
     settings.save().unwrap();
 
     let mut settings = Settings::new(&file_name);
-    assert_eq!(
-        Arc::as_ref(&settings.config_arc).header.name,
-        "test".to_string()
-    );
+    assert_eq!(settings.config.header.name, "test".to_string());
 }
