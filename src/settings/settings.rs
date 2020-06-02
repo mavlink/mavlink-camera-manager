@@ -52,6 +52,10 @@ impl Settings {
             config: settings,
         };
 
+        settings.save().unwrap_or_else(|error| {
+            println!("Failed to save file: {:#?}", error);
+        });
+
         return settings;
     }
 

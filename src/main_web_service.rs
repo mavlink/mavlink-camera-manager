@@ -57,6 +57,10 @@ fn main() {
                         settings.config.videos_configuration[id] = json.into_inner();
                     }
 
+                    settings.save().unwrap_or_else(|error| {
+                        println!("Failed to save file: {:#?}", error);
+                    });
+
                     return HttpResponse::Ok()
                         .content_type("application/json")
                         .body(serde_json::to_string_pretty(&(*settings)).unwrap());
