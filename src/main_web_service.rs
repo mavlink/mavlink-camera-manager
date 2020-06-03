@@ -17,6 +17,23 @@ fn main() {
     )));
     let settings_pipelines = Arc::clone(&settings);
 
+    let settings_thread = settings.clone();
+    std::thread::spawn(move || loop {
+        loop {
+            println!(".");
+            match settings_thread
+                .lock()
+                .unwrap()
+                .file_channel
+                .recv_timeout(std::time::Duration::from_secs(1))
+            {
+                Ok(x) => println!("Ok: {:#?}", x),
+                Err(x) => println!("Err: {:#?}", x),
+            }
+            //std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+    });
+
     HttpServer::new(move || {
         let settings_get_pipelines = Arc::clone(&settings_pipelines);
         let settings_post_pipelines = Arc::clone(&settings_pipelines);

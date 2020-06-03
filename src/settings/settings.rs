@@ -49,7 +49,7 @@ pub struct Settings {
     pub config: SettingsStruct,
     pub file_channel: mpsc::Receiver<notify::DebouncedEvent>,
 
-    #[derivative(Debug="ignore")]
+    #[derivative(Debug = "ignore")]
     watcher: notify::RecommendedWatcher,
 }
 
