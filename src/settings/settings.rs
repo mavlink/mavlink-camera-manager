@@ -83,14 +83,15 @@ impl Settings {
             .unwrap_or_else(|x| SettingsStruct::default());
     }
 
+    pub fn load(&mut self) {
+        let settings = Settings::load_settings_from_file(&self.file_name);
+        self.config = settings;
+    }
+
     pub fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> std::io::Result<()> {
         let mut file = std::fs::File::create(file_name).unwrap();
         let value = toml::Value::try_from(content).unwrap();
         file.write_all(value.to_string().as_bytes())
-    }
-
-    pub fn create_settings_file(file_name: &str) -> std::io::Result<()> {
-        Settings::save_settings_to_file(file_name, &SettingsStruct::default())
     }
 
     pub fn save(&self) -> std::io::Result<()> {
