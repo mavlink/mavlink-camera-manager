@@ -4,6 +4,11 @@ use serde::{Deserialize, Serialize};
 
 use std::io::prelude::*;
 
+use notify;
+use std::sync::mpsc;
+
+use derivative::Derivative;
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct HeaderSettingsFile {
     pub name: String,
@@ -37,19 +42,27 @@ impl Default for SettingsStruct {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub struct Settings {
     pub file_name: String,
     pub config: SettingsStruct,
+    pub file_channel: mpsc::Receiver<notify::DebouncedEvent>,
+
+    #[derivative(Debug="ignore")]
+    watcher: notify::RecommendedWatcher,
 }
 
 impl Settings {
     pub fn new(file_name: &str) -> Self {
         let settings = Settings::load_settings_from_file(file_name);
+        let (tx, rx) = mpsc::channel();
 
-        let mut settings = Settings {
+        let settings = Settings {
             file_name: file_name.to_string(),
             config: settings,
+            file_channel: rx,
+            watcher: notify::Watcher::new(tx, std::time::Duration::from_secs(1)).unwrap(),
         };
 
         settings.save().unwrap_or_else(|error| {

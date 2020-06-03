@@ -35,7 +35,7 @@ fn main() {
 
                     return HttpResponse::Ok()
                         .content_type("application/json")
-                        .body(serde_json::to_string_pretty(&(*settings)).unwrap());
+                        .body(serde_json::to_string_pretty(&(*settings).config).unwrap());
                 }),
             )
             .route(
@@ -63,7 +63,7 @@ fn main() {
 
                     return HttpResponse::Ok()
                         .content_type("application/json")
-                        .body(serde_json::to_string_pretty(&(*settings)).unwrap());
+                        .body(serde_json::to_string_pretty(&(*settings).config).unwrap());
                 }),
             )
     })

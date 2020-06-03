@@ -26,15 +26,17 @@ name = "mavlink-camera-manager-web-service"
 path = "src/main_web_service.rs"
 
 [dependencies]
-actix-web = "1.0.9"
 clap = "2"
 toml = { version = "0.5.6", features = ["preserve_order"] }
 pnet = "0.25"
 regex = "1.3"
 
+actix-web = "1.0.9"
 serde_derive = "^1.0.8"
 serde = "^1.0.8"
 serde_json = "^1.0.41"
+notify = "4.0.15"
+derivative = "2.1.1"
 
 ## Mavlink
 mavlink = { version = "0.8.2", features = ["default", "emit-extensions"] }
