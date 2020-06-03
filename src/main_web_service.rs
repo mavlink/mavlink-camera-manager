@@ -29,12 +29,10 @@ fn main() {
                 .file_channel
                 .recv_timeout(std::time::Duration::from_millis(1))
             {
-                Ok(notification) => {
-                        match notification {
-                            notify::DebouncedEvent::Write(_) => println!("Settings file updated."),
-                            _ => {},
-                    }
-                }
+                Ok(notification) => match notification {
+                    notify::DebouncedEvent::Write(_) => println!("Settings file updated."),
+                    _ => {}
+                },
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 Err(x) => println!("Error in file settings update: {:#?}", x),
             }

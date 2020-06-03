@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 
 use notify;
-use notify::{RecommendedWatcher, Watcher, RecursiveMode};
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 use std::sync::mpsc;
 
@@ -71,7 +71,10 @@ impl Settings {
             println!("Failed to save file: {:#?}", error);
         });
 
-        settings.watcher.watch(file_name, RecursiveMode::NonRecursive).unwrap();
+        settings
+            .watcher
+            .watch(file_name, RecursiveMode::NonRecursive)
+            .unwrap();
 
         return settings;
     }
