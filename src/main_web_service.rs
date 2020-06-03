@@ -11,6 +11,8 @@ use serde_derive::Deserialize;
 
 use std::sync::{Arc, Mutex};
 
+use notify;
+
 fn main() {
     let settings = Arc::new(Mutex::new(settings::settings::Settings::new(
         "/tmp/potato.toml",
@@ -25,14 +27,21 @@ fn main() {
                 .lock()
                 .unwrap()
                 .file_channel
-                .recv_timeout(std::time::Duration::from_secs(1))
+                .recv_timeout(std::time::Duration::from_millis(1))
             {
-                Ok(x) => println!("Ok: {:#?}", x),
-                Err(x) => println!("Err: {:#?}", x),
+                Ok(notification) => {
+                        match notification {
+                            notify::DebouncedEvent::Write(_) => println!("Settings file updated."),
+                            _ => {},
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(x) => println!("Error in file settings update: {:#?}", x),
             }
-            //std::thread::sleep(std::time::Duration::from_secs(1));
+            std::thread::sleep(std::time::Duration::from_secs(1));
         }
     });
+    println!("thread spawned.");
 
     HttpServer::new(move || {
         let settings_get_pipelines = Arc::clone(&settings_pipelines);

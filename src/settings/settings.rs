@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 
 use notify;
+use notify::{RecommendedWatcher, Watcher, RecursiveMode};
+
 use std::sync::mpsc;
 
 use derivative::Derivative;
@@ -58,7 +60,7 @@ impl Settings {
         let settings = Settings::load_settings_from_file(file_name);
         let (tx, rx) = mpsc::channel();
 
-        let settings = Settings {
+        let mut settings = Settings {
             file_name: file_name.to_string(),
             config: settings,
             file_channel: rx,
@@ -68,6 +70,8 @@ impl Settings {
         settings.save().unwrap_or_else(|error| {
             println!("Failed to save file: {:#?}", error);
         });
+
+        settings.watcher.watch(file_name, RecursiveMode::NonRecursive).unwrap();
 
         return settings;
     }
