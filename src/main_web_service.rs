@@ -21,25 +21,32 @@ fn main() {
 
     let settings_thread = settings.clone();
     std::thread::spawn(move || loop {
-        loop {
-            println!(".");
-            match settings_thread
-                .lock()
-                .unwrap()
-                .file_channel
-                .recv_timeout(std::time::Duration::from_millis(1))
-            {
-                Ok(notification) => match notification {
-                    notify::DebouncedEvent::Write(_) => println!("Settings file updated."),
-                    _ => {}
-                },
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                Err(x) => println!("Error in file settings update: {:#?}", x),
-            }
-            std::thread::sleep(std::time::Duration::from_secs(1));
+        println!(".");
+        match settings_thread
+            .lock()
+            .unwrap()
+            .file_channel
+            .recv_timeout(std::time::Duration::from_millis(1))
+        {
+            Ok(notification) => match notification {
+                notify::DebouncedEvent::Write(_) => println!("Settings file updated."),
+                _ => {}
+            },
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(x) => println!("Error in file settings update: {:#?}", x),
         }
+        std::thread::sleep(std::time::Duration::from_secs(1));
     });
-    println!("thread spawned.");
+
+
+    let mut mavlink_camera = mavlink_camera_information::MavlinkCameraInformation::default();
+    mavlink_camera.connect("udpout:0.0.0.0:14550");
+    mavlink_camera.set_verbosity(true);
+    mavlink_camera.set_video_stream_uri("rtsp://0.0.0.0:8554/video1".to_string());
+
+    std::thread::spawn(move || loop {
+        mavlink_camera.run_loop();
+    });
 
     HttpServer::new(move || {
         let settings_get_pipelines = Arc::clone(&settings_pipelines);
