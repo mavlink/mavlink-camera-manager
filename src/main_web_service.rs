@@ -38,7 +38,6 @@ fn main() {
         std::thread::sleep(std::time::Duration::from_secs(1));
     });
 
-
     let mut mavlink_camera = mavlink_camera_information::MavlinkCameraInformation::default();
     mavlink_camera.connect("udpout:0.0.0.0:14550");
     mavlink_camera.set_verbosity(true);
