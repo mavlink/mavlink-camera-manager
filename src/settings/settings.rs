@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 
 use notify;
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use notify::Watcher;
 
 use std::sync::mpsc;
 
@@ -73,7 +73,7 @@ impl Settings {
 
         settings
             .watcher
-            .watch(file_name, RecursiveMode::NonRecursive)
+            .watch(file_name, notify::RecursiveMode::NonRecursive)
             .unwrap();
 
         return settings;
@@ -87,7 +87,7 @@ impl Settings {
         };
 
         return toml::from_str(&result.unwrap().as_str())
-            .unwrap_or_else(|x| SettingsStruct::default());
+            .unwrap_or_else(|_error| SettingsStruct::default());
     }
 
     pub fn load(&mut self) {

@@ -1,5 +1,3 @@
-use regex::Regex;
-
 mod helper;
 mod mavlink_camera_information;
 
@@ -17,27 +15,32 @@ fn main() {
     let settings = Arc::new(Mutex::new(settings::settings::Settings::new(
         "/tmp/potato.toml",
     )));
-    let settings_pipelines = Arc::clone(&settings);
 
+    // Settings thread
+    let settings_pipelines = Arc::clone(&settings);
     let settings_thread = settings.clone();
+
     std::thread::spawn(move || loop {
-        println!(".");
-        match settings_thread
-            .lock()
-            .unwrap()
+        let mut settings = settings_thread.lock().unwrap();
+        match settings
             .file_channel
             .recv_timeout(std::time::Duration::from_millis(1))
         {
             Ok(notification) => match notification {
-                notify::DebouncedEvent::Write(_) => println!("Settings file updated."),
+                notify::DebouncedEvent::Write(_) => {
+                    settings.load();
+                    println!("Settings file updated.")
+                },
                 _ => {}
             },
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(x) => println!("Error in file settings update: {:#?}", x),
         }
+        std::mem::drop(settings);
         std::thread::sleep(std::time::Duration::from_secs(1));
     });
 
+    // MAVLink communication thread
     let mut mavlink_camera = mavlink_camera_information::MavlinkCameraInformation::default();
     mavlink_camera.connect("udpout:0.0.0.0:14550");
     mavlink_camera.set_verbosity(true);
@@ -47,6 +50,7 @@ fn main() {
         mavlink_camera.run_loop();
     });
 
+    // REST API server
     HttpServer::new(move || {
         let settings_get_pipelines = Arc::clone(&settings_pipelines);
         let settings_post_pipelines = Arc::clone(&settings_pipelines);
@@ -70,7 +74,7 @@ fn main() {
             )
             .route(
                 r"/pipelines/{id:\d+}",
-                web::post().to(move |x: HttpRequest, id: web::Path<usize>, json: web::Json<settings::settings::VideoConfiguration>| {
+                web::post().to(move |_: HttpRequest, id: web::Path<usize>, json: web::Json<settings::settings::VideoConfiguration>| {
                     let mut settings = settings_post_pipelines.lock().unwrap();
                     let number_of_configurations = settings.config.videos_configuration.len();
                     let id = id .into_inner();
