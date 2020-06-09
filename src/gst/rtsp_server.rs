@@ -9,6 +9,7 @@ use crate::gst::gstreamer_runner;
 pub struct RTSPServer {
     pipeline: String,
     port: u16,
+    event_loop: glib::MainLoop,
 }
 
 impl Default for RTSPServer {
@@ -16,6 +17,7 @@ impl Default for RTSPServer {
         RTSPServer {
             pipeline: "videotestsrc ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc ! rtph264pay name=pay0".to_string(),
             port: 8554,
+            event_loop: glib::MainLoop::new(None, false),
         }
     }
 }
@@ -30,12 +32,22 @@ impl RTSPServer {
     }
 
     pub fn run_loop(&self) {
-        let self_structure = self.clone();
-        let closure = move || RTSPServer::rtsp_loop(self_structure);
-        gstreamer_runner::run(closure);
+        self.stop();
+        println!("run_loop!");
+        // Start or restart the pipeline
+        RTSPServer::rtsp_loop(self);
     }
 
-    fn rtsp_loop(rtsp_server: RTSPServer) {
+    pub fn stop(&self) {
+        // If there is an event loop for this pipeline, we are going to kill it with fire
+        println!("self.event_loop: {}", self.event_loop.is_running());
+        if self.event_loop.is_running() {
+            self.event_loop.quit();
+            //self.event_loop = None;
+        }
+    }
+
+    fn rtsp_loop(rtsp_server: &RTSPServer) {
         match gstreamer::init() {
             Ok(_) => {}
             Err(error) => {
@@ -44,7 +56,6 @@ impl RTSPServer {
             }
         }
 
-        let main_loop = glib::MainLoop::new(None, false);
         let server = gstreamer_rtsp_server::RTSPServer::new();
         server.set_service(&rtsp_server.port.to_string());
 
@@ -93,7 +104,7 @@ impl RTSPServer {
 
         // Start the mainloop. From this point on, the server will start to serve
         // our quality content to connecting clients.
-        main_loop.run();
+        rtsp_server.event_loop.run();
 
         glib::source_remove(id);
     }
