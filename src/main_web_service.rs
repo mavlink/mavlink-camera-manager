@@ -14,9 +14,6 @@ use notify;
 mod gst;
 
 fn main() {
-    let rtsp = Arc::new(Mutex::new(gst::rtsp_server::RTSPServer::default()));
-    rtsp.lock().unwrap().run_loop();
-
     // Setting file
     let settings = Arc::new(Mutex::new(settings::settings::Settings::new(
         "/tmp/potato.toml",
@@ -54,6 +51,20 @@ fn main() {
 
     std::thread::spawn(move || loop {
         mavlink_camera.run_loop();
+    });
+
+    std::thread::spawn({
+        let mut rtsp = gst::rtsp_server::RTSPServer::default();
+        move || loop {
+            rtsp.run_loop();
+        }
+
+        /*
+        let mut pipeline_runner = gst::pipeline_runner::PipelineRunner::default();
+        move || loop {
+            pipeline_runner.run_loop();
+        }
+        */
     });
 
     // REST API server

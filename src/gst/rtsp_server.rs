@@ -5,7 +5,7 @@ use gstreamer_rtsp_server::prelude::*;
 
 use crate::gst::gstreamer_runner;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RTSPServer {
     pipeline: String,
     port: u16,
@@ -14,8 +14,8 @@ pub struct RTSPServer {
 impl Default for RTSPServer {
     fn default() -> Self {
         RTSPServer {
-            pipeline: Default::default(),
-            port: 554,
+            pipeline: "videotestsrc ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc ! rtph264pay name=pay0".to_string(),
+            port: 8554,
         }
     }
 }
@@ -38,7 +38,10 @@ impl RTSPServer {
     fn rtsp_loop(rtsp_server: RTSPServer) {
         match gstreamer::init() {
             Ok(_) => {}
-            Err(error) => println!("Error! {}", error),
+            Err(error) => {
+                println!("Error! {}", error);
+                std::process::exit(-1);
+            }
         }
 
         let main_loop = glib::MainLoop::new(None, false);
