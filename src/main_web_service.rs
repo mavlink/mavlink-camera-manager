@@ -11,7 +11,13 @@ use std::sync::{Arc, Mutex};
 
 use notify;
 
+mod gst;
+
 fn main() {
+    let rtsp = Arc::new(Mutex::new(gst::rtsp_server::RTSPServer::default()));
+    rtsp.lock().unwrap().run_loop();
+
+    // Setting file
     let settings = Arc::new(Mutex::new(settings::settings::Settings::new(
         "/tmp/potato.toml",
     )));
@@ -30,7 +36,7 @@ fn main() {
                 notify::DebouncedEvent::Write(_) => {
                     settings.load();
                     println!("Settings file updated.")
-                },
+                }
                 _ => {}
             },
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
@@ -79,13 +85,13 @@ fn main() {
                     let number_of_configurations = settings.config.videos_configuration.len();
                     let id = id .into_inner();
 
-                    if (id > number_of_configurations) {
+                    if id > number_of_configurations {
                         return HttpResponse::NotFound()
                             .content_type("text/plain")
                             .body(format!("Maximum id allowed is {}", number_of_configurations));
                     }
 
-                    if (id == number_of_configurations) {
+                    if id == number_of_configurations {
                         settings.config.videos_configuration.push(json.into_inner());
                     } else {
                         settings.config.videos_configuration[id] = json.into_inner();

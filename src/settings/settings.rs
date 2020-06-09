@@ -82,7 +82,7 @@ impl Settings {
     pub fn load_settings_from_file(file_name: &str) -> SettingsStruct {
         let result = std::fs::read_to_string(file_name);
 
-        if (result.is_err()) {
+        if result.is_err() {
             return SettingsStruct::default();
         };
 
