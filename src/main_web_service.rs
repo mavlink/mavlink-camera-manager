@@ -60,13 +60,19 @@ fn main() {
     // Rtsp
     let mut rtsp_rest_api = Arc::clone(&rtsp);
     std::thread::spawn(move || loop {
-        match settings_rtsp.lock().unwrap().config.videos_configuration.first() {
+        match settings_rtsp
+            .lock()
+            .unwrap()
+            .config
+            .videos_configuration
+            .first()
+        {
             Some(pipeline_struct) => {
                 let mut rtsp = Arc::make_mut(&mut rtsp);
                 //let pipeline_string = pipeline_struct.pipeline.as_ref().unwrap();
                 rtsp.set_pipeline(pipeline_struct.pipeline.as_ref().unwrap());
                 println!("Running pipeline: {:#?}", pipeline_struct.pipeline);
-            },
+            }
             _ => {}
         }
         println!("Run loop!");
