@@ -18,9 +18,14 @@ fn main() {
     )));
 
     // Settings thread
-    let settings_pipelines = Arc::clone(&settings);
+    let settings_pipelines = settings.clone();
+    let settings_rtsp = settings.clone();
     let settings_thread = settings.clone();
 
+    // RTSP
+    let mut rtsp = Arc::new(gst::rtsp_server::RTSPServer::default());
+
+    let mut rtsp_settings = Arc::clone(&rtsp);
     std::thread::spawn(move || loop {
         let mut settings = settings_thread.lock().unwrap();
         match settings
@@ -30,7 +35,8 @@ fn main() {
             Ok(notification) => match notification {
                 notify::DebouncedEvent::Write(_) => {
                     settings.load();
-                    println!("Settings file updated.")
+                    rtsp_settings.stop();
+                    println!("Settings file updated.");
                 }
                 _ => {}
             },
@@ -52,19 +58,19 @@ fn main() {
     });
 
     // Rtsp
-    let mut rtsp = Arc::new(gst::rtsp_server::RTSPServer::default());
     let mut rtsp_rest_api = Arc::clone(&rtsp);
     std::thread::spawn(move || loop {
-        //let settings_pipelines = Arc::clone(&settings_pipelines);
-        let mut rtsp = Arc::clone(&rtsp);
-        /*
-        match settings_pipelines.lock().unwrap().config.videos_configuration.first() {
+        match settings_rtsp.lock().unwrap().config.videos_configuration.first() {
             Some(pipeline_struct) => {
-                let pipeline_string = pipeline_struct.pipeline.as_ref().unwrap();
+                let mut rtsp = Arc::make_mut(&mut rtsp);
+                //let pipeline_string = pipeline_struct.pipeline.as_ref().unwrap();
                 rtsp.set_pipeline(pipeline_struct.pipeline.as_ref().unwrap());
+                println!("Running pipeline: {:#?}", pipeline_struct.pipeline);
             },
             _ => {}
-        }*/
+        }
+        println!("Run loop!");
+        let mut rtsp = Arc::clone(&rtsp);
         rtsp.run_loop();
 
         /*
@@ -86,7 +92,6 @@ fn main() {
                 "/",
                 web::get().to(move || {
                     //let mut rtsp = Arc::clone(&rtsp).unwrap();
-                    rtsp.stop();
                     "mavlink-camera-manager home page, WIP"
                 }),
             )
