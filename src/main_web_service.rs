@@ -25,8 +25,11 @@ fn main() {
     // RTSP
     let mut rtsp = Arc::new(gst::rtsp_server::RTSPServer::default());
 
-    let mut rtsp_settings = Arc::clone(&rtsp);
+    let rtsp_settings = Arc::clone(&rtsp);
     std::thread::spawn(move || loop {
+        // Avoid multiple file changes and allow a bigger time for the mutex to be unlocked
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
         let mut settings = settings_thread.lock().unwrap();
         match settings
             .file_channel
@@ -43,8 +46,6 @@ fn main() {
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(x) => println!("Error in file settings update: {:#?}", x),
         }
-        std::mem::drop(settings);
-        std::thread::sleep(std::time::Duration::from_secs(1));
     });
 
     // MAVLink communication thread
@@ -68,13 +69,12 @@ fn main() {
         {
             Some(pipeline_struct) => {
                 let rtsp = Arc::make_mut(&mut rtsp);
-                //let pipeline_string = pipeline_struct.pipeline.as_ref().unwrap();
                 rtsp.set_pipeline(pipeline_struct.pipeline.as_ref().unwrap());
-                println!("Running pipeline: {:#?}", pipeline_struct.pipeline);
             }
             _ => {}
         }
-        println!("Run loop!");
+
+        println!("Starting new pipeline: {:#?}", rtsp.pipeline);
         let rtsp = Arc::clone(&rtsp);
         rtsp.run_loop();
 

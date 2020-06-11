@@ -5,7 +5,7 @@ use gstreamer_rtsp_server::prelude::*;
 
 #[derive(Clone, Debug)]
 pub struct RTSPServer {
-    pipeline: String,
+    pub pipeline: String,
     port: u16,
     event_loop: glib::MainLoop,
 }
