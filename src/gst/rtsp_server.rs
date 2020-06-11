@@ -107,5 +107,9 @@ impl RTSPServer {
         rtsp_server.event_loop.run();
 
         glib::source_remove(id);
+
+        for client in server.client_filter(None) {
+            client.close();
+        }
     }
 }
