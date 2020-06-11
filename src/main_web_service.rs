@@ -58,7 +58,6 @@ fn main() {
     });
 
     // Rtsp
-    let mut rtsp_rest_api = Arc::clone(&rtsp);
     std::thread::spawn(move || loop {
         match settings_rtsp
             .lock()
@@ -68,7 +67,7 @@ fn main() {
             .first()
         {
             Some(pipeline_struct) => {
-                let mut rtsp = Arc::make_mut(&mut rtsp);
+                let rtsp = Arc::make_mut(&mut rtsp);
                 //let pipeline_string = pipeline_struct.pipeline.as_ref().unwrap();
                 rtsp.set_pipeline(pipeline_struct.pipeline.as_ref().unwrap());
                 println!("Running pipeline: {:#?}", pipeline_struct.pipeline);
@@ -76,7 +75,7 @@ fn main() {
             _ => {}
         }
         println!("Run loop!");
-        let mut rtsp = Arc::clone(&rtsp);
+        let rtsp = Arc::clone(&rtsp);
         rtsp.run_loop();
 
         /*
@@ -91,13 +90,11 @@ fn main() {
     HttpServer::new(move || {
         let settings_get_pipelines = Arc::clone(&settings_pipelines);
         let settings_post_pipelines = Arc::clone(&settings_pipelines);
-        let rtsp = Arc::clone(&rtsp_rest_api);
 
         App::new()
             .route(
                 "/",
                 web::get().to(move || {
-                    //let mut rtsp = Arc::clone(&rtsp).unwrap();
                     "mavlink-camera-manager home page, WIP"
                 }),
             )
