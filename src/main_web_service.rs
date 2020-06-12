@@ -24,8 +24,10 @@ fn main() {
 
     // RTSP
     let mut rtsp = Arc::new(gst::rtsp_server::RTSPServer::default());
+    let mut pipeline_runner = Arc::new(gst::pipeline_runner::PipelineRunner::default());
 
     let rtsp_settings = Arc::clone(&rtsp);
+    let pipeline_runner_settings = Arc::clone(&pipeline_runner);
     std::thread::spawn(move || loop {
         // Avoid multiple file changes and allow a bigger time for the mutex to be unlocked
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -38,8 +40,11 @@ fn main() {
             Ok(notification) => match notification {
                 notify::DebouncedEvent::Write(_) => {
                     settings.load();
-                    rtsp_settings.stop();
                     println!("Settings file updated.");
+
+                    // Stop RTSP or pipeline runner, this will force an restart
+                    rtsp_settings.stop();
+                    pipeline_runner_settings.stop();
                 }
                 _ => {}
             },
@@ -58,9 +63,9 @@ fn main() {
         mavlink_camera.run_loop();
     });
 
-    // Rtsp
+    // Run RTSP or normal gstreamer pipeline, it depends of the content of the pipeline
     std::thread::spawn(move || loop {
-        match settings_rtsp
+        let pipeline = match settings_rtsp
             .lock()
             .unwrap()
             .config
@@ -68,22 +73,30 @@ fn main() {
             .first()
         {
             Some(pipeline_struct) => {
-                let rtsp = Arc::make_mut(&mut rtsp);
-                rtsp.set_pipeline(pipeline_struct.pipeline.as_ref().unwrap());
+                pipeline_struct.pipeline.clone()
             }
-            _ => {}
+            _ => { None }
+        };
+
+        if pipeline.is_none() {
+            println!("Pipeline string is empty.");
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            continue;
         }
 
-        println!("Starting new pipeline: {:#?}", rtsp.pipeline);
-        let rtsp = Arc::clone(&rtsp);
-        rtsp.run_loop();
+        let pipeline = pipeline.unwrap();
 
-        /*
-        let mut pipeline_runner = gst::pipeline_runner::PipelineRunner::default();
-        move || loop {
+        println!("Starting new pipeline: {:#?}", &pipeline);
+
+        if pipeline.contains("name=pay") {
+            let rtsp = Arc::make_mut(&mut rtsp);
+            rtsp.set_pipeline(&pipeline);
+            rtsp.run_loop();
+        } else {
+            let pipeline_runner = Arc::make_mut(&mut pipeline_runner);
+            pipeline_runner.set_pipeline(&pipeline);
             pipeline_runner.run_loop();
         }
-        */
     });
 
     // REST API server

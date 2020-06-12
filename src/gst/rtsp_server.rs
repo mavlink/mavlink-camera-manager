@@ -31,7 +31,6 @@ impl RTSPServer {
 
     pub fn run_loop(&self) {
         self.stop();
-        println!("run_loop!");
         // Start or restart the pipeline
         RTSPServer::rtsp_loop(self);
     }
@@ -41,7 +40,6 @@ impl RTSPServer {
         println!("self.event_loop: {}", self.event_loop.is_running());
         if self.event_loop.is_running() {
             self.event_loop.quit();
-            //self.event_loop = None;
         }
     }
 
@@ -106,6 +104,7 @@ impl RTSPServer {
 
         glib::source_remove(id);
 
+        // Get all clients that are connected and close the connection
         for client in server.client_filter(None) {
             client.close();
         }
