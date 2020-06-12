@@ -46,7 +46,6 @@ impl PipelineRunner {
         let mut pipeline;
 
         'externalLoop: loop {
-
             // Create pipeline from string
             let mut context = gstreamer::ParseContext::new();
             pipeline = match gstreamer::parse_launch_full(
@@ -93,7 +92,7 @@ impl PipelineRunner {
                             println!("EOS received.");
                             // Broke internal loop to restart pipeline
                             break 'internalLoop;
-                        },
+                        }
                         MessageView::Error(err) => {
                             print!(
                                 "Error from {:?}: {} ({:?})\n",

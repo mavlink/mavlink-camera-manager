@@ -72,10 +72,8 @@ fn main() {
             .videos_configuration
             .first()
         {
-            Some(pipeline_struct) => {
-                pipeline_struct.pipeline.clone()
-            }
-            _ => { None }
+            Some(pipeline_struct) => pipeline_struct.pipeline.clone(),
+            _ => None,
         };
 
         if pipeline.is_none() {
