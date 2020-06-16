@@ -39,7 +39,13 @@ impl Default for SettingsStruct {
                 version: 0,
             },
             mavlink_endpoint: "udpout:0.0.0.0:14550".to_string(),
-            videos_configuration: vec![],
+            videos_configuration: vec![
+                VideoConfiguration {
+                    device: None,
+                    pipeline: Some("videotestsrc ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc ! rtph264pay ! udpsink host=0.0.0.0 port=5600".to_string()),
+                    endpoint: None,
+                }
+            ],
         }
     }
 }
