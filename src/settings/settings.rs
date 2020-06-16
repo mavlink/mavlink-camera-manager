@@ -43,7 +43,7 @@ impl Default for SettingsStruct {
                 VideoConfiguration {
                     device: None,
                     pipeline: Some("videotestsrc ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc ! rtph264pay ! udpsink host=0.0.0.0 port=5600".to_string()),
-                    endpoint: None,
+                    endpoint: Some("udp://0.0.0.0:5600".to_string()),
                 }
             ],
         }
