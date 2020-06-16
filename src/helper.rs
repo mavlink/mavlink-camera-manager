@@ -41,7 +41,7 @@ TYPE should be:
 \t- tcp (MPEG)
 \t- tsusb (taisync)
 Example of valid arguments:
-\t- udp:://192.168.2.2:5600
+\t- udp://192.168.2.2:5600
 \t- rtsp://0.0.0.0:8554/video1",
                 )
                 .takes_value(true)
