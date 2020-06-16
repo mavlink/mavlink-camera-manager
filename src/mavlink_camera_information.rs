@@ -1,14 +1,19 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 pub struct MavlinkCameraInformation {
     system_id: u8,
     component_id: u8,
-    video_stream_uri: String,
+    // This is necessary since mavlink does not provide a way to have nonblock communication
+    // So we need the main mavlink loop live while changing the stream uri
+    // and forcing QGC to request the new uri available
+    video_stream_uri: Arc<Mutex<String>>,
     verbose: bool,
     vehicle:
         Option<Arc<Box<dyn mavlink::MavConnection<mavlink::common::MavMessage> + Sync + Send>>>,
+    // Counter used to not emit heartbeats to force QGC update
+    restart_counter: Arc<Mutex<u8>>,
 }
 
 impl Default for MavlinkCameraInformation {
@@ -16,11 +21,12 @@ impl Default for MavlinkCameraInformation {
         MavlinkCameraInformation {
             system_id: 1,
             component_id: mavlink::common::MavComponent::MAV_COMP_ID_CAMERA as u8,
-            video_stream_uri: String::from(
-                "rtsp://wowzaec2demo.streamlock.net:554/vod/mp4:BigBuckBunny_115k.mov",
-            ),
+            video_stream_uri: Arc::new(Mutex::new(
+                "rtsp://wowzaec2demo.streamlock.net:554/vod/mp4:BigBuckBunny_115k.mov".to_string(),
+            )),
             verbose: false,
             vehicle: Default::default(),
+            restart_counter: Arc::new(Mutex::new(0)),
         }
     }
 }
@@ -32,8 +38,9 @@ impl MavlinkCameraInformation {
         self.vehicle = Some(Arc::new(mavlink_connection));
     }
 
-    pub fn set_video_stream_uri(&mut self, uri: String) {
-        self.video_stream_uri = uri;
+    pub fn set_video_stream_uri(&self, uri: String) {
+        *self.video_stream_uri.lock().unwrap() = uri;
+        *self.restart_counter.lock().unwrap() = 5;
     }
 
     pub fn set_verbosity(&mut self, verbose: bool) {
@@ -128,7 +135,9 @@ impl MavlinkCameraInformation {
             name[index as usize] = name_str.as_bytes()[index as usize] as char;
         }
 
-        let uri: Vec<char> = format!("{}\0", self.video_stream_uri).chars().collect();
+        let uri: Vec<char> = format!("{}\0", self.video_stream_uri.lock().unwrap())
+            .chars()
+            .collect();
 
         //The only important information here is the mavtype and uri variables, everything else is fake
         mavlink::common::MavMessage::VIDEO_STREAM_INFORMATION(
@@ -157,8 +166,16 @@ impl MavlinkCameraInformation {
         // Create heartbeat thread
         thread::spawn({
             let vehicle = self.vehicle.as_ref().unwrap().clone();
+            let restart_counter = self.restart_counter.clone();
             move || loop {
                 thread::sleep(Duration::from_secs(1));
+                let mut restart_counter = restart_counter.lock().unwrap();
+                if *restart_counter > 0 {
+                    println!("Restarting camera service in {} seconds.", restart_counter);
+                    *restart_counter -= 1;
+                    continue;
+                }
+
                 let res = vehicle.send(&header, &MavlinkCameraInformation::heartbeat_message());
                 if res.is_err() {
                     println!("Failed to send heartbeat: {:?}", res);

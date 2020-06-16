@@ -26,8 +26,15 @@ fn main() {
     let mut rtsp = Arc::new(gst::rtsp_server::RTSPServer::default());
     let mut pipeline_runner = Arc::new(gst::pipeline_runner::PipelineRunner::default());
 
+    // MAVLink communication thread
+    let mut mavlink_camera = mavlink_camera_information::MavlinkCameraInformation::default();
+    mavlink_camera.set_verbosity(true);
+    mavlink_camera.connect(&settings.lock().unwrap().config.mavlink_endpoint);
+    let mut mavlink_camera = Arc::new(mavlink_camera);
+
     let rtsp_settings = Arc::clone(&rtsp);
     let pipeline_runner_settings = Arc::clone(&pipeline_runner);
+    let mavlink_camera_settings = Arc::clone(&mavlink_camera);
     std::thread::spawn(move || loop {
         // Avoid multiple file changes and allow a bigger time for the mutex to be unlocked
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -45,6 +52,15 @@ fn main() {
                     // Stop RTSP or pipeline runner, this will force an restart
                     rtsp_settings.stop();
                     pipeline_runner_settings.stop();
+                    let uri = settings
+                        .config
+                        .videos_configuration
+                        .first()
+                        .unwrap()
+                        .endpoint
+                        .clone()
+                        .unwrap();
+                    mavlink_camera_settings.set_video_stream_uri(uri)
                 }
                 _ => {}
             },
@@ -53,11 +69,20 @@ fn main() {
         }
     });
 
-    // MAVLink communication thread
-    let mut mavlink_camera = mavlink_camera_information::MavlinkCameraInformation::default();
-    mavlink_camera.connect("udpout:0.0.0.0:14550");
-    mavlink_camera.set_verbosity(true);
-    mavlink_camera.set_video_stream_uri("rtsp://0.0.0.0:8554/video1".to_string());
+    {
+        // This scope is necessary to use RAII of the mutex lock
+        let config = &settings.lock().unwrap().config;
+        println!("{:#?}", config.videos_configuration.first().unwrap());
+        mavlink_camera.set_video_stream_uri(
+            config
+                .videos_configuration
+                .first()
+                .unwrap()
+                .endpoint
+                .clone()
+                .unwrap(),
+        );
+    }
 
     std::thread::spawn(move || loop {
         mavlink_camera.run_loop();
