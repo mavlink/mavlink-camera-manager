@@ -19,7 +19,7 @@ pub struct HeaderSettingsFile {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct VideoConfiguration {
-    pub device: String,
+    pub device: Option<String>,
     pub pipeline: Option<String>,
     pub endpoint: Option<String>, //TODO: Move to struct
 }
