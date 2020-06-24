@@ -15,6 +15,24 @@ mod gst;
 use dirs;
 
 fn main() {
+    let mut matches = clap::App::new(env!("CARGO_PKG_NAME"))
+        .version(env!("CARGO_PKG_VERSION"))
+        .about(env!("CARGO_PKG_DESCRIPTION"))
+        .author(env!("CARGO_PKG_AUTHORS"))
+        .arg(
+            clap::Arg::with_name("server")
+                .short("s")
+                .long("server")
+                .value_name("IP:PORT")
+                .help("Sets the IP and port that the rest server will be provided")
+                .takes_value(true)
+                .default_value("0.0.0.0:8088"),
+        )
+        .get_matches();
+
+    let server_string = matches.value_of("server").unwrap();
+    println!("REST API address: {}", server_string);
+
     // Setting file
     let settings_path = format!(
         "{}/{}/",
@@ -188,7 +206,7 @@ fn main() {
                 }),
             )
     })
-    .bind("0.0.0.0:8088")
+    .bind(server_string)
     .unwrap()
     .run()
     .unwrap();
