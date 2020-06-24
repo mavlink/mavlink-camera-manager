@@ -1,6 +1,7 @@
 mod helper;
 mod mavlink_camera_information;
 
+use actix_cors::Cors;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 
 mod settings;
@@ -128,6 +129,7 @@ fn main() {
         let settings_post_pipelines = Arc::clone(&settings_pipelines);
 
         App::new()
+            .wrap(Cors::default())
             .route(
                 "/",
                 web::get().to(move || {
