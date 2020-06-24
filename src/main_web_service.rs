@@ -73,7 +73,7 @@ fn main() {
                         .unwrap()
                         .endpoint
                         .clone()
-                        .unwrap();
+                        .unwrap_or(Default::default());
                     mavlink_camera_settings.set_video_stream_uri(uri)
                 }
                 _ => {}
