@@ -8,6 +8,13 @@ jobs:
     name: Build on ARMv7
     steps:
     - uses: actions/checkout@v1.0.0
+    - uses: actions/cache@v1
+      with:
+          path: ~/.cargo
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+              ${{ runner.os }}-cargo-
+
     - uses: uraimo/run-on-arch-action@v1.0.8
       id: runcmd
       with:
@@ -20,7 +27,10 @@ jobs:
           apt install -y libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
           export PATH="$HOME/.cargo/bin:$PATH"
-          cargo build --verbose --release --features rtsp
+          export RUSTC_WRAPPER=$(if [ -f ~/.cargo/bin/sccache ]; then echo "~/.cargo/bin/sccache"; else echo ""; fi)
+          RUSTC_WRAPPER=sccache cargo install sccache --features=default
+          export RUSTC_WRAPPER=$(if [ -f ~/.cargo/bin/sccache ]; then echo "~/.cargo/bin/sccache"; else echo ""; fi)
+          RUSTC_WRAPPER=sccache cargo build --verbose --release --features=rtsp
 
     - name: Rename
       run: |
