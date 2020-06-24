@@ -27,10 +27,8 @@ jobs:
           apt install -y libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
           export PATH="$HOME/.cargo/bin:$PATH"
-          export RUSTC_WRAPPER=$(if [ -f ~/.cargo/bin/sccache ]; then echo "~/.cargo/bin/sccache"; else echo ""; fi)
-          RUSTC_WRAPPER=sccache cargo install sccache --features default --verbose
-          export RUSTC_WRAPPER=$(if [ -f ~/.cargo/bin/sccache ]; then echo "~/.cargo/bin/sccache"; else echo ""; fi)
-          RUSTC_WRAPPER=sccache cargo build --verbose --release --features=rtsp
+          if [ ! -f ~/.cargo/bin/sccache ]; then sccache cargo install sccache --features default --verbose; fi
+          RUSTC_WRAPPER=~/.cargo/bin/sccache cargo build --verbose --release --features=rtsp
 
     - name: Rename
       run: |
