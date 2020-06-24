@@ -104,7 +104,6 @@ fn main() {
     {
         // This scope is necessary to use RAII of the mutex lock
         let config = &settings.lock().unwrap().config;
-        println!("{:#?}", config.videos_configuration.first().unwrap());
         mavlink_camera.set_video_stream_uri(
             config
                 .videos_configuration
