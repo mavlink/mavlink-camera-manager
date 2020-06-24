@@ -28,7 +28,7 @@ jobs:
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
           export PATH="$HOME/.cargo/bin:$PATH"
           export RUSTC_WRAPPER=$(if [ -f ~/.cargo/bin/sccache ]; then echo "~/.cargo/bin/sccache"; else echo ""; fi)
-          RUSTC_WRAPPER=sccache cargo install sccache --features=default
+          RUSTC_WRAPPER=sccache cargo install sccache --features default
           export RUSTC_WRAPPER=$(if [ -f ~/.cargo/bin/sccache ]; then echo "~/.cargo/bin/sccache"; else echo ""; fi)
           RUSTC_WRAPPER=sccache cargo build --verbose --release --features=rtsp
 
