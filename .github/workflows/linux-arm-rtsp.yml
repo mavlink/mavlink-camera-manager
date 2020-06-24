@@ -23,7 +23,7 @@ jobs:
         run: |
           uname -a
           apt update
-          apt install -y curl openssl-dev
+          apt install -y curl libssl-dev pkg-config
           apt install -y libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
           export PATH="$HOME/.cargo/bin:$PATH"
