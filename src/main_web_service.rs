@@ -12,10 +12,23 @@ use notify;
 
 mod gst;
 
+use dirs;
+
 fn main() {
     // Setting file
+    let settings_path = format!(
+        "{}/{}/",
+        dirs::config_dir().unwrap().to_str().unwrap(),
+        env!("CARGO_PKG_NAME")
+    );
+    let settings_file = "server-settings.toml";
+    std::fs::create_dir_all(&settings_path)
+        .unwrap_or_else(|error| panic!("Error while creating settings directory: {}", error));
     let settings = Arc::new(Mutex::new(settings::settings::Settings::new(
-        "/tmp/potato.toml",
+        std::path::Path::new(&settings_path)
+            .join(&settings_file)
+            .to_str()
+            .unwrap(),
     )));
 
     // Settings thread
