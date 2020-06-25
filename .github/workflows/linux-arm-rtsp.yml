@@ -14,6 +14,12 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
           restore-keys: |
               ${{ runner.os }}-cargo-
+    - uses: actions/cache@v1
+      with:
+          path: ~/.cache
+          key: ${{ runner.os }}-cache-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+              ${{ runner.os }}-cache-
 
     - uses: uraimo/run-on-arch-action@v1.0.8
       id: runcmd
