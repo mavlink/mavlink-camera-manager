@@ -1,0 +1,28 @@
+dist: xenial
+language: rust
+sudo: required
+
+env:
+  global:
+    - CRATE_NAME=ardupilot-camera-manager
+
+matrix:
+  include:
+    - os: linux
+      arch: amd64
+      dist: xenial
+      env:
+        - TARGET=armv7-unknown-linux-musleabihf
+      addons:
+        apt:
+          packages:
+            - libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev
+
+before_install:
+  - set -e
+  - rustup self update
+
+install:
+  - rustup install stable
+  - rustup default stable
+  - cargo build --verbose --release --features=rtsp
