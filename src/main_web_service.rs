@@ -28,6 +28,14 @@ fn main() {
                 .takes_value(true)
                 .default_value("0.0.0.0:8088"),
         )
+        .arg(
+            clap::Arg::with_name("connect")
+                .short("c")
+                .long("connect")
+                .value_name("TYPE:<IP/SERIAL>:<PORT/BAUDRATE>")
+                .help("Sets the mavlink connection string, E.g: (udpbcast:192.168.0.255:14550)")
+                .takes_value(true),
+        )
         .get_matches();
 
     let server_string = matches.value_of("server").unwrap();
@@ -48,6 +56,14 @@ fn main() {
             .to_str()
             .unwrap(),
     )));
+
+    if let Some(mavlink_string) = matches.value_of("connect") {
+        settings.lock().unwrap().config.mavlink_endpoint = mavlink_string.to_string();
+    }
+    println!(
+        "MAVLink connection in: {}",
+        &settings.lock().unwrap().config.mavlink_endpoint
+    );
 
     // Settings thread
     let settings_pipelines = settings.clone();
