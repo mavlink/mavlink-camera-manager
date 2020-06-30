@@ -1,5 +1,7 @@
 language: rust
 
+dist: bionic
+
 rust:
   - stable
 
