@@ -11,6 +11,6 @@ cache: cargo
 script:
   - apt update
   - apt install -y curl
-  - apt install -y libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev
+  - apt install -y libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev libglib2.0-dev
   - cargo build --verbose --release --features rtsp
   - curl --upload-file ./target/release/mavlink-camera-manager-web-service https://transfer.sh/mavlink-camera-manager-web-service
