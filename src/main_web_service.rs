@@ -100,7 +100,7 @@ fn main() {
                     // Stop RTSP or pipeline runner, this will force an restart
                     rtsp_settings.stop();
                     pipeline_runner_settings.stop();
-                    let uri = settings
+                    let mut uri = settings
                         .config
                         .videos_configuration
                         .first()
@@ -108,6 +108,10 @@ fn main() {
                         .endpoint
                         .clone()
                         .unwrap_or(Default::default());
+
+                    uri = uri.replace("{service_ip}", &helper::get_ip_address_for_qgc());
+
+                    println!("Video will be available in: {}", uri);
                     mavlink_camera_settings.set_video_stream_uri(uri)
                 }
                 _ => {}
