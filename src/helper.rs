@@ -1,4 +1,5 @@
 use clap;
+use regex::Regex;
 
 pub fn get_valid_ip_address() -> Vec<std::net::IpAddr> {
     let mut ips = Vec::new();
@@ -91,4 +92,36 @@ Example of valid arguments:
     }
 
     return matches.get_matches();
+}
+
+pub fn get_ip_address_for_qgc() -> String {
+    // Look for valid ips with our use (192.168.(2).1)
+    // If no valid ip address is found, the first one that matches the regex is used
+    let regex = Regex::new(r"192.168.(\d{1})\..+$").unwrap();
+    let mut video_stream_ip = String::new();
+    let ips = get_valid_ip_address();
+
+    for ip in ips {
+        let ip = ip.to_string();
+
+        if !regex.is_match(&ip) {
+            continue;
+        }
+
+        // Check if we have a valid ip address
+        // And force update if we are inside companion ip address range
+        let capture = regex.captures(&ip).unwrap();
+        if video_stream_ip.is_empty() {
+            video_stream_ip = String::from(&ip);
+        }
+        if &capture[1] == "2" {
+            return String::from(&ip);
+        }
+    }
+
+    if video_stream_ip.is_empty() {
+        return "0.0.0.0".to_string();
+    }
+
+    return video_stream_ip;
 }
