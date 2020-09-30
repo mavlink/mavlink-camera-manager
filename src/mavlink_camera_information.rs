@@ -124,6 +124,7 @@ impl MavlinkCameraInformation {
                 available_capacity: 10000.0,
                 image_status: 0,
                 video_status: 0,
+                image_count: 0,
             },
         )
     }

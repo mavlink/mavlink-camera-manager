@@ -51,7 +51,7 @@ impl PipelineRunner {
             pipeline = match gstreamer::parse_launch_full(
                 &pipeline_runner.pipeline,
                 Some(&mut context),
-                gstreamer::ParseFlags::NONE,
+                gstreamer::ParseFlags::empty(),
             ) {
                 Ok(pipeline) => Arc::new(pipeline),
                 Err(err) => {

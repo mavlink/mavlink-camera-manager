@@ -39,7 +39,7 @@ pub fn start_pipeline(pipeline: &str) {
 pub fn start_pipeline(_pipeline: &str) {}
 
 fn main() {
-    let matches = helper::get_clap_matches();
+    let matches = helper::helper::get_clap_matches();
     let verbose = matches.is_present("verbose");
     let connection_string = matches.value_of("connect").unwrap();
     println!("MAVLink connection string: {}", connection_string);
@@ -70,7 +70,7 @@ fn main() {
         // If no valid ip address is found, the first one that matches the regex is used
         let regex = Regex::new(r"192.168.(\d{1})\..+$").unwrap();
         let mut video_stream_ip = String::new();
-        let ips = helper::get_valid_ip_address();
+        let ips = helper::helper::get_valid_ip_address();
 
         if ips.is_empty() {
             video_stream_uri = format!("rtsp://0.0.0.0:{}/video1", rtsp_port);

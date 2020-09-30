@@ -109,7 +109,7 @@ fn main() {
                         .clone()
                         .unwrap_or(Default::default());
 
-                    uri = uri.replace("{service_ip}", &helper::get_ip_address_for_qgc());
+                    uri = uri.replace("{service_ip}", &helper::helper::get_ip_address_for_qgc());
 
                     println!("Video will be available in: {}", uri);
                     mavlink_camera_settings.set_video_stream_uri(uri)
