@@ -26,7 +26,7 @@ pub fn is_verbose() -> bool {
     return MANAGER.as_ref().clap_matches.is_present("verbose");
 }
 
-pub fn mavlink_connection_string<'a>() -> &'a str {
+pub fn mavlink_connection_string() -> &'static str {
     return MANAGER.as_ref().clap_matches.value_of("mavlink").unwrap();
 }
 
