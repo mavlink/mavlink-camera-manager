@@ -26,6 +26,12 @@ name = "mavlink-camera-manager-web-service"
 path = "src/main_web_service.rs"
 required-features = ["rtsp"]
 
+[[bin]]
+bench = false
+name = "final"
+path = "src2/main.rs"
+#required-features = ["rtsp"]
+
 [dependencies]
 clap = "2"
 toml = { version = "0.5.6", features = ["preserve_order"] }
