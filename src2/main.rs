@@ -23,15 +23,15 @@ fn main() {
     loop {
         let mut stream_manager = stream::video_stream_manager::VideoStreamManager::default();
         println!("created!");
-        std::thread::sleep(std::time::Duration::from_millis(3000));
-        stream_manager.add();
+        std::thread::sleep(std::time::Duration::from_millis(2000));
+        stream_manager.add("videotestsrc pattern=snow ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc bitrate=5000 ! video/x-h264, profile=baseline ! rtph264pay ! udpsink host=0.0.0.0 port=5600");
         println!("added!");
-        std::thread::sleep(std::time::Duration::from_millis(3000));
+        std::thread::sleep(std::time::Duration::from_millis(2000));
         stream_manager.start();
         println!("started!");
-        std::thread::sleep(std::time::Duration::from_millis(3000));
+        std::thread::sleep(std::time::Duration::from_millis(2000));
         drop(stream_manager);
         println!("finished!");
-        std::thread::sleep(std::time::Duration::from_millis(3000));
+        std::thread::sleep(std::time::Duration::from_millis(2000));
     }
 }

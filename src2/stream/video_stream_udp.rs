@@ -9,6 +9,7 @@ use gstreamer::prelude::*;
 
 #[derive(Debug)]
 struct VideoStreamUdpState {
+    // move run kill restart logic to enum as states
     run: bool,
     kill: bool,
     pipeline: Pipeline,
@@ -38,7 +39,7 @@ impl Default for VideoStreamUdp {
         Self {
             state,
             thread: Some(thread::spawn(move || {
-                run_video_stream_udp(thread_state, sender)
+                run_video_stream_udp(thread_state.clone(), sender)
             })),
             thread_rx_channel: receiver,
         }
@@ -68,6 +69,14 @@ impl StreamBackend for VideoStreamUdp {
     fn restart(&mut self) {
         unimplemented!();
     }
+
+    fn set_pipeline_description(&mut self, description: &'static str) {
+        self.state.lock().unwrap().pipeline.description = description.into();
+        //TODO: use restart here
+        self.state.lock().unwrap().run = false;
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        self.state.lock().unwrap().run = true;
+    }
 }
 
 fn run_video_stream_udp(
@@ -80,7 +89,6 @@ fn run_video_stream_udp(
     }
 
     let mut pipeline: Option<gstreamer::Element> = None;
-
     'externalLoop: loop {
         std::thread::sleep(std::time::Duration::from_millis(1000));
         if state.lock().unwrap().kill {

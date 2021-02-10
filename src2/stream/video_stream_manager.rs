@@ -17,8 +17,10 @@ impl VideoStreamManager {
         }
     }
 
-    pub fn add(&mut self) {
-        self.streams
-            .push(StreamType::UDP(VideoStreamUdp::default()));
+    //TODO: rework to use UML definition
+    pub fn add(&mut self, description: &'static str) {
+        let mut stream = VideoStreamUdp::default();
+        stream.set_pipeline_description(description);
+        self.streams.push(StreamType::UDP(stream));
     }
 }
