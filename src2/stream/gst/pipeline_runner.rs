@@ -1,9 +1,6 @@
 use gstreamer;
 use gstreamer::prelude::*;
 
-use std::sync::{mpsc, Arc, Mutex};
-use std::thread;
-
 use simple_error::SimpleError;
 
 #[derive(Clone, Debug)]

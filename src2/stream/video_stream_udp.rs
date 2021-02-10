@@ -17,6 +17,7 @@ struct VideoStreamUdpState {
 pub struct VideoStreamUdp {
     state: Arc<Mutex<VideoStreamUdpState>>,
     thread: Option<std::thread::JoinHandle<()>>,
+    thread_rx_channel: std::sync::mpsc::Receiver<String>,
 }
 
 impl Default for VideoStreamUdpState {
@@ -33,9 +34,13 @@ impl Default for VideoStreamUdp {
     fn default() -> Self {
         let state: Arc<Mutex<VideoStreamUdpState>> = Default::default();
         let thread_state = state.clone();
+        let (sender, receiver) = std::sync::mpsc::channel::<String>();
         Self {
             state,
-            thread: Some(thread::spawn(move || run_video_stream_udp(thread_state))),
+            thread: Some(thread::spawn(move || {
+                run_video_stream_udp(thread_state, sender)
+            })),
+            thread_rx_channel: receiver,
         }
     }
 }
@@ -44,7 +49,8 @@ impl Drop for VideoStreamUdp {
     fn drop(&mut self) {
         // Kill the thread and wait for it
         self.state.lock().unwrap().kill = true;
-        self.thread.take().unwrap().join();
+        let answer = self.thread.take().unwrap().join();
+        println!("done: {:#?}", answer);
     }
 }
 
@@ -64,20 +70,25 @@ impl StreamBackend for VideoStreamUdp {
     }
 }
 
-fn run_video_stream_udp(state: Arc<Mutex<VideoStreamUdpState>>) {
+fn run_video_stream_udp(
+    state: Arc<Mutex<VideoStreamUdpState>>,
+    channel: std::sync::mpsc::Sender<String>,
+) {
     if let Err(error) = gstreamer::init() {
-        /*
-        return Err(SimpleError::new(format!(
-            "Failed to init GStreamer: {}",
-            error
-        )));
-        */
+        let _ = channel.send(format!("Failed to init GStreamer: {}", error));
+        return;
     }
 
-    let mut pipeline;
+    let mut pipeline: Option<gstreamer::Element> = None;
 
     'externalLoop: loop {
-        println!("external");
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        if state.lock().unwrap().kill {
+            break 'externalLoop;
+        }
+        if !state.lock().unwrap().run {
+            continue;
+        }
 
         let pipeline_description = state.lock().unwrap().pipeline.description.clone();
 
@@ -88,42 +99,46 @@ fn run_video_stream_udp(state: Arc<Mutex<VideoStreamUdpState>>) {
             Some(&mut context),
             gstreamer::ParseFlags::empty(),
         ) {
-            Ok(pipeline) => pipeline,
+            Ok(pipeline) => Some(pipeline),
             Err(error) => {
-                unreachable!();
-                /*
                 if let Some(gstreamer::ParseError::NoSuchElement) =
                     error.kind::<gstreamer::ParseError>()
                 {
-                    return Err(SimpleError::new(format!(
+                    let _ = channel.send(format!(
                         "GStreamer error: Missing element(s): {:?}",
                         context.get_missing_elements()
-                    )));
+                    ));
+                } else {
+                    let _ = channel.send(format!(
+                        "GStreamer error: Failed to parse pipeline: {}",
+                        error
+                    ));
                 }
-                return Err(SimpleError::new(format!(
-                    "GStreamer error: Failed to parse pipeline: {}",
-                    error
-                )));
-                */
+                continue;
             }
         };
 
-        let bus = pipeline.get_bus().unwrap();
+        let bus = pipeline.as_ref().unwrap().get_bus().unwrap();
 
-        if let Err(error) = pipeline.set_state(gstreamer::State::Playing) {
-            /*
-            return Err(SimpleError::new(format!(
+        if let Err(error) = pipeline
+            .as_ref()
+            .unwrap()
+            .set_state(gstreamer::State::Playing)
+        {
+            let _ = channel.send(format!(
                 "GStreamer error: Unable to set the pipeline to the `Playing` state (check the bus for error messages): {}",
                 error
-            )));
-            */
+            ));
+            continue;
         }
 
         // Check if we need to break external loop
-        'internalLoop: loop {
-            println!("internal");
-            if !state.lock().unwrap().run {
+        'innerLoop: loop {
+            if state.lock().unwrap().kill {
                 break 'externalLoop;
+            }
+            if !state.lock().unwrap().run {
+                break 'innerLoop;
             }
 
             for msg in bus.timed_pop(gstreamer::ClockTime::from_mseconds(100)) {
@@ -131,43 +146,40 @@ fn run_video_stream_udp(state: Arc<Mutex<VideoStreamUdpState>>) {
 
                 match msg.view() {
                     MessageView::Eos(eos) => {
-                        /*
-                        return Err(SimpleError::new(format!(
-                            "GStreamer error: EOS received: {:#?}",
-                            eos
-                        )));
-                        */
+                        let _ = channel.send(format!("GStreamer error: EOS received: {:#?}", eos));
+                        break 'innerLoop;
                     }
                     MessageView::Error(error) => {
-                        /*
-                        return Err(SimpleError::new(format!(
+                        let _ = channel.send(format!(
                             "GStreamer error: Error from {:?}: {} ({:?})",
                             error.get_src().map(|s| s.get_path_string()),
                             error.get_error(),
                             error.get_debug()
-                        )));
-                        */
+                        ));
+                        break 'innerLoop;
                     }
                     _ => (),
                 }
             }
         }
 
-        let result = pipeline.set_state(gstreamer::State::Null);
-        if result.is_err() {
-            eprintln!("Unable to set the pipeline to the `Null` state");
+        if let Err(error) = pipeline.as_ref().unwrap().set_state(gstreamer::State::Null) {
+            let _ = channel.send(format!(
+                "GStreamer error: Unable to set the pipeline to the `Null` state: {:#?}",
+                error
+            ));
         }
 
         // The loop will restart, add delay to avoid high cpu usage
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
-    if let Err(error) = pipeline.set_state(gstreamer::State::Null) {
-        /*
-        return Err(SimpleError::new(format!(
-            "GStreamer error: Unable to set the pipeline to the `Null` state: {}",
-            error
-        )));
-        */
+    if pipeline.as_ref().is_some() {
+        if let Err(error) = pipeline.as_ref().unwrap().set_state(gstreamer::State::Null) {
+            let _ = channel.send(format!(
+                "GStreamer error: Unable to set the pipeline to the `Null` state: {:#?}",
+                error
+            ));
+        }
     }
 }
