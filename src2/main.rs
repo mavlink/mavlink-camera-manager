@@ -25,6 +25,7 @@ fn main() {
         println!("created!");
         std::thread::sleep(std::time::Duration::from_millis(2000));
         stream_manager.add("videotestsrc pattern=snow ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc bitrate=5000 ! video/x-h264, profile=baseline ! rtph264pay ! udpsink host=0.0.0.0 port=5600");
+        stream_manager.add("videotestsrc pattern=ball ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc bitrate=5000 ! video/x-h264, profile=baseline ! rtph264pay ! udpsink host=0.0.0.0 port=5601");
         println!("added!");
         std::thread::sleep(std::time::Duration::from_millis(2000));
         stream_manager.start();
