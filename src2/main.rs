@@ -7,6 +7,7 @@ mod stream;
 mod video;
 
 use stream::stream_backend::StreamBackend;
+use stream::video_stream_manager::VideoStreamManager;
 
 /**
  * Start our managers
@@ -20,16 +21,17 @@ fn main() {
     println!("hello!");
     println!("verbose: {}", manager::command_line::is_verbose());
     loop {
-        let mut udp_stream = stream::video_stream_udp::VideoStreamUdp::default();
-        println!("start stream!");
-        udp_stream.start();
+        let mut stream_manager = stream::video_stream_manager::VideoStreamManager::default();
+        println!("created!");
         std::thread::sleep(std::time::Duration::from_millis(3000));
-        println!("stop stream!");
-        udp_stream.stop();
+        stream_manager.add();
+        println!("added!");
         std::thread::sleep(std::time::Duration::from_millis(3000));
-        println!("drop it!");
-        drop(udp_stream);
-        println!("bye bye");
+        stream_manager.start();
+        println!("started!");
+        std::thread::sleep(std::time::Duration::from_millis(3000));
+        drop(stream_manager);
+        println!("finished!");
         std::thread::sleep(std::time::Duration::from_millis(3000));
     }
 }

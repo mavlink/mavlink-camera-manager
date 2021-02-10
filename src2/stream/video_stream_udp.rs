@@ -23,7 +23,7 @@ pub struct VideoStreamUdp {
 impl Default for VideoStreamUdpState {
     fn default() -> Self {
         Self {
-            run: true,
+            run: false,
             kill: false,
             pipeline: Default::default(),
         }
