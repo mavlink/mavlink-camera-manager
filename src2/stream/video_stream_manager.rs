@@ -7,6 +7,11 @@ pub struct VideoStreamManager {
 }
 
 impl VideoStreamManager {
+    pub fn _init(&mut self) {
+        self.add("videotestsrc pattern=snow ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc bitrate=5000 ! video/x-h264, profile=baseline ! rtph264pay ! udpsink host=0.0.0.0 port=5600");
+        self.add("videotestsrc pattern=ball ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc bitrate=5000 ! video/x-h264, profile=baseline ! rtph264pay ! udpsink host=0.0.0.0 port=5601");
+    }
+
     pub fn start(&mut self) {
         for stream in &mut self.streams {
             match stream {
