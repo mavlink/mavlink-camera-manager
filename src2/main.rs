@@ -1,6 +1,9 @@
 #[macro_use]
 extern crate lazy_static;
 
+#[macro_use]
+extern crate simple_error;
+
 mod manager;
 mod stream;
 mod video;

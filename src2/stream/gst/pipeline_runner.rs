@@ -4,6 +4,8 @@ use gstreamer::prelude::*;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
+use simple_error::SimpleError;
+
 #[derive(Clone)]
 pub struct Pipeline {
     pub description: String,
@@ -12,7 +14,6 @@ pub struct Pipeline {
 #[derive(Default)]
 pub struct PipelineRunner {
     pub pipeline: Pipeline,
-    pub stop: bool,
 }
 
 impl Default for Pipeline {
@@ -25,15 +26,82 @@ impl Default for Pipeline {
 
 impl PipelineRunner {
     pub fn run(&self) {
-        pipeline_loop(self);
+        simple_pipeline_loop(self);
     }
 }
 
-struct PipelineThreadRunner {
-    private_channel: mpsc::Receiver<Pipeline>,
-    public_channel: mpsc::Sender<Pipeline>,
+fn do_foo() -> Result<(), SimpleError> {
+    Err(SimpleError::new("cannot do foo"))
 }
 
+fn simple_pipeline_loop(pipeline_runner: &PipelineRunner) -> Result<(), SimpleError> {
+    if let Err(error) = gstreamer::init() {
+        return Err(SimpleError::new(format!(
+            "Failed to init GStreamer: {}",
+            error
+        )));
+    }
+
+    let mut context = gstreamer::ParseContext::new();
+
+    let pipeline: Result<gstreamer::Element, SimpleError> = match gstreamer::parse_launch_full(
+        &pipeline_runner.pipeline.description,
+        Some(&mut context),
+        gstreamer::ParseFlags::empty(),
+    ) {
+        Ok(pipeline) => Ok(pipeline),
+        Err(error) => {
+            if let Some(gstreamer::ParseError::NoSuchElement) =
+                error.kind::<gstreamer::ParseError>()
+            {
+                return Err(SimpleError::new(format!(
+                    "GStreamer error: Missing element(s): {:?}",
+                    context.get_missing_elements()
+                )));
+            }
+            return Err(SimpleError::new(format!(
+                "GStreamer error: Failed to parse pipeline: {}",
+                error
+            )));
+        }
+    };
+    let pipeline = pipeline?;
+
+    let bus = pipeline.get_bus().unwrap();
+
+    if let Err(error) = pipeline.set_state(gstreamer::State::Playing) {
+        return Err(SimpleError::new(format!(
+            "GStreamer error: Unable to set the pipeline to the `Playing` state (check the bus for error messages): {}",
+            error
+        )));
+    }
+
+    loop {
+        for msg in bus.timed_pop(gstreamer::ClockTime::from_mseconds(100)) {
+            use gstreamer::MessageView;
+
+            match msg.view() {
+                MessageView::Eos(eos) => {
+                    return Err(SimpleError::new(format!(
+                        "GStreamer error: EOS received: {:#?}",
+                        eos
+                    )));
+                }
+                MessageView::Error(error) => {
+                    return Err(SimpleError::new(format!(
+                        "GStreamer error: Error from {:?}: {} ({:?})",
+                        error.get_src().map(|s| s.get_path_string()),
+                        error.get_error(),
+                        error.get_debug()
+                    )));
+                }
+                _ => (),
+            }
+        }
+    }
+}
+
+/*
 fn pipeline_loop(pipeline_runner: &PipelineRunner) {
     match gstreamer::init() {
         Ok(_) => {}
@@ -119,8 +187,10 @@ fn pipeline_loop(pipeline_runner: &PipelineRunner) {
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
-    let result = pipeline.set_state(gstreamer::State::Null);
-    if result.is_err() {
-        eprintln!("Unable to set the pipeline to the `Null` state");
+    if let Err(error) = pipeline.set_state(gstreamer::State::Null) {
+        return Err(SimpleError::new(format!(
+            "GStreamer error: Unable to set the pipeline to the `Null` state: {}",
+            error
+        )));
     }
-}
+}*/

@@ -49,6 +49,7 @@ serde_json = "^1.0.41"
 
 ## FINAL
 lazy_static = "1.4.0"
+simple-error = "0.2"
 v4l = "0.12.0"
 
 ## Mavlink
