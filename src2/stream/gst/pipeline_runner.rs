@@ -6,7 +6,7 @@ use std::thread;
 
 use simple_error::SimpleError;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Pipeline {
     pub description: String,
 }
@@ -25,13 +25,9 @@ impl Default for Pipeline {
 }
 
 impl PipelineRunner {
-    pub fn run(&self) {
-        simple_pipeline_loop(self);
+    pub fn run(&self) -> Result<(), SimpleError> {
+        simple_pipeline_loop(self)
     }
-}
-
-fn do_foo() -> Result<(), SimpleError> {
-    Err(SimpleError::new("cannot do foo"))
 }
 
 fn simple_pipeline_loop(pipeline_runner: &PipelineRunner) -> Result<(), SimpleError> {
