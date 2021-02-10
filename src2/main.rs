@@ -42,5 +42,5 @@ fn main() {
         }
     }
     println!("bye bye");
-    std::thread::sleep(std::time::Duration::from_millis(30000));
+    std::thread::sleep(std::time::Duration::from_millis(10000));
 }
