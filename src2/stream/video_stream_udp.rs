@@ -85,7 +85,9 @@ fn run_video_stream_udp(
     }
 
     let mut pipeline: Option<gstreamer::Element> = None;
+    //TODO: move to while not kill
     'externalLoop: loop {
+        //TODO: millies to second, check clip!
         std::thread::sleep(std::time::Duration::from_millis(1000));
         if state.lock().unwrap().kill {
             break 'externalLoop;
