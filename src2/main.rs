@@ -18,6 +18,9 @@ pub fn let_there_be_light() {
 
 fn main() {
     let_there_be_light();
+
+    stream::video_stream_manager::start();
+
     println!("hello!");
     println!("verbose: {}", manager::command_line::is_verbose());
     loop {

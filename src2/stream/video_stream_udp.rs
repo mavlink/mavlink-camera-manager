@@ -72,10 +72,6 @@ impl StreamBackend for VideoStreamUdp {
 
     fn set_pipeline_description(&mut self, description: &'static str) {
         self.state.lock().unwrap().pipeline.description = description.into();
-        //TODO: use restart here
-        self.state.lock().unwrap().run = false;
-        std::thread::sleep(std::time::Duration::from_millis(1000));
-        self.state.lock().unwrap().run = true;
     }
 }
 
