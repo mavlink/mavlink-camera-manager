@@ -21,6 +21,7 @@ impl Default for Pipeline {
     }
 }
 
+#[allow(dead_code)]
 impl PipelineRunner {
     pub fn run(&self) -> Result<(), SimpleError> {
         simple_pipeline_loop(self)

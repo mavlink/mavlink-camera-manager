@@ -6,8 +6,6 @@ mod cli;
 mod stream;
 mod video;
 
-use stream::stream_backend::StreamBackend;
-
 /**
  * Start our managers
  */
