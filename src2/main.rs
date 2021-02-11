@@ -3,6 +3,7 @@ extern crate lazy_static;
 extern crate simple_error;
 
 mod cli;
+mod settings;
 mod stream;
 mod video;
 
@@ -11,6 +12,7 @@ mod video;
  */
 pub fn let_there_be_light() {
     cli::manager::init();
+    settings::manager::init("/tmp/potato.toml");
     stream::manager::init();
 }
 
@@ -21,8 +23,6 @@ fn main() {
 
     println!("hello!");
     println!("verbose: {}", cli::manager::is_verbose());
-    loop {
-        println!("created!");
-        std::thread::sleep(std::time::Duration::from_millis(2000));
-    }
+    println!("created!");
+    std::thread::sleep(std::time::Duration::from_millis(5000));
 }

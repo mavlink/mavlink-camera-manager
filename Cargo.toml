@@ -62,7 +62,7 @@ gstreamer = {version = "0.16.3", optional = true}
 gstreamer-rtsp-server = {version = "0.16.3", optional = true}
 
 [dev-dependencies]
-rand = "0.7"
+rand = "0.8"
 
 [features]
 default = ["rtsp"]
