@@ -2,8 +2,8 @@ use clap;
 use std::sync::Arc;
 
 #[derive(Debug)]
-pub struct Manager<'a> {
-    pub clap_matches: clap::ArgMatches<'a>,
+struct Manager<'a> {
+    clap_matches: clap::ArgMatches<'a>,
 }
 
 lazy_static! {
