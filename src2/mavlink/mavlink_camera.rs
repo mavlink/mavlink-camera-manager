@@ -151,40 +151,43 @@ fn receive_message_loop(
                         match command_long.command {
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_INFORMATION => {
                                 println!("Sending camera_information..");
-                                let res = vehicle.send(&header, &camera_information());
-                                if res.is_err() {
-                                    println!("Failed to send camera_information: {:?}", res);
+                                if let Err(error) = vehicle.send(&header, &camera_information()) {
+                                    println!("Failed to send camera_information: {:?}", error);
                                 }
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_SETTINGS => {
                                 println!("Sending camera_settings..");
-                                let res = vehicle.send(&header, &camera_settings());
-                                if res.is_err() {
-                                    println!("Failed to send camera_settings: {:?}", res);
+                                if let Err(error) = vehicle.send(&header, &camera_settings()) {
+                                    println!("Failed to send camera_settings: {:?}", error);
                                 }
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_STORAGE_INFORMATION => {
                                 println!("Sending camera_storage_information..");
-                                let res = vehicle.send(&header, &camera_storage_information());
-                                if res.is_err() {
+                                if let Err(error) =
+                                    vehicle.send(&header, &camera_storage_information())
+                                {
                                     println!(
                                         "Failed to send camera_storage_information: {:?}",
-                                        res
+                                        error
                                     );
                                 }
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_CAPTURE_STATUS => {
                                 println!("Sending camera_capture_status..");
-                                let res = vehicle.send(&header, &camera_capture_status());
-                                if res.is_err() {
-                                    println!("Failed to send camera_capture_status: {:?}", res);
+                                if let Err(error) = vehicle.send(&header, &camera_capture_status())
+                                {
+                                    println!("Failed to send camera_capture_status: {:?}", error);
                                 }
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION => {
                                 println!("Sending video_stream_information..");
-                                let res = vehicle.send(&header, &video_stream_information());
-                                if res.is_err() {
-                                    println!("Failed to send video_stream_information: {:?}", res);
+                                if let Err(error) =
+                                    vehicle.send(&header, &video_stream_information())
+                                {
+                                    println!(
+                                        "Failed to send video_stream_information: {:?}",
+                                        error
+                                    );
                                 }
                             }
                             _ => {
