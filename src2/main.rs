@@ -26,5 +26,5 @@ fn main() {
     let l = mavlink::mavlink_camera::MavlinkCameraHandle::new();
     println!("verbose: {}", cli::manager::is_verbose());
     println!("created!");
-    std::thread::sleep(std::time::Duration::from_millis(5000));
+    std::thread::sleep(std::time::Duration::from_secs(5000));
 }
