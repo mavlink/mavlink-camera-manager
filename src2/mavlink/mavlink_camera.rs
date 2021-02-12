@@ -30,9 +30,8 @@ enum ThreadState {
 
 pub struct MavlinkCameraHandle {
     mavlink_camera_information: Arc<Mutex<MavlinkCameraInformation>>,
-    heartbeat_state: Arc<Mutex<ThreadState>>,
+    thread_state: Arc<Mutex<ThreadState>>,
     heartbeat_thread: std::thread::JoinHandle<()>,
-    receive_message_state: Arc<Mutex<ThreadState>>, //TODO: unify states
     receive_message_thread: std::thread::JoinHandle<()>,
 }
 
@@ -69,19 +68,20 @@ impl MavlinkCameraHandle {
             Mutex::new(MavlinkCameraInformation::new("udpout:0.0.0.0:14550")),
         );
 
-        let heartbeat_state = Arc::new(Mutex::new(ThreadState::RUNNING));
-        let receive_message_state = Arc::new(Mutex::new(ThreadState::ZOMBIE));
+        let thread_state = Arc::new(Mutex::new(ThreadState::RUNNING));
 
         let heartbeat_mavlink_information = mavlink_camera_information.clone();
         let receive_message_mavlink_information = mavlink_camera_information.clone();
 
+        let heartbeat_state = thread_state.clone();
+        let receive_message_state = thread_state.clone();
+
         Self {
             mavlink_camera_information: mavlink_camera_information.clone(),
-            heartbeat_state: heartbeat_state.clone(),
+            thread_state: thread_state.clone(),
             heartbeat_thread: std::thread::spawn(move || {
                 heartbeat_loop(heartbeat_state.clone(), heartbeat_mavlink_information)
             }),
-            receive_message_state: receive_message_state.clone(),
             receive_message_thread: std::thread::spawn(move || {
                 receive_message_loop(
                     receive_message_state.clone(),
