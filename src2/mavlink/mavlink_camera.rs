@@ -299,7 +299,7 @@ fn video_stream_information() -> mavlink::common::MavMessage {
         name[index as usize] = name_str.as_bytes()[index as usize] as char;
     }
 
-    let uri: Vec<char> = format!("{}\0", "udp:0.0.0.0:5601").chars().collect();
+    let uri: Vec<char> = format!("{}\0", "udp://0.0.0.0:5600").chars().collect();
 
     //The only important information here is the mavtype and uri variables, everything else is fake
     mavlink::common::MavMessage::VIDEO_STREAM_INFORMATION(
