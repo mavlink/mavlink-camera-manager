@@ -134,12 +134,12 @@ fn receive_message_loop(
     mavlink_camera_information: Arc<Mutex<MavlinkCameraInformation>>,
 ) {
     let mut header = mavlink::MavHeader::default();
-    let mavlink_camera_information = mavlink_camera_information.as_ref().lock().unwrap();
-    header.system_id = mavlink_camera_information.component.system_id;
-    header.component_id = mavlink_camera_information.component.component_id;
+    let information = mavlink_camera_information.as_ref().lock().unwrap();
+    header.system_id = information.component.system_id;
+    header.component_id = information.component.component_id;
 
-    let vehicle = mavlink_camera_information.vehicle.clone();
-    drop(mavlink_camera_information);
+    let vehicle = information.vehicle.clone();
+    drop(information);
 
     loop {
         let vehicle = vehicle.as_ref();
@@ -181,8 +181,10 @@ fn receive_message_loop(
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION => {
                                 println!("Sending video_stream_information..");
+                                let information = mavlink_camera_information.as_ref().lock().unwrap();
+
                                 if let Err(error) =
-                                    vehicle.send(&header, &video_stream_information())
+                                    vehicle.send(&header, &video_stream_information(&information.video_stream_uri))
                                 {
                                     println!(
                                         "Failed to send video_stream_information: {:?}",
@@ -292,14 +294,14 @@ fn camera_capture_status() -> mavlink::common::MavMessage {
     )
 }
 
-fn video_stream_information() -> mavlink::common::MavMessage {
+fn video_stream_information(video_uri: &String) -> mavlink::common::MavMessage {
     let name_str = String::from("name");
     let mut name: [char; 32] = ['\0'; 32];
     for index in 0..name_str.len() as u32 {
         name[index as usize] = name_str.as_bytes()[index as usize] as char;
     }
 
-    let uri: Vec<char> = format!("{}\0", "udp://0.0.0.0:5600").chars().collect();
+    let uri: Vec<char> = format!("{}\0", video_uri).chars().collect();
 
     //The only important information here is the mavtype and uri variables, everything else is fake
     mavlink::common::MavMessage::VIDEO_STREAM_INFORMATION(
@@ -314,8 +316,8 @@ fn video_stream_information() -> mavlink::common::MavMessage {
             stream_id: 1, // Starts at 1, 0 is for broadcast
             count: 0,
             mavtype: mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
-            name: name,
-            uri: uri,
+            name,
+            uri,
         },
     )
 }
