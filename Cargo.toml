@@ -22,7 +22,6 @@ path = "src/main.rs"
 
 [dependencies]
 clap = "2"
-pnet = "0.26"
 regex = "1.3"
 toml = {version = "0.5.6", features = ["preserve_order"]}
 
@@ -38,7 +37,6 @@ serde_json = "^1.0.41"
 ## FINAL
 lazy_static = "1.4.0"
 quick-xml = {version = "0.21", features = ["serialize"]}
-rand = "0.8"
 simple-error = "0.2"
 v4l = "0.12.0"
 
