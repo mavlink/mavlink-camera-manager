@@ -74,7 +74,7 @@ impl Manager {
     }
 }
 
-pub fn init(file_name: &'static str) {
+pub fn init(file_name: &str) {
     let mut manager = MANAGER.as_ref().lock().unwrap();
     manager.content = Some(Manager::new(file_name));
 }
@@ -115,7 +115,6 @@ pub fn save() {
     println!("saved!");
 }
 
-/*
 #[test]
 fn simple_test() {
     use rand::Rng;
@@ -123,17 +122,16 @@ fn simple_test() {
     let rand_string: String = rand::thread_rng()
         .sample_iter(&rand::distributions::Alphanumeric)
         .take(30)
-        .map(Into::into)
+        .map(char::from)
         .collect();
 
     let file_name = format!("/tmp/{}.toml", rand_string);
-    println!("Test file: {}", file_name);
-
+    println!("Test file: {}", &file_name);
     init(&file_name);
     save();
-    // TODO: Add read test
 
-    let settings = new(&file_name);
-    assert_eq!(settings.config.header.name, "test".to_string());
+    let settings = Manager::new(&file_name);
+    assert_eq!(settings.config.header.name, "Camera Manager".to_string());
+
+    //TODO Add write/read test
 }
-*/
