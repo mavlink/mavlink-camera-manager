@@ -18,19 +18,7 @@ default-run = "mavlink-camera-manager"
 [[bin]]
 bench = false
 name = "mavlink-camera-manager"
-path = "src/main_command_line.rs"
-
-[[bin]]
-bench = false
-name = "mavlink-camera-manager-web-service"
-path = "src/main_web_service.rs"
-required-features = ["rtsp"]
-
-[[bin]]
-bench = false
-name = "final"
-path = "src2/main.rs"
-#required-features = ["rtsp"]
+path = "src/main.rs"
 
 [dependencies]
 clap = "2"
@@ -49,9 +37,10 @@ serde_json = "^1.0.41"
 
 ## FINAL
 lazy_static = "1.4.0"
-rand = "0.8.3"
+rand = "0.8"
 simple-error = "0.2"
 v4l = "0.12.0"
+quick-xml = { version = "0.21", features = [ "serialize" ] }
 
 ## Mavlink
 mavlink = {version = "0.8.6", features = ["default", "emit-extensions"]}
