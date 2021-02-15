@@ -14,6 +14,7 @@ pub trait VideoSource {
     fn resolutions(&self) -> Vec<FrameSize>;
     fn configure_by_name(&self, config_name: &str, value: u32) -> bool;
     fn configure_by_id(&self, config_id: u32, value: u32) -> bool;
+    fn cameras_available() -> Vec<VideoSourceType>;
     fn xml(&self) -> String;
 }
 

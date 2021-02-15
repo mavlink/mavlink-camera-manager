@@ -2,30 +2,30 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
 #[serde(rename = "mavlinkcamera")]
-struct MavlinkCamera {
-    definition: Definition,
-    parameters: Parameters,
+pub struct MavlinkCamera {
+    pub definition: Definition,
+    pub parameters: Parameters,
 }
 
 #[derive(Debug, Serialize)]
-struct Definition {
-    version: u32,
-    model: Model,
-    vendor: Vendor,
+pub struct Definition {
+    pub version: u32,
+    pub model: Model,
+    pub vendor: Vendor,
     //TODO: Wait for flatten to be fixed in quick-xml.
     //camera_info: CameraInfo,
 }
 
 #[derive(Debug, Serialize)]
-struct Model {
+pub struct Model {
     #[serde(rename = "$value")]
-    body: String,
+    pub body: String,
 }
 
 #[derive(Debug, Serialize)]
-struct Vendor {
+pub struct Vendor {
     #[serde(rename = "$value")]
-    body: String,
+    pub body: String,
 }
 
 /*
@@ -38,67 +38,75 @@ struct CameraInfo {
 }*/
 
 #[derive(Debug, Serialize)]
-struct Parameters {
-    parameter: Vec<ParameterType>,
+pub struct Parameters {
+    pub parameter: Vec<ParameterType>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
-enum ParameterType {
+pub enum ParameterType {
     Bool(ParameterBool),
     Slider(ParameterSlider),
     Menu(ParameterMenu),
 }
 
 #[derive(Debug, Serialize)]
-struct ParameterBool {
-    name: String,
+pub struct ParameterBool {
+    pub name: String,
     #[serde(rename = "type")]
-    cpp_type: String,
-    default: i32,
-    v4l2_id: i64,
-    description: Description,
+    pub cpp_type: String,
+    pub default: i32,
+    pub v4l2_id: u32,
+    pub description: Description,
 }
 
 #[derive(Debug, Serialize)]
-struct ParameterSlider {
-    name: String,
+pub struct ParameterSlider {
+    pub name: String,
     #[serde(rename = "type")]
-    cpp_type: String,
-    default: i32,
-    v4l2_id: i64,
-    step: u32,
-    max: u32,
-    min: u32,
-    description: Description,
+    pub cpp_type: String,
+    pub default: i32,
+    pub v4l2_id: u32,
+    pub step: i32,
+    pub max: i32,
+    pub min: i32,
+    pub description: Description,
 }
 
 #[derive(Debug, Serialize)]
-struct ParameterMenu {
-    name: String,
+pub struct ParameterMenu {
+    pub name: String,
     #[serde(rename = "type")]
-    cpp_type: String,
-    default: i32,
-    v4l2_id: i64,
-    description: Description,
-    options: Options,
+    pub cpp_type: String,
+    pub default: i32,
+    pub v4l2_id: u32,
+    pub description: Description,
+    pub options: Options,
 }
 
 #[derive(Debug, Serialize)]
-struct Options {
-    option: Vec<Option>,
+pub struct Options {
+    pub option: Vec<Option>,
 }
 
 #[derive(Debug, Serialize)]
-struct Option {
-    name: String,
-    value: i32,
+pub struct Option {
+    pub name: String,
+    pub value: u32,
 }
 
-#[derive(Debug, Serialize)]
-struct Description {
+#[derive(Debug, Default, Serialize)]
+pub struct Description {
     #[serde(rename = "$value")]
-    body: String,
+    pub body: String,
+}
+
+impl Description {
+    pub fn new(description: &str) -> Self {
+        Self {
+            body: description.into(),
+        }
+    }
 }
 
 #[cfg(test)]

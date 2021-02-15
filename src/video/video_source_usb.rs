@@ -4,6 +4,8 @@ use v4l::prelude::*;
 use v4l::video::Capture;
 use v4l::FrameSize;
 
+use super::xml::*;
+
 #[derive(Debug)]
 pub struct UsbBus {
     pub domain: u8,
@@ -83,13 +85,7 @@ impl VideoSource for VideoSourceUsb {
         unimplemented!();
     }
 
-    fn xml(&self) -> String {
-        unimplemented!();
-    }
-}
-
-impl VideoSourceUsb {
-    pub fn cameras_available() -> Vec<VideoSourceType> {
+    fn cameras_available() -> Vec<VideoSourceType> {
         let cameras_path: Vec<String> = std::fs::read_dir("/dev/")
             .unwrap()
             .map(|f| String::from(f.unwrap().path().clone().to_str().unwrap()))
@@ -108,5 +104,104 @@ impl VideoSourceUsb {
         }
 
         return cameras;
+    }
+
+    fn xml(&self) -> String {
+        let definition = Definition {
+            version: 1,
+            model: Model {
+                body: self.name.clone(),
+            },
+            vendor: Vendor {
+                body: "Missing".into(),
+            },
+        };
+
+        let mut parameters: Vec<ParameterType> = vec![];
+
+        let device = Device::with_path(&self.device_path).unwrap();
+        let controls = device.query_controls().unwrap_or_default();
+
+        for control in controls {
+            let name = control.name;
+            let description = Description::new(&name);
+            let default = control.default;
+            let v4l2_id = control.id;
+            match control.typ {
+                v4l::control::Type::Integer | v4l::control::Type::Integer64 => {
+                    let cpp_type = "int64".to_string();
+                    parameters.push(ParameterType::Slider(ParameterSlider {
+                        name,
+                        cpp_type: cpp_type.into(),
+                        default,
+                        v4l2_id,
+                        description,
+                        min: control.minimum,
+                        max: control.maximum,
+                        step: control.step,
+                    }));
+                },
+                v4l::control::Type::Boolean => {
+                    let cpp_type = "bool".to_string();
+                    parameters.push(ParameterType::Bool(ParameterBool {
+                        name,
+                        cpp_type: cpp_type.into(),
+                        default,
+                        v4l2_id,
+                        description,
+                    }));
+                },
+                v4l::control::Type::Menu | v4l::control::Type::IntegerMenu => {
+                    let cpp_type = "int32".to_string();
+                    if let Some(items) = control.items {
+                        let options = items
+                            .iter()
+                            .map(|(value, name)| Option {
+                                name: match name {
+                                    v4l::control::MenuItem::Name(name) => name.clone(),
+                                    v4l::control::MenuItem::Value(name) => name.to_string(),
+                                },
+                                value: *value,
+                            })
+                            .collect();
+
+                        parameters.push(ParameterType::Menu(ParameterMenu {
+                            name,
+                            cpp_type: cpp_type.into(),
+                            default,
+                            v4l2_id,
+                            description: Default::default(),
+                            options: Options { option: options },
+                        }));
+                    }
+                },
+                _ => continue,
+            };
+        }
+        println!("{:#?}", parameters);
+
+        let mavlink_camera = MavlinkCamera {
+            definition,
+            parameters: Parameters {
+                parameter: parameters,
+            },
+        };
+
+        use quick_xml::se::to_string;
+        return to_string(&mavlink_camera).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simple_test() {
+        for camera in VideoSourceUsb::cameras_available() {
+            if let VideoSourceType::Usb(camera) = camera {
+                println!("{}", camera.xml());
+            }
+        }
     }
 }
