@@ -115,6 +115,7 @@ pub fn save() {
     println!("saved!");
 }
 
+/*
 #[test]
 fn simple_test() {
     use rand::Rng;
@@ -132,8 +133,7 @@ fn simple_test() {
     save();
     // TODO: Add read test
 
-    /*
     let settings = new(&file_name);
     assert_eq!(settings.config.header.name, "test".to_string());
-     */
 }
+*/

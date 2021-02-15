@@ -78,6 +78,7 @@ impl VideoSource for VideoSourceUsb {
     fn configure_by_name(&self, _config_name: &str, _value: u32) -> bool {
         unimplemented!();
     }
+
     fn configure_by_id(&self, _config_id: u32, _value: u32) -> bool {
         unimplemented!();
     }

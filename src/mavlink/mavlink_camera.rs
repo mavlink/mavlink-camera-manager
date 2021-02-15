@@ -56,7 +56,7 @@ impl MavlinkCameraInformation {
             component: Default::default(),
             mavlink_connection_string: mavlink_connection_string.into(),
             video_stream_uri:
-                "rtsp://wowzaec2demo.streamlock.net:554/vod/mp4:BigBuckBunny_115k.mov".into(),
+                "udp://0.0.0.0:5601".into(),
             vehicle: Arc::new(mavlink::connect(&mavlink_connection_string).unwrap()),
         }
     }
@@ -234,7 +234,7 @@ fn camera_information() -> mavlink::common::MavMessage {
     }
 
     // Send path to our camera configuration file
-    let uri: Vec<char> = format!("{}", "http://0.0.0.0").chars().collect();
+    let uri: Vec<char> = format!("{}", "http://0.0.0.0:8000/test.xml").chars().collect();
 
     // Send fake data
     mavlink::common::MavMessage::CAMERA_INFORMATION(mavlink::common::CAMERA_INFORMATION_DATA {
