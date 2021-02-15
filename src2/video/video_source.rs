@@ -75,15 +75,10 @@ pub fn local_cameras_available() -> Vec<VideoSourceType> {
     // Extract path of video devices
     let cameras_path = std::fs::read_dir("/dev/")
         .unwrap()
-        .filter(|f| {
-            f.as_ref()
-                .unwrap()
-                .file_name()
-                .to_str()
-                .unwrap()
-                .starts_with("video")
-        })
         .map(|f| String::from(f.unwrap().path().clone().to_str().unwrap()))
+        .filter(|f| {
+            f.starts_with("video")
+        })
         .collect::<Vec<_>>();
 
     let mut cameras: Vec<VideoSourceType> = vec![];
