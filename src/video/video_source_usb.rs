@@ -158,8 +158,8 @@ impl VideoSource for VideoSourceUsb {
         let controls = device.query_controls().unwrap_or_default();
 
         for control in controls {
-            let name = control.name;
-            let description = Description::new(&name);
+            let name = control.id.to_string();
+            let description = Description::new(&control.name);
             let default = control.default;
             let v4l2_id = control.id;
             match control.typ {
