@@ -72,9 +72,13 @@ impl VideoSource for VideoSourceUsb {
 
     fn resolutions(&self) -> Vec<FrameSize> {
         let device = Device::with_path(&self.device_path).unwrap();
-        let format = device.format().unwrap();
-        let frame_sizes = device.enum_framesizes(format.fourcc).unwrap();
-        return frame_sizes;
+        let format = device.format();
+        if let Ok(format) = format {
+            let frame_sizes = device.enum_framesizes(format.fourcc).unwrap();
+            return frame_sizes;
+        }
+
+        return vec![];
     }
 
     fn configure_by_name(&self, _config_name: &str, _value: u32) -> bool {
@@ -95,7 +99,17 @@ impl VideoSource for VideoSourceUsb {
         let mut cameras: Vec<VideoSourceType> = vec![];
         for camera_path in &cameras_path {
             let camera = Device::with_path(camera_path).unwrap();
-            let caps = camera.query_caps().unwrap();
+            let caps = camera.query_caps();
+
+            if let Err(_) = caps {
+                continue;
+            }
+            let caps = caps.unwrap();
+
+            if let Err(_) = camera.format() {
+                continue;
+            }
+
             cameras.push(VideoSourceType::Usb(VideoSourceUsb {
                 name: caps.card,
                 device_path: camera_path.clone(),
