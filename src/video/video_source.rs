@@ -1,11 +1,35 @@
 use v4l::prelude::*;
-use v4l::FrameSize;
-
 use super::video_source_usb::{VideoSourceUsb, UsbBus};
 
 #[derive(Debug)]
 pub enum VideoSourceType {
     Usb(VideoSourceUsb),
+}
+
+#[derive(Debug)]
+pub enum VideoEncodeType {
+    UNKNOWN(String),
+    H264,
+    MJPG,
+    YUYV,
+}
+
+impl VideoEncodeType {
+    pub fn from_str(fourcc: &str) -> VideoEncodeType {
+        return match fourcc {
+            "H264" => VideoEncodeType::H264,
+            "MJPG" => VideoEncodeType::MJPG,
+            "YUYV" => VideoEncodeType::YUYV,
+            _ => VideoEncodeType::UNKNOWN(fourcc.to_string()),
+        };
+    }
+}
+
+#[derive(Debug)]
+pub struct FrameSize {
+    pub encode: VideoEncodeType,
+    pub height: u32,
+    pub width: u32,
 }
 
 pub trait VideoSource {
@@ -18,12 +42,16 @@ pub trait VideoSource {
     fn xml(&self) -> String;
 }
 
+pub fn cameras_available() -> Vec<VideoSourceType> {
+    return VideoSourceUsb::cameras_available();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn simple_test() {
-        println!("{:#?}", VideoSourceUsb::cameras_available());
+        println!("{:#?}", cameras_available());
     }
 }

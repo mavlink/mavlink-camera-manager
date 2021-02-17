@@ -1,8 +1,7 @@
-use super::video_source::{VideoSource, VideoSourceType};
+use super::video_source::{FrameSize, VideoEncodeType, VideoSource, VideoSourceType};
 use regex::Regex;
 use v4l::prelude::*;
 use v4l::video::Capture;
-use v4l::FrameSize;
 
 use super::xml::*;
 
@@ -61,6 +60,26 @@ impl UsbBus {
     }
 }
 
+fn convert_v4l_framesize(frame_sizes: &Vec<v4l::FrameSize>) -> Vec<FrameSize> {
+    let frame_sizes: Vec<FrameSize> = frame_sizes
+        .iter()
+        .map(|frame_size| match &frame_size.size { //TODO: Move to map_while after release
+            v4l::framesize::FrameSizeEnum::Discrete(discrete) => Some(FrameSize {
+                encode: VideoEncodeType::from_str(frame_size.fourcc.str().unwrap()),
+                height: discrete.height,
+                width: discrete.width,
+            }),
+            v4l::framesize::FrameSizeEnum::Stepwise(stepwise) => {
+                eprintln!("Ignoring stepwise source: {:#?}", frame_size);
+                None //TODO this can be done with frame_size.size.to_discrete()
+            }
+        })
+        .take_while(|x| x.is_some())
+        .map(|x| x.unwrap())
+        .collect();
+    return frame_sizes;
+}
+
 impl VideoSource for VideoSourceUsb {
     fn name(&self) -> &String {
         return &self.name;
@@ -72,13 +91,13 @@ impl VideoSource for VideoSourceUsb {
 
     fn resolutions(&self) -> Vec<FrameSize> {
         let device = Device::with_path(&self.device_path).unwrap();
-        let format = device.format();
-        if let Ok(format) = format {
-            let frame_sizes = device.enum_framesizes(format.fourcc).unwrap();
-            return frame_sizes;
+        let formats = device.enum_formats().unwrap_or_default();
+        let mut frame_sizes = vec![];
+        for format in formats {
+            frame_sizes.append(&mut convert_v4l_framesize(&device.enum_framesizes(format.fourcc).unwrap()));
         }
 
-        return vec![];
+        return frame_sizes;
     }
 
     fn configure_by_name(&self, _config_name: &str, _value: u32) -> bool {
@@ -101,12 +120,14 @@ impl VideoSource for VideoSourceUsb {
             let camera = Device::with_path(camera_path).unwrap();
             let caps = camera.query_caps();
 
-            if let Err(_) = caps {
+            if let Err(error) = caps {
+                eprintln!("Failed to capture caps for device: {} {:#?}", camera_path, error);
                 continue;
             }
             let caps = caps.unwrap();
 
-            if let Err(_) = camera.format() {
+            if let Err(error) = camera.format() {
+                eprintln!("Failed to capture formats for device: {} {:#?}", camera_path, error);
                 continue;
             }
 
@@ -154,7 +175,7 @@ impl VideoSource for VideoSourceUsb {
                         max: control.maximum,
                         step: control.step,
                     }));
-                },
+                }
                 v4l::control::Type::Boolean => {
                     let cpp_type = "bool".to_string();
                     parameters.push(ParameterType::Bool(ParameterBool {
@@ -164,7 +185,7 @@ impl VideoSource for VideoSourceUsb {
                         v4l2_id,
                         description,
                     }));
-                },
+                }
                 v4l::control::Type::Menu | v4l::control::Type::IntegerMenu => {
                     let cpp_type = "int32".to_string();
                     if let Some(items) = control.items {
@@ -188,7 +209,7 @@ impl VideoSource for VideoSourceUsb {
                             options: Options { option: options },
                         }));
                     }
-                },
+                }
                 _ => continue,
             };
         }
