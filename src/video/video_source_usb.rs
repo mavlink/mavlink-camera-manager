@@ -205,7 +205,7 @@ impl VideoSource for VideoSourceUsb {
                             cpp_type: cpp_type.into(),
                             default,
                             v4l2_id,
-                            description: Default::default(),
+                            description,
                             options: Options { option: options },
                         }));
                     }
