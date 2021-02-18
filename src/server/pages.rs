@@ -13,7 +13,7 @@ struct V4LCamera {
     name: String,
     camera: String,
     resolutions: Vec<video::video_source::FrameSize>,
-    controls: Vec<video::xml::ParameterType>,
+    controls: Vec<video::types::Control>,
 }
 
 pub fn v4l(_req: HttpRequest) -> HttpResponse {
@@ -29,10 +29,10 @@ pub fn v4l(_req: HttpRequest) -> HttpResponse {
     .take_while(|cam| cam.is_some())
     .map(|cam| cam.unwrap())
         .map(|cam| V4LCamera {
-            name: cam.name.clone(),
-            camera: cam.device_path.clone(),
+            name: cam.name().clone(),
+            camera: cam.source_string().clone(),
             resolutions: cam.resolutions(),
-            controls: cam.parameters(),
+            controls: cam.controls(),
         })
         .collect();
 

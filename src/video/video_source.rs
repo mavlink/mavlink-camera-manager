@@ -2,12 +2,14 @@ use v4l::prelude::*;
 use super::video_source_usb::{VideoSourceUsb, UsbBus};
 use super::xml;
 use serde::{Deserialize, Serialize};
+use super::types::*;
 
 #[derive(Debug, Serialize)]
 pub enum VideoSourceType {
     Usb(VideoSourceUsb),
 }
 
+//TODO: move types to own file
 #[derive(Debug, Serialize)]
 pub enum VideoEncodeType {
     UNKNOWN(String),
@@ -41,7 +43,7 @@ pub trait VideoSource {
     fn configure_by_name(&self, config_name: &str, value: u32) -> bool;
     fn configure_by_id(&self, config_id: u32, value: u32) -> bool;
     fn cameras_available() -> Vec<VideoSourceType>;
-    fn parameters(&self) -> Vec<xml::ParameterType>;
+    fn controls(&self) -> Vec<Control>;
     fn xml(&self) -> String;
 }
 

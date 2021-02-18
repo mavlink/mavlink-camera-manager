@@ -5,6 +5,7 @@ use v4l::video::Capture;
 use serde::{Deserialize, Serialize};
 
 use super::xml::*;
+use super::types::*;
 
 #[derive(Debug, Serialize)]
 pub struct UsbBus {
@@ -58,6 +59,23 @@ impl UsbBus {
             first_function,
             last_function,
         });
+    }
+}
+
+impl VideoSourceUsb {
+    fn control_value(&self, id: u32) -> std::io::Result<i64> {
+        let device = Device::with_path(&self.device_path)?;
+        let value = device.control(id)?;
+        match value {
+            v4l::control::Control::String(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "String control type is not supported.",
+                ));
+            }
+            v4l::control::Control::Value(value) => return Ok(value as i64),
+            v4l::control::Control::Value64(value) => return Ok(value),
+        }
     }
 }
 
@@ -142,71 +160,73 @@ impl VideoSource for VideoSourceUsb {
         return cameras;
     }
 
-    fn parameters(&self) -> Vec<ParameterType> {
+    fn controls(&self) -> Vec<Control> {
         let device = Device::with_path(&self.device_path).unwrap();
-        let controls = device.query_controls().unwrap_or_default();
+        let v4l_controls = device.query_controls().unwrap_or_default();
 
-        let mut parameters: Vec<ParameterType> = vec![];
-        for control in controls {
-            let name = control.id.to_string();
-            let description = Description::new(&control.name);
-            let default = control.default;
-            let v4l2_id = control.id;
-            match control.typ {
-                v4l::control::Type::Integer | v4l::control::Type::Integer64 => {
-                    let cpp_type = "int64".to_string();
-                    parameters.push(ParameterType::Slider(ParameterSlider {
-                        name,
-                        cpp_type: cpp_type.into(),
-                        default,
-                        v4l2_id,
-                        description,
-                        min: control.minimum,
-                        max: control.maximum,
-                        step: control.step,
-                    }));
-                }
+        let mut controls: Vec<Control> = vec![];
+        for v4l_control in v4l_controls {
+            let mut control: Control = Default::default();
+            control.name = v4l_control.name;
+            control.v4l2_id = v4l_control.id;
+            let value = self.control_value(v4l_control.id);
+            if let Err(error) = value {
+                eprintln!("Failed to get control '{} ({})' from device {}: {:#?}", control.name, control.v4l2_id, self.device_path, error);
+                continue;
+            }
+            let value = value.unwrap();
+            let default = v4l_control.default;
+
+            match v4l_control.typ {
                 v4l::control::Type::Boolean => {
-                    let cpp_type = "bool".to_string();
-                    parameters.push(ParameterType::Bool(ParameterBool {
-                        name,
-                        cpp_type: cpp_type.into(),
+                    control.cpp_type = "bool".to_string();
+                    control.configuration = ControlType::Bool(ControlBool {
                         default,
-                        v4l2_id,
-                        description,
-                    }));
+                        value,
+                    });
+                    controls.push(control);
+                }
+                v4l::control::Type::Integer | v4l::control::Type::Integer64 => {
+                    control.cpp_type = "int64".to_string();
+                    control.configuration = ControlType::Slider(ControlSlider {
+                        default,
+                        value,
+                        step: v4l_control.step,
+                        max: v4l_control.maximum,
+                        min: v4l_control.minimum,
+                    });
+                    controls.push(control);
                 }
                 v4l::control::Type::Menu | v4l::control::Type::IntegerMenu => {
-                    let cpp_type = "int32".to_string();
-                    if let Some(items) = control.items {
+                    control.cpp_type = "int32".to_string();
+                    if let Some(items) = v4l_control.items {
                         let options = items
                             .iter()
-                            .map(|(value, name)| Option {
+                            .map(|(value, name)| ControlOption {
                                 name: match name {
                                     v4l::control::MenuItem::Name(name) => name.clone(),
                                     v4l::control::MenuItem::Value(name) => name.to_string(),
                                 },
-                                value: *value,
+                                value: *value as i64,
                             })
                             .collect();
-
-                        parameters.push(ParameterType::Menu(ParameterMenu {
-                            name,
-                            cpp_type: cpp_type.into(),
+                        control.configuration = ControlType::Menu(ControlMenu {
                             default,
-                            v4l2_id,
-                            description,
-                            options: Options { option: options },
-                        }));
+                            value,
+                            options,
+                        });
+                        controls.push(control);
                     }
                 }
                 _ => continue,
             };
         };
-        return parameters;
+        return controls;
     }
 
     fn xml(&self) -> String {
+        return Default::default();
+        /*
         let definition = Definition {
             version: 1,
             model: Model {
@@ -217,7 +237,7 @@ impl VideoSource for VideoSourceUsb {
             },
         };
 
-        let parameters = self.parameters();
+        let parameters = self.controls();
         println!("{:#?}", parameters);
 
         let mavlink_camera = MavlinkCamera {
@@ -229,6 +249,7 @@ impl VideoSource for VideoSourceUsb {
 
         use quick_xml::se::to_string;
         return to_string(&mavlink_camera).unwrap();
+        */
     }
 }
 
