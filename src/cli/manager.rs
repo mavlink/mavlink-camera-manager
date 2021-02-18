@@ -31,6 +31,10 @@ pub fn mavlink_connection_string() -> &'static str {
     return MANAGER.as_ref().clap_matches.value_of("mavlink").unwrap();
 }
 
+pub fn server_address() -> &'static str {
+    return MANAGER.as_ref().clap_matches.value_of("rest-server").unwrap();
+}
+
 pub fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
     let matches = clap::App::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
@@ -43,6 +47,13 @@ pub fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
                 .help("Sets the mavlink connection string")
                 .takes_value(true)
                 .default_value("udpout:0.0.0.0:14550"),
+        )
+        .arg(
+            clap::Arg::with_name("rest-server")
+                .long("rest-server")
+                .help("Sets the address for the REST API server")
+                .takes_value(true)
+                .default_value("0.0.0.0:6020"),
         )
         .arg(
             clap::Arg::with_name("verbose")
