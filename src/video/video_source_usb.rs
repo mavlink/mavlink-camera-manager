@@ -2,10 +2,11 @@ use super::video_source::{FrameSize, VideoEncodeType, VideoSource, VideoSourceTy
 use regex::Regex;
 use v4l::prelude::*;
 use v4l::video::Capture;
+use serde::{Deserialize, Serialize};
 
 use super::xml::*;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct UsbBus {
     pub domain: u8,
     pub bus: u8,
@@ -14,10 +15,10 @@ pub struct UsbBus {
     pub last_function: u8,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct VideoSourceUsb {
-    name: String,
-    device_path: String,
+    pub name: String,
+    pub device_path: String,
     pub usb_bus: UsbBus,
 }
 
@@ -141,22 +142,11 @@ impl VideoSource for VideoSourceUsb {
         return cameras;
     }
 
-    fn xml(&self) -> String {
-        let definition = Definition {
-            version: 1,
-            model: Model {
-                body: self.name.clone(),
-            },
-            vendor: Vendor {
-                body: "Missing".into(),
-            },
-        };
-
-        let mut parameters: Vec<ParameterType> = vec![];
-
+    fn parameters(&self) -> Vec<ParameterType> {
         let device = Device::with_path(&self.device_path).unwrap();
         let controls = device.query_controls().unwrap_or_default();
 
+        let mut parameters: Vec<ParameterType> = vec![];
         for control in controls {
             let name = control.id.to_string();
             let description = Description::new(&control.name);
@@ -212,7 +202,22 @@ impl VideoSource for VideoSourceUsb {
                 }
                 _ => continue,
             };
-        }
+        };
+        return parameters;
+    }
+
+    fn xml(&self) -> String {
+        let definition = Definition {
+            version: 1,
+            model: Model {
+                body: self.name.clone(),
+            },
+            vendor: Vendor {
+                body: "Missing".into(),
+            },
+        };
+
+        let parameters = self.parameters();
         println!("{:#?}", parameters);
 
         let mavlink_camera = MavlinkCamera {
