@@ -9,6 +9,15 @@ pub enum VideoSourceType {
     Usb(VideoSourceUsb),
 }
 
+impl VideoSourceType {
+    pub fn inner(&self) -> impl VideoSource {
+        match self {
+            VideoSourceType::Usb(source) => (*source).clone(),
+            _ => unreachable!(),
+        }
+    }
+}
+
 //TODO: move types to own file
 #[derive(Debug, Serialize)]
 pub enum VideoEncodeType {
@@ -44,7 +53,6 @@ pub trait VideoSource {
     fn configure_by_id(&self, config_id: u32, value: u32) -> bool;
     fn cameras_available() -> Vec<VideoSourceType>;
     fn controls(&self) -> Vec<Control>;
-    fn xml(&self) -> String;
 }
 
 pub fn cameras_available() -> Vec<VideoSourceType> {

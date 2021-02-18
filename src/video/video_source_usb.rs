@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::xml::*;
 use super::types::*;
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct UsbBus {
     pub domain: u8,
     pub bus: u8,
@@ -16,7 +16,7 @@ pub struct UsbBus {
     pub last_function: u8,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct VideoSourceUsb {
     pub name: String,
     pub device_path: String,
@@ -146,7 +146,7 @@ impl VideoSource for VideoSourceUsb {
             let caps = caps.unwrap();
 
             if let Err(error) = camera.format() {
-                eprintln!("Failed to capture formats for device: {} {:#?}", camera_path, error);
+                eprintln!("Failed to capture formats for device: {}\nError: {:#?}", camera_path, error);
                 continue;
             }
 
@@ -223,34 +223,6 @@ impl VideoSource for VideoSourceUsb {
         };
         return controls;
     }
-
-    fn xml(&self) -> String {
-        return Default::default();
-        /*
-        let definition = Definition {
-            version: 1,
-            model: Model {
-                body: self.name.clone(),
-            },
-            vendor: Vendor {
-                body: "Missing".into(),
-            },
-        };
-
-        let parameters = self.controls();
-        println!("{:#?}", parameters);
-
-        let mavlink_camera = MavlinkCamera {
-            definition,
-            parameters: Parameters {
-                parameter: parameters,
-            },
-        };
-
-        use quick_xml::se::to_string;
-        return to_string(&mavlink_camera).unwrap();
-        */
-    }
 }
 
 #[cfg(test)]
@@ -261,7 +233,7 @@ mod tests {
     fn simple_test() {
         for camera in VideoSourceUsb::cameras_available() {
             if let VideoSourceType::Usb(camera) = camera {
-                println!("{}", camera.xml());
+                println!("{:#?}", camera);
             }
         }
     }

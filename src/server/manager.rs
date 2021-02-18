@@ -10,7 +10,7 @@ pub fn run(server_address: &str) {
         App::new()
             .route("/", web::get().to(pages::root))
             .route("/v4l", web::get().to(pages::v4l))
-            //.route("/v4l", web::post().to(pages::control))
+            .route("/xml", web::post().to(pages::xml))
             //.route("/v4l/interval", web::get().to(pages::interval))
     })
     .bind(server_address)

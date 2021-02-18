@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use super::{video_source, video_source::{VideoSourceType, VideoSource}};
+use super::types::*;
 
 #[derive(Debug, Serialize)]
 #[serde(rename = "mavlinkcamera")]
@@ -93,7 +95,7 @@ pub struct Options {
 #[derive(Debug, Serialize)]
 pub struct Option {
     pub name: String,
-    pub value: u32,
+    pub value: i64,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -103,6 +105,7 @@ pub struct Description {
 }
 
 impl Description {
+    //TODO: impl fromStr
     pub fn new(description: &str) -> Self {
         Self {
             body: description.into(),
@@ -110,10 +113,88 @@ impl Description {
     }
 }
 
+pub fn from_video_source(video_source: &impl VideoSource) -> String {
+    let controls = video_source.controls();
+
+    let definition = Definition {
+        version: 1,
+        model: Model {
+            body: video_source.name().clone(),
+        },
+        vendor: Vendor {
+            body: "Missing".into(),
+        },
+    };
+
+    let parameters = controls.iter().map(|control|
+        match &control.configuration {
+            ControlType::Bool(bool_control) => {
+                ParameterType::Bool(ParameterBool {
+                    name: control.v4l2_id.to_string(),
+                    cpp_type: control.cpp_type.clone(),
+                    default: bool_control.default,
+                    v4l2_id: control.v4l2_id,
+                    description: Description::new(&control.name),
+                })
+            },
+            ControlType::Slider(slider_control) => {
+                ParameterType::Slider(ParameterSlider {
+                    name: control.v4l2_id.to_string(),
+                    cpp_type: control.cpp_type.clone(),
+                    default: slider_control.default,
+                    v4l2_id: control.v4l2_id,
+                    description: Description::new(&control.name),
+                    step: slider_control.step,
+                    max: slider_control.max,
+                    min: slider_control.min,
+                })
+            },
+            ControlType::Menu(menu_control) => {
+                ParameterType::Menu(ParameterMenu {
+                    name: control.v4l2_id.to_string(),
+                    cpp_type: control.cpp_type.clone(),
+                    default: menu_control.default,
+                    v4l2_id: control.v4l2_id,
+                    description: Description::new(&control.name),
+                    options: Options {
+                        option: menu_control.options.iter().map(|option| {
+                            Option {
+                                name: option.name.clone(),
+                                value: option.value,
+                            }
+                        }).collect()
+                    },
+                })
+            },
+        }
+    ).collect();
+
+    let mavlink_camera = MavlinkCamera {
+        definition,
+        parameters: Parameters {
+            parameter: parameters,
+        },
+    };
+
+    use quick_xml::se::to_string;
+    return to_string(&mavlink_camera).unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use quick_xml::se::to_string;
+
+    #[test]
+    fn test_device() {
+        use std::fmt::Display;
+        for camera in video_source::cameras_available() {
+            if let VideoSourceType::Usb(camera) = camera{
+                let xml_string = from_video_source(&camera);
+                println!("{}", xml_string);
+            }
+        }
+    }
 
     #[test]
     fn deserialize() {

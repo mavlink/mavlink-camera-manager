@@ -9,6 +9,8 @@ mod settings;
 mod stream;
 mod video;
 
+mod master;
+
 /**
  * Start our managers
  */
