@@ -53,11 +53,19 @@ pub struct V4lControl {
 }
 
 pub fn v4l_post(req: HttpRequest, json: web::Json<V4lControl>) -> HttpResponse {
-    let v4l_control = json.into_inner();
-    println!("{:#?}", v4l_control);
-    return HttpResponse::Ok()
-        .content_type("text/xml")
-        .body(serde_json::to_string_pretty(&v4l_control).unwrap());
+    //TODO: check all uses here in this file
+    use video::video_source;
+    let control = json.into_inner();
+
+    let answer = video_source::set_control(&control.device, control.v4l_id, control.value);
+
+    if answer.is_ok() {
+        return HttpResponse::Ok().finish();
+    };
+
+    return HttpResponse::NotAcceptable()
+        .content_type("text/plain")
+        .body(format!("{:#?}", answer.err().unwrap()));
 }
 
 #[derive(Deserialize)]
@@ -80,5 +88,8 @@ pub fn xml(web::Query(xml_file_request): web::Query<XmlFileRequest>) -> HttpResp
     }
     return HttpResponse::NotFound()
         .content_type("text/plain")
-        .body(format!("File for {} does not exist.", xml_file_request.file));
+        .body(format!(
+            "File for {} does not exist.",
+            xml_file_request.file
+        ));
 }

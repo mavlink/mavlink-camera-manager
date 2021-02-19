@@ -66,7 +66,7 @@ pub fn set_control(source_string: &String, control_id: u64, value: i64) -> std::
         .find(|source| source.inner().source_string() == source_string);
 
     if let Some(camera) = camera {
-        camera.inner().configure_by_id(control_id, value);
+        return camera.inner().configure_by_id(control_id, value);
     }
 
     let sources_available: Vec<String> = cameras
