@@ -16,7 +16,7 @@ struct V4LCamera {
     controls: Vec<video::types::Control>,
 }
 
-pub fn v4l(req: HttpRequest) -> HttpResponse {
+pub fn v4l(_req: HttpRequest) -> HttpResponse {
     //println!("{:#?} {:#?} {:#?}", req.method(), req.app_data::<V4lControl>(), json);
     use video::video_source::{VideoSource, VideoSourceType};
 
@@ -25,19 +25,18 @@ pub fn v4l(req: HttpRequest) -> HttpResponse {
         .iter()
         .map(|cam| {
             if let VideoSourceType::Usb(cam) = cam {
-                return Some(cam);
+                return Some(V4LCamera {
+                    name: cam.name().clone(),
+                    camera: cam.source_string().clone(),
+                    resolutions: cam.resolutions(),
+                    controls: cam.controls(),
+                });
             } else {
                 return None;
             }
         })
         .take_while(|cam| cam.is_some())
         .map(|cam| cam.unwrap())
-        .map(|cam| V4LCamera {
-            name: cam.name().clone(),
-            camera: cam.source_string().clone(),
-            resolutions: cam.resolutions(),
-            controls: cam.controls(),
-        })
         .collect();
 
     HttpResponse::Ok()

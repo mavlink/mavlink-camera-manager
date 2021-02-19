@@ -148,8 +148,7 @@ impl VideoSource for VideoSourceUsb {
         //TODO: Add control validation
         let device = Device::with_path(&self.device_path).unwrap();
         //TODO: we should handle value, value64 and string
-        device.set_control(config_id as u32, v4l::control::Control::Value(value as i32))?;
-        return Ok(());
+        return device.set_control(config_id as u32, v4l::control::Control::Value(value as i32));
     }
 
     fn cameras_available() -> Vec<VideoSourceType> {
