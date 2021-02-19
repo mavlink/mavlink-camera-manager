@@ -9,9 +9,9 @@ pub fn run(server_address: &str) {
     HttpServer::new(|| {
         App::new()
             .route("/", web::get().to(pages::root))
-            .route("/v4l", web::get().to(pages::v4l))
             .route("/xml", web::post().to(pages::xml))
-            //.route("/v4l/interval", web::get().to(pages::interval))
+            .route("/v4l", web::get().to(pages::v4l))
+            .route("/v4l", web::post().to(pages::v4l_post))
     })
     .bind(server_address)
     .unwrap()

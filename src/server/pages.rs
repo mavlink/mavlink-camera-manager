@@ -16,7 +16,8 @@ struct V4LCamera {
     controls: Vec<video::types::Control>,
 }
 
-pub fn v4l(_req: HttpRequest) -> HttpResponse {
+pub fn v4l(req: HttpRequest) -> HttpResponse {
+    //println!("{:#?} {:#?} {:#?}", req.method(), req.app_data::<V4lControl>(), json);
     use video::video_source::{VideoSource, VideoSourceType};
 
     let cameras = video::video_source::cameras_available();
@@ -44,18 +45,33 @@ pub fn v4l(_req: HttpRequest) -> HttpResponse {
         .body(serde_json::to_string_pretty(&cameras).unwrap())
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct V4lControl {
+    device: String,
+    v4l_id: u64,
+    value: i64,
+}
+
+pub fn v4l_post(req: HttpRequest, json: web::Json<V4lControl>) -> HttpResponse {
+    let v4l_control = json.into_inner();
+    println!("{:#?}", v4l_control);
+    return HttpResponse::Ok()
+        .content_type("text/xml")
+        .body(serde_json::to_string_pretty(&v4l_control).unwrap());
+}
+
 #[derive(Deserialize)]
 pub struct XmlFileRequest {
     file: String,
 }
 
-pub fn xml(web::Query(xmlFileRequest): web::Query<XmlFileRequest>) -> HttpResponse {
+pub fn xml(web::Query(xml_file_request): web::Query<XmlFileRequest>) -> HttpResponse {
     use video::video_source::VideoSource;
     use video::xml;
     let cameras = video::video_source::cameras_available();
     let camera = cameras
         .iter()
-        .find(|source| source.inner().source_string() == &xmlFileRequest.file);
+        .find(|source| source.inner().source_string() == &xml_file_request.file);
 
     if let Some(camera) = camera {
         return HttpResponse::Ok()
@@ -64,5 +80,5 @@ pub fn xml(web::Query(xmlFileRequest): web::Query<XmlFileRequest>) -> HttpRespon
     }
     return HttpResponse::NotFound()
         .content_type("text/plain")
-        .body(format!("File for {} does not exist.", xmlFileRequest.file));
+        .body(format!("File for {} does not exist.", xml_file_request.file));
 }
