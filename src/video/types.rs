@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct Control {
     pub name: String,
     pub cpp_type: String,
-    pub v4l2_id: u32,
+    pub id: u64,
     pub configuration: ControlType,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub enum ControlType {
     Bool(ControlBool),
     Slider(ControlSlider),
@@ -24,13 +24,13 @@ impl Default for ControlType {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ControlBool {
     pub default: i32,
     pub value: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ControlSlider {
     pub default: i32,
     pub value: i64,
@@ -39,14 +39,14 @@ pub struct ControlSlider {
     pub min: i32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ControlMenu {
     pub default: i32,
     pub value: i64,
     pub options: Vec<ControlOption>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ControlOption {
     pub name: String,
     pub value: i64,

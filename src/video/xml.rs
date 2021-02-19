@@ -1,6 +1,9 @@
-use serde::{Deserialize, Serialize};
-use super::{video_source, video_source::{VideoSourceType, VideoSource}};
 use super::types::*;
+use super::{
+    video_source,
+    video_source::{VideoSource, VideoSourceType},
+};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
 #[serde(rename = "mavlinkcamera")]
@@ -59,7 +62,7 @@ pub struct ParameterBool {
     #[serde(rename = "type")]
     pub cpp_type: String,
     pub default: i32,
-    pub v4l2_id: u32,
+    pub v4l_id: u64,
     pub description: Description,
 }
 
@@ -69,7 +72,7 @@ pub struct ParameterSlider {
     #[serde(rename = "type")]
     pub cpp_type: String,
     pub default: i32,
-    pub v4l2_id: u32,
+    pub v4l_id: u64,
     pub step: i32,
     pub max: i32,
     pub min: i32,
@@ -82,7 +85,7 @@ pub struct ParameterMenu {
     #[serde(rename = "type")]
     pub cpp_type: String,
     pub default: i32,
-    pub v4l2_id: u32,
+    pub v4l_id: u64,
     pub description: Description,
     pub options: Options,
 }
@@ -126,48 +129,45 @@ pub fn from_video_source(video_source: &impl VideoSource) -> String {
         },
     };
 
-    let parameters = controls.iter().map(|control|
-        match &control.configuration {
-            ControlType::Bool(bool_control) => {
-                ParameterType::Bool(ParameterBool {
-                    name: control.v4l2_id.to_string(),
-                    cpp_type: control.cpp_type.clone(),
-                    default: bool_control.default,
-                    v4l2_id: control.v4l2_id,
-                    description: Description::new(&control.name),
-                })
-            },
-            ControlType::Slider(slider_control) => {
-                ParameterType::Slider(ParameterSlider {
-                    name: control.v4l2_id.to_string(),
-                    cpp_type: control.cpp_type.clone(),
-                    default: slider_control.default,
-                    v4l2_id: control.v4l2_id,
-                    description: Description::new(&control.name),
-                    step: slider_control.step,
-                    max: slider_control.max,
-                    min: slider_control.min,
-                })
-            },
-            ControlType::Menu(menu_control) => {
-                ParameterType::Menu(ParameterMenu {
-                    name: control.v4l2_id.to_string(),
-                    cpp_type: control.cpp_type.clone(),
-                    default: menu_control.default,
-                    v4l2_id: control.v4l2_id,
-                    description: Description::new(&control.name),
-                    options: Options {
-                        option: menu_control.options.iter().map(|option| {
-                            Option {
-                                name: option.name.clone(),
-                                value: option.value,
-                            }
-                        }).collect()
-                    },
-                })
-            },
-        }
-    ).collect();
+    let parameters = controls
+        .iter()
+        .map(|control| match &control.configuration {
+            ControlType::Bool(bool_control) => ParameterType::Bool(ParameterBool {
+                name: control.id.to_string(),
+                cpp_type: control.cpp_type.clone(),
+                default: bool_control.default,
+                v4l_id: control.id,
+                description: Description::new(&control.name),
+            }),
+            ControlType::Slider(slider_control) => ParameterType::Slider(ParameterSlider {
+                name: control.id.to_string(),
+                cpp_type: control.cpp_type.clone(),
+                default: slider_control.default,
+                v4l_id: control.id,
+                description: Description::new(&control.name),
+                step: slider_control.step,
+                max: slider_control.max,
+                min: slider_control.min,
+            }),
+            ControlType::Menu(menu_control) => ParameterType::Menu(ParameterMenu {
+                name: control.id.to_string(),
+                cpp_type: control.cpp_type.clone(),
+                default: menu_control.default,
+                v4l_id: control.id,
+                description: Description::new(&control.name),
+                options: Options {
+                    option: menu_control
+                        .options
+                        .iter()
+                        .map(|option| Option {
+                            name: option.name.clone(),
+                            value: option.value,
+                        })
+                        .collect(),
+                },
+            }),
+        })
+        .collect();
 
     let mavlink_camera = MavlinkCamera {
         definition,
@@ -189,7 +189,7 @@ mod tests {
     fn test_device() {
         use std::fmt::Display;
         for camera in video_source::cameras_available() {
-            if let VideoSourceType::Usb(camera) = camera{
+            if let VideoSourceType::Usb(camera) = camera {
                 let xml_string = from_video_source(&camera);
                 println!("{}", xml_string);
             }
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn deserialize() {
-        let test_string = r#"<mavlinkcamera><definition version="42"><model>Potato</model><vendor>PotatoFarm</vendor></definition><parameters><parameter name="Magic Parameter Bool" type="bool" default="1" v4l2_id="12345678"><description>Do magic bool stuff</description></parameter><parameter name="Magic Parameter Slider" type="int32" default="42" v4l2_id="123456789" step="1" max="666" min="0"><description>Do magic slider stuff</description></parameter><parameter name="Magic Parameter Menu" type="int32" default="0" v4l2_id="234567891"><description>Do magic menu stuff</description><options><option name="Magic" value="0"/><option name="Stuff" value="1"/></options></parameter></parameters></mavlinkcamera>"#;
+        let test_string = r#"<mavlinkcamera><definition version="42"><model>Potato</model><vendor>PotatoFarm</vendor></definition><parameters><parameter name="Magic Parameter Bool" type="bool" default="1" id="12345678"><description>Do magic bool stuff</description></parameter><parameter name="Magic Parameter Slider" type="int32" default="42" id="123456789" step="1" max="666" min="0"><description>Do magic slider stuff</description></parameter><parameter name="Magic Parameter Menu" type="int32" default="0" id="234567891"><description>Do magic menu stuff</description><options><option name="Magic" value="0"/><option name="Stuff" value="1"/></options></parameter></parameters></mavlinkcamera>"#;
 
         let struct_string = to_string(&MavlinkCamera {
             definition: Definition {
@@ -222,7 +222,7 @@ mod tests {
                         name: "Magic Parameter Bool".into(),
                         cpp_type: "bool".into(),
                         default: 1,
-                        v4l2_id: 012345678,
+                        v4l_id: 012345678,
                         description: Description {
                             body: "Do magic bool stuff".into(),
                         },
@@ -231,7 +231,7 @@ mod tests {
                         name: "Magic Parameter Slider".into(),
                         cpp_type: "int32".into(),
                         default: 42,
-                        v4l2_id: 123456789,
+                        v4l_id: 123456789,
                         step: 1,
                         min: 0,
                         max: 666,
@@ -243,7 +243,7 @@ mod tests {
                         name: "Magic Parameter Menu".into(),
                         cpp_type: "int32".into(),
                         default: 0,
-                        v4l2_id: 234567891,
+                        v4l_id: 234567891,
                         description: Description {
                             body: "Do magic menu stuff".into(),
                         },

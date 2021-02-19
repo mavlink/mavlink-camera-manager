@@ -1,11 +1,11 @@
 use super::video_source::{FrameSize, VideoEncodeType, VideoSource, VideoSourceType};
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use v4l::prelude::*;
 use v4l::video::Capture;
-use serde::{Deserialize, Serialize};
 
-use super::xml::*;
 use super::types::*;
+use super::xml::*;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct UsbBus {
@@ -21,6 +21,7 @@ pub struct VideoSourceUsb {
     pub name: String,
     pub device_path: String,
     pub usb_bus: UsbBus,
+    controls: Vec<Control>,
 }
 
 impl UsbBus {
@@ -63,6 +64,7 @@ impl UsbBus {
 }
 
 impl VideoSourceUsb {
+    //TODO: move to video source
     fn control_value(&self, id: u32) -> std::io::Result<i64> {
         let device = Device::with_path(&self.device_path)?;
         let value = device.control(id)?;
@@ -82,7 +84,8 @@ impl VideoSourceUsb {
 fn convert_v4l_framesize(frame_sizes: &Vec<v4l::FrameSize>) -> Vec<FrameSize> {
     let frame_sizes: Vec<FrameSize> = frame_sizes
         .iter()
-        .map(|frame_size| match &frame_size.size { //TODO: Move to map_while after release
+        .map(|frame_size| match &frame_size.size {
+            //TODO: Move to map_while after release
             v4l::framesize::FrameSizeEnum::Discrete(discrete) => Some(FrameSize {
                 encode: VideoEncodeType::from_str(frame_size.fourcc.str().unwrap()),
                 height: discrete.height,
@@ -113,18 +116,40 @@ impl VideoSource for VideoSourceUsb {
         let formats = device.enum_formats().unwrap_or_default();
         let mut frame_sizes = vec![];
         for format in formats {
-            frame_sizes.append(&mut convert_v4l_framesize(&device.enum_framesizes(format.fourcc).unwrap()));
+            frame_sizes.append(&mut convert_v4l_framesize(
+                &device.enum_framesizes(format.fourcc).unwrap(),
+            ));
         }
 
         return frame_sizes;
     }
 
-    fn configure_by_name(&self, _config_name: &str, _value: u32) -> bool {
+    fn configure_by_name(&self, _config_name: &str, _value: i64) -> std::io::Result<()> {
         unimplemented!();
     }
 
-    fn configure_by_id(&self, _config_id: u32, _value: u32) -> bool {
-        unimplemented!();
+    fn configure_by_id(&self, config_id: u64, value: i64) -> std::io::Result<()> {
+        let control = self
+            .controls()
+            .into_iter()
+            .find(|control| control.id == config_id);
+
+        if control.is_none() {
+            let ids: Vec<u64> = self.controls().iter().map(|control| control.id).collect();
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!(
+                    "Control ID '{}' is not valid, options are: {:?}",
+                    config_id, ids
+                ),
+            ));
+        }
+
+        //TODO: Add control validation
+        let device = Device::with_path(&self.device_path).unwrap();
+        //TODO: we should handle value, value64 and string
+        device.set_control(config_id as u32, v4l::control::Control::Value(value as i32))?;
+        return Ok(());
     }
 
     fn cameras_available() -> Vec<VideoSourceType> {
@@ -140,13 +165,19 @@ impl VideoSource for VideoSourceUsb {
             let caps = camera.query_caps();
 
             if let Err(error) = caps {
-                eprintln!("Failed to capture caps for device: {} {:#?}", camera_path, error);
+                eprintln!(
+                    "Failed to capture caps for device: {} {:#?}",
+                    camera_path, error
+                );
                 continue;
             }
             let caps = caps.unwrap();
 
             if let Err(error) = camera.format() {
-                eprintln!("Failed to capture formats for device: {}\nError: {:#?}", camera_path, error);
+                eprintln!(
+                    "Failed to capture formats for device: {}\nError: {:#?}",
+                    camera_path, error
+                );
                 continue;
             }
 
@@ -154,6 +185,7 @@ impl VideoSource for VideoSourceUsb {
                 name: caps.card,
                 device_path: camera_path.clone(),
                 usb_bus: UsbBus::from_str(&caps.bus).unwrap(),
+                controls: Default::default(),
             }));
         }
 
@@ -161,6 +193,11 @@ impl VideoSource for VideoSourceUsb {
     }
 
     fn controls(&self) -> Vec<Control> {
+        if !self.controls.is_empty() {
+            return self.controls.clone();
+        }
+
+        //TODO: create function to encapsulate device
         let device = Device::with_path(&self.device_path).unwrap();
         let v4l_controls = device.query_controls().unwrap_or_default();
 
@@ -168,10 +205,13 @@ impl VideoSource for VideoSourceUsb {
         for v4l_control in v4l_controls {
             let mut control: Control = Default::default();
             control.name = v4l_control.name;
-            control.v4l2_id = v4l_control.id;
+            control.id = v4l_control.id as u64;
             let value = self.control_value(v4l_control.id);
             if let Err(error) = value {
-                eprintln!("Failed to get control '{} ({})' from device {}: {:#?}", control.name, control.v4l2_id, self.device_path, error);
+                eprintln!(
+                    "Failed to get control '{} ({})' from device {}: {:#?}",
+                    control.name, control.id, self.device_path, error
+                );
                 continue;
             }
             let value = value.unwrap();
@@ -180,10 +220,7 @@ impl VideoSource for VideoSourceUsb {
             match v4l_control.typ {
                 v4l::control::Type::Boolean => {
                     control.cpp_type = "bool".to_string();
-                    control.configuration = ControlType::Bool(ControlBool {
-                        default,
-                        value,
-                    });
+                    control.configuration = ControlType::Bool(ControlBool { default, value });
                     controls.push(control);
                 }
                 v4l::control::Type::Integer | v4l::control::Type::Integer64 => {
@@ -220,7 +257,7 @@ impl VideoSource for VideoSourceUsb {
                 }
                 _ => continue,
             };
-        };
+        }
         return controls;
     }
 }
