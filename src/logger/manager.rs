@@ -1,11 +1,13 @@
 use log::{info, LevelFilter};
 use std::io::Write;
 
+use chrono;
 use env_logger::{
     fmt::{Color, Style, StyledValue},
     Builder,
 };
 use log::Level;
+
 fn colored_level<'a>(style: &'a mut Style, level: Level) -> StyledValue<'a, &'static str> {
     match level {
         Level::Trace => style.set_color(Color::Magenta).value("TRACE"),
@@ -31,8 +33,9 @@ pub fn init() {
 
             writeln!(
                 buf,
-                "{} {}:{}: {}",
+                "{} {} {}:{}: {}",
                 level,
+                chrono::Local::now().format("%H:%M:%S.%3f"),
                 record.file().unwrap_or("unknown"),
                 record.line().unwrap_or(0),
                 message,
@@ -41,5 +44,9 @@ pub fn init() {
         .filter_level(LevelFilter::Info)
         .init();
 
-    info!("hello world");
+    //TODO: add binary version and etc information
+    info!(
+        "Starting {}",
+        chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
+    );
 }
