@@ -40,6 +40,14 @@ pub fn server_address() -> &'static str {
         .unwrap();
 }
 
+pub fn command_line_string() -> String {
+    return std::env::args().collect::<Vec<String>>().join(" ");
+}
+
+pub fn matches<'a>() -> clap::ArgMatches<'a> {
+    return MANAGER.as_ref().clap_matches.clone();
+}
+
 pub fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
     let matches = clap::App::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
@@ -64,16 +72,11 @@ pub fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
             clap::Arg::with_name("verbose")
                 .short("v")
                 .long("verbose")
-                .help("Be verbose")
+                .help("Turn all log categories up to Debug, for more information check RUST_LOG env variable.")
                 .takes_value(false),
         );
 
-    let string_args: Vec<String> = std::env::args().collect();
-    debug!("Command line call: {}", string_args.join(" "));
-
-    let matches = matches.get_matches();
-    debug!("Command line input structure: {:#?}", &matches.args);
-    return matches;
+    return matches.get_matches();
 }
 
 #[cfg(test)]
