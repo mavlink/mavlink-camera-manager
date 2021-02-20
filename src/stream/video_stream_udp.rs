@@ -52,7 +52,7 @@ impl Drop for VideoStreamUdp {
         // Kill the thread and wait for it
         self.state.lock().unwrap().kill = true;
         let answer = self.thread.take().unwrap().join();
-        info!("done: {:#?}", answer);
+        debug!("done: {:#?}", answer);
     }
 }
 

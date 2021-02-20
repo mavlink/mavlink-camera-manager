@@ -1,8 +1,5 @@
 use super::types::*;
 use super::video_source_usb::VideoSourceUsb;
-use super::xml;
-use serde::{Deserialize, Serialize};
-use v4l::prelude::*;
 
 pub trait VideoSource {
     fn name(&self) -> &String;

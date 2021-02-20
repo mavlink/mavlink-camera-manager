@@ -30,12 +30,8 @@ fn main() {
     master::run();
 
     stream::manager::start(); //TODO: unify start and run
-
-    println!("hello!");
     let l = mavlink::mavlink_camera::MavlinkCameraHandle::new();
     println!("verbose: {}", cli::manager::is_verbose());
-    println!("created!");
-
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
     }

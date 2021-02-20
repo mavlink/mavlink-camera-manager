@@ -1,6 +1,6 @@
 use super::types::*;
-use super::{video_source, video_source::VideoSource};
-use serde::{Deserialize, Serialize};
+use super::video_source::VideoSource;
+use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 #[serde(rename = "mavlinkcamera")]
@@ -181,6 +181,7 @@ pub fn from_video_source(video_source: &impl VideoSource) -> String {
 mod tests {
     use super::*;
     use quick_xml::se::to_string;
+    use serde::Deserialize;
 
     #[test]
     fn test_device() {
@@ -188,7 +189,7 @@ mod tests {
         for camera in video_source::cameras_available() {
             if let VideoSourceType::Usb(camera) = camera {
                 let xml_string = from_video_source(&camera);
-                info!("{}", xml_string);
+                println!("{}", xml_string);
             }
         }
     }

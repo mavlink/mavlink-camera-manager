@@ -1,6 +1,6 @@
 use super::video_source::VideoSource;
 use super::video_source_usb::VideoSourceUsb;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 pub enum VideoSourceType {

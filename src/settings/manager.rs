@@ -83,7 +83,7 @@ pub fn init(file_name: &str) {
 pub fn load_settings_from_file(file_name: &str) -> SettingsStruct {
     let result = std::fs::read_to_string(file_name);
 
-    info!("loaded!");
+    debug!("loaded!");
     if result.is_err() {
         return SettingsStruct::default();
     };
@@ -111,9 +111,15 @@ pub fn save() {
     let manager = MANAGER.as_ref().lock().unwrap();
     //TODO: deal com save problems here
     if let Some(content) = &manager.content {
-        save_settings_to_file(&content.file_name, &content.config);
+        if let Err(error) = save_settings_to_file(&content.file_name, &content.config) {
+            error!(
+                "Failed to save settings: file: {:#?}, configuration: {:#?}, error: {:#?}",
+                &content.file_name, &content.config, error
+            );
+        }
+    } else {
+        debug!("saved!");
     }
-    info!("saved!");
 }
 
 #[test]
@@ -127,7 +133,7 @@ fn simple_test() {
         .collect();
 
     let file_name = format!("/tmp/{}.toml", rand_string);
-    info!("Test file: {}", &file_name);
+    println!("Test file: {}", &file_name);
     init(&file_name);
     save();
 

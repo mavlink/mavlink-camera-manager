@@ -1,12 +1,11 @@
 use super::types::{FrameSize, VideoEncodeType, VideoSourceType};
 use super::video_source::VideoSource;
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use v4l::prelude::*;
 use v4l::video::Capture;
 
 use super::types::*;
-use super::xml::*;
 use log::*;
 
 #[derive(Clone, Debug, Serialize)]
@@ -94,7 +93,10 @@ fn convert_v4l_framesize(frame_sizes: &Vec<v4l::FrameSize>) -> Vec<FrameSize> {
                 width: discrete.width,
             }),
             v4l::framesize::FrameSizeEnum::Stepwise(stepwise) => {
-                warn!("Ignoring stepwise source: {:#?}", frame_size);
+                warn!(
+                    "Ignoring stepwise '{:#?}' for source: {:#?}",
+                    stepwise, frame_size
+                );
                 None //TODO this can be done with frame_size.size.to_discrete()
             }
         })

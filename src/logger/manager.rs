@@ -2,10 +2,7 @@ use log::{info, LevelFilter};
 use std::io::Write;
 
 use chrono;
-use env_logger::{
-    fmt::{Color, Style, StyledValue},
-    Builder,
-};
+use env_logger::fmt::{Color, Style, StyledValue};
 use log::Level;
 
 fn colored_level<'a>(style: &'a mut Style, level: Level) -> StyledValue<'a, &'static str> {
@@ -21,10 +18,6 @@ fn colored_level<'a>(style: &'a mut Style, level: Level) -> StyledValue<'a, &'st
 pub fn init() {
     env_logger::builder()
         .format(|buf, record| {
-            use std::io::Write;
-
-            let target = record.target();
-
             let mut style = buf.style();
             let level = colored_level(&mut style, record.level());
 
@@ -45,13 +38,14 @@ pub fn init() {
         .init();
 
     info!(
-        "{}-{} ({})",
+        "{}, version: {}-{}, build: ({})",
+        env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION"),
         env!("VERGEN_GIT_SHA_SHORT"),
         env!("VERGEN_BUILD_DATE")
     );
     info!(
-        "Starting {}",
+        "Starting at {}",
         chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
     );
 }

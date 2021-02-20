@@ -122,7 +122,7 @@ fn heartbeat_loop(
             continue;
         }
 
-        info!("sending heartbeat");
+        debug!("sending heartbeat");
         if let Err(error) = vehicle.as_ref().send(&header, &heartbeat_message()) {
             error!("Failed to send heartbeat: {:?}", error);
         }
@@ -150,19 +150,19 @@ fn receive_message_loop(
                     mavlink::common::MavMessage::COMMAND_LONG(command_long) => {
                         match command_long.command {
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_INFORMATION => {
-                                info!("Sending camera_information..");
+                                debug!("Sending camera_information..");
                                 if let Err(error) = vehicle.send(&header, &camera_information()) {
                                     warn!("Failed to send camera_information: {:?}", error);
                                 }
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_SETTINGS => {
-                                info!("Sending camera_settings..");
+                                debug!("Sending camera_settings..");
                                 if let Err(error) = vehicle.send(&header, &camera_settings()) {
                                     warn!("Failed to send camera_settings: {:?}", error);
                                 }
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_STORAGE_INFORMATION => {
-                                info!("Sending camera_storage_information..");
+                                debug!("Sending camera_storage_information..");
                                 if let Err(error) =
                                     vehicle.send(&header, &camera_storage_information())
                                 {
@@ -170,14 +170,14 @@ fn receive_message_loop(
                                 }
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_CAPTURE_STATUS => {
-                                info!("Sending camera_capture_status..");
+                                debug!("Sending camera_capture_status..");
                                 if let Err(error) = vehicle.send(&header, &camera_capture_status())
                                 {
                                     warn!("Failed to send camera_capture_status: {:?}", error);
                                 }
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION => {
-                                info!("Sending video_stream_information..");
+                                debug!("Sending video_stream_information..");
                                 let information =
                                     mavlink_camera_information.as_ref().lock().unwrap();
 
@@ -190,7 +190,7 @@ fn receive_message_loop(
                             }
                             _ => {
                                 //TODO: reworking this prints
-                                info!("Ignoring command: {:?}", command_long.command);
+                                warn!("Ignoring command: {:?}", command_long.command);
                             }
                         }
                     }
@@ -199,7 +199,7 @@ fn receive_message_loop(
                     // Any other message that is not a heartbeat or command_long
                     _ => {
                         //TODO: reworking this prints
-                        info!("Ignoring: {:?}", msg);
+                        warn!("Ignoring: {:?}", msg);
                     }
                 }
             }

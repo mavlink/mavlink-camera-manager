@@ -20,7 +20,7 @@ struct V4LCamera {
 }
 
 pub fn v4l(req: HttpRequest) -> HttpResponse {
-    info!("{:#?}", req);
+    debug!("{:#?}", req);
     use video::types::VideoSourceType; //TODO: maybe moving to video_source?
     use video::video_source::VideoSource;
 
@@ -56,7 +56,7 @@ pub struct V4lControl {
 }
 
 pub fn v4l_post(req: HttpRequest, json: web::Json<V4lControl>) -> HttpResponse {
-    info!("{:#?}{:?}", req, json);
+    debug!("{:#?}{:?}", req, json);
     //TODO: check all uses here in this file
     use video::video_source;
     let control = json.into_inner();

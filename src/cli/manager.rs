@@ -1,4 +1,5 @@
 use clap;
+use log::*;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -32,7 +33,11 @@ pub fn mavlink_connection_string() -> &'static str {
 }
 
 pub fn server_address() -> &'static str {
-    return MANAGER.as_ref().clap_matches.value_of("rest-server").unwrap();
+    return MANAGER
+        .as_ref()
+        .clap_matches
+        .value_of("rest-server")
+        .unwrap();
 }
 
 pub fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
@@ -63,7 +68,12 @@ pub fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
                 .takes_value(false),
         );
 
-    return matches.get_matches();
+    let string_args: Vec<String> = std::env::args().collect();
+    debug!("Command line call: {}", string_args.join(" "));
+
+    let matches = matches.get_matches();
+    debug!("Command line input structure: {:#?}", &matches.args);
+    return matches;
 }
 
 #[cfg(test)]
