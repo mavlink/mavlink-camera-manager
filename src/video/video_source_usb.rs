@@ -10,11 +10,9 @@ use log::*;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct UsbBus {
-    pub domain: u32,
-    pub bus: u16,
-    pub device: u16,
-    pub first_function: u8,
-    pub last_function: u8,
+    pub interface: String,
+    pub usb_hub: u8,
+    pub usb_port: u8,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -22,46 +20,53 @@ pub struct VideoSourceUsb {
     pub name: String,
     pub device_path: String,
     pub usb_bus: UsbBus,
-    controls: Vec<Control>,
 }
 
 impl UsbBus {
+    // For PCI:
     // https://wiki.xenproject.org/wiki/Bus:Device.Function_(BDF)_Notation
     // description should follow: <domain>:<bus>:<device>.<first_function>-<last_function>
-    // E.g: 1234:56:78.9-0, where domain, bus and device are hexadecimal
+    // E.g: f2a4:5c:78.9-0, where domain, bus and device are hexadecimal
+    // `first_function` describes the usb HUB and `last_function` describes the USB port of that HUB
+    //
+    // For devices that does not have PCI, the information will come with
+    // the following description: usb-<unknown>z.<usb-usb_hub>.<usb_port>
+    // E.g: usb-3f9800z.usb-1.4, where unknown is hexadecimal
     // `udevadm info` can also provide information about the camera
     pub fn from_str(description: &str) -> std::io::Result<Self> {
-        let regex = Regex::new(
-            r"(?P<domain>[0-9|a-f]+):(?P<bus>[0-9|a-f]+):(?P<device>[0-9|a-f]+).(?P<first_function>\d+)-(?P<last_function>\d+)",
+        let pci_regex = Regex::new(
+            r"(?P<interface>[0-9|a-f]+:[0-9|a-f]+:[0-9|a-f]+).(?P<usb_hub>\d+)-(?P<usb_port>\d+)",
         )
         .unwrap();
-        if !regex.is_match(description) {
-            panic!("Description is not valid: {:#?}", description);
-        }
+        let usb_regex =
+            Regex::new(r"(?P<interface>[0-9|a-f]+)z.usb-(?P<usb_hub>\d+).(?P<usb_port>\d+)")
+                .unwrap();
 
-        let capture = regex.captures(description).unwrap();
-        let domain = capture.name("domain").unwrap().as_str();
-        let bus = capture.name("bus").unwrap().as_str();
-        let device = capture.name("device").unwrap().as_str();
-        let first_function = capture
-            .name("first_function")
-            .unwrap()
-            .as_str()
-            .parse()
-            .unwrap();
-        let last_function = capture
-            .name("last_function")
-            .unwrap()
-            .as_str()
-            .parse()
-            .unwrap();
+        let capture = (|| {
+            match pci_regex.captures(description) {
+                Some(capture) => return capture,
+                _ => {}
+            };
+
+            match usb_regex.captures(description) {
+                Some(capture) => return capture,
+                _ => {}
+            };
+
+            panic!(
+                "Description does not match both PCI and USB formats: {}",
+                description
+            );
+        })();
+
+        let interface = capture.name("interface").unwrap().as_str().parse().unwrap();
+        let usb_hub = capture.name("usb_hub").unwrap().as_str().parse().unwrap();
+        let usb_port = capture.name("usb_port").unwrap().as_str().parse().unwrap();
 
         return Ok(Self {
-            domain: u32::from_str_radix(&domain, 16).unwrap(),
-            bus: u16::from_str_radix(&bus, 16).unwrap(),
-            device: u16::from_str_radix(&device, 16).unwrap(),
-            first_function,
-            last_function,
+            interface,
+            usb_hub,
+            usb_port,
         });
     }
 }
@@ -190,22 +195,18 @@ impl VideoSource for VideoSourceUsb {
                 continue;
             }
 
-            cameras.push(VideoSourceType::Usb(VideoSourceUsb {
+            let source = VideoSourceUsb {
                 name: caps.card,
                 device_path: camera_path.clone(),
                 usb_bus: UsbBus::from_str(&caps.bus).unwrap(),
-                controls: Default::default(),
-            }));
+            };
+            cameras.push(VideoSourceType::Usb(source));
         }
 
         return cameras;
     }
 
     fn controls(&self) -> Vec<Control> {
-        if !self.controls.is_empty() {
-            return self.controls.clone();
-        }
-
         //TODO: create function to encapsulate device
         let device = Device::with_path(&self.device_path).unwrap();
         let v4l_controls = device.query_controls().unwrap_or_default();
@@ -279,7 +280,9 @@ mod tests {
     fn simple_test() {
         for camera in VideoSourceUsb::cameras_available() {
             if let VideoSourceType::Usb(camera) = camera {
-                println!("{:#?}", camera);
+                println!("Camera: {:#?}", camera);
+                println!("Resolutions: {:#?}", camera.resolutions());
+                println!("Controls: {:#?}", camera.controls());
             }
         }
     }
