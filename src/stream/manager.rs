@@ -1,4 +1,5 @@
-use super::stream_backend::{StreamBackend, StreamType};
+use super::stream_backend::StreamBackend;
+use super::types::StreamType;
 use super::video_stream_udp::VideoStreamUdp;
 use std::sync::{Arc, Mutex};
 
