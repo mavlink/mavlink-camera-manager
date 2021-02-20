@@ -7,21 +7,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest]
-        TARGET: [x86_64-apple-darwin, arm-unknown-linux-musleabihf, x86_64-unknown-linux-musl]
-        exclude:
-        - os: macos-latest
-          TARGET: arm-unknown-linux-musleabihf
-
-        - os: macos-latest
-          TARGET: x86_64-unknown-linux-musl
-
+        include:
         - os: ubuntu-latest
-          TARGET: x86_64-apple-darwin
+          SUFFIX: linux-desktop
 
     steps:
-    - name: Building ${{ matrix.TARGET }}
-      run: echo "${{ matrix.TARGET }}"
+    - name: Building ${{ matrix.os }} ${{ matrix.SUFFIX }}
+      run: echo "${{ matrix.os }} ${{ matrix.SUFFIX }}"
 
     - uses: actions/checkout@master
     - uses: actions-rs/toolchain@v1.0.1
@@ -30,14 +22,22 @@ jobs:
         target: ${{ matrix.TARGET }}
         override: true
 
+    - name: Install linux libraries
+      if: ${{ matrix.os == 'ubuntu-latest' }}
+      run: |
+        uname -a
+        apt update
+        apt install -y curl libclang-dev
+        apt install -y libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev
+
     - uses: actions-rs/cargo@v1
       with:
         use-cross: true
         command: build
-        args: --verbose --release --target=${{ matrix.TARGET }}
+        args: --verbose --release
 
     - name: Rename
-      run: cp target/${{ matrix.TARGET }}/release/mavlink-camera-manager mavlink-camera-manager-${{ matrix.TARGET }}
+      run: cp target/${{ matrix.TARGET }}/release/mavlink-camera-manager mavlink-camera-manager-${{ matrix.SUFFIX }}
 
     - uses: actions/upload-artifact@master
       with:
