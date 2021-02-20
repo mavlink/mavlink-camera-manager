@@ -26,9 +26,9 @@ jobs:
       if: ${{ matrix.os == 'ubuntu-latest' }}
       run: |
         uname -a
-        apt update
-        apt install -y curl libclang-dev
-        apt install -y libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev
+        sudo apt update
+        sudo apt install -y libclang-dev
+        sudo apt install -y libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev
 
     - uses: actions-rs/cargo@v1
       with:
