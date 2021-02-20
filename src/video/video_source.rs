@@ -5,8 +5,10 @@ pub trait VideoSource {
     fn name(&self) -> &String;
     fn source_string(&self) -> &String;
     fn resolutions(&self) -> Vec<FrameSize>;
-    fn configure_by_name(&self, config_name: &str, value: i64) -> std::io::Result<()>;
-    fn configure_by_id(&self, config_id: u64, value: i64) -> std::io::Result<()>;
+    fn set_control_by_name(&self, control_name: &str, value: i64) -> std::io::Result<()>;
+    fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()>;
+    fn control_value_by_name(&self, control_name: &str) -> std::io::Result<i64>;
+    fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64>;
     fn cameras_available() -> Vec<VideoSourceType>;
     fn controls(&self) -> Vec<Control>;
 }
@@ -22,7 +24,7 @@ pub fn set_control(source_string: &String, control_id: u64, value: i64) -> std::
         .find(|source| source.inner().source_string() == source_string);
 
     if let Some(camera) = camera {
-        return camera.inner().configure_by_id(control_id, value);
+        return camera.inner().set_control_by_id(control_id, value);
     }
 
     let sources_available: Vec<String> = cameras

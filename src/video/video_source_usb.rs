@@ -64,24 +64,6 @@ impl UsbBus {
     }
 }
 
-impl VideoSourceUsb {
-    //TODO: move to video source
-    fn control_value(&self, id: u32) -> std::io::Result<i64> {
-        let device = Device::with_path(&self.device_path)?;
-        let value = device.control(id)?;
-        match value {
-            v4l::control::Control::String(_) => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "String control type is not supported.",
-                ));
-            }
-            v4l::control::Control::Value(value) => return Ok(value as i64),
-            v4l::control::Control::Value64(value) => return Ok(value),
-        }
-    }
-}
-
 fn convert_v4l_framesize(frame_sizes: &Vec<v4l::FrameSize>) -> Vec<FrameSize> {
     let frame_sizes: Vec<FrameSize> = frame_sizes
         .iter()
@@ -128,15 +110,15 @@ impl VideoSource for VideoSourceUsb {
         return frame_sizes;
     }
 
-    fn configure_by_name(&self, _config_name: &str, _value: i64) -> std::io::Result<()> {
+    fn set_control_by_name(&self, _control_name: &str, _value: i64) -> std::io::Result<()> {
         unimplemented!();
     }
 
-    fn configure_by_id(&self, config_id: u64, value: i64) -> std::io::Result<()> {
+    fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()> {
         let control = self
             .controls()
             .into_iter()
-            .find(|control| control.id == config_id);
+            .find(|control| control.id == control_id);
 
         if control.is_none() {
             let ids: Vec<u64> = self.controls().iter().map(|control| control.id).collect();
@@ -144,7 +126,7 @@ impl VideoSource for VideoSourceUsb {
                 std::io::ErrorKind::NotFound,
                 format!(
                     "Control ID '{}' is not valid, options are: {:?}",
-                    config_id, ids
+                    control_id, ids
                 ),
             ));
         }
@@ -152,7 +134,29 @@ impl VideoSource for VideoSourceUsb {
         //TODO: Add control validation
         let device = Device::with_path(&self.device_path).unwrap();
         //TODO: we should handle value, value64 and string
-        return device.set_control(config_id as u32, v4l::control::Control::Value(value as i32));
+        return device.set_control(
+            control_id as u32,
+            v4l::control::Control::Value(value as i32),
+        );
+    }
+
+    fn control_value_by_name(&self, control_name: &str) -> std::io::Result<i64> {
+        unimplemented!();
+    }
+
+    fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64> {
+        let device = Device::with_path(&self.device_path)?;
+        let value = device.control(control_id as u32)?;
+        match value {
+            v4l::control::Control::String(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "String control type is not supported.",
+                ));
+            }
+            v4l::control::Control::Value(value) => return Ok(value as i64),
+            v4l::control::Control::Value64(value) => return Ok(value),
+        }
     }
 
     fn cameras_available() -> Vec<VideoSourceType> {
@@ -209,7 +213,7 @@ impl VideoSource for VideoSourceUsb {
             let mut control: Control = Default::default();
             control.name = v4l_control.name;
             control.id = v4l_control.id as u64;
-            let value = self.control_value(v4l_control.id);
+            let value = self.control_value_by_id(v4l_control.id as u64);
             if let Err(error) = value {
                 error!(
                     "Failed to get control '{} ({})' from device {}: {:#?}",

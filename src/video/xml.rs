@@ -39,7 +39,6 @@ struct CameraInfo {
     model: String,
 }*/
 
-//TODO: This should be in video as controls
 #[derive(Debug, Serialize)]
 pub struct Parameters {
     pub parameter: Vec<ParameterType>,
