@@ -148,6 +148,8 @@ impl VideoSource for VideoSourceLocal {
         let device = Device::with_path(&self.device_path).unwrap();
         let formats = device.enum_formats().unwrap_or_default();
         let mut frame_sizes = vec![];
+
+        debug!("Checking resolutions for camera: {}", &self.device_path);
         for format in formats {
             frame_sizes.append(&mut convert_v4l_framesize(
                 &device.enum_framesizes(format.fourcc).unwrap(),
