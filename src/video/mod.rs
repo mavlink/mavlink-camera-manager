@@ -1,6 +1,5 @@
+pub mod types;
 pub mod video_source;
 pub mod xml;
-pub mod types;
 
-//TODO: back to privated
-pub mod video_source_usb;
+mod video_source_usb;

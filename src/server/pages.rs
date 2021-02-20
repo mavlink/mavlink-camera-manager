@@ -1,5 +1,5 @@
-use crate::video;
-use crate::video::types::FrameSize;
+use crate::video::types::{Control, FrameSize, VideoSourceType};
+use crate::video::{video_source, video_source::VideoSource, xml};
 use actix_web::{web, HttpRequest, HttpResponse};
 use log::*;
 use serde::{Deserialize, Serialize};
@@ -16,15 +16,13 @@ struct V4LCamera {
     camera: String,
     //TODO: check includes vs types
     resolutions: Vec<FrameSize>,
-    controls: Vec<video::types::Control>,
+    controls: Vec<Control>,
 }
 
 pub fn v4l(req: HttpRequest) -> HttpResponse {
     debug!("{:#?}", req);
-    use video::types::VideoSourceType; //TODO: maybe moving to video_source?
-    use video::video_source::VideoSource;
 
-    let cameras = video::video_source::cameras_available();
+    let cameras = video_source::cameras_available();
     let cameras: Vec<V4LCamera> = cameras
         .iter()
         .map(|cam| {
@@ -58,7 +56,6 @@ pub struct V4lControl {
 pub fn v4l_post(req: HttpRequest, json: web::Json<V4lControl>) -> HttpResponse {
     debug!("{:#?}{:?}", req, json);
     //TODO: check all uses here in this file
-    use video::video_source;
     let control = json.into_inner();
 
     let answer = video_source::set_control(&control.device, control.v4l_id, control.value);
@@ -78,9 +75,7 @@ pub struct XmlFileRequest {
 }
 
 pub fn xml(web::Query(xml_file_request): web::Query<XmlFileRequest>) -> HttpResponse {
-    use video::video_source::VideoSource;
-    use video::xml;
-    let cameras = video::video_source::cameras_available();
+    let cameras = video_source::cameras_available();
     let camera = cameras
         .iter()
         .find(|source| source.inner().source_string() == &xml_file_request.file);
