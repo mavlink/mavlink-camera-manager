@@ -6,6 +6,7 @@ use std::thread;
 
 use gstreamer;
 use gstreamer::prelude::*;
+use log::*;
 
 #[derive(Debug)]
 struct VideoStreamUdpState {
@@ -51,7 +52,7 @@ impl Drop for VideoStreamUdp {
         // Kill the thread and wait for it
         self.state.lock().unwrap().kill = true;
         let answer = self.thread.take().unwrap().join();
-        println!("done: {:#?}", answer);
+        info!("done: {:#?}", answer);
     }
 }
 

@@ -6,6 +6,7 @@ use v4l::video::Capture;
 
 use super::types::*;
 use super::xml::*;
+use log::*;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct UsbBus {
@@ -92,7 +93,7 @@ fn convert_v4l_framesize(frame_sizes: &Vec<v4l::FrameSize>) -> Vec<FrameSize> {
                 width: discrete.width,
             }),
             v4l::framesize::FrameSizeEnum::Stepwise(stepwise) => {
-                eprintln!("Ignoring stepwise source: {:#?}", frame_size);
+                warn!("Ignoring stepwise source: {:#?}", frame_size);
                 None //TODO this can be done with frame_size.size.to_discrete()
             }
         })
@@ -164,7 +165,7 @@ impl VideoSource for VideoSourceUsb {
             let caps = camera.query_caps();
 
             if let Err(error) = caps {
-                eprintln!(
+                error!(
                     "Failed to capture caps for device: {} {:#?}",
                     camera_path, error
                 );
@@ -173,7 +174,7 @@ impl VideoSource for VideoSourceUsb {
             let caps = caps.unwrap();
 
             if let Err(error) = camera.format() {
-                eprintln!(
+                error!(
                     "Failed to capture formats for device: {}\nError: {:#?}",
                     camera_path, error
                 );
@@ -207,7 +208,7 @@ impl VideoSource for VideoSourceUsb {
             control.id = v4l_control.id as u64;
             let value = self.control_value(v4l_control.id);
             if let Err(error) = value {
-                eprintln!(
+                error!(
                     "Failed to get control '{} ({})' from device {}: {:#?}",
                     control.name, control.id, self.device_path, error
                 );

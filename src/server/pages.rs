@@ -1,5 +1,6 @@
 use crate::video;
 use actix_web::{web, HttpRequest, HttpResponse};
+use log::*;
 use serde::{Deserialize, Serialize};
 
 pub fn root(_req: HttpRequest) -> HttpResponse {

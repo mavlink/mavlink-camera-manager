@@ -1,5 +1,6 @@
 use toml;
 
+use log::*;
 use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 use std::sync::{Arc, Mutex};
@@ -67,7 +68,7 @@ impl Manager {
         };
 
         save_settings_to_file(&settings.file_name, &settings.config).unwrap_or_else(|error| {
-            eprintln!("Failed to save file: {:#?}", error);
+            error!("Failed to save file: {:#?}", error);
         });
 
         return settings;
@@ -82,7 +83,7 @@ pub fn init(file_name: &str) {
 pub fn load_settings_from_file(file_name: &str) -> SettingsStruct {
     let result = std::fs::read_to_string(file_name);
 
-    println!("loaded!");
+    info!("loaded!");
     if result.is_err() {
         return SettingsStruct::default();
     };
@@ -112,7 +113,7 @@ pub fn save() {
     if let Some(content) = &manager.content {
         save_settings_to_file(&content.file_name, &content.config);
     }
-    println!("saved!");
+    info!("saved!");
 }
 
 #[test]
@@ -126,7 +127,7 @@ fn simple_test() {
         .collect();
 
     let file_name = format!("/tmp/{}.toml", rand_string);
-    println!("Test file: {}", &file_name);
+    info!("Test file: {}", &file_name);
     init(&file_name);
     save();
 

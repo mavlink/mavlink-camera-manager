@@ -191,7 +191,7 @@ mod tests {
         for camera in video_source::cameras_available() {
             if let VideoSourceType::Usb(camera) = camera {
                 let xml_string = from_video_source(&camera);
-                println!("{}", xml_string);
+                info!("{}", xml_string);
             }
         }
     }

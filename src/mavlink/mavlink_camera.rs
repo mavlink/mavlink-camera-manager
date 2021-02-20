@@ -1,3 +1,4 @@
+use log::*;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug)]
@@ -55,8 +56,7 @@ impl MavlinkCameraInformation {
         Self {
             component: Default::default(),
             mavlink_connection_string: mavlink_connection_string.into(),
-            video_stream_uri:
-                "udp://0.0.0.0:5601".into(),
+            video_stream_uri: "udp://0.0.0.0:5601".into(),
             vehicle: Arc::new(mavlink::connect(&mavlink_connection_string).unwrap()),
         }
     }
@@ -122,9 +122,9 @@ fn heartbeat_loop(
             continue;
         }
 
-        println!("send!");
+        info!("sending heartbeat");
         if let Err(error) = vehicle.as_ref().send(&header, &heartbeat_message()) {
-            eprintln!("Failed to send heartbeat: {:?}", error);
+            error!("Failed to send heartbeat: {:?}", error);
         }
     }
 }
@@ -150,51 +150,47 @@ fn receive_message_loop(
                     mavlink::common::MavMessage::COMMAND_LONG(command_long) => {
                         match command_long.command {
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_INFORMATION => {
-                                println!("Sending camera_information..");
+                                info!("Sending camera_information..");
                                 if let Err(error) = vehicle.send(&header, &camera_information()) {
-                                    println!("Failed to send camera_information: {:?}", error);
+                                    warn!("Failed to send camera_information: {:?}", error);
                                 }
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_SETTINGS => {
-                                println!("Sending camera_settings..");
+                                info!("Sending camera_settings..");
                                 if let Err(error) = vehicle.send(&header, &camera_settings()) {
-                                    println!("Failed to send camera_settings: {:?}", error);
+                                    warn!("Failed to send camera_settings: {:?}", error);
                                 }
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_STORAGE_INFORMATION => {
-                                println!("Sending camera_storage_information..");
+                                info!("Sending camera_storage_information..");
                                 if let Err(error) =
                                     vehicle.send(&header, &camera_storage_information())
                                 {
-                                    println!(
-                                        "Failed to send camera_storage_information: {:?}",
-                                        error
-                                    );
+                                    warn!("Failed to send camera_storage_information: {:?}", error);
                                 }
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_CAPTURE_STATUS => {
-                                println!("Sending camera_capture_status..");
+                                info!("Sending camera_capture_status..");
                                 if let Err(error) = vehicle.send(&header, &camera_capture_status())
                                 {
-                                    println!("Failed to send camera_capture_status: {:?}", error);
+                                    warn!("Failed to send camera_capture_status: {:?}", error);
                                 }
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION => {
-                                println!("Sending video_stream_information..");
-                                let information = mavlink_camera_information.as_ref().lock().unwrap();
+                                info!("Sending video_stream_information..");
+                                let information =
+                                    mavlink_camera_information.as_ref().lock().unwrap();
 
-                                if let Err(error) =
-                                    vehicle.send(&header, &video_stream_information(&information.video_stream_uri))
-                                {
-                                    println!(
-                                        "Failed to send video_stream_information: {:?}",
-                                        error
-                                    );
+                                if let Err(error) = vehicle.send(
+                                    &header,
+                                    &video_stream_information(&information.video_stream_uri),
+                                ) {
+                                    warn!("Failed to send video_stream_information: {:?}", error);
                                 }
                             }
                             _ => {
                                 //TODO: reworking this prints
-                                println!("Ignoring command: {:?}", command_long.command);
+                                info!("Ignoring command: {:?}", command_long.command);
                             }
                         }
                     }
@@ -203,12 +199,12 @@ fn receive_message_loop(
                     // Any other message that is not a heartbeat or command_long
                     _ => {
                         //TODO: reworking this prints
-                        println!("Ignoring: {:?}", msg);
+                        info!("Ignoring: {:?}", msg);
                     }
                 }
             }
             Err(e) => {
-                println!("recv error: {:?}", e);
+                error!("recv error: {:?}", e);
             }
         }
     }
@@ -234,7 +230,9 @@ fn camera_information() -> mavlink::common::MavMessage {
     }
 
     // Send path to our camera configuration file
-    let uri: Vec<char> = format!("{}", "http://0.0.0.0:8000/test.xml").chars().collect();
+    let uri: Vec<char> = format!("{}", "http://0.0.0.0:8000/test.xml")
+        .chars()
+        .collect();
 
     // Send fake data
     mavlink::common::MavMessage::CAMERA_INFORMATION(mavlink::common::CAMERA_INFORMATION_DATA {
