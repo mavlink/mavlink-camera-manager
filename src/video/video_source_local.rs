@@ -123,7 +123,7 @@ fn convert_v4l_framesize(frame_sizes: &Vec<v4l::FrameSize>) -> Vec<FrameSize> {
             }),
             v4l::framesize::FrameSizeEnum::Stepwise(stepwise) => {
                 warn!(
-                    "Ignoring stepwise '{:#?}' for source: {:#?}",
+                    "Ignoring stepwise '{:#?}', frame_size: {:#?}",
                     stepwise, frame_size
                 );
                 None //TODO this can be done with frame_size.size.to_discrete()
