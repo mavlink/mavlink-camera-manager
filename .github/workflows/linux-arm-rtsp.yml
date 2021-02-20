@@ -1,4 +1,4 @@
-name: Deploy RTSP ARMv7
+name: Deploy ARMv7
 
 on: [push]
 
@@ -24,15 +24,9 @@ jobs:
 
     - name: Rename
       run: |
-        cp target/release/mavlink-camera-manager mavlink-camera-manager-rtsp-server-armv7
-        cp target/release/mavlink-camera-manager-web-service mavlink-camera-manager-web-service-rtsp-server-armv7
+        cp target/release/mavlink-camera-manager mavlink-camera-manager-armv7
 
     - uses: actions/upload-artifact@master
       with:
-        name: mavlink-camera-manager-rtsp-server-armv7
-        path: mavlink-camera-manager-rtsp-server-armv7
-
-    - uses: actions/upload-artifact@master
-      with:
-        name: mavlink-camera-manager-web-service-rtsp-server-armv7
-        path: mavlink-camera-manager-web-service-rtsp-server-armv7
+        name: mavlink-camera-manager-armv7
+        path: mavlink-camera-manager-armv7
