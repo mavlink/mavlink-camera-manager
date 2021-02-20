@@ -10,9 +10,9 @@ use log::*;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct UsbBus {
-    pub domain: u8,
-    pub bus: u8,
-    pub device: u8,
+    pub domain: u32,
+    pub bus: u16,
+    pub device: u16,
     pub first_function: u8,
     pub last_function: u8,
 }
@@ -28,9 +28,11 @@ pub struct VideoSourceUsb {
 impl UsbBus {
     // https://wiki.xenproject.org/wiki/Bus:Device.Function_(BDF)_Notation
     // description should follow: <domain>:<bus>:<device>.<first_function>-<last_function>
+    // E.g: 1234:56:78.9-0, where domain, bus and device are hexadecimal
+    // `udevadm info` can also provide information about the camera
     pub fn from_str(description: &str) -> std::io::Result<Self> {
         let regex = Regex::new(
-            r"(?P<domain>\d+):(?P<bus>\d+):(?P<device>\d+).(?P<first_function>\d+)-(?P<last_function>\d+)",
+            r"(?P<domain>[0-9|a-f]+):(?P<bus>[0-9|a-f]+):(?P<device>[0-9|a-f]+).(?P<first_function>\d+)-(?P<last_function>\d+)",
         )
         .unwrap();
         if !regex.is_match(description) {
@@ -38,9 +40,9 @@ impl UsbBus {
         }
 
         let capture = regex.captures(description).unwrap();
-        let domain = capture.name("domain").unwrap().as_str().parse().unwrap();
-        let bus = capture.name("bus").unwrap().as_str().parse().unwrap();
-        let device = capture.name("device").unwrap().as_str().parse().unwrap();
+        let domain = capture.name("domain").unwrap().as_str();
+        let bus = capture.name("bus").unwrap().as_str();
+        let device = capture.name("device").unwrap().as_str();
         let first_function = capture
             .name("first_function")
             .unwrap()
@@ -55,9 +57,9 @@ impl UsbBus {
             .unwrap();
 
         return Ok(Self {
-            domain,
-            bus,
-            device,
+            domain: u32::from_str_radix(&domain, 16).unwrap(),
+            bus: u16::from_str_radix(&bus, 16).unwrap(),
+            device: u16::from_str_radix(&device, 16).unwrap(),
             first_function,
             last_function,
         });
