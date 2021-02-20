@@ -1,8 +1,5 @@
 use super::types::*;
-use super::{
-    video_source,
-    video_source::{VideoSource, VideoSourceType},
-};
+use super::{video_source, video_source::VideoSource};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]

@@ -1,49 +1,8 @@
 use super::types::*;
-use super::video_source_usb::{UsbBus, VideoSourceUsb};
+use super::video_source_usb::VideoSourceUsb;
 use super::xml;
 use serde::{Deserialize, Serialize};
 use v4l::prelude::*;
-
-#[derive(Debug, Serialize)]
-pub enum VideoSourceType {
-    Usb(VideoSourceUsb),
-}
-
-impl VideoSourceType {
-    pub fn inner(&self) -> impl VideoSource {
-        match self {
-            VideoSourceType::Usb(source) => (*source).clone(),
-            _ => unreachable!(),
-        }
-    }
-}
-
-//TODO: move types to own file
-#[derive(Debug, Serialize)]
-pub enum VideoEncodeType {
-    UNKNOWN(String),
-    H264,
-    MJPG,
-    YUYV,
-}
-
-impl VideoEncodeType {
-    pub fn from_str(fourcc: &str) -> VideoEncodeType {
-        return match fourcc {
-            "H264" => VideoEncodeType::H264,
-            "MJPG" => VideoEncodeType::MJPG,
-            "YUYV" => VideoEncodeType::YUYV,
-            _ => VideoEncodeType::UNKNOWN(fourcc.to_string()),
-        };
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub struct FrameSize {
-    pub encode: VideoEncodeType,
-    pub height: u32,
-    pub width: u32,
-}
 
 pub trait VideoSource {
     fn name(&self) -> &String;

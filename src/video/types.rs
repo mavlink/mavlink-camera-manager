@@ -1,4 +1,26 @@
+use super::video_source::VideoSource;
+use super::video_source_usb::VideoSourceUsb;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize)]
+pub enum VideoSourceType {
+    Usb(VideoSourceUsb),
+}
+
+#[derive(Debug, Serialize)]
+pub enum VideoEncodeType {
+    UNKNOWN(String),
+    H264,
+    MJPG,
+    YUYV,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FrameSize {
+    pub encode: VideoEncodeType,
+    pub height: u32,
+    pub width: u32,
+}
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Control {
@@ -13,15 +35,6 @@ pub enum ControlType {
     Bool(ControlBool),
     Slider(ControlSlider),
     Menu(ControlMenu),
-}
-
-impl Default for ControlType {
-    fn default() -> Self {
-        ControlType::Bool(ControlBool {
-            default: 0,
-            value: 0,
-        })
-    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -50,4 +63,33 @@ pub struct ControlMenu {
 pub struct ControlOption {
     pub name: String,
     pub value: i64,
+}
+
+impl VideoSourceType {
+    pub fn inner(&self) -> impl VideoSource {
+        match self {
+            VideoSourceType::Usb(source) => (*source).clone(),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl VideoEncodeType {
+    pub fn from_str(fourcc: &str) -> VideoEncodeType {
+        return match fourcc {
+            "H264" => VideoEncodeType::H264,
+            "MJPG" => VideoEncodeType::MJPG,
+            "YUYV" => VideoEncodeType::YUYV,
+            _ => VideoEncodeType::UNKNOWN(fourcc.to_string()),
+        };
+    }
+}
+
+impl Default for ControlType {
+    fn default() -> Self {
+        ControlType::Bool(ControlBool {
+            default: 0,
+            value: 0,
+        })
+    }
 }

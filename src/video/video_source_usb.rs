@@ -1,4 +1,5 @@
-use super::video_source::{FrameSize, VideoEncodeType, VideoSource, VideoSourceType};
+use super::types::{FrameSize, VideoEncodeType, VideoSourceType};
+use super::video_source::VideoSource;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use v4l::prelude::*;

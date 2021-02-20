@@ -1,4 +1,5 @@
 use crate::video;
+use crate::video::types::FrameSize;
 use actix_web::{web, HttpRequest, HttpResponse};
 use log::*;
 use serde::{Deserialize, Serialize};
@@ -13,13 +14,15 @@ pub fn root(_req: HttpRequest) -> HttpResponse {
 struct V4LCamera {
     name: String,
     camera: String,
-    resolutions: Vec<video::video_source::FrameSize>,
+    //TODO: check includes vs types
+    resolutions: Vec<FrameSize>,
     controls: Vec<video::types::Control>,
 }
 
-pub fn v4l(_req: HttpRequest) -> HttpResponse {
-    //println!("{:#?} {:#?} {:#?}", req.method(), req.app_data::<V4lControl>(), json);
-    use video::video_source::{VideoSource, VideoSourceType};
+pub fn v4l(req: HttpRequest) -> HttpResponse {
+    info!("{:#?}", req);
+    use video::types::VideoSourceType; //TODO: maybe moving to video_source?
+    use video::video_source::VideoSource;
 
     let cameras = video::video_source::cameras_available();
     let cameras: Vec<V4LCamera> = cameras
@@ -53,6 +56,7 @@ pub struct V4lControl {
 }
 
 pub fn v4l_post(req: HttpRequest, json: web::Json<V4lControl>) -> HttpResponse {
+    info!("{:#?}{:?}", req, json);
     //TODO: check all uses here in this file
     use video::video_source;
     let control = json.into_inner();
