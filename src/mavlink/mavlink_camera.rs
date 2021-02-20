@@ -37,6 +37,7 @@ pub struct MavlinkCameraHandle {
     receive_message_thread: std::thread::JoinHandle<()>,
 }
 
+// Debug definition to avoid problems with vehicle type
 impl std::fmt::Debug for MavlinkCameraInformation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MavlinkCameraInformation")
@@ -208,6 +209,7 @@ fn receive_message_loop(
                             }
                         }
                     }
+                    //TODO: Handle all necessary QGC messages to setup camera
                     // We receive a bunch of heartbeat messages, we can ignore it
                     mavlink::common::MavMessage::HEARTBEAT(_) => {}
                     // Any other message that is not a heartbeat or command_long
@@ -225,6 +227,7 @@ fn receive_message_loop(
     }
 }
 
+//TODO: finish this messages
 fn heartbeat_message() -> mavlink::common::MavMessage {
     mavlink::common::MavMessage::HEARTBEAT(mavlink::common::HEARTBEAT_DATA {
         custom_mode: 0,

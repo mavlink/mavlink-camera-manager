@@ -19,19 +19,23 @@ impl Manager<'_> {
     }
 }
 
+// Construct our manager, should be done inside main
 pub fn init() {
     MANAGER.as_ref();
 }
 
+// Check if the verbosity parameter was used
 pub fn is_verbose() -> bool {
     return MANAGER.as_ref().clap_matches.is_present("verbose");
 }
 
 #[allow(dead_code)]
+// Return the mavlink connection string
 pub fn mavlink_connection_string() -> &'static str {
     return MANAGER.as_ref().clap_matches.value_of("mavlink").unwrap();
 }
 
+// Return the desired address for the REST API
 pub fn server_address() -> &'static str {
     return MANAGER
         .as_ref()
@@ -40,15 +44,17 @@ pub fn server_address() -> &'static str {
         .unwrap();
 }
 
+// Return the command line used to start this application
 pub fn command_line_string() -> String {
     return std::env::args().collect::<Vec<String>>().join(" ");
 }
 
+// Return clap::ArgMatches struct
 pub fn matches<'a>() -> clap::ArgMatches<'a> {
     return MANAGER.as_ref().clap_matches.clone();
 }
 
-pub fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
+fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
     let matches = clap::App::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .about(env!("CARGO_PKG_DESCRIPTION"))

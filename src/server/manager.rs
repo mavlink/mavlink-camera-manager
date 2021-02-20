@@ -2,9 +2,11 @@ use super::pages;
 
 use actix_web::{rt::System, web, App, HttpServer};
 
+// Start REST API server with the desired address
 pub fn run(server_address: &str) {
     let server_address = server_address.to_string();
-    // Start thread
+
+    // Start HTTP server thread
     let _ = System::new("http-server");
     HttpServer::new(|| {
         App::new()

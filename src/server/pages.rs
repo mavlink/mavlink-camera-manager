@@ -1,22 +1,37 @@
-use crate::video::types::{Control, FrameSize, VideoSourceType};
-use crate::video::{video_source, video_source::VideoSource, xml};
+use crate::video::{
+    types::{Control, FrameSize, VideoSourceType},
+    video_source,
+    video_source::VideoSource,
+    xml,
+};
 use actix_web::{web, HttpRequest, HttpResponse};
 use log::*;
 use serde::{Deserialize, Serialize};
-
-pub fn root(_req: HttpRequest) -> HttpResponse {
-    HttpResponse::Ok()
-        .content_type("text/plain")
-        .body(format!("Hello !"))
-}
 
 #[derive(Debug, Serialize)]
 struct V4LCamera {
     name: String,
     camera: String,
-    //TODO: check includes vs types
     resolutions: Vec<FrameSize>,
     controls: Vec<Control>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct V4lControl {
+    device: String,
+    v4l_id: u64,
+    value: i64,
+}
+
+#[derive(Deserialize)]
+pub struct XmlFileRequest {
+    file: String,
+}
+
+pub fn root(_req: HttpRequest) -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/plain")
+        .body(format!("Hello !"))
 }
 
 pub fn v4l(req: HttpRequest) -> HttpResponse {
@@ -46,20 +61,10 @@ pub fn v4l(req: HttpRequest) -> HttpResponse {
         .body(serde_json::to_string_pretty(&cameras).unwrap())
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct V4lControl {
-    device: String,
-    v4l_id: u64,
-    value: i64,
-}
-
 pub fn v4l_post(req: HttpRequest, json: web::Json<V4lControl>) -> HttpResponse {
     debug!("{:#?}{:?}", req, json);
-    //TODO: check all uses here in this file
     let control = json.into_inner();
-
     let answer = video_source::set_control(&control.device, control.v4l_id, control.value);
-
     if answer.is_ok() {
         return HttpResponse::Ok().finish();
     };
@@ -67,11 +72,6 @@ pub fn v4l_post(req: HttpRequest, json: web::Json<V4lControl>) -> HttpResponse {
     return HttpResponse::NotAcceptable()
         .content_type("text/plain")
         .body(format!("{:#?}", answer.err().unwrap()));
-}
-
-#[derive(Deserialize)]
-pub struct XmlFileRequest {
-    file: String,
 }
 
 pub fn xml(web::Query(xml_file_request): web::Query<XmlFileRequest>) -> HttpResponse {

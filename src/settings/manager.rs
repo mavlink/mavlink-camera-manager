@@ -25,6 +25,20 @@ pub struct SettingsStruct {
     pub videos_configuration: Vec<VideoConfiguration>,
 }
 
+#[derive(Debug)]
+struct ManagerStruct {
+    pub file_name: String,
+    pub config: SettingsStruct,
+}
+
+struct Manager {
+    pub content: Option<ManagerStruct>,
+}
+
+lazy_static! {
+    static ref MANAGER: Arc<Mutex<Manager>> = Arc::new(Mutex::new(Manager { content: None }));
+}
+
 impl Default for SettingsStruct {
     fn default() -> Self {
         SettingsStruct {
@@ -44,20 +58,6 @@ impl Default for SettingsStruct {
     }
 }
 
-#[derive(Debug)]
-struct ManagerStruct {
-    pub file_name: String,
-    pub config: SettingsStruct,
-}
-
-struct Manager {
-    pub content: Option<ManagerStruct>,
-}
-
-lazy_static! {
-    static ref MANAGER: Arc<Mutex<Manager>> = Arc::new(Mutex::new(Manager { content: None }));
-}
-
 impl Manager {
     fn new(file_name: &str) -> ManagerStruct {
         let settings = load_settings_from_file(file_name);
@@ -75,12 +75,14 @@ impl Manager {
     }
 }
 
+// Init settings manager with the desired settings file,
+// will be created if does not exist
 pub fn init(file_name: &str) {
     let mut manager = MANAGER.as_ref().lock().unwrap();
     manager.content = Some(Manager::new(file_name));
 }
 
-pub fn load_settings_from_file(file_name: &str) -> SettingsStruct {
+fn load_settings_from_file(file_name: &str) -> SettingsStruct {
     let result = std::fs::read_to_string(file_name);
 
     debug!("loaded!");
@@ -93,7 +95,7 @@ pub fn load_settings_from_file(file_name: &str) -> SettingsStruct {
 }
 
 #[allow(dead_code)]
-pub fn load() {
+fn load() {
     let mut manager = MANAGER.as_ref().lock().unwrap();
     //TODO: deal with load problems
     if let Some(content) = &mut manager.content {
@@ -107,6 +109,7 @@ fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> std::io::
     file.write_all(value.to_string().as_bytes())
 }
 
+// Save the latest state of the settings
 pub fn save() {
     let manager = MANAGER.as_ref().lock().unwrap();
     //TODO: deal com save problems here

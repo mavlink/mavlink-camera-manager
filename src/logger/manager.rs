@@ -5,6 +5,7 @@ use crate::cli;
 use chrono;
 use env_logger::fmt::{Color, Style, StyledValue};
 
+// Change style based on the message log level
 fn colored_level<'a>(style: &'a mut Style, level: Level) -> StyledValue<'a, &'static str> {
     match level {
         Level::Trace => style.set_color(Color::Magenta).value("TRACE"),
@@ -15,6 +16,7 @@ fn colored_level<'a>(style: &'a mut Style, level: Level) -> StyledValue<'a, &'st
     }
 }
 
+// Start logger, should be done inside main
 pub fn init() {
     let default_filter = if cli::manager::is_verbose() {
         "debug"
