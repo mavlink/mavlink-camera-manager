@@ -1,5 +1,4 @@
 use clap;
-use log::*;
 use std::sync::Arc;
 
 #[derive(Debug)]
