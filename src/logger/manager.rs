@@ -44,7 +44,12 @@ pub fn init() {
         .filter_level(LevelFilter::Info)
         .init();
 
-    //TODO: add binary version and etc information
+    info!(
+        "{}-{} ({})",
+        env!("CARGO_PKG_VERSION"),
+        env!("VERGEN_GIT_SHA_SHORT"),
+        env!("VERGEN_BUILD_DATE")
+    );
     info!(
         "Starting {}",
         chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
