@@ -1,7 +1,7 @@
 use log::*;
 use std::sync::{Arc, Mutex};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MavlinkCameraComponent {
     // MAVLink specific information
     system_id: u8,
@@ -14,6 +14,7 @@ pub struct MavlinkCameraComponent {
     resolution_v: f32,
 }
 
+#[derive(Clone)]
 pub struct MavlinkCameraInformation {
     component: MavlinkCameraComponent,
     mavlink_connection_string: String,
@@ -21,7 +22,7 @@ pub struct MavlinkCameraInformation {
     vehicle: Arc<Box<dyn mavlink::MavConnection<mavlink::common::MavMessage> + Sync + Send>>,
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum ThreadState {
     DEAD,
     RUNNING,
@@ -34,6 +35,16 @@ pub struct MavlinkCameraHandle {
     thread_state: Arc<Mutex<ThreadState>>,
     heartbeat_thread: std::thread::JoinHandle<()>,
     receive_message_thread: std::thread::JoinHandle<()>,
+}
+
+impl std::fmt::Debug for MavlinkCameraInformation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MavlinkCameraInformation")
+            .field("component", &self.component)
+            .field("mavlink_connection_string", &self.mavlink_connection_string)
+            .field("video_stream_uri", &self.video_stream_uri)
+            .finish()
+    }
 }
 
 impl Default for MavlinkCameraComponent {
@@ -106,16 +117,16 @@ fn heartbeat_loop(
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let mut heartbeat_state = atomic_thread_state.as_ref().lock().unwrap();
-        if *heartbeat_state == ThreadState::ZOMBIE {
+        let mut heartbeat_state = atomic_thread_state.as_ref().lock().unwrap().clone();
+        if heartbeat_state == ThreadState::ZOMBIE {
             continue;
         }
-        if *heartbeat_state == ThreadState::DEAD {
+        if heartbeat_state == ThreadState::DEAD {
             break;
         }
 
-        if *heartbeat_state == ThreadState::RESTART {
-            *heartbeat_state = ThreadState::RUNNING;
+        if heartbeat_state == ThreadState::RESTART {
+            heartbeat_state = ThreadState::RUNNING;
             drop(heartbeat_state);
 
             std::thread::sleep(std::time::Duration::from_secs(3));
@@ -140,9 +151,8 @@ fn receive_message_loop(
 
     let vehicle = information.vehicle.clone();
     drop(information);
-
+    let vehicle = vehicle.as_ref();
     loop {
-        let vehicle = vehicle.as_ref();
         match vehicle.recv() {
             Ok((_header, msg)) => {
                 match msg {
@@ -189,8 +199,12 @@ fn receive_message_loop(
                                 }
                             }
                             _ => {
-                                //TODO: reworking this prints
-                                warn!("Ignoring command: {:?}", command_long.command);
+                                let information =
+                                    mavlink_camera_information.as_ref().lock().unwrap();
+                                warn!(
+                                    "Camera: {:#?}, ignoring command: {:#?}",
+                                    information, command_long.command
+                                );
                             }
                         }
                     }
@@ -198,13 +212,14 @@ fn receive_message_loop(
                     mavlink::common::MavMessage::HEARTBEAT(_) => {}
                     // Any other message that is not a heartbeat or command_long
                     _ => {
-                        //TODO: reworking this prints
-                        warn!("Ignoring: {:?}", msg);
+                        let information = mavlink_camera_information.as_ref().lock().unwrap();
+                        warn!("Camera: {:#?}, Ignoring: {:#?}", information, msg);
                     }
                 }
             }
-            Err(e) => {
-                error!("recv error: {:?}", e);
+            Err(error) => {
+                let information = mavlink_camera_information.as_ref().lock().unwrap();
+                error!("Camera: {:#?}, Recv error: {:#?}", information, error);
             }
         }
     }
