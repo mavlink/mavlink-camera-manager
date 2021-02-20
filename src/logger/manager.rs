@@ -40,7 +40,7 @@ pub fn init() {
         .init();
 
     info!(
-        "{}, version: {}-{}, build: ({})",
+        "{}, version: {}-{}, build date: {}",
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION"),
         env!("VERGEN_GIT_SHA_SHORT"),
