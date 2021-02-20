@@ -15,14 +15,21 @@ pub struct UsbBus {
     pub usb_port: u8,
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub struct VideoSourceUsb {
-    pub name: String,
-    pub device_path: String,
-    pub usb_bus: UsbBus,
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub enum VideoSourceLocalType {
+    Unknown(String),
+    Usb(UsbBus),
+    Isp(String),
 }
 
-impl UsbBus {
+#[derive(Clone, Debug, Serialize)]
+pub struct VideoSourceLocal {
+    pub name: String,
+    pub device_path: String,
+    pub typ: VideoSourceLocalType,
+}
+
+impl VideoSourceLocalType {
     // For PCI:
     // https://wiki.xenproject.org/wiki/Bus:Device.Function_(BDF)_Notation
     // description should follow: <domain>:<bus>:<device>.<first_function>-<last_function>
@@ -33,7 +40,25 @@ impl UsbBus {
     // the following description: usb-<unknown>z.<usb-usb_hub>.<usb_port>
     // E.g: usb-3f980000.usb-1.4, where unknown is hexadecimal
     // `udevadm info` can also provide information about the camera
-    pub fn from_str(description: &str) -> std::io::Result<Self> {
+    pub fn from_str(description: &str) -> Self {
+        let result = VideoSourceLocalType::usb_from_str(description);
+        if result.is_some() {
+            return result.unwrap();
+        }
+
+        let result = VideoSourceLocalType::isp_from_str(description);
+        if result.is_some() {
+            return result.unwrap();
+        }
+
+        warn!(
+            "Unable to identify the local camera connection type, please report the problem: {}",
+            description
+        );
+        return VideoSourceLocalType::Unknown(description.into());
+    }
+
+    fn usb_from_str(description: &str) -> Option<Self> {
         let pci_regex = Regex::new(
             r"(?P<interface>[0-9|a-f]+:[0-9|a-f]+:[0-9|a-f]+).(?P<usb_hub>\d+)-(?P<usb_port>\d+)",
         )
@@ -44,30 +69,45 @@ impl UsbBus {
 
         let capture = (|| {
             match pci_regex.captures(description) {
-                Some(capture) => return capture,
+                Some(capture) => return Some(capture),
                 _ => {}
             };
 
             match usb_regex.captures(description) {
-                Some(capture) => return capture,
+                Some(capture) => return Some(capture),
                 _ => {}
             };
 
-            panic!(
+            debug!(
                 "Description does not match both PCI and USB formats: {}",
                 description
             );
+
+            return None;
         })();
+
+        let capture = match capture {
+            Some(capture) => capture,
+            _ => return None,
+        };
 
         let interface = capture.name("interface").unwrap().as_str().parse().unwrap();
         let usb_hub = capture.name("usb_hub").unwrap().as_str().parse().unwrap();
         let usb_port = capture.name("usb_port").unwrap().as_str().parse().unwrap();
 
-        return Ok(Self {
+        return Some(VideoSourceLocalType::Usb(UsbBus {
             interface,
             usb_hub,
             usb_port,
-        });
+        }));
+    }
+
+    fn isp_from_str(description: &str) -> Option<Self> {
+        let regex = Regex::new(r"platform:(?P<device>\S+)-isp").unwrap();
+        if regex.is_match(description) {
+            return Some(VideoSourceLocalType::Isp(description.into()));
+        }
+        return None;
     }
 }
 
@@ -95,7 +135,7 @@ fn convert_v4l_framesize(frame_sizes: &Vec<v4l::FrameSize>) -> Vec<FrameSize> {
     return frame_sizes;
 }
 
-impl VideoSource for VideoSourceUsb {
+impl VideoSource for VideoSourceLocal {
     fn name(&self) -> &String {
         return &self.name;
     }
@@ -195,12 +235,12 @@ impl VideoSource for VideoSourceUsb {
                 continue;
             }
 
-            let source = VideoSourceUsb {
+            let source = VideoSourceLocal {
                 name: caps.card,
                 device_path: camera_path.clone(),
-                usb_bus: UsbBus::from_str(&caps.bus).unwrap(),
+                typ: VideoSourceLocalType::from_str(&caps.bus),
             };
-            cameras.push(VideoSourceType::Usb(source));
+            cameras.push(VideoSourceType::Local(source));
         }
 
         return cameras;
@@ -282,32 +322,42 @@ mod tests {
         let descriptions = vec![
             (
                 // Normal desktop
-                UsbBus {
+                VideoSourceLocalType::Usb(UsbBus {
                     interface: "0000:08:00".into(),
                     usb_hub: 3,
                     usb_port: 1,
-                },
+                }),
                 "usb-0000:08:00.3-1",
             ),
             (
-                // Provided by the raspberry pi
-                UsbBus {
+                // Provided by the raspberry pi with a USB camera
+                VideoSourceLocalType::Usb(UsbBus {
                     interface: "3f980000".into(),
                     usb_hub: 1,
                     usb_port: 4,
-                },
+                }),
                 "usb-3f980000.usb-1.4",
+            ),
+            (
+                // Provided by the raspberry pi with a ISP device
+                VideoSourceLocalType::Isp("platform:bcm2835-isp".into()),
+                "platform:bcm2835-isp",
+            ),
+            (
+                // Sanity test
+                VideoSourceLocalType::Unknown("potato".into()),
+                "potato",
             ),
         ];
 
         for description in descriptions {
-            assert_eq!(description.0, UsbBus::from_str(description.1).unwrap());
+            assert_eq!(description.0, VideoSourceLocalType::from_str(description.1));
         }
     }
 
     fn simple_test() {
-        for camera in VideoSourceUsb::cameras_available() {
-            if let VideoSourceType::Usb(camera) = camera {
+        for camera in VideoSourceLocal::cameras_available() {
+            if let VideoSourceType::Local(camera) = camera {
                 println!("Camera: {:#?}", camera);
                 println!("Resolutions: {:#?}", camera.resolutions());
                 println!("Controls: {:#?}", camera.controls());

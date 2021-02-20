@@ -41,7 +41,7 @@ pub fn v4l(req: HttpRequest) -> HttpResponse {
     let cameras: Vec<V4LCamera> = cameras
         .iter()
         .map(|cam| {
-            if let VideoSourceType::Usb(cam) = cam {
+            if let VideoSourceType::Local(cam) = cam {
                 return Some(V4LCamera {
                     name: cam.name().clone(),
                     camera: cam.source_string().clone(),

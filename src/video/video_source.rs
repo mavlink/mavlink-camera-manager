@@ -1,5 +1,5 @@
 use super::types::*;
-use super::video_source_usb::VideoSourceUsb;
+use super::video_source_local::VideoSourceLocal;
 
 pub trait VideoSource {
     fn name(&self) -> &String;
@@ -14,7 +14,7 @@ pub trait VideoSource {
 }
 
 pub fn cameras_available() -> Vec<VideoSourceType> {
-    return VideoSourceUsb::cameras_available();
+    return VideoSourceLocal::cameras_available();
 }
 
 pub fn set_control(source_string: &String, control_id: u64, value: i64) -> std::io::Result<()> {

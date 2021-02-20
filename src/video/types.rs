@@ -1,10 +1,10 @@
 use super::video_source::VideoSource;
-use super::video_source_usb::VideoSourceUsb;
+use super::video_source_local::VideoSourceLocal;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 pub enum VideoSourceType {
-    Usb(VideoSourceUsb),
+    Local(VideoSourceLocal),
 }
 
 #[derive(Debug, Serialize)]
@@ -68,7 +68,7 @@ pub struct ControlOption {
 impl VideoSourceType {
     pub fn inner(&self) -> impl VideoSource {
         match self {
-            VideoSourceType::Usb(source) => (*source).clone(),
+            VideoSourceType::Local(source) => (*source).clone(),
             _ => unreachable!(),
         }
     }
