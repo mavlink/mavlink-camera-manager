@@ -8,7 +8,7 @@ use v4l::video::Capture;
 use super::types::*;
 use log::*;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct UsbBus {
     pub interface: String,
     pub usb_hub: u8,
@@ -26,12 +26,12 @@ impl UsbBus {
     // For PCI:
     // https://wiki.xenproject.org/wiki/Bus:Device.Function_(BDF)_Notation
     // description should follow: <domain>:<bus>:<device>.<first_function>-<last_function>
-    // E.g: f2a4:5c:78.9-0, where domain, bus and device are hexadecimal
+    // E.g: usb-0000:08:00.3-1, where domain, bus and device are hexadecimal
     // `first_function` describes the usb HUB and `last_function` describes the USB port of that HUB
     //
     // For devices that does not have PCI, the information will come with
     // the following description: usb-<unknown>z.<usb-usb_hub>.<usb_port>
-    // E.g: usb-3f9800z.usb-1.4, where unknown is hexadecimal
+    // E.g: usb-3f980000.usb-1.4, where unknown is hexadecimal
     // `udevadm info` can also provide information about the camera
     pub fn from_str(description: &str) -> std::io::Result<Self> {
         let pci_regex = Regex::new(
@@ -39,7 +39,7 @@ impl UsbBus {
         )
         .unwrap();
         let usb_regex =
-            Regex::new(r"(?P<interface>[0-9|a-f]+)z.usb-(?P<usb_hub>\d+).(?P<usb_port>\d+)")
+            Regex::new(r"(?P<interface>[0-9|a-f]+).usb-(?P<usb_hub>\d+).(?P<usb_port>\d+)")
                 .unwrap();
 
         let capture = (|| {
@@ -277,6 +277,34 @@ mod tests {
     use super::*;
 
     #[test]
+
+    fn bus_decode() {
+        let descriptions = vec![
+            (
+                // Normal desktop
+                UsbBus {
+                    interface: "0000:08:00".into(),
+                    usb_hub: 3,
+                    usb_port: 1,
+                },
+                "usb-0000:08:00.3-1",
+            ),
+            (
+                // Provided by the raspberry pi
+                UsbBus {
+                    interface: "3f980000".into(),
+                    usb_hub: 1,
+                    usb_port: 4,
+                },
+                "usb-3f980000.usb-1.4",
+            ),
+        ];
+
+        for description in descriptions {
+            assert_eq!(description.0, UsbBus::from_str(description.1).unwrap());
+        }
+    }
+
     fn simple_test() {
         for camera in VideoSourceUsb::cameras_available() {
             if let VideoSourceType::Usb(camera) = camera {
