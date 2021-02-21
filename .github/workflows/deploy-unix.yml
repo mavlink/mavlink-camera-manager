@@ -40,5 +40,5 @@ jobs:
 
     - uses: actions/upload-artifact@master
       with:
-        name: mavlink-camera-manager-${{ matrix.TARGET }}
-        path: mavlink-camera-manager-${{ matrix.TARGET }}
+        name: mavlink-camera-manager-${{ matrix.SUFFIX }}
+        path: mavlink-camera-manager-${{ matrix.SUFFIX }}
