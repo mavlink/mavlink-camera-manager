@@ -207,7 +207,7 @@ impl VideoSource for VideoSourceLocal {
     fn cameras_available() -> Vec<VideoSourceType> {
         let cameras_path: Vec<String> = std::fs::read_dir("/dev/")
             .unwrap()
-            .map(|f| String::from(f.unwrap().path().clone().to_str().unwrap()))
+            .map(|f| String::from(f.unwrap().path().to_str().unwrap()))
             .filter(|f| f.starts_with("/dev/video"))
             .collect();
 
