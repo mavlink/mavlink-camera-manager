@@ -2,7 +2,6 @@ use log::*;
 use std::io::Write;
 
 use crate::cli;
-use chrono;
 use env_logger::fmt::{Color, Style, StyledValue};
 
 // Change style based on the message log level
