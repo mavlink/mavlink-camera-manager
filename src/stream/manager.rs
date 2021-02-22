@@ -1,7 +1,10 @@
-use super::stream_backend::StreamBackend;
-use super::types::StreamType;
+use super::types::*;
 use super::video_stream_udp::VideoStreamUdp;
+use super::{stream_backend, stream_backend::StreamBackend};
+use crate::video::types::{VideoEncodeType, VideoSourceType};
+use crate::video_stream::types::VideoAndStreamInformation;
 use std::sync::{Arc, Mutex};
+use url::Url;
 
 #[derive(Default)]
 struct Manager {
@@ -14,7 +17,32 @@ lazy_static! {
 
 // Init stream manager, should be done inside main
 pub fn init() {
-    add("videotestsrc pattern=ball ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc bitrate=5000 ! video/x-h264, profile=baseline ! rtph264pay ! udpsink host=0.0.0.0 port=5601");
+    use crate::video::{
+        types::FrameSize,
+        video_source_local::{VideoSourceLocal, VideoSourceLocalType},
+    };
+    //add("videotestsrc pattern=ball ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc bitrate=5000 ! video/x-h264, profile=baseline ! rtph264pay ! udpsink host=0.0.0.0 port=5601");
+
+    let stream = stream_backend::create_stream(&VideoAndStreamInformation {
+        name: "Test".into(),
+        stream_information: StreamInformation {
+            endpoints: vec![Url::parse("udp://0.0.0.0:5601").unwrap()],
+            frame_size: FrameSize {
+                encode: VideoEncodeType::H264,
+                height: 1080,
+                width: 1920,
+            },
+        },
+        video_source: VideoSourceType::Local(VideoSourceLocal {
+            name: "PotatoCam".into(),
+            device_path: "/dev/video0".into(),
+            typ: VideoSourceLocalType::Unknown("TestPotatoCam".into()),
+        }),
+    })
+    .unwrap();
+
+    let mut manager = MANAGER.as_ref().lock().unwrap();
+    manager.streams.push(stream);
 }
 
 // Start all streams that are not running

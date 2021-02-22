@@ -1,4 +1,5 @@
-use super::types::StreamType;
+use super::types::*;
+use super::video_stream_udp::VideoStreamUdp;
 use crate::video::types::{VideoEncodeType, VideoSourceType};
 use crate::video_stream::types::VideoAndStreamInformation;
 use log::*;
@@ -9,7 +10,8 @@ pub trait StreamBackend {
     fn start(&mut self) -> bool;
     fn stop(&mut self) -> bool;
     fn restart(&mut self);
-    fn set_pipeline_description(&mut self, description: &'static str);
+    fn set_pipeline_description(&mut self, description: &str);
+    fn pipeline(&self) -> String;
 }
 
 pub fn new(
@@ -26,6 +28,7 @@ fn check_endpoints(
 ) -> Result<(), SimpleError> {
     let encode = video_and_stream_information
         .stream_information
+        .frame_size
         .encode
         .clone();
     let endpoints = &video_and_stream_information.stream_information.endpoints;
@@ -52,6 +55,7 @@ fn check_encode(
 ) -> Result<(), SimpleError> {
     let encode = video_and_stream_information
         .stream_information
+        .frame_size
         .encode
         .clone();
 
@@ -78,6 +82,7 @@ fn check_scheme(
     let endpoints = &video_and_stream_information.stream_information.endpoints;
     let encode = video_and_stream_information
         .stream_information
+        .frame_size
         .encode
         .clone();
     let scheme = endpoints.first().unwrap().scheme();
@@ -131,7 +136,11 @@ fn check_scheme(
 pub fn create_stream(
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<StreamType, SimpleError> {
-    let encode = &video_and_stream_information.stream_information.encode;
+    let encode = video_and_stream_information
+        .stream_information
+        .frame_size
+        .encode
+        .clone();
     let endpoints = &video_and_stream_information.stream_information.endpoints;
     let frame_size = &video_and_stream_information.stream_information.frame_size;
     let video_source = &video_and_stream_information.video_source;
@@ -140,22 +149,22 @@ pub fn create_stream(
     let VideoSourceType::Local(video_source) = video_source;
     let device = &video_source.device_path;
 
-    if VideoEncodeType::H264 == *encode {
+    if VideoEncodeType::H264 == encode {
         let video_format = format!(
-            r"
-            v4l2src device={device} do-timestamp=true num-buffers=1
-            ! video/x-h264, width={width}, height={height}
-            ",
+            concat!(
+                "v4l2src device={device}",
+                " ! video/x-h264,width={width},height={height},framerate=30/1",
+            ),
             device = device,
             width = frame_size.width,
             height = frame_size.height
         );
 
-        let udp_encode = r"
-            ! h264parse
-            ! queue
-            ! rtph264pay config-interval=10 pt=96
-            ";
+        let udp_encode = concat!(
+            " ! h264parse",
+            " ! queue",
+            " ! rtph264pay config-interval=10 pt=96",
+        );
 
         let clients: Vec<String> = endpoints
             .iter()
@@ -163,20 +172,52 @@ pub fn create_stream(
             .collect();
         let clients = clients.join(",");
 
-        let udp_sink = format!(
-            r"
-            ! udpsink host=192.168.2.1 port=5600
-            ! multiudpsink clients={}
-            ",
-            clients
-        );
+        let udp_sink = format!(" ! multiudpsink clients={}", clients);
 
-        let pipeline = [&video_format, udp_encode, &udp_sink].join(" ");
-        debug!("Created pipeline: {}", pipeline);
+        let pipeline = [&video_format, udp_encode, &udp_sink].join("");
+        println!("Created pipeline: {}", pipeline);
+        let mut stream = VideoStreamUdp::default();
+        stream.set_pipeline_description(&pipeline);
+        return Ok(StreamType::UDP(stream));
     }
 
     return Err(SimpleError::new(format!(
         "Unsupported encode: {:?}",
         encode
     )));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::video::{
+        types::FrameSize,
+        video_source_local::{VideoSourceLocal, VideoSourceLocalType},
+    };
+
+    #[test]
+    fn test_udp() {
+        let result = create_stream(&VideoAndStreamInformation {
+            name: "Test".into(),
+            stream_information: StreamInformation {
+                endpoints: vec![Url::parse("udp://192.168.0.1:42").unwrap()],
+                frame_size: FrameSize {
+                    encode: VideoEncodeType::H264,
+                    height: 720,
+                    width: 1080,
+                },
+            },
+            video_source: VideoSourceType::Local(VideoSourceLocal {
+                name: "PotatoCam".into(),
+                device_path: "/dev/video42".into(),
+                typ: VideoSourceLocalType::Unknown("TestPotatoCam".into()),
+            }),
+        });
+
+        assert!(result.is_ok());
+        let result = result.unwrap();
+
+        let StreamType::UDP(video_stream_udp) = result;
+        assert_eq!(video_stream_udp.pipeline(), "v4l2src device=/dev/video42 do-timestamp=true num-buffers=1 ! video/x-h264, width=1080, height=720 ! h264parse ! queue ! rtph264pay config-interval=10 pt=96 ! multiudpsink clients=192.168.0.1:42");
+    }
 }

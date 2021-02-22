@@ -16,6 +16,7 @@ struct VideoStreamUdpState {
     pipeline: Pipeline,
 }
 
+#[derive(Debug)]
 pub struct VideoStreamUdp {
     state: Arc<Mutex<VideoStreamUdpState>>,
     thread: Option<std::thread::JoinHandle<()>>,
@@ -71,8 +72,13 @@ impl StreamBackend for VideoStreamUdp {
         unimplemented!();
     }
 
-    fn set_pipeline_description(&mut self, description: &'static str) {
-        self.state.lock().unwrap().pipeline.description = description.into();
+    fn set_pipeline_description(&mut self, description: &str) {
+        self.state.lock().unwrap().pipeline.description = description.to_string();
+    }
+
+    fn pipeline(&self) -> String {
+        let string = self.state.lock().unwrap().pipeline.description.clone();
+        return string;
     }
 }
 
