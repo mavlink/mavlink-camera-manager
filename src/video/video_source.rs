@@ -17,7 +17,7 @@ pub fn cameras_available() -> Vec<VideoSourceType> {
     return VideoSourceLocal::cameras_available();
 }
 
-pub fn set_control(source_string: &String, control_id: u64, value: i64) -> std::io::Result<()> {
+pub fn set_control(source_string: &str, control_id: u64, value: i64) -> std::io::Result<()> {
     let cameras = cameras_available();
     let camera = cameras
         .iter()
