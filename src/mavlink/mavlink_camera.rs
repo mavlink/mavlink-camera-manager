@@ -310,7 +310,7 @@ fn camera_capture_status() -> mavlink::common::MavMessage {
     )
 }
 
-fn video_stream_information(video_uri: &String) -> mavlink::common::MavMessage {
+fn video_stream_information(video_uri: &str) -> mavlink::common::MavMessage {
     let name_str = String::from("name");
     let mut name: [char; 32] = ['\0'; 32];
     for index in 0..name_str.len() as u32 {

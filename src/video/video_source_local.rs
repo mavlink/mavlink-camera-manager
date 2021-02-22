@@ -41,14 +41,12 @@ impl VideoSourceLocalType {
     // E.g: usb-3f980000.usb-1.4, where unknown is hexadecimal
     // `udevadm info` can also provide information about the camera
     pub fn from_str(description: &str) -> Self {
-        let result = VideoSourceLocalType::usb_from_str(description);
-        if result.is_some() {
-            return result.unwrap();
+        if let Some(result) = VideoSourceLocalType::usb_from_str(description) {
+            return result;
         }
 
-        let result = VideoSourceLocalType::isp_from_str(description);
-        if result.is_some() {
-            return result.unwrap();
+        if let Some(result) = VideoSourceLocalType::isp_from_str(description) {
+            return result;
         }
 
         warn!(
@@ -68,14 +66,12 @@ impl VideoSourceLocalType {
                 .unwrap();
 
         let capture = (|| {
-            match pci_regex.captures(description) {
-                Some(capture) => return Some(capture),
-                _ => {}
+            if let Some(capture) = pci_regex.captures(description) {
+                return Some(capture);
             };
 
-            match usb_regex.captures(description) {
-                Some(capture) => return Some(capture),
-                _ => {}
+            if let Some(capture) = usb_regex.captures(description) {
+                return Some(capture);
             };
 
             debug!(
