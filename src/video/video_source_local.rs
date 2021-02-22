@@ -107,7 +107,7 @@ impl VideoSourceLocalType {
     }
 }
 
-fn convert_v4l_framesize(frame_sizes: &Vec<v4l::FrameSize>) -> Vec<FrameSize> {
+fn convert_v4l_framesize(frame_sizes: &[v4l::FrameSize]) -> Vec<FrameSize> {
     let frame_sizes: Vec<FrameSize> = frame_sizes
         .iter()
         .map(|frame_size| match &frame_size.size {
