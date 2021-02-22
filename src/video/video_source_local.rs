@@ -251,9 +251,11 @@ impl VideoSource for VideoSourceLocal {
 
         let mut controls: Vec<Control> = vec![];
         for v4l_control in v4l_controls {
-            let mut control: Control = Default::default();
-            control.name = v4l_control.name;
-            control.id = v4l_control.id as u64;
+            let mut control = Control {
+                name: v4l_control.name,
+                id: v4l_control.id as u64,
+                ..Default::default()
+            };
             let value = self.control_value_by_id(v4l_control.id as u64);
             if let Err(error) = value {
                 error!(
