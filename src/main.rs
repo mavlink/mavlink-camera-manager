@@ -12,6 +12,7 @@ mod video;
 
 mod logger;
 mod master;
+mod video_stream;
 
 /**
  * Start our managers

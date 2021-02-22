@@ -7,9 +7,10 @@ pub enum VideoSourceType {
     Local(VideoSourceLocal),
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum VideoEncodeType {
     UNKNOWN(String),
+    H265,
     H264,
     MJPG,
     YUYV,
@@ -75,6 +76,7 @@ impl VideoSourceType {
 }
 
 impl VideoEncodeType {
+    //TODO: use trait fromstr, check others places
     pub fn from_str(fourcc: &str) -> VideoEncodeType {
         return match fourcc {
             "H264" => VideoEncodeType::H264,
