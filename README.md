@@ -8,6 +8,11 @@ The Mavlink Camera Manager is an extensible cross-platform camera server.
 
 It provides a RTSP service for sharing video stream and a MAVLink camera protocol compatible API to configure ground control stations (E.g: QGroundControl).
 
+# Run it
+1. Install: `gstreamer1.0-plugins-ugly gstreamer1.0-plugins-bad libgstrtspserver-1.0-0`
+2. Download
+3. Run!
+
 # How to test it
 
 ## Get video via player
