@@ -21,7 +21,6 @@ pub fn init() {
         types::FrameSize,
         video_source_local::{VideoSourceLocal, VideoSourceLocalType},
     };
-    //add("videotestsrc pattern=ball ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc bitrate=5000 ! video/x-h264, profile=baseline ! rtph264pay ! udpsink host=0.0.0.0 port=5601");
 
     let stream = stream_backend::create_stream(&VideoAndStreamInformation {
         name: "Test".into(),
