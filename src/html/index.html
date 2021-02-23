@@ -34,17 +34,21 @@
                 <div v-if="control.configuration.Bool">
                     <input
                         type="checkbox"
-                        :id="'control-checkbox-' + control.id"
-                        :name="'control-checkbox-' + control.id"
-                        :value="control.configuration.Bool.value"
-                        @change="(value) => setControl(item.camera, control.id, value)"
+                        :checked="control.configuration.Bool.value == 1"
+                        @change="(event) => setControl(item.camera, control.id, event.target.checked ? 1 : 0)"
                         >
-                    <label :for="'control-checkbox-' + control.id">On</label>
+                    <label>On</label>
                 </div>
 
                 <div v-if="control.configuration.Menu">
-                    <select>
-                        <option v-for="option in control.configuration.Menu.options" v-bind:value="option">
+                    <select
+                        @change="(event) => setControl(item.camera, control.id, event.target.value)"
+                    >
+                        <option
+                            v-for="option in control.configuration.Menu.options"
+                            v-bind:value="option.value"
+                            :selected="option.value == control.configuration.Menu.value"
+                            >
                             {{option.name}}
                         </option>
                     </select>
@@ -64,7 +68,7 @@
                     this.content = await response.json();
                 },
                 setControl: async function(camera, id, value) {
-                    console.log(`${camera} ${id}, ${value}`)
+                    console.log(`Configuring: ${camera} ${id}, ${value}`)
                     const settings = {
                         method: 'POST',
                         body: JSON.stringify({ "device": camera, "v4l_id": Number(id), "value": Number(value) }),
