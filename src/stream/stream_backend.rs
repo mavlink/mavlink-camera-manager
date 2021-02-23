@@ -218,6 +218,6 @@ mod tests {
         let result = result.unwrap();
 
         let StreamType::UDP(video_stream_udp) = result;
-        assert_eq!(video_stream_udp.pipeline(), "v4l2src device=/dev/video42 do-timestamp=true num-buffers=1 ! video/x-h264, width=1080, height=720 ! h264parse ! queue ! rtph264pay config-interval=10 pt=96 ! multiudpsink clients=192.168.0.1:42");
+        assert_eq!(video_stream_udp.pipeline(), "v4l2src device=/dev/video42 ! video/x-h264,width=1080,height=720,framerate=30/1 ! h264parse ! queue ! rtph264pay config-interval=10 pt=96 ! multiudpsink clients=192.168.0.1:42");
     }
 }
