@@ -28,10 +28,19 @@ pub struct XmlFileRequest {
     file: String,
 }
 
-pub fn root(_req: HttpRequest) -> HttpResponse {
-    HttpResponse::Ok()
-        .content_type("text/plain")
-        .body(format!("Hello !"))
+pub fn root(req: HttpRequest) -> HttpResponse {
+    let index = std::include_str!("../html/index.html");
+    let vue = std::include_str!("../html/vue.js");
+    let path = match req.match_info().query("filename") {
+        "" | "index.html" => index,
+        "vue.js" => vue,
+        something => {
+            return HttpResponse::NotFound()
+                .content_type("text/plain")
+                .body(format!("Page does not exist: {}", something));
+        }
+    };
+    HttpResponse::Ok().content_type("text/html").body(path)
 }
 
 pub fn v4l(req: HttpRequest) -> HttpResponse {
