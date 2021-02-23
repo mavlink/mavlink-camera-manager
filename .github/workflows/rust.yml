@@ -23,6 +23,6 @@ jobs:
       env:
         TOKEN: ${{ secrets.TOKEN }}
       run: |
-        cargo package
+        cargo package --no-verify
         [[ "$(git describe --tags)" =~ ^[0-9]+.[0-9]+.[0-9]+$ ]] && cargo publish --allow-dirty --token $TOKEN || echo "No tag availale for this commit."
 
