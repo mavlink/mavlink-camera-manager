@@ -217,7 +217,7 @@ impl VideoSource for VideoSourceLocal {
             let caps = camera.query_caps();
 
             if let Err(error) = caps {
-                error!(
+                debug!(
                     "Failed to capture caps for device: {} {:#?}",
                     camera_path, error
                 );
@@ -226,7 +226,7 @@ impl VideoSource for VideoSourceLocal {
             let caps = caps.unwrap();
 
             if let Err(error) = camera.format() {
-                error!(
+                debug!(
                     "Failed to capture formats for device: {}\nError: {:#?}",
                     camera_path, error
                 );
