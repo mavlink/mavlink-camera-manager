@@ -1,4 +1,4 @@
-# Mavlink Camera Manager
+# Mavlink Camera Manager [WIP for 0.3.0, check release tags]
 [![Build status](https://github.com/patrickelectric/mavlink-camera-manager/workflows/Rust/badge.svg)](https://github.com/patrickelectric/mavlink-camera-manager/actions)
 [![Cargo download](https://img.shields.io/crates/d/mavlink-camera-manager)](https://crates.io/crates/mavlink-camera-manager)
 [![Crate info](https://img.shields.io/crates/v/mavlink-camera-manager.svg)](https://crates.io/crates/mavlink-camera-manager)
