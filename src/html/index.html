@@ -1,57 +1,59 @@
 <html>
 
 <body>
-    <div id="app">
-        <div v-for="item in content">
-            <div>
-                <h3>Camera: {{ item.name }}</h3>
-            </div>
-            <div>
-                <p>Devise: {{ item.camera }}</p>
-            </div>
-
-            <div>
-                Resolution:
-                <select>
-                    <option v-for="option in item.resolutions" v-bind:value="option">
-                        {{ option.encode }} {{ option.width }}x{{ option.height }}
-                    </option>
-                </select>
-            </div>
-            <h4>
-                Controls:
-            </h4>
-            <div v-for="control in item.controls">
-                <h5>Name: {{ control.name }}</h5>
-                <div v-if="control.configuration.Slider">
-                    <v4lslider
-                        :slider="control.configuration.Slider"
-                        :name="control.id.toString()"
-                        v-on:onchange="(value) => setControl(item.camera, control.id, value)"
-                    ></v4lslider>
+    <div id="app" style="display: flex; column-gap: 1em">
+        <div style="display: flex; column-gap: 1em">
+            <div v-for="item in content">
+                <div>
+                    <h3>Camera: {{ item.name }}</h3>
+                </div>
+                <div>
+                    <p>Devise: {{ item.camera }}</p>
                 </div>
 
-                <div v-if="control.configuration.Bool">
-                    <input
-                        type="checkbox"
-                        :checked="control.configuration.Bool.value == 1"
-                        @change="(event) => setControl(item.camera, control.id, event.target.checked ? 1 : 0)"
-                        >
-                    <label>On</label>
-                </div>
-
-                <div v-if="control.configuration.Menu">
-                    <select
-                        @change="(event) => setControl(item.camera, control.id, event.target.value)"
-                    >
-                        <option
-                            v-for="option in control.configuration.Menu.options"
-                            v-bind:value="option.value"
-                            :selected="option.value == control.configuration.Menu.value"
-                            >
-                            {{option.name}}
+                <div>
+                    Resolution:
+                    <select>
+                        <option v-for="option in item.resolutions" v-bind:value="option">
+                            {{ option.encode }} {{ option.width }}x{{ option.height }}
                         </option>
                     </select>
+                </div>
+                <h4>
+                    Controls:
+                </h4>
+                <div v-for="control in item.controls">
+                    <h5>Name: {{ control.name }}</h5>
+                    <div v-if="control.configuration.Slider">
+                        <v4lslider
+                            :slider="control.configuration.Slider"
+                            :name="control.id.toString()"
+                            v-on:onchange="(value) => setControl(item.camera, control.id, value)"
+                        ></v4lslider>
+                    </div>
+
+                    <div v-if="control.configuration.Bool">
+                        <input
+                            type="checkbox"
+                            :checked="control.configuration.Bool.value == 1"
+                            @change="(event) => setControl(item.camera, control.id, event.target.checked ? 1 : 0)"
+                            >
+                        <label>On</label>
+                    </div>
+
+                    <div v-if="control.configuration.Menu">
+                        <select
+                            @change="(event) => setControl(item.camera, control.id, event.target.value)"
+                        >
+                            <option
+                                v-for="option in control.configuration.Menu.options"
+                                v-bind:value="option.value"
+                                :selected="option.value == control.configuration.Menu.value"
+                                >
+                                {{option.name}}
+                            </option>
+                        </select>
+                    </div>
                 </div>
             </div>
         </div>
