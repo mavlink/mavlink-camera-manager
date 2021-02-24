@@ -83,6 +83,15 @@ pub fn v4l_post(req: HttpRequest, json: web::Json<V4lControl>) -> HttpResponse {
         .body(format!("{:#?}", answer.err().unwrap()));
 }
 
+pub fn streams(req: HttpRequest) -> HttpResponse {
+    debug!("{:#?}", req);
+    use crate::stream::manager as stream_manager;
+    let streams = stream_manager::streams();
+    HttpResponse::Ok()
+        .content_type("text/plain")
+        .body(serde_json::to_string_pretty(&streams).unwrap())
+}
+
 pub fn xml(web::Query(xml_file_request): web::Query<XmlFileRequest>) -> HttpResponse {
     let cameras = video_source::cameras_available();
     let camera = cameras

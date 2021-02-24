@@ -1,28 +1,28 @@
 use super::types::{FrameSize, VideoEncodeType, VideoSourceType};
 use super::video_source::VideoSource;
 use regex::Regex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use v4l::prelude::*;
 use v4l::video::Capture;
 
 use super::types::*;
 use log::*;
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct UsbBus {
     pub interface: String,
     pub usb_hub: u8,
     pub usb_port: u8,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub enum VideoSourceLocalType {
     Unknown(String),
     Usb(UsbBus),
     Isp(String),
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct VideoSourceLocal {
     pub name: String,
     pub device_path: String,

@@ -1,13 +1,13 @@
 use super::video_source::VideoSource;
 use super::video_source_local::VideoSourceLocal;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum VideoSourceType {
     Local(VideoSourceLocal),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum VideoEncodeType {
     UNKNOWN(String),
     H265,
@@ -16,7 +16,7 @@ pub enum VideoEncodeType {
     YUYV,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct FrameSize {
     pub encode: VideoEncodeType,
     pub height: u32,

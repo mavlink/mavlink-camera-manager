@@ -8,7 +8,7 @@ use url::Url;
 
 #[derive(Default)]
 struct Manager {
-    pub streams: Vec<StreamType>,
+    pub streams: Vec<(StreamType, VideoAndStreamInformation)>,
 }
 
 lazy_static! {
@@ -22,7 +22,7 @@ pub fn init() {
         video_source_local::{VideoSourceLocal, VideoSourceLocalType},
     };
 
-    let stream = stream_backend::create_stream(&VideoAndStreamInformation {
+    let video_and_stream_information = VideoAndStreamInformation {
         name: "Test".into(),
         stream_information: StreamInformation {
             endpoints: vec![Url::parse("udp://0.0.0.0:5601").unwrap()],
@@ -37,17 +37,18 @@ pub fn init() {
             device_path: "/dev/video0".into(),
             typ: VideoSourceLocalType::Unknown("TestPotatoCam".into()),
         }),
-    })
-    .unwrap();
+    };
+
+    let stream = stream_backend::create_stream(&video_and_stream_information).unwrap();
 
     let mut manager = MANAGER.as_ref().lock().unwrap();
-    manager.streams.push(stream);
+    manager.streams.push((stream, video_and_stream_information));
 }
 
 // Start all streams that are not running
 pub fn start() {
     let mut manager = MANAGER.as_ref().lock().unwrap();
-    for stream in &mut manager.streams {
+    for (stream, _) in &mut manager.streams {
         match stream {
             StreamType::UDP(stream) => {
                 stream.start();
@@ -56,11 +57,27 @@ pub fn start() {
     }
 }
 
+pub fn streams() -> Vec<StreamStatus> {
+    let manager = MANAGER.as_ref().lock().unwrap();
+    let status: Vec<StreamStatus> = manager
+        .streams
+        .iter()
+        .map(|(stream, information)| StreamStatus {
+            running: stream.inner().is_running(),
+            information: information.clone(),
+        })
+        .collect();
+
+    return status;
+}
+
 //TODO: rework to use UML definition
 // Add a new pipeline string to run
+/*
 pub fn add(description: &'static str) {
     let mut stream = VideoStreamUdp::default();
     stream.set_pipeline_description(description);
     let mut manager = MANAGER.as_ref().lock().unwrap();
     manager.streams.push(StreamType::UDP(stream));
 }
+*/

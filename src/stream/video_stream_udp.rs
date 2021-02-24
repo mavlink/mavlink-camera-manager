@@ -72,6 +72,10 @@ impl StreamBackend for VideoStreamUdp {
         unimplemented!();
     }
 
+    fn is_running(&self) -> bool {
+        return self.state.lock().unwrap().run;
+    }
+
     fn set_pipeline_description(&mut self, description: &str) {
         self.state.lock().unwrap().pipeline.description = description.to_string();
     }

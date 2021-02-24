@@ -27,6 +27,7 @@ pub fn run(server_address: &str) {
             .data(web::JsonConfig::default().error_handler(json_error_handler))
             .route("/html/{filename:.*}", web::get().to(pages::root))
             .route("/xml", web::post().to(pages::xml))
+            .route("/streams", web::get().to(pages::streams))
             .route("/v4l", web::get().to(pages::v4l))
             .route("/v4l", web::post().to(pages::v4l_post))
     })
