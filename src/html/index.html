@@ -56,6 +56,27 @@
                     </div>
                 </div>
             </div>
+            <div>
+                <h3>Streams</h3>
+                <div v-for="stream in streams">
+                    <div>
+                        <h3>Name: {{ stream.information.name }}</h3>
+                    </div>
+                    <div>
+                        <p>Video: {{ stream.information.stream_information.frame_size.encode }} {{ stream.information.stream_information.frame_size.width }}x{{ stream.information.stream_information.frame_size.height }}</p>
+                    </div>
+                    <div>
+                        <p>Endpoints:</p>
+                        <div style="margin-left: 0.5em;" v-for="endpoint in stream.information.stream_information.endpoints">
+                            <p>{{ endpoint }}</p>
+                        </div>
+                    </div>
+                    <div>
+                        <p>Configuration:</p>
+                        <pre style="margin-left: 0.5em;">{{ JSON.stringify(stream.information.video_source, undefined, 2) }}</pre>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     <script src="vue.js"></script>
@@ -66,8 +87,11 @@
             },
             methods: {
                 requestData: async function() {
-                    const response = await fetch(this.restAddress);
-                    this.content = await response.json();
+                    const response_content = await fetch(this.restAddress + '/v4l');
+                    this.content = await response_content.json();
+
+                    const response_streams = await fetch(this.restAddress  + '/streams');
+                    this.streams = await response_streams.json();
                 },
                 setControl: async function(camera, id, value) {
                     console.log(`Configuring: ${camera} ${id}, ${value}`)
@@ -79,7 +103,7 @@
                             'Content-Type': 'application/json',
                         }
                     };
-                    const response = await fetch(this.restAddress, settings);
+                    const response = await fetch(this.restAddress  + '/v4l', settings);
                     if (!response.ok) {
                         console.log("Something went wrong with POST:")
                         console.log(response)
@@ -88,12 +112,14 @@
             },
             data: function() {
                 return {
+                    //TODO: Add this back
                     //location.protocol+'//'+location.hostname+(location.port ? ':'+location.port: '');
-                    "restAddress": `${location.protocol}//${location.hostname}:6020/v4l`,
+                    "restAddress": `${location.protocol}//${location.hostname}:6020`,
                     "state": {
                         "resolution": undefined,
                     },
-                    "content": []
+                    "content": [],
+                    "streams": []
                 }
             }
         });
