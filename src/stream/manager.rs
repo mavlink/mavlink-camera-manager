@@ -30,6 +30,7 @@ pub fn init() {
                 encode: VideoEncodeType::H264,
                 height: 1080,
                 width: 1920,
+                frame_rate: 30,
             },
         },
         video_source: VideoSourceType::Local(VideoSourceLocal {

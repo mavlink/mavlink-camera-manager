@@ -107,26 +107,38 @@ impl VideoSourceLocalType {
     }
 }
 
-fn convert_v4l_framesize(frame_sizes: &[v4l::FrameSize]) -> Vec<FrameSize> {
-    let frame_sizes: Vec<FrameSize> = frame_sizes
+fn convert_v4l_framesize(frame_intervals: &[v4l::FrameInterval]) -> Vec<FrameSize> {
+    let frame_sizes: Vec<FrameSize> = frame_intervals
         .iter()
-        .map(|frame_size| match &frame_size.size {
-            //TODO: Move to map_while after release
-            v4l::framesize::FrameSizeEnum::Discrete(discrete) => Some(FrameSize {
-                encode: VideoEncodeType::from_str(frame_size.fourcc.str().unwrap()),
-                height: discrete.height,
-                width: discrete.width,
-            }),
-            v4l::framesize::FrameSizeEnum::Stepwise(stepwise) => {
-                warn!(
-                    "Ignoring stepwise '{:#?}', frame_size: {:#?}",
-                    stepwise, frame_size
-                );
-                None //TODO this can be done with frame_size.size.to_discrete()
-            }
+        .map(|frame_interval| {
+            let frame_rate = match &frame_interval.interval {
+                v4l::frameinterval::FrameIntervalEnum::Discrete(fraction) => {
+                    if fraction.numerator != 1 {
+                        warn!(
+                            "Unsupported fraction frame interval: {:#?}",
+                            frame_interval.interval
+                        );
+                        0
+                    } else {
+                        fraction.denominator
+                    }
+                }
+                v4l::frameinterval::FrameIntervalEnum::Stepwise(stepwise) => {
+                    warn!(
+                        "Unsupported stepwise frame interval: {:#?}",
+                        frame_interval.interval
+                    );
+                    0
+                }
+            };
+
+            return FrameSize {
+                encode: VideoEncodeType::from_str(frame_interval.fourcc.str().unwrap()),
+                height: frame_interval.height,
+                width: frame_interval.width,
+                frame_rate,
+            };
         })
-        .take_while(|x| x.is_some())
-        .map(|x| x.unwrap())
         .collect();
     return frame_sizes;
 }
@@ -147,9 +159,15 @@ impl VideoSource for VideoSourceLocal {
 
         debug!("Checking resolutions for camera: {}", &self.device_path);
         for format in formats {
-            frame_sizes.append(&mut convert_v4l_framesize(
-                &device.enum_framesizes(format.fourcc).unwrap(),
-            ));
+            for framesizes in device.enum_framesizes(format.fourcc).unwrap() {
+                for size in framesizes.size.to_discrete() {
+                    frame_sizes.append(&mut convert_v4l_framesize(
+                        &device
+                            .enum_frameintervals(framesizes.fourcc, size.width, size.height)
+                            .unwrap(),
+                    ));
+                }
+            }
         }
 
         return frame_sizes;

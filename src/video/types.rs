@@ -21,6 +21,7 @@ pub struct FrameSize {
     pub encode: VideoEncodeType,
     pub height: u32,
     pub width: u32,
+    pub frame_rate: u32,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]

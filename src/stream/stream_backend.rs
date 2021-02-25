@@ -154,11 +154,12 @@ pub fn create_stream(
         let video_format = format!(
             concat!(
                 "v4l2src device={device}",
-                " ! video/x-h264,width={width},height={height},framerate=30/1",
+                " ! video/x-h264,width={width},height={height},framerate={framerate}/1",
             ),
             device = device,
             width = frame_size.width,
-            height = frame_size.height
+            height = frame_size.height,
+            framerate = frame_size.frame_rate
         );
 
         let udp_encode = concat!(
@@ -206,6 +207,7 @@ mod tests {
                     encode: VideoEncodeType::H264,
                     height: 720,
                     width: 1080,
+                    frame_rate: 30,
                 },
             },
             video_source: VideoSourceType::Local(VideoSourceLocal {
