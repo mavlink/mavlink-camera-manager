@@ -17,11 +17,17 @@ pub enum VideoEncodeType {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct FrameInterval {
+    pub numerator: u32,
+    pub denominator: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct FrameSize {
     pub encode: VideoEncodeType,
     pub height: u32,
     pub width: u32,
-    pub frame_rate: u32,
+    pub frame_interval: FrameInterval,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]

@@ -110,33 +110,29 @@ impl VideoSourceLocalType {
 fn convert_v4l_framesize(frame_intervals: &[v4l::FrameInterval]) -> Vec<FrameSize> {
     let frame_sizes: Vec<FrameSize> = frame_intervals
         .iter()
-        .map(|frame_interval| {
-            let frame_rate = match &frame_interval.interval {
-                v4l::frameinterval::FrameIntervalEnum::Discrete(fraction) => {
-                    if fraction.numerator != 1 {
-                        warn!(
-                            "Unsupported fraction frame interval: {:#?}",
-                            frame_interval.interval
-                        );
-                        0
-                    } else {
-                        fraction.denominator
-                    }
-                }
+        .map(|v4l_frame_interval| {
+            let frame_interval = match &v4l_frame_interval.interval {
+                v4l::frameinterval::FrameIntervalEnum::Discrete(fraction) => FrameInterval {
+                    numerator: fraction.numerator,
+                    denominator: fraction.denominator,
+                },
                 v4l::frameinterval::FrameIntervalEnum::Stepwise(stepwise) => {
                     warn!(
                         "Unsupported stepwise frame interval: {:#?}",
-                        frame_interval.interval
+                        v4l_frame_interval.interval
                     );
-                    0
+                    FrameInterval {
+                        numerator: 0,
+                        denominator: 0,
+                    }
                 }
             };
 
             return FrameSize {
-                encode: VideoEncodeType::from_str(frame_interval.fourcc.str().unwrap()),
-                height: frame_interval.height,
-                width: frame_interval.width,
-                frame_rate,
+                encode: VideoEncodeType::from_str(v4l_frame_interval.fourcc.str().unwrap()),
+                height: v4l_frame_interval.height,
+                width: v4l_frame_interval.width,
+                frame_interval,
             };
         })
         .collect();

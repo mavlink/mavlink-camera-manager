@@ -154,12 +154,13 @@ pub fn create_stream(
         let video_format = format!(
             concat!(
                 "v4l2src device={device}",
-                " ! video/x-h264,width={width},height={height},framerate={framerate}/1",
+                " ! video/x-h264,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
             ),
             device = device,
             width = frame_size.width,
             height = frame_size.height,
-            framerate = frame_size.frame_rate
+            interval_denominator = frame_size.frame_interval.denominator,
+            interval_numerator = frame_size.frame_interval.numerator,
         );
 
         let udp_encode = concat!(
@@ -193,7 +194,7 @@ pub fn create_stream(
 mod tests {
     use super::*;
     use crate::video::{
-        types::FrameSize,
+        types::{FrameInterval, FrameSize},
         video_source_local::{VideoSourceLocal, VideoSourceLocalType},
     };
 
@@ -207,7 +208,10 @@ mod tests {
                     encode: VideoEncodeType::H264,
                     height: 720,
                     width: 1080,
-                    frame_rate: 30,
+                    frame_interval: FrameInterval {
+                        numerator: 1,
+                        denominator: 30,
+                    },
                 },
             },
             video_source: VideoSourceType::Local(VideoSourceLocal {

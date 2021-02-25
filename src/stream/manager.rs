@@ -18,7 +18,7 @@ lazy_static! {
 // Init stream manager, should be done inside main
 pub fn init() {
     use crate::video::{
-        types::FrameSize,
+        types::{FrameInterval, FrameSize},
         video_source_local::{VideoSourceLocal, VideoSourceLocalType},
     };
 
@@ -30,7 +30,10 @@ pub fn init() {
                 encode: VideoEncodeType::H264,
                 height: 1080,
                 width: 1920,
-                frame_rate: 30,
+                frame_interval: FrameInterval {
+                    numerator: 1,
+                    denominator: 30,
+                },
             },
         },
         video_source: VideoSourceType::Local(VideoSourceLocal {
