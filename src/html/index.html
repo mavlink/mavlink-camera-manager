@@ -15,7 +15,7 @@
                     Resolution:
                     <select>
                         <option v-for="option in item.resolutions" v-bind:value="option">
-                            {{ option.encode }} {{ option.width }}x{{ option.height }} @ {{option.frame_rate}} FPS
+                            {{ option.encode }} {{ option.width }}x{{ option.height }} @ {{ option.frame_interval.denominator / option.frame_interval.numerator}} FPS
                         </option>
                     </select>
                 </div>
@@ -63,7 +63,7 @@
                         <h3>Name: {{ stream.information.name }}</h3>
                     </div>
                     <div>
-                        <p>Video: {{ stream.information.stream_information.frame_size.encode }} {{ stream.information.stream_information.frame_size.width }}x{{ stream.information.stream_information.frame_size.height }}</p>
+                        <p>Video: {{ stream.information.stream_information.frame_size.encode }} {{ stream.information.stream_information.frame_size.width }}x{{ stream.information.stream_information.frame_size.height }} @ {{ stream.information.stream_information.frame_size.frame_interval.denominator / stream.information.stream_information.frame_size.frame_interval.numerator}} FPS</p>
                     </div>
                     <div>
                         <p>Endpoints:</p>
