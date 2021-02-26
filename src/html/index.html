@@ -14,7 +14,7 @@
                     Configure Stream:
                 </h4>
                 <div>
-                    <streamform :camera="item"/>
+                    <streamform :camera="item" :streams="streams">
                 </div>
                 <h4>
                     Controls:
@@ -60,7 +60,7 @@
                         <h3>Name: {{ stream.information.name }}</h3>
                     </div>
                     <div>
-                        <p>Video: {{ stream.information.stream_information.frame_size.encode }} {{ stream.information.stream_information.frame_size.width }}x{{ stream.information.stream_information.frame_size.height }} @ {{ stream.information.stream_information.frame_size.frame_interval.denominator / stream.information.stream_information.frame_size.frame_interval.numerator}} FPS</p>
+                        <p>Video: {{ stream.information.stream_information.configuration.encode }} {{ stream.information.stream_information.configuration.width }}x{{ stream.information.stream_information.configuration.height }} @ {{ stream.information.stream_information.configuration.frame_interval.denominator / stream.information.stream_information.configuration.frame_interval.numerator}} FPS</p>
                     </div>
                     <div>
                         <p>Endpoints:</p>
@@ -70,7 +70,7 @@
                     </div>
                     <div>
                         <p>Configuration:</p>
-                        <pre style="margin-left: 0.5em;">{{ JSON.stringify(stream.information.video_source, undefined, 2) }}</pre>
+                        <pre style="margin-left: 0.5em;">{{ JSON.stringify(stream, undefined, 2) }}</pre>
                     </div>
                 </div>
             </div>
@@ -163,12 +163,70 @@
                     type: Object,
                     required: true
                 },
-                stream: {
+                streams: {
                     type: Object,
                     required: true
                 },
             },
+            mounted: function() {
+                this.stream_options.encoders = this.stream_options.encoders =
+                            this.camera.formats
+                                .map((format) => this.encodeToStr(format.encode))
+            },
+            watch: {
+                streams: {
+                    handler: function(streams, _) {
+                        this.stream = streams
+                            .filter((stream) => stream.information.video_source.Local.device_path == this.camera.camera)[0]
+                        if(!this.stream) {
+                            return;
+                        }
+
+                        this.stream_setting.configuration.encode = this.stream.information.stream_information.configuration.encode
+                        this.stream_setting.configuration.size = {
+                            height: this.stream.information.stream_information.configuration.height,
+                            width: this.stream.information.stream_information.configuration.width
+                        }
+                        this.stream_setting.configuration.interval = this.stream.information.stream_information.configuration.frame_interval
+                        this.stream_setting.configuration.endpoints = this.stream.information.stream_information.endpoints ?
+                            this.stream.information.stream_information.endpoints.join(", ") : ""
+                    },
+                    deep: true
+                },
+                stream_setting: {
+                    handler: function(stream_setting, _) {
+                        console.log(JSON.stringify(stream_setting, undefined, 2))
+
+                        this.stream_options.encoders =
+                            this.camera.formats
+                                .map((format) => this.encodeToStr(format.encode))
+
+                        this.stream_options.sizes =
+                            this.camera.formats
+                                .filter((format) => this.encodeToStr(format.encode) == stream_setting.configuration.encode)
+                                .map((format) => format.sizes)[0]
+                                // Sort width by preference
+                                .sort((size1, size2) => (10 * size2.width + size2.height) - (10 * size1.width + size1.height))
+
+                        console.log(this.stream_options.sizes)
+
+                        let chosen_size = stream_setting.configuration.size
+                        if(chosen_size == undefined) {
+                            return;
+                        }
+
+                        this.stream_options.intervals =
+                            this.stream_options.sizes
+                                .filter((size) => size.width == chosen_size.width && size.height == chosen_size.height)[0].intervals
+                    },
+                    deep: true
+                }
+            },
             methods: {
+                encodeToStr: function(encode) {
+                    // encode is an enum that contains the encode as string or a object that describes the encode
+                    return typeof(encode) == 'object' ? Object.values(encode)[0] : encode
+                },
                 submitForm: async function() {
                     console.log(this.stream_setting.configuration)
                     console.log(`Stream configuration: ${JSON.stringify(this.stream_setting, undefined, 2)}`)
@@ -178,9 +236,20 @@
                 return {
                     stream_setting: {
                         name: this.camera.camera + ' - ' + this.camera.name,
-                        endpoints: "udp:0.0.0.0:5600",
-                        configuration: undefined
-                    }
+                        endpoints: undefined,
+                        configuration: {
+                            encode: undefined,
+                            size: undefined,
+                            interval: undefined,
+                            endpoints: undefined
+                        }
+                    },
+                    stream_options: {
+                        encoders: undefined,
+                        sizes: undefined,
+                        intervals: undefined,
+                    },
+                    stream: undefined
                 };
             },
             template: `
@@ -197,12 +266,35 @@
                     </p>
 
                     <div>
-                        <label>Resolution: </label>
-                        <select v-model="stream_setting.configuration">
+                        <label>Encode: </label>
+                        <select v-model="stream_setting.configuration.encode">
                             <option
-                                v-for="option in camera.resolutions"
+                                v-for="encode in stream_options.encoders"
+                                :value="encode"
                             >
-                                {{ option.encode }} {{ option.width }}x{{ option.height }} @ {{ option.frame_interval.denominator / option.frame_interval.numerator}} FPS
+                                {{ encode }}
+                            </option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Size: </label>
+                        <select v-model="stream_setting.configuration.size">
+                            <option
+                                v-for="size in stream_options.sizes"
+                                v-bind:value="{width: size.width, height: size.height}"
+                            >
+                                {{ size.width }} x {{ size.height }}
+                            </option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>FPS: </label>
+                        <select v-model="stream_setting.configuration.interval">
+                            <option
+                                v-for="interval in this.stream_options.intervals"
+                                v-bind:value="interval"
+                            >
+                                {{ interval.denominator / interval.numerator }}
                             </option>
                         </select>
                     </div>
@@ -212,8 +304,7 @@
                         <input
                             type="text"
                             autocomplete="off"
-                            v-bind:value="stream_setting.endpoints"
-                            value="udp:0.0.0.0:5600"
+                            v-model="stream_setting.configuration.endpoints"
                         >
                     </p>
                     <button disabled type="button" :onclick="submitForm">Configure stream</button>
