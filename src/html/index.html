@@ -10,14 +10,11 @@
                 <div>
                     <p>Devise: {{ item.camera }}</p>
                 </div>
-
+                <h4>
+                    Configure Stream:
+                </h4>
                 <div>
-                    Resolution:
-                    <select>
-                        <option v-for="option in item.resolutions" v-bind:value="option">
-                            {{ option.encode }} {{ option.width }}x{{ option.height }} @ {{ option.frame_interval.denominator / option.frame_interval.numerator}} FPS
-                        </option>
-                    </select>
+                    <streamform :camera="item"/>
                 </div>
                 <h4>
                     Controls:
@@ -108,6 +105,11 @@
                         console.log("Something went wrong with POST:")
                         console.log(response)
                     };
+                },
+                findStream: function(camera) {
+                    for(stream of streams) {
+                        console.log(JSON.stringify(stream.information.video_source, undefined, 2))
+                    }
                 }
             },
             data: function() {
@@ -153,6 +155,70 @@
                         class='slider'>
                     <span>{{val}}</span>
                 </div>`
+        })
+
+        app.component('streamform', {
+            props: {
+                camera: {
+                    type: Object,
+                    required: true
+                },
+                stream: {
+                    type: Object,
+                    required: true
+                },
+            },
+            methods: {
+                submitForm: async function() {
+                    console.log(this.stream_setting.configuration)
+                    console.log(`Stream configuration: ${JSON.stringify(this.stream_setting, undefined, 2)}`)
+                }
+            },
+            data: function() {
+                return {
+                    stream_setting: {
+                        name: this.camera.camera + ' - ' + this.camera.name,
+                        endpoints: "udp:0.0.0.0:5600",
+                        configuration: undefined
+                    }
+                };
+            },
+            template: `
+                <form
+                >
+                    <p>
+                        <label>Name: </label>
+                        <input
+                            name="name"
+                            type="text"
+                            autocomplete="off"
+                            v-bind:value="stream_setting.name"
+                        >
+                    </p>
+
+                    <div>
+                        <label>Resolution: </label>
+                        <select v-model="stream_setting.configuration">
+                            <option
+                                v-for="option in camera.resolutions"
+                            >
+                                {{ option.encode }} {{ option.width }}x{{ option.height }} @ {{ option.frame_interval.denominator / option.frame_interval.numerator}} FPS
+                            </option>
+                        </select>
+                    </div>
+
+                    <p>
+                        <label>Endpoints: </label>
+                        <input
+                            type="text"
+                            autocomplete="off"
+                            v-bind:value="stream_setting.endpoints"
+                            value="udp:0.0.0.0:5600"
+                        >
+                    </p>
+                    <button disabled type="button" :onclick="submitForm">Configure stream</button>
+                </form>
+            `
         })
 
         app.mount("#app")
