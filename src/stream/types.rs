@@ -1,6 +1,6 @@
 use super::stream_backend::StreamBackend;
 use super::video_stream_udp::VideoStreamUdp;
-use crate::video::types::{FrameSize, VideoEncodeType};
+use crate::video::types::{CaptureConfiguration, VideoEncodeType};
 use crate::video_stream::types::VideoAndStreamInformation;
 
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ impl StreamType {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct StreamInformation {
     pub endpoints: Vec<Url>,
-    pub frame_size: FrameSize,
+    pub configuration: CaptureConfiguration,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

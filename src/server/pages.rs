@@ -1,5 +1,5 @@
 use crate::video::{
-    types::{Control, FrameSize, VideoSourceType},
+    types::{Control, Format, VideoSourceType},
     video_source,
     video_source::VideoSource,
     xml,
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 struct V4LCamera {
     name: String,
     camera: String,
-    resolutions: Vec<FrameSize>,
+    formats: Vec<Format>,
     controls: Vec<Control>,
 }
 
@@ -54,7 +54,7 @@ pub fn v4l(req: HttpRequest) -> HttpResponse {
                 return Some(V4LCamera {
                     name: cam.name().clone(),
                     camera: cam.source_string().clone(),
-                    resolutions: cam.resolutions(),
+                    formats: cam.formats(),
                     controls: cam.controls(),
                 });
             } else {

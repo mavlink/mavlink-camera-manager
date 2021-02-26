@@ -18,7 +18,7 @@ lazy_static! {
 // Init stream manager, should be done inside main
 pub fn init() {
     use crate::video::{
-        types::{FrameInterval, FrameSize},
+        types::{CaptureConfiguration, FrameInterval},
         video_source_local::{VideoSourceLocal, VideoSourceLocalType},
     };
 
@@ -26,7 +26,7 @@ pub fn init() {
         name: "Test".into(),
         stream_information: StreamInformation {
             endpoints: vec![Url::parse("udp://0.0.0.0:5601").unwrap()],
-            frame_size: FrameSize {
+            configuration: CaptureConfiguration {
                 encode: VideoEncodeType::H264,
                 height: 1080,
                 width: 1920,

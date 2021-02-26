@@ -4,7 +4,7 @@ use super::video_source_local::VideoSourceLocal;
 pub trait VideoSource {
     fn name(&self) -> &String;
     fn source_string(&self) -> &String;
-    fn resolutions(&self) -> Vec<FrameSize>;
+    fn formats(&self) -> Vec<Format>;
     fn set_control_by_name(&self, control_name: &str, value: i64) -> std::io::Result<()>;
     fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()>;
     fn control_value_by_name(&self, control_name: &str) -> std::io::Result<i64>;

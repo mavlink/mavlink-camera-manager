@@ -16,18 +16,32 @@ pub enum VideoEncodeType {
     YUYV,
 }
 
+//TODO: Move to stream
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct FrameInterval {
-    pub numerator: u32,
-    pub denominator: u32,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct FrameSize {
+pub struct CaptureConfiguration {
     pub encode: VideoEncodeType,
     pub height: u32,
     pub width: u32,
     pub frame_interval: FrameInterval,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Format {
+    pub encode: VideoEncodeType,
+    pub sizes: Vec<Size>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Size {
+    pub width: u32,
+    pub height: u32,
+    pub intervals: Vec<FrameInterval>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct FrameInterval {
+    pub numerator: u32,
+    pub denominator: u32,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]

@@ -1,4 +1,4 @@
-use super::types::{FrameSize, VideoEncodeType, VideoSourceType};
+use super::types::*;
 use super::video_source::VideoSource;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -107,36 +107,27 @@ impl VideoSourceLocalType {
     }
 }
 
-fn convert_v4l_framesize(frame_intervals: &[v4l::FrameInterval]) -> Vec<FrameSize> {
-    let frame_sizes: Vec<FrameSize> = frame_intervals
+fn convert_v4l_intervals(v4l_intervals: &[v4l::FrameInterval]) -> Vec<FrameInterval> {
+    let intervals: Vec<FrameInterval> = v4l_intervals
         .iter()
-        .map(|v4l_frame_interval| {
-            let frame_interval = match &v4l_frame_interval.interval {
-                v4l::frameinterval::FrameIntervalEnum::Discrete(fraction) => FrameInterval {
-                    numerator: fraction.numerator,
-                    denominator: fraction.denominator,
-                },
-                v4l::frameinterval::FrameIntervalEnum::Stepwise(stepwise) => {
-                    warn!(
-                        "Unsupported stepwise frame interval: {:#?}",
-                        v4l_frame_interval.interval
-                    );
-                    FrameInterval {
-                        numerator: 0,
-                        denominator: 0,
-                    }
+        .map(|v4l_interval| match &v4l_interval.interval {
+            v4l::frameinterval::FrameIntervalEnum::Discrete(fraction) => FrameInterval {
+                numerator: fraction.numerator,
+                denominator: fraction.denominator,
+            },
+            v4l::frameinterval::FrameIntervalEnum::Stepwise(stepwise) => {
+                warn!(
+                    "Unsupported stepwise frame interval: {:#?}",
+                    v4l_interval.interval
+                );
+                FrameInterval {
+                    numerator: 0,
+                    denominator: 0,
                 }
-            };
-
-            return FrameSize {
-                encode: VideoEncodeType::from_str(v4l_frame_interval.fourcc.str().unwrap()),
-                height: v4l_frame_interval.height,
-                width: v4l_frame_interval.width,
-                frame_interval,
-            };
+            }
         })
         .collect();
-    return frame_sizes;
+    return intervals;
 }
 
 impl VideoSource for VideoSourceLocal {
@@ -148,25 +139,39 @@ impl VideoSource for VideoSourceLocal {
         return &self.device_path;
     }
 
-    fn resolutions(&self) -> Vec<FrameSize> {
+    fn formats(&self) -> Vec<Format> {
         let device = Device::with_path(&self.device_path).unwrap();
-        let formats = device.enum_formats().unwrap_or_default();
-        let mut frame_sizes = vec![];
+        let v4l_formats = device.enum_formats().unwrap_or_default();
+        let mut formats = vec![];
 
         debug!("Checking resolutions for camera: {}", &self.device_path);
-        for format in formats {
-            for framesizes in device.enum_framesizes(format.fourcc).unwrap() {
-                for size in framesizes.size.to_discrete() {
-                    frame_sizes.append(&mut convert_v4l_framesize(
+        for v4l_format in v4l_formats {
+            let mut sizes = vec![];
+            for v4l_framesizes in device.enum_framesizes(v4l_format.fourcc).unwrap() {
+                for v4l_size in v4l_framesizes.size.to_discrete() {
+                    let intervals = convert_v4l_intervals(
                         &device
-                            .enum_frameintervals(framesizes.fourcc, size.width, size.height)
+                            .enum_frameintervals(
+                                v4l_framesizes.fourcc,
+                                v4l_size.width,
+                                v4l_size.height,
+                            )
                             .unwrap(),
-                    ));
+                    );
+                    sizes.push(Size {
+                        width: v4l_size.width,
+                        height: v4l_size.height,
+                        intervals,
+                    })
                 }
             }
+            formats.push(Format {
+                encode: VideoEncodeType::from_str(v4l_format.fourcc.str().unwrap()),
+                sizes,
+            });
         }
 
-        return frame_sizes;
+        return formats;
     }
 
     fn set_control_by_name(&self, _control_name: &str, _value: i64) -> std::io::Result<()> {

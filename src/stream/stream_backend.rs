@@ -29,7 +29,7 @@ fn check_endpoints(
 ) -> Result<(), SimpleError> {
     let encode = video_and_stream_information
         .stream_information
-        .frame_size
+        .configuration
         .encode
         .clone();
     let endpoints = &video_and_stream_information.stream_information.endpoints;
@@ -56,7 +56,7 @@ fn check_encode(
 ) -> Result<(), SimpleError> {
     let encode = video_and_stream_information
         .stream_information
-        .frame_size
+        .configuration
         .encode
         .clone();
 
@@ -83,7 +83,7 @@ fn check_scheme(
     let endpoints = &video_and_stream_information.stream_information.endpoints;
     let encode = video_and_stream_information
         .stream_information
-        .frame_size
+        .configuration
         .encode
         .clone();
     let scheme = endpoints.first().unwrap().scheme();
@@ -139,11 +139,13 @@ pub fn create_stream(
 ) -> Result<StreamType, SimpleError> {
     let encode = video_and_stream_information
         .stream_information
-        .frame_size
+        .configuration
         .encode
         .clone();
     let endpoints = &video_and_stream_information.stream_information.endpoints;
-    let frame_size = &video_and_stream_information.stream_information.frame_size;
+    let configuration = &video_and_stream_information
+        .stream_information
+        .configuration;
     let video_source = &video_and_stream_information.video_source;
 
     // We only support local devices for now
@@ -157,10 +159,10 @@ pub fn create_stream(
                 " ! video/x-h264,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
             ),
             device = device,
-            width = frame_size.width,
-            height = frame_size.height,
-            interval_denominator = frame_size.frame_interval.denominator,
-            interval_numerator = frame_size.frame_interval.numerator,
+            width = configuration.width,
+            height = configuration.height,
+            interval_denominator = configuration.frame_interval.denominator,
+            interval_numerator = configuration.frame_interval.numerator,
         );
 
         let udp_encode = concat!(
@@ -194,7 +196,7 @@ pub fn create_stream(
 mod tests {
     use super::*;
     use crate::video::{
-        types::{FrameInterval, FrameSize},
+        types::{CaptureConfiguration, FrameInterval},
         video_source_local::{VideoSourceLocal, VideoSourceLocalType},
     };
 
@@ -204,7 +206,7 @@ mod tests {
             name: "Test".into(),
             stream_information: StreamInformation {
                 endpoints: vec![Url::parse("udp://192.168.0.1:42").unwrap()],
-                frame_size: FrameSize {
+                frame_size: CaptureConfiguration {
                     encode: VideoEncodeType::H264,
                     height: 720,
                     width: 1080,
