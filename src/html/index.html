@@ -14,7 +14,7 @@
                     Configure Stream:
                 </h4>
                 <div>
-                    <streamform :camera="item">
+                    <streamform :camera="item" :streams="streams">
                 </div>
                 <h4>
                     Controls:
@@ -163,12 +163,10 @@
                     type: Object,
                     required: true
                 },
-                /*
-                stream: {
+                streams: {
                     type: Object,
                     required: true
                 },
-                */
             },
             mounted: function() {
                 this.stream_options.encoders = this.stream_options.encoders =
@@ -176,6 +174,13 @@
                                 .map((format) => this.encodeToStr(format.encode))
             },
             watch: {
+                streams: {
+                    handler: function(streams, _) {
+                        this.stream = streams
+                            .filter((stream) => stream.information.video_source.Local.device_path == this.camera.camera)[0]
+                    },
+                    deep: true
+                },
                 stream_setting: {
                     handler: function(stream_setting, _) {
                         console.log(JSON.stringify(stream_setting, undefined, 2))
@@ -230,7 +235,8 @@
                         encoders: undefined,
                         sizes: undefined,
                         intervals: undefined,
-                    }
+                    },
+                    stream: undefined
                 };
             },
             template: `
@@ -251,6 +257,7 @@
                         <select v-model="stream_setting.configuration.encode">
                             <option
                                 v-for="encode in stream_options.encoders"
+                                :selected="stream.information.stream_information.configuration.encode == encode"
                             >
                                 {{ encode }}
                             </option>
