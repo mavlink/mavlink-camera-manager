@@ -14,6 +14,8 @@ mod logger;
 mod master;
 mod video_stream;
 
+use log::*;
+
 /**
  * Start our managers
  */
@@ -35,7 +37,7 @@ fn main() {
 
     stream::manager::start(); //TODO: unify start and run
     let l = mavlink::mavlink_camera::MavlinkCameraHandle::new();
-    println!("verbose: {}", cli::manager::is_verbose());
+    info!("verbose: {}", cli::manager::is_verbose());
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
