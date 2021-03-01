@@ -60,7 +60,25 @@ impl Default for SettingsStruct {
 
 impl Manager {
     fn new(file_name: &str) -> ManagerStruct {
-        let settings = load_settings_from_file(file_name);
+        use directories::ProjectDirs;
+        use std::path::Path;
+
+        let file_name = if !Path::new(file_name).is_absolute() {
+            match ProjectDirs::from("com", "Blue Robotics", env!("CARGO_PKG_NAME")) {
+                Some(project) => Path::new(project.config_dir())
+                    .join(file_name)
+                    .to_str()
+                    .expect("Failed to create settings path.")
+                    .to_string(),
+                None => panic!("Failed to find user settings path."),
+            }
+        } else {
+            file_name.into()
+        };
+
+        debug!("Using settings file: {}", &file_name);
+
+        let settings = load_settings_from_file(&file_name);
 
         let settings = ManagerStruct {
             file_name: file_name.to_string(),
@@ -77,8 +95,9 @@ impl Manager {
 
 // Init settings manager with the desired settings file,
 // will be created if does not exist
-pub fn init(file_name: &str) {
+pub fn init(file_name: Option<&str>) {
     let mut manager = MANAGER.as_ref().lock().unwrap();
+    let file_name = file_name.unwrap_or("settings.toml");
     manager.content = Some(Manager::new(file_name));
 }
 
@@ -94,6 +113,7 @@ fn load_settings_from_file(file_name: &str) -> SettingsStruct {
         .unwrap_or_else(|_error| SettingsStruct::default());
 }
 
+//TODO: remove allow dead code
 #[allow(dead_code)]
 fn load() {
     let mut manager = MANAGER.as_ref().lock().unwrap();
@@ -137,7 +157,7 @@ fn simple_test() {
 
     let file_name = format!("/tmp/{}.toml", rand_string);
     println!("Test file: {}", &file_name);
-    init(&file_name);
+    init(Some(&file_name));
     save();
 
     let settings = Manager::new(&file_name);
