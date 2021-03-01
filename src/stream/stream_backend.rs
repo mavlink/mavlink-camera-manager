@@ -206,7 +206,7 @@ mod tests {
             name: "Test".into(),
             stream_information: StreamInformation {
                 endpoints: vec![Url::parse("udp://192.168.0.1:42").unwrap()],
-                frame_size: CaptureConfiguration {
+                configuration: CaptureConfiguration {
                     encode: VideoEncodeType::H264,
                     height: 720,
                     width: 1080,
