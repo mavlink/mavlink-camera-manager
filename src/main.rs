@@ -4,14 +4,13 @@ extern crate log;
 extern crate simple_error;
 
 mod cli;
+mod logger;
+mod master;
 mod mavlink;
 mod server;
 mod settings;
 mod stream;
 mod video;
-
-mod logger;
-mod master;
 mod video_stream;
 
 use log::*;
