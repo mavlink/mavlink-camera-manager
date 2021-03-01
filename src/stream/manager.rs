@@ -1,8 +1,12 @@
 use super::types::*;
 use super::video_stream_udp::VideoStreamUdp;
 use super::{stream_backend, stream_backend::StreamBackend};
-use crate::video::types::{VideoEncodeType, VideoSourceType};
+use crate::video::{
+    types::{VideoEncodeType, VideoSourceType},
+    video_source,
+};
 use crate::video_stream::types::VideoAndStreamInformation;
+use log::*;
 use std::sync::{Arc, Mutex};
 use url::Url;
 
@@ -19,7 +23,35 @@ lazy_static! {
 pub fn init() {
     use crate::video::{
         types::{CaptureConfiguration, FrameInterval},
-        video_source_local::{VideoSourceLocal, VideoSourceLocalType},
+        video_source_local::{UsbBus, VideoSourceLocal, VideoSourceLocalType},
+    };
+
+    // Find camera based on the usb configuration
+    let cameras = video_source::cameras_available();
+    let camera: Option<VideoSourceType> = cameras
+        .into_iter()
+        .filter(|camera| match camera {
+            VideoSourceType::Local(camera) => match &camera.typ {
+                VideoSourceLocalType::Usb(usb) => {
+                    *usb == UsbBus {
+                        interface: "0000:08:00".into(),
+                        usb_hub: 3,
+                        usb_port: 1,
+                    }
+                }
+                _ => false,
+            },
+            _ => false,
+        })
+        .next();
+
+    let camera = match camera {
+        Some(camera) => camera,
+        None => VideoSourceType::Local(VideoSourceLocal {
+            name: "PotatoCam".into(),
+            device_path: "/dev/video0".into(),
+            typ: VideoSourceLocalType::Unknown("TestPotatoCam".into()),
+        }),
     };
 
     let video_and_stream_information = VideoAndStreamInformation {
@@ -36,11 +68,7 @@ pub fn init() {
                 },
             },
         },
-        video_source: VideoSourceType::Local(VideoSourceLocal {
-            name: "PotatoCam".into(),
-            device_path: "/dev/video0".into(),
-            typ: VideoSourceLocalType::Unknown("TestPotatoCam".into()),
-        }),
+        video_source: camera,
     };
 
     let stream = stream_backend::create_stream(&video_and_stream_information).unwrap();
