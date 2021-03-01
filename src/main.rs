@@ -24,8 +24,6 @@ pub fn let_there_be_light() {
     cli::manager::init();
     // Logger should start before everything else to register any log information
     logger::manager::init();
-
-    settings::manager::init("/tmp/potato.toml");
     stream::manager::init();
     server::manager::run(cli::manager::server_address());
 }
