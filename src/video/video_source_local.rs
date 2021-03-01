@@ -378,7 +378,7 @@ mod tests {
         for camera in VideoSourceLocal::cameras_available() {
             if let VideoSourceType::Local(camera) = camera {
                 println!("Camera: {:#?}", camera);
-                println!("Resolutions: {:#?}", camera.resolutions());
+                println!("Resolutions: {:#?}", camera.formats());
                 println!("Controls: {:#?}", camera.controls());
             }
         }
