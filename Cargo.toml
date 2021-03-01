@@ -36,10 +36,12 @@ chrono = "0.4.19"
 env_logger = "0.8.3"
 lazy_static = "1.4.0"
 log = "0.4"
+#TODO: Replace it with yaserde
 quick-xml = {version = "0.21", features = ["serialize"]}
 simple-error = "0.2"
 url = {version = "2", features = ["serde"]}
 v4l = "0.12.0"
+directories = "3.0.1"
 
 ## Mavlink
 mavlink = {version = "0.8.6", features = ["default", "emit-extensions"]}
