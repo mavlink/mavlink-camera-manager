@@ -1,9 +1,15 @@
-use toml;
-
 use log::*;
 use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 use std::sync::{Arc, Mutex};
+use url::Url;
+
+use crate::stream::types::*;
+use crate::video::{
+    types::*,
+    video_source_local::{UsbBus, VideoSourceLocal, VideoSourceLocalType},
+};
+use crate::video_stream::types::VideoAndStreamInformation;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct HeaderSettingsFile {
@@ -12,17 +18,10 @@ pub struct HeaderSettingsFile {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct VideoConfiguration {
-    pub device: Option<String>,
-    pub pipeline: Option<String>,
-    pub endpoints: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SettingsStruct {
     pub header: HeaderSettingsFile,
     pub mavlink_endpoint: String,
-    pub videos_configuration: Vec<VideoConfiguration>,
+    pub streams: Vec<VideoAndStreamInformation>,
 }
 
 #[derive(Debug)]
@@ -47,13 +46,30 @@ impl Default for SettingsStruct {
                 version: 0,
             },
             mavlink_endpoint: "udpout:0.0.0.0:14550".to_string(),
-            videos_configuration: vec![
-                VideoConfiguration {
-                    device: None,
-                    pipeline: Some("videotestsrc pattern=snow ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc bitrate=5000 ! video/x-h264, profile=baseline ! rtph264pay ! udpsink host=0.0.0.0 port=5600".to_string()),
-                    endpoints: vec!["udp://0.0.0.0:5600".to_string()],
-                }
-            ],
+            streams: vec![VideoAndStreamInformation {
+                name: "Test".into(),
+                stream_information: StreamInformation {
+                    endpoints: vec![Url::parse("udp://0.0.0.0:5601").unwrap()],
+                    configuration: CaptureConfiguration {
+                        encode: VideoEncodeType::H264,
+                        height: 720,
+                        width: 1080,
+                        frame_interval: FrameInterval {
+                            numerator: 1,
+                            denominator: 30,
+                        },
+                    },
+                },
+                video_source: VideoSourceType::Local(VideoSourceLocal {
+                    name: "Camera Manager Default Camera".into(),
+                    device_path: "/dev/video0".into(),
+                    typ: VideoSourceLocalType::Usb(UsbBus {
+                        interface: "0000:08:00".into(),
+                        usb_hub: 3,
+                        usb_port: 1,
+                    }),
+                }),
+            }],
         }
     }
 }
@@ -97,7 +113,7 @@ impl Manager {
 // will be created if does not exist
 pub fn init(file_name: Option<&str>) {
     let mut manager = MANAGER.as_ref().lock().unwrap();
-    let file_name = file_name.unwrap_or("settings.toml");
+    let file_name = file_name.unwrap_or("settings.json");
     manager.content = Some(Manager::new(file_name));
 }
 
@@ -109,7 +125,7 @@ fn load_settings_from_file(file_name: &str) -> SettingsStruct {
         return SettingsStruct::default();
     };
 
-    return toml::from_str(&result.unwrap().as_str())
+    return serde_json::from_str(&result.unwrap().as_str())
         .unwrap_or_else(|_error| SettingsStruct::default());
 }
 
@@ -125,7 +141,8 @@ fn load() {
 
 fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> std::io::Result<()> {
     let mut file = std::fs::File::create(file_name)?;
-    let value = toml::Value::try_from(content).unwrap();
+    println!("content: {:#?}", content);
+    let value = serde_json::to_string_pretty(content).unwrap();
     file.write_all(value.to_string().as_bytes())
 }
 
@@ -155,7 +172,7 @@ fn simple_test() {
         .map(char::from)
         .collect();
 
-    let file_name = format!("/tmp/{}.toml", rand_string);
+    let file_name = format!("/tmp/{}.json", rand_string);
     println!("Test file: {}", &file_name);
     init(Some(&file_name));
     save();
