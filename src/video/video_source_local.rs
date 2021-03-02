@@ -374,6 +374,10 @@ impl VideoSource for VideoSourceLocal {
         }
         return controls;
     }
+
+    fn is_valid(&self) -> bool {
+        return !self.device_path.is_empty();
+    }
 }
 
 #[cfg(test)]

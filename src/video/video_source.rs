@@ -11,6 +11,7 @@ pub trait VideoSource {
     fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64>;
     fn cameras_available() -> Vec<VideoSourceType>;
     fn controls(&self) -> Vec<Control>;
+    fn is_valid(&self) -> bool;
 }
 
 pub fn cameras_available() -> Vec<VideoSourceType> {
