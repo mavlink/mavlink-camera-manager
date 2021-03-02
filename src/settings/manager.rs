@@ -136,6 +136,8 @@ fn load() {
     //TODO: deal with load problems
     if let Some(content) = &mut manager.content {
         content.config = load_settings_from_file(&content.file_name);
+    } else {
+        error!("Failed to load settings!");
     }
 }
 
