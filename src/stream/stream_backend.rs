@@ -180,7 +180,7 @@ pub fn create_stream(
         let udp_sink = format!(" ! multiudpsink clients={}", clients);
 
         let pipeline = [&video_format, udp_encode, &udp_sink].join("");
-        println!("Created pipeline: {}", pipeline);
+        info!("Created pipeline: {}", pipeline);
         let mut stream = VideoStreamUdp::default();
         stream.set_pipeline_description(&pipeline);
         return Ok(StreamType::UDP(stream));
