@@ -245,10 +245,12 @@ impl VideoSource for VideoSourceLocal {
             let caps = caps.unwrap();
 
             if let Err(error) = camera.format() {
-                debug!(
-                    "Failed to capture formats for device: {}\nError: {:#?}",
-                    camera_path, error
-                );
+                if error.kind() != std::io::ErrorKind::InvalidInput {
+                    debug!(
+                        "Failed to capture formats for device: {}\nError: {:#?}",
+                        camera_path, error
+                    );
+                }
                 continue;
             }
 
