@@ -164,6 +164,12 @@ pub fn save() {
     }
 }
 
+pub fn streams() -> Vec<VideoAndStreamInformation> {
+    let manager = MANAGER.as_ref().lock().unwrap();
+    let content = manager.content.as_ref();
+    return content.unwrap().config.streams.clone();
+}
+
 #[test]
 fn simple_test() {
     use rand::Rng;
