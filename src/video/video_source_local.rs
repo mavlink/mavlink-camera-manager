@@ -1,5 +1,5 @@
 use super::types::*;
-use super::video_source::VideoSource;
+use super::{video_source, video_source::VideoSource};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use v4l::prelude::*;
@@ -105,6 +105,48 @@ impl VideoSourceLocalType {
             return Some(VideoSourceLocalType::Isp(description.into()));
         }
         return None;
+    }
+}
+
+impl VideoSourceLocal {
+    pub fn update_device(&mut self) -> bool {
+        if let VideoSourceLocalType::Usb(our_usb_bus) = &self.typ {
+            let cameras = video_source::cameras_available();
+            let camera: Option<VideoSourceType> = cameras
+                .into_iter()
+                .filter(|camera| match camera {
+                    VideoSourceType::Local(camera) => match &camera.typ {
+                        VideoSourceLocalType::Usb(usb_bus) => *usb_bus == *our_usb_bus,
+                        _ => false,
+                    },
+                    _ => false,
+                })
+                .next();
+
+            match camera {
+                None => {
+                    error!("Failed to find camera: {:#?}", self);
+                    error!("Camera will be set as invalid.");
+                    self.device_path = "".into();
+                    return false;
+                }
+                Some(camera) => {
+                    if let VideoSourceType::Local(camera) = camera {
+                        if camera.device_path == self.device_path {
+                            return true;
+                        }
+
+                        info!("Camera path changed.");
+                        info!("Previous camera location: {:#?}", self);
+                        info!("New camera location: {:#?}", camera);
+                        *self = camera.clone();
+                        return true;
+                    }
+                    unreachable!();
+                }
+            }
+        }
+        return true;
     }
 }
 
