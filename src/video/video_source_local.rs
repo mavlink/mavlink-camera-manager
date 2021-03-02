@@ -26,6 +26,7 @@ pub enum VideoSourceLocalType {
 pub struct VideoSourceLocal {
     pub name: String,
     pub device_path: String,
+    #[serde(rename = "type")]
     pub typ: VideoSourceLocalType,
 }
 
