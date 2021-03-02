@@ -57,14 +57,14 @@
                 <h3>Streams</h3>
                 <div v-for="stream in streams">
                     <div>
-                        <h3>Name: {{ stream.information.name }}</h3>
+                        <h3>Name: {{ stream.video_and_stream.name }}</h3>
                     </div>
                     <div>
-                        <p>Video: {{ stream.information.stream_information.configuration.encode }} {{ stream.information.stream_information.configuration.width }}x{{ stream.information.stream_information.configuration.height }} @ {{ stream.information.stream_information.configuration.frame_interval.denominator / stream.information.stream_information.configuration.frame_interval.numerator}} FPS</p>
+                        <p>Video: {{ stream.video_and_stream.stream_information.configuration.encode }} {{ stream.video_and_stream.stream_information.configuration.width }}x{{ stream.video_and_stream.stream_information.configuration.height }} @ {{ stream.video_and_stream.stream_information.configuration.frame_interval.denominator / stream.video_and_stream.stream_information.configuration.frame_interval.numerator}} FPS</p>
                     </div>
                     <div>
                         <p>Endpoints:</p>
-                        <div style="margin-left: 0.5em;" v-for="endpoint in stream.information.stream_information.endpoints">
+                        <div style="margin-left: 0.5em;" v-for="endpoint in stream.video_and_stream.stream_information.endpoints">
                             <p>{{ endpoint }}</p>
                         </div>
                     </div>
@@ -108,7 +108,7 @@
                 },
                 findStream: function(camera) {
                     for(stream of streams) {
-                        console.log(JSON.stringify(stream.information.video_source, undefined, 2))
+                        console.log(JSON.stringify(stream.video_and_stream.video_source, undefined, 2))
                     }
                 }
             },
@@ -177,19 +177,19 @@
                 streams: {
                     handler: function(streams, _) {
                         this.stream = streams
-                            .filter((stream) => stream.information.video_source.Local.device_path == this.camera.camera)[0]
+                            .filter((stream) => stream.video_and_stream.video_source.Local.device_path == this.camera.camera)[0]
                         if(!this.stream) {
                             return;
                         }
 
-                        this.stream_setting.configuration.encode = this.stream.information.stream_information.configuration.encode
+                        this.stream_setting.configuration.encode = this.stream.video_and_stream.stream_information.configuration.encode
                         this.stream_setting.configuration.size = {
-                            height: this.stream.information.stream_information.configuration.height,
-                            width: this.stream.information.stream_information.configuration.width
+                            height: this.stream.video_and_stream.stream_information.configuration.height,
+                            width: this.stream.video_and_stream.stream_information.configuration.width
                         }
-                        this.stream_setting.configuration.interval = this.stream.information.stream_information.configuration.frame_interval
-                        this.stream_setting.configuration.endpoints = this.stream.information.stream_information.endpoints ?
-                            this.stream.information.stream_information.endpoints.join(", ") : ""
+                        this.stream_setting.configuration.interval = this.stream.video_and_stream.stream_information.configuration.frame_interval
+                        this.stream_setting.configuration.endpoints = this.stream.video_and_stream.stream_information.endpoints ?
+                            this.stream.video_and_stream.stream_information.endpoints.join(", ") : ""
                     },
                     deep: true
                 },
