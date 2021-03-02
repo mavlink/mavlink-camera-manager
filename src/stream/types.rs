@@ -28,5 +28,5 @@ pub struct StreamInformation {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StreamStatus {
     pub running: bool,
-    pub information: VideoAndStreamInformation,
+    pub video_and_stream: VideoAndStreamInformation,
 }

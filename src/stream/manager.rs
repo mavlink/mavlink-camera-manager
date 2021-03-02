@@ -94,9 +94,9 @@ pub fn streams() -> Vec<StreamStatus> {
     let status: Vec<StreamStatus> = manager
         .streams
         .iter()
-        .map(|(stream, information)| StreamStatus {
+        .map(|(stream, video_and_stream)| StreamStatus {
             running: stream.inner().is_running(),
-            information: information.clone(),
+            video_and_stream: video_and_stream.clone(),
         })
         .collect();
 
