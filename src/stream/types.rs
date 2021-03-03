@@ -19,7 +19,7 @@ impl StreamType {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct StreamInformation {
     pub endpoints: Vec<Url>,
     pub configuration: CaptureConfiguration,

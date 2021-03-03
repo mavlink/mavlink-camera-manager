@@ -22,7 +22,7 @@ pub enum VideoSourceLocalType {
     Isp(String),
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct VideoSourceLocal {
     pub name: String,
     pub device_path: String,

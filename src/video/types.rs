@@ -2,7 +2,7 @@ use super::video_source::VideoSource;
 use super::video_source_local::VideoSourceLocal;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum VideoSourceType {
     Local(VideoSourceLocal),
 }
@@ -17,7 +17,7 @@ pub enum VideoEncodeType {
 }
 
 //TODO: Move to stream
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct CaptureConfiguration {
     pub encode: VideoEncodeType,
     pub height: u32,
@@ -38,7 +38,7 @@ pub struct Size {
     pub intervals: Vec<FrameInterval>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct FrameInterval {
     pub numerator: u32,
     pub denominator: u32,

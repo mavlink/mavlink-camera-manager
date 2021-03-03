@@ -4,7 +4,7 @@ use crate::video::types::VideoSourceType;
 use serde::{Deserialize, Serialize};
 
 //TODO: move to stream ?
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct VideoAndStreamInformation {
     pub name: String,
     pub stream_information: StreamInformation,
