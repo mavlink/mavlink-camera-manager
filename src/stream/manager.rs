@@ -7,6 +7,7 @@ use crate::video::{
 };
 use crate::video_stream::types::VideoAndStreamInformation;
 use log::*;
+use simple_error::SimpleError;
 use std::sync::{Arc, Mutex};
 use url::Url;
 
@@ -101,6 +102,16 @@ pub fn streams() -> Vec<StreamStatus> {
         .collect();
 
     return status;
+}
+
+pub fn add_stream_and_start(
+    video_and_stream_information: VideoAndStreamInformation,
+) -> Result<(), SimpleError> {
+    let mut manager = MANAGER.as_ref().lock().unwrap();
+    let mut stream = stream_backend::create_stream(&video_and_stream_information)?;
+    stream.mut_inner().start();
+    manager.streams.push((stream, video_and_stream_information));
+    return Ok(());
 }
 
 //TODO: rework to use UML definition
