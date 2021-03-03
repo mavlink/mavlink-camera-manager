@@ -207,23 +207,60 @@ pub fn set_streams(streams: &mut Vec<VideoAndStreamInformation>) {
     save();
 }
 
-#[test]
-fn simple_test() {
-    use rand::Rng;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let rand_string: String = rand::thread_rng()
-        .sample_iter(&rand::distributions::Alphanumeric)
-        .take(30)
-        .map(char::from)
-        .collect();
+    fn generate_random_settings_file_name() -> String {
+        use rand::Rng;
 
-    let file_name = format!("/tmp/{}.json", rand_string);
-    println!("Test file: {}", &file_name);
-    init(Some(&file_name));
-    save();
+        let rand_string: String = rand::thread_rng()
+            .sample_iter(&rand::distributions::Alphanumeric)
+            .take(30)
+            .map(char::from)
+            .collect();
 
-    let settings = Manager::new(&file_name);
-    assert_eq!(settings.config.header.name, "Camera Manager".to_string());
+        return format!("/tmp/{}.json", rand_string);
+    }
 
-    //TODO Add write/read test
+    #[test]
+    fn test_store() {
+        init(Some(&generate_random_settings_file_name()));
+
+        let header = header();
+        assert_eq!(header.name, "Camera Manager".to_string());
+
+        let fake_mavlink_endpoint = "tcp:potatohost:42";
+        set_mavlink_endpoint(fake_mavlink_endpoint);
+        assert_eq!(mavlink_endpoint(), fake_mavlink_endpoint);
+
+        let mut fake_streams = vec![VideoAndStreamInformation {
+            name: "PotatoTestStream".into(),
+            stream_information: StreamInformation {
+                endpoints: vec![Url::parse("udp://potatohost:4242").unwrap()],
+                configuration: CaptureConfiguration {
+                    encode: VideoEncodeType::H264,
+                    height: 666,
+                    width: 444,
+                    frame_interval: FrameInterval {
+                        numerator: 17,
+                        denominator: 47,
+                    },
+                },
+            },
+            video_source: VideoSourceType::Local(VideoSourceLocal {
+                name: "Fale Potato Test Video Source Camera".into(),
+                device_path: "/dev/potatovideo".into(),
+                typ: VideoSourceLocalType::Usb(UsbBus {
+                    interface: "0420:08:47".into(),
+                    usb_hub: 42,
+                    usb_port: 77,
+                }),
+            }),
+        }];
+        set_streams(&mut fake_streams.clone());
+        assert_eq!(streams(), fake_streams);
+
+        save();
+    }
 }
