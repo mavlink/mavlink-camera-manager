@@ -20,7 +20,7 @@ pub struct HeaderSettingsFile {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SettingsStruct {
     pub header: HeaderSettingsFile,
-    pub mavlink_endpoint: String,
+    pub mavlink_endpoint: String, //TODO: Move to URL
     pub streams: Vec<VideoAndStreamInformation>,
 }
 
