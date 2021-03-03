@@ -170,6 +170,17 @@ pub fn streams() -> Vec<VideoAndStreamInformation> {
     return content.unwrap().config.streams.clone();
 }
 
+pub fn set_streams(streams: &mut Vec<VideoAndStreamInformation>) {
+    // Take care of scope mutex
+    {
+        let mut manager = MANAGER.lock().unwrap();
+        let mut content = manager.content.as_mut();
+        content.as_mut().unwrap().config.streams.clear();
+        content.as_mut().unwrap().config.streams.append(streams);
+    }
+    save();
+}
+
 #[test]
 fn simple_test() {
     use rand::Rng;
