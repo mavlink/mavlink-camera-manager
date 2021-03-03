@@ -25,7 +25,10 @@ pub fn let_there_be_light() {
     // Logger should start before everything else to register any log information
     logger::manager::init();
     stream::manager::init();
+    settings::manager::init(None);
+    settings::manager::set_mavlink_endpoint(cli::manager::mavlink_connection_string());
     server::manager::run(cli::manager::server_address());
+    mavlink::mavlink_camera::MavlinkCameraHandle::new();
 }
 
 fn main() {
@@ -33,9 +36,6 @@ fn main() {
 
     master::run();
 
-    stream::manager::start(); //TODO: unify start and run
-    let l = mavlink::mavlink_camera::MavlinkCameraHandle::new();
-    info!("verbose: {}", cli::manager::is_verbose());
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
