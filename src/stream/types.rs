@@ -17,6 +17,12 @@ impl StreamType {
             StreamType::UDP(backend) => backend,
         }
     }
+
+    pub fn mut_inner(&mut self) -> &mut (dyn StreamBackend + '_) {
+        match self {
+            StreamType::UDP(backend) => backend,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
