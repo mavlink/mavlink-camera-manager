@@ -227,6 +227,45 @@ fn receive_message_loop(
     }
 }
 
+#[derive(Debug)]
+struct SysInfo {
+    time_boot_ms: u32,
+    total_capacity: f32,
+    used_capacity: f32,
+    available_capacity: f32,
+}
+
+fn sys_info() -> SysInfo {
+    let mut total_capacity_KB = 0;
+    let mut available_capacity_KB = 0;
+
+    match sys_info::disk_info() {
+        Ok(disk_info) => {
+            available_capacity_KB = disk_info.free;
+            total_capacity_KB = disk_info.total;
+        }
+
+        Err(error) => {
+            warn!("Failed to fetch disk info: {:#?}", error);
+        }
+    }
+
+    let mut boottime_ms = match sys_info::boottime() {
+        Ok(bootime) => bootime.tv_usec / 1000,
+        Err(error) => {
+            warn!("Failed to fetch boottime info: {:#?}", error);
+            0
+        }
+    };
+
+    return SysInfo {
+        time_boot_ms: boottime_ms as u32,
+        total_capacity: total_capacity_KB as f32 / f32::powf(2.0, 10.0),
+        used_capacity: ((total_capacity_KB - available_capacity_KB) as f32) / f32::powf(2.0, 10.0),
+        available_capacity: available_capacity_KB as f32 / f32::powf(2.0, 10.0),
+    };
+}
+
 //TODO: finish this messages
 fn heartbeat_message() -> mavlink::common::MavMessage {
     mavlink::common::MavMessage::HEARTBEAT(mavlink::common::HEARTBEAT_DATA {
@@ -252,9 +291,10 @@ fn camera_information() -> mavlink::common::MavMessage {
         .chars()
         .collect();
 
-    // Send fake data
+    let sys_info = sys_info();
+
     mavlink::common::MavMessage::CAMERA_INFORMATION(mavlink::common::CAMERA_INFORMATION_DATA {
-        time_boot_ms: 0,
+        time_boot_ms: sys_info.time_boot_ms,
         firmware_version: 0,
         focal_length: 0.0,
         sensor_size_h: 0.0,
@@ -271,9 +311,10 @@ fn camera_information() -> mavlink::common::MavMessage {
 }
 
 fn camera_settings() -> mavlink::common::MavMessage {
-    //Send fake data
+    let sys_info = sys_info();
+
     mavlink::common::MavMessage::CAMERA_SETTINGS(mavlink::common::CAMERA_SETTINGS_DATA {
-        time_boot_ms: 0,
+        time_boot_ms: sys_info.time_boot_ms,
         zoomLevel: 0.0,
         focusLevel: 0.0,
         mode_id: mavlink::common::CameraMode::CAMERA_MODE_VIDEO,
@@ -281,12 +322,13 @@ fn camera_settings() -> mavlink::common::MavMessage {
 }
 
 fn camera_storage_information() -> mavlink::common::MavMessage {
-    //Send fake data
+    let sys_info = sys_info();
+
     mavlink::common::MavMessage::STORAGE_INFORMATION(mavlink::common::STORAGE_INFORMATION_DATA {
-        time_boot_ms: 0,
-        total_capacity: 102400.0,
-        used_capacity: 0.0,
-        available_capacity: 102400.0,
+        time_boot_ms: sys_info.time_boot_ms,
+        total_capacity: sys_info.total_capacity,
+        used_capacity: sys_info.used_capacity,
+        available_capacity: sys_info.available_capacity,
         read_speed: 1000.0,
         write_speed: 1000.0,
         storage_id: 0,
@@ -296,13 +338,14 @@ fn camera_storage_information() -> mavlink::common::MavMessage {
 }
 
 fn camera_capture_status() -> mavlink::common::MavMessage {
-    //Send fake data
+    let sys_info = sys_info();
+
     mavlink::common::MavMessage::CAMERA_CAPTURE_STATUS(
         mavlink::common::CAMERA_CAPTURE_STATUS_DATA {
-            time_boot_ms: 0,
+            time_boot_ms: sys_info.time_boot_ms,
             image_interval: 0.0,
             recording_time_ms: 0,
-            available_capacity: 10000.0,
+            available_capacity: sys_info.available_capacity,
             image_status: 0,
             video_status: 0,
             image_count: 0,
