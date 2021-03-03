@@ -164,6 +164,27 @@ pub fn save() {
     }
 }
 
+pub fn mavlink_endpoint() -> String {
+    let manager = MANAGER.as_ref().lock().unwrap();
+    return manager
+        .content
+        .as_ref()
+        .unwrap()
+        .config
+        .mavlink_endpoint
+        .clone();
+}
+
+pub fn set_mavlink_endpoint(endpoint: &str) {
+    //TODO: make content more easy to access
+    {
+        let mut manager = MANAGER.lock().unwrap();
+        let mut content = manager.content.as_mut();
+        content.as_mut().unwrap().config.mavlink_endpoint = endpoint.into();
+    }
+    save();
+}
+
 pub fn streams() -> Vec<VideoAndStreamInformation> {
     let manager = MANAGER.as_ref().lock().unwrap();
     let content = manager.content.as_ref();
