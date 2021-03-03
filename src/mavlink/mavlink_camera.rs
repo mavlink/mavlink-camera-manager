@@ -287,7 +287,7 @@ fn camera_information() -> mavlink::common::MavMessage {
     }
 
     // Send path to our camera configuration file
-    let uri: Vec<char> = format!("{}", "http://0.0.0.0:8000/test.xml")
+    let uri: Vec<char> = format!("{}", r"http://0.0.0.0:6020/xml?file=/dev/video0")
         .chars()
         .collect();
 
