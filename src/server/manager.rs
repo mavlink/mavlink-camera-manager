@@ -25,7 +25,8 @@ pub fn run(server_address: &str) {
     HttpServer::new(|| {
         App::new()
             .data(web::JsonConfig::default().error_handler(json_error_handler))
-            .route("/html/{filename:.*}", web::get().to(pages::root))
+            .route("/", web::get().to(pages::root))
+            .route(r"/{filename:.*(\.html|\.js)}", web::get().to(pages::root))
             .route("/xml", web::get().to(pages::xml))
             .route("/streams", web::get().to(pages::streams))
             .route("/v4l", web::get().to(pages::v4l))
