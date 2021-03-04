@@ -20,62 +20,8 @@ lazy_static! {
     static ref MANAGER: Arc<Mutex<Manager>> = Arc::new(Mutex::new(Manager::default()));
 }
 
-// Init stream manager, should be done inside main
 pub fn init() {
-    use crate::video::{
-        types::{CaptureConfiguration, FrameInterval},
-        video_source_local::{UsbBus, VideoSourceLocal, VideoSourceLocalType},
-    };
-
-    // Find camera based on the usb configuration
-    let cameras = video_source::cameras_available();
-    let camera: Option<VideoSourceType> = cameras
-        .into_iter()
-        .filter(|camera| match camera {
-            VideoSourceType::Local(camera) => match &camera.typ {
-                VideoSourceLocalType::Usb(usb) => {
-                    *usb == UsbBus {
-                        interface: "0000:08:00".into(),
-                        usb_hub: 3,
-                        usb_port: 1,
-                    }
-                }
-                _ => false,
-            },
-            _ => false,
-        })
-        .next();
-
-    let camera = match camera {
-        Some(camera) => camera,
-        None => VideoSourceType::Local(VideoSourceLocal {
-            name: "PotatoCam".into(),
-            device_path: "/dev/video0".into(),
-            typ: VideoSourceLocalType::Unknown("TestPotatoCam".into()),
-        }),
-    };
-
-    let video_and_stream_information = VideoAndStreamInformation {
-        name: "Test".into(),
-        stream_information: StreamInformation {
-            endpoints: vec![Url::parse("udp://0.0.0.0:5601").unwrap()],
-            configuration: CaptureConfiguration {
-                encode: VideoEncodeType::H264,
-                height: 1080,
-                width: 1920,
-                frame_interval: FrameInterval {
-                    numerator: 1,
-                    denominator: 30,
-                },
-            },
-        },
-        video_source: camera,
-    };
-
-    let stream = stream_backend::create_stream(&video_and_stream_information).unwrap();
-
-    let mut manager = MANAGER.as_ref().lock().unwrap();
-    manager.streams.push((stream, video_and_stream_information));
+    debug!("Starting video stream service.");
 }
 
 // Start all streams that are not running
