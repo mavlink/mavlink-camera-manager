@@ -1,4 +1,5 @@
 use log::*;
+use simple_error::SimpleError;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
@@ -209,6 +210,59 @@ fn receive_message_loop(
                             }
                         }
                     }
+                    mavlink::common::MavMessage::PARAM_EXT_SET(param_ext_set) => {
+                        if param_ext_set.target_system != header.system_id {
+                            debug!(
+                                "Ignoring PARAM_EXT_SET, wrong system id: {}",
+                                param_ext_set.target_system
+                            );
+                            continue;
+                        }
+
+                        if param_ext_set.target_component != header.component_id {
+                            debug!(
+                                "Ignoring PARAM_EXT_SET, wrong component id: {}",
+                                param_ext_set.target_component
+                            );
+                        }
+
+                        let param_id: String = param_ext_set.param_id.iter().collect();
+                        let control_id = param_id.parse::<u64>();
+
+                        use std::convert::TryInto;
+                        let bytes: Vec<u8> =
+                            param_ext_set.param_value.iter().map(|c| *c as u8).collect();
+                        let control_value = match param_ext_set.param_type {
+                            mavlink::common::MavParamExtType::MAV_PARAM_EXT_TYPE_UINT8 => {
+                                Ok(u8::from_ne_bytes(bytes[0..1].try_into().unwrap()) as i64)
+                            }
+                            mavlink::common::MavParamExtType::MAV_PARAM_EXT_TYPE_INT32 => {
+                                Ok(i32::from_ne_bytes(bytes[0..4].try_into().unwrap()) as i64)
+                            }
+                            mavlink::common::MavParamExtType::MAV_PARAM_EXT_TYPE_INT64 => {
+                                Ok(i64::from_ne_bytes(bytes[0..8].try_into().unwrap()))
+                            }
+                            something_else => Err(SimpleError::new(format!(
+                                "Received parameter of untreatable type: {:#?}",
+                                something_else
+                            ))),
+                        };
+
+                        if let Err(error) = control_id {
+                            error!("Failed to parse control id: {:#?}", error);
+                            continue;
+                        }
+                        let control_id = control_id.unwrap();
+
+                        if let Err(error) = control_value {
+                            error!("Failed to parse parameter value: {:#?}", error);
+                            continue;
+                        }
+                        let control_value = control_value.unwrap();
+
+                        //TODO: Control V4L
+                    }
+
                     //TODO: Handle all necessary QGC messages to setup camera
                     // We receive a bunch of heartbeat messages, we can ignore it
                     mavlink::common::MavMessage::HEARTBEAT(_) => {}
