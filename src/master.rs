@@ -33,6 +33,8 @@ pub fn run() {
     println!("streams: {:#?}", streams);
 
     for stream in streams {
-        stream::manager::add_stream_and_start(stream);
+        stream::manager::add_stream_and_start(stream).unwrap_or_else(|error| {
+            error!("Not possible to start stream: {}", error.to_string());
+        });
     }
 }
