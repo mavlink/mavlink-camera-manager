@@ -10,7 +10,7 @@ pub trait VideoSource {
     fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()>;
     fn control_value_by_name(&self, control_name: &str) -> std::io::Result<i64>;
     fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64>;
-    fn cameras_available() -> Vec<VideoSourceType>;
+    fn cameras_available() -> Vec<VideoSourceType>; //TODO: Move to namespace function
     fn controls(&self) -> Vec<Control>;
     fn is_valid(&self) -> bool;
 }
