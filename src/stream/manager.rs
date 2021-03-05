@@ -1,6 +1,7 @@
 use super::types::*;
 use super::video_stream_udp::VideoStreamUdp;
 use super::{stream_backend, stream_backend::StreamBackend};
+use crate::settings;
 use crate::video::{
     types::{VideoEncodeType, VideoSourceType},
     video_source,
@@ -63,6 +64,13 @@ pub fn add_stream_and_start(
     let mut stream = stream_backend::create_stream(&video_and_stream_information)?;
     stream.mut_inner().start();
     manager.streams.push((stream, video_and_stream_information));
+
+    let video_and_stream_informations = manager
+        .streams
+        .iter()
+        .map(|(stream, video_and_stream_information)| video_and_stream_information.clone())
+        .collect();
+    settings::manager::set_streams(&video_and_stream_informations);
     return Ok(());
 }
 
