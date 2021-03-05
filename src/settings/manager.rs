@@ -46,7 +46,7 @@ impl Default for SettingsStruct {
                 version: 0,
             },
             mavlink_endpoint: "udpout:0.0.0.0:14550".to_string(),
-            streams: vec![VideoAndStreamInformation {
+            streams: vec![/*VideoAndStreamInformation {
                 name: "Test".into(),
                 stream_information: StreamInformation {
                     endpoints: vec![Url::parse("udp://0.0.0.0:5601").unwrap()],
@@ -69,7 +69,7 @@ impl Default for SettingsStruct {
                         usb_port: 1,
                     }),
                 }),
-            }],
+            }*/],
         }
     }
 }
