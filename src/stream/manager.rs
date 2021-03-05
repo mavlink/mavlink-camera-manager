@@ -53,6 +53,7 @@ pub fn streams() -> Vec<StreamStatus> {
 pub fn add_stream_and_start(
     video_and_stream_information: VideoAndStreamInformation,
 ) -> Result<(), SimpleError> {
+    //TODO: Check if stream can handle caps
     let mut manager = MANAGER.as_ref().lock().unwrap();
 
     for (our_stream_type, our_video_and_stream_information) in manager.streams.iter() {
