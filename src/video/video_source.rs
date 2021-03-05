@@ -1,5 +1,6 @@
 use super::types::*;
 use super::video_source_local::VideoSourceLocal;
+use simple_error::SimpleError;
 
 pub trait VideoSource {
     fn name(&self) -> &String;
@@ -16,6 +17,19 @@ pub trait VideoSource {
 
 pub fn cameras_available() -> Vec<VideoSourceType> {
     return VideoSourceLocal::cameras_available();
+}
+
+pub fn get_video_source(source_string: &str) -> Result<VideoSourceType, SimpleError> {
+    match cameras_available()
+        .iter()
+        .find(|source| source.inner().source_string() == source_string)
+    {
+        Some(video_source) => Ok(video_source.clone()),
+        None => Err(SimpleError::new(format!(
+            "Failed to find video source for: {}",
+            source_string
+        ))),
+    }
 }
 
 pub fn set_control(source_string: &str, control_id: u64, value: i64) -> std::io::Result<()> {
