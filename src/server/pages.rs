@@ -1,3 +1,4 @@
+use crate::stream::types::StreamInformation;
 use crate::video::{
     types::{Control, Format, VideoSourceType},
     video_source,
@@ -97,6 +98,39 @@ pub fn streams(req: HttpRequest) -> HttpResponse {
     HttpResponse::Ok()
         .content_type("text/plain")
         .body(serde_json::to_string_pretty(&streams).unwrap())
+}
+
+pub fn streams_post(req: HttpRequest, json: web::Json<PostStream>) -> HttpResponse {
+    debug!("{:#?}{:?}", req, json);
+    let json = json.into_inner();
+    //json.
+    //TODO: Move stream manager to absolute scope, check others places
+    use crate::stream::manager as stream_manager;
+    use crate::video_stream::types::VideoAndStreamInformation;
+
+    let video_source = match video_source::get_video_source(&json.device_path) {
+        Ok(video_source) => video_source,
+        Err(error) => {
+            return HttpResponse::NotAcceptable()
+                .content_type("text/plain")
+                .body(format!("{:#?}", error.to_string()));
+        }
+    };
+
+    match stream_manager::add_stream_and_start(VideoAndStreamInformation {
+        name: json.name,
+        stream_information: json.stream_information,
+        video_source,
+    }) {
+        Ok(_) => HttpResponse::Ok()
+            .content_type("text/plain")
+            .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap()),
+        Err(error) => {
+            return HttpResponse::NotAcceptable()
+                .content_type("text/plain")
+                .body(format!("{:#?}", error.to_string()));
+        }
+    }
 }
 
 pub fn xml(web::Query(xml_file_request): web::Query<XmlFileRequest>) -> HttpResponse {
