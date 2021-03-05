@@ -14,7 +14,7 @@
                     Configure Stream:
                 </h4>
                 <div>
-                    <streamform :camera="item" :streams="streams">
+                    <streamform :camera="item" :streams="streams" v-on:onconfigure="(value) => configureStream(value)">
                 </div>
                 <h4>
                     Controls:
@@ -104,6 +104,36 @@
                     if (!response.ok) {
                         console.log("Something went wrong with POST:")
                         console.log(response)
+                    };
+                },
+                configureStream: async function(stream) {
+                    const content = {
+                        "name": stream.name,
+                        "device_path": stream.camera,
+                        "stream_information": {
+                            "endpoints": stream.endpoints.split(','),
+                            "configuration": {
+                                "encode": stream.configuration.encode,
+                                "height": Number(stream.configuration.size.height),
+                                "width": Number(stream.configuration.size.width),
+                                "frame_interval": stream.configuration.interval
+                            }
+                        }
+                    }
+                    console.log(`Configuring new strem: ${JSON.stringify(content, null, 2)}`)
+
+                    const settings = {
+                        method: 'POST',
+                        body: JSON.stringify(content),
+                        headers: {
+                            Accept: 'application/json',
+                            'Content-Type': 'application/json',
+                        }
+                    };
+                    const response = await fetch(this.restAddress  + '/streams', settings);
+                    if (!response.ok) {
+                        console.log("Something went wrong with POST:")
+                        console.log(response.json())
                     };
                 },
                 findStream: function(camera) {
@@ -304,10 +334,10 @@
                         <input
                             type="text"
                             autocomplete="off"
-                            v-model="stream_setting.configuration.endpoints"
+                            v-model="stream_setting.endpoints"
                         >
                     </p>
-                    <button disabled type="button" :onclick="submitForm">Configure stream</button>
+                    <button type="button" @click="$emit('onconfigure', stream_setting)">Configure stream</button>
                 </form>
             `
         })
