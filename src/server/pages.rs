@@ -23,7 +23,14 @@ pub struct V4lControl {
     value: i64,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PostStream {
+    name: String,
+    device_path: String,
+    stream_information: StreamInformation,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct XmlFileRequest {
     file: String,
 }
@@ -93,6 +100,7 @@ pub fn streams(req: HttpRequest) -> HttpResponse {
 }
 
 pub fn xml(web::Query(xml_file_request): web::Query<XmlFileRequest>) -> HttpResponse {
+    debug!("{:#?}", xml_file_request);
     let cameras = video_source::cameras_available();
     let camera = cameras
         .iter()
