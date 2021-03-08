@@ -2,10 +2,7 @@ use super::types::*;
 use super::video_stream_udp::VideoStreamUdp;
 use super::{stream_backend, stream_backend::StreamBackend};
 use crate::settings;
-use crate::video::{
-    types::{VideoEncodeType, VideoSourceType},
-    video_source,
-};
+use crate::video::{types::VideoEncodeType, video_source};
 use crate::video_stream::types::VideoAndStreamInformation;
 use log::*;
 use simple_error::SimpleError;
