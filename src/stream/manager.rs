@@ -71,6 +71,23 @@ pub fn add_stream_and_start(
     return Ok(());
 }
 
+pub fn remove_stream(stream_name: &str) -> Result<(), SimpleError> {
+    let find_stream = |(stream_type, information): &(StreamType, VideoAndStreamInformation)| {
+        information.name == *stream_name
+    };
+
+    let mut manager = MANAGER.as_ref().lock().unwrap();
+    match manager.streams.iter().position(find_stream) {
+        Some(index) => {
+            manager.streams.remove(index);
+            Ok(())
+        }
+        None => Err(SimpleError::new(
+            "Identification does not match any stream.",
+        )),
+    }
+}
+
 //TODO: rework to use UML definition
 // Add a new pipeline string to run
 /*
