@@ -32,6 +32,11 @@ pub struct PostStream {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct RemoveStream {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct XmlFileRequest {
     file: String,
 }
@@ -139,6 +144,23 @@ pub fn streams_post(req: HttpRequest, json: web::Json<PostStream>) -> HttpRespon
         stream_information: json.stream_information,
         video_source,
     }) {
+        Ok(_) => HttpResponse::Ok()
+            .content_type("text/plain")
+            .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap()),
+        Err(error) => {
+            return HttpResponse::NotAcceptable()
+                .content_type("text/plain")
+                .body(format!("{:#?}", error.to_string()));
+        }
+    }
+}
+
+pub fn remove_stream(req: HttpRequest, query: web::Query<RemoveStream>) -> HttpResponse {
+    debug!("{:#?}{:?}", req, query);
+    //TODO: Move stream manager to absolute scope, check others places
+    use crate::stream::manager as stream_manager;
+
+    match stream_manager::remove_stream(&query.name) {
         Ok(_) => HttpResponse::Ok()
             .content_type("text/plain")
             .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap()),

@@ -30,6 +30,7 @@ pub fn run(server_address: &str) {
             .route("/xml", web::get().to(pages::xml))
             .route("/streams", web::get().to(pages::streams))
             .route("/streams", web::post().to(pages::streams_post))
+            .route("/delete_stream", web::delete().to(pages::remove_stream))
             .route("/v4l", web::get().to(pages::v4l))
             .route("/v4l", web::post().to(pages::v4l_post))
     })
