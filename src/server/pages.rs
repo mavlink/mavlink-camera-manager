@@ -36,13 +36,30 @@ pub struct XmlFileRequest {
     file: String,
 }
 
+pub fn load_file(file_name: &str) -> String {
+    // Load files at runtime only in debug builds
+    if cfg!(debug_assertions) {
+        use std::io::prelude::*;
+        let html_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/html/");
+        let mut file = std::fs::File::open(html_path.join(file_name)).unwrap();
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).unwrap();
+        return contents;
+    }
+
+    match file_name {
+        "" | "index.html" => std::include_str!("../html/index.html").into(),
+        "vue.js" => std::include_str!("../html/vue.js").into(),
+        _ => format!("File not found: {}", file_name),
+    }
+}
+
 pub fn root(req: HttpRequest) -> HttpResponse {
-    let index = std::include_str!("../html/index.html");
-    let vue = std::include_str!("../html/vue.js");
     let path = match req.match_info().query("filename") {
-        "" | "index.html" => index,
-        "vue.js" => vue,
+        "" | "index.html" => load_file("index.html"),
+        "vue.js" => load_file("vue.js"),
         something => {
+            //TODO: do that in load_file
             return HttpResponse::NotFound()
                 .content_type("text/plain")
                 .body(format!("Page does not exist: {}", something));
