@@ -172,7 +172,7 @@ pub fn remove_stream(req: HttpRequest, query: web::Query<RemoveStream>) -> HttpR
     }
 }
 
-pub fn xml(web::Query(xml_file_request): web::Query<XmlFileRequest>) -> HttpResponse {
+pub fn xml(xml_file_request: web::Query<XmlFileRequest>) -> HttpResponse {
     debug!("{:#?}", xml_file_request);
     let cameras = video_source::cameras_available();
     let camera = cameras
