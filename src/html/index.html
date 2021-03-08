@@ -101,9 +101,14 @@
                         }
                     };
                     const response = await fetch(this.restAddress  + '/v4l', settings);
+                    this.checkResponse(response)
+                },
+                checkResponse: async function(response) {
                     if (!response.ok) {
-                        console.log("Something went wrong with POST:")
-                        console.log(response)
+                        const text = await response.text()
+                        console.log("Something went wrong:", text)
+                        console.log(response.json())
+                        alert(text)
                     };
                 },
                 configureStream: async function(stream) {
@@ -131,10 +136,7 @@
                         }
                     };
                     const response = await fetch(this.restAddress  + '/streams', settings);
-                    if (!response.ok) {
-                        console.log("Something went wrong with POST:")
-                        console.log(response.json())
-                    };
+                    this.checkResponse(response)
                 },
                 findStream: function(camera) {
                     for(stream of streams) {
