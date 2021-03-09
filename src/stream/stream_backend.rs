@@ -199,6 +199,8 @@ mod tests {
         video_source_local::{VideoSourceLocal, VideoSourceLocalType},
     };
 
+    use url::Url;
+
     #[test]
     fn test_udp() {
         let result = create_stream(&VideoAndStreamInformation {
