@@ -2,13 +2,7 @@ use log::*;
 use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 use std::sync::{Arc, Mutex};
-use url::Url;
 
-use crate::stream::types::*;
-use crate::video::{
-    types::*,
-    video_source_local::{UsbBus, VideoSourceLocal, VideoSourceLocalType},
-};
 use crate::video_stream::types::VideoAndStreamInformation;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
