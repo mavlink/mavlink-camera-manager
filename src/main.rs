@@ -24,8 +24,10 @@ pub fn let_there_be_light() {
     cli::manager::init();
     // Logger should start before everything else to register any log information
     logger::manager::init();
-    stream::manager::init();
+    // Settings should start before everybody else to ensure that the CLI are stored
     settings::manager::init(None);
+
+    stream::manager::init();
     settings::manager::set_mavlink_endpoint(cli::manager::mavlink_connection_string());
     server::manager::run(cli::manager::server_address());
     mavlink::mavlink_camera::MavlinkCameraHandle::new();
