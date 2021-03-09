@@ -87,10 +87,10 @@
             },
             methods: {
                 requestData: async function() {
-                    const response_content = await fetch(this.restAddress + '/v4l')
+                    const response_content = await fetch(`${this.restAddress}/v4l`)
                     this.content = await response_content.json()
 
-                    const response_streams = await fetch(this.restAddress  + '/streams')
+                    const response_streams = await fetch(`${this.restAddress}/streams`)
                     this.streams = await response_streams.json()
                 },
                 setControl: async function(camera, id, value) {
@@ -103,7 +103,7 @@
                             'Content-Type': 'application/json',
                         }
                     }
-                    const response = await fetch(this.restAddress  + '/v4l', settings)
+                    const response = await fetch(`${this.restAddress}/v4l`, settings)
                     this.checkResponse(response)
                 },
                 deleteStream: async function(stream_name) {
@@ -117,7 +117,7 @@
                 checkResponse: async function(response) {
                     if (!response.ok) {
                         const text = await response.text()
-                        console.warn("Something went wrong:", text)
+                        console.warn(`Something went wrong: ${text}`)
                         alert(text)
                         return undefined
                     } else {
@@ -148,7 +148,7 @@
                             'Content-Type': 'application/json',
                         }
                     }
-                    const response = await fetch(this.restAddress  + '/streams', settings)
+                    const response = await fetch(`${this.restAddress}/streams`, settings)
                     this.checkResponse(response).then(() => this.requestData())
                 },
             },
