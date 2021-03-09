@@ -108,7 +108,10 @@
                         const text = await response.text()
                         console.log("Something went wrong:", text)
                         alert(text)
-                    };
+                        return undefined
+                    } else {
+                        return await response.json()
+                    }
                 },
                 configureStream: async function(stream) {
                     const content = {
