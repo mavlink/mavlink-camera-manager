@@ -1,5 +1,6 @@
 use super::types::*;
 use super::video_source_local::VideoSourceLocal;
+use log::*;
 use simple_error::SimpleError;
 
 pub trait VideoSource {
@@ -39,6 +40,10 @@ pub fn set_control(source_string: &str, control_id: u64, value: i64) -> std::io:
         .find(|source| source.inner().source_string() == source_string);
 
     if let Some(camera) = camera {
+        debug!(
+            "Set camera ({}) control ({}) value ({}).",
+            source_string, control_id, value
+        );
         return camera.inner().set_control_by_id(control_id, value);
     }
 
