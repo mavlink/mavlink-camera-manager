@@ -138,7 +138,7 @@
                         }
                     };
                     const response = await fetch(this.restAddress  + '/streams', settings);
-                    this.checkResponse(response)
+                    this.checkResponse(response).then(() => this.requestData())
                 },
                 findStream: function(camera) {
                     for(stream of streams) {
