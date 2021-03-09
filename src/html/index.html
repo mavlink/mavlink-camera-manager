@@ -107,7 +107,6 @@
                     if (!response.ok) {
                         const text = await response.text()
                         console.log("Something went wrong:", text)
-                        console.log(response.json())
                         alert(text)
                     };
                 },
