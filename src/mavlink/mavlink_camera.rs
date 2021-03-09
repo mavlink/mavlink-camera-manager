@@ -290,13 +290,14 @@ struct SysInfo {
 }
 
 fn sys_info() -> SysInfo {
-    let mut total_capacity_KB = 0;
-    let mut available_capacity_KB = 0;
+    //Both uses KB
+    let mut local_total_capacity = 0;
+    let mut local_available_capacity = 0;
 
     match sys_info::disk_info() {
         Ok(disk_info) => {
-            available_capacity_KB = disk_info.free;
-            total_capacity_KB = disk_info.total;
+            local_available_capacity = disk_info.free;
+            local_total_capacity = disk_info.total;
         }
 
         Err(error) => {
@@ -314,9 +315,10 @@ fn sys_info() -> SysInfo {
 
     return SysInfo {
         time_boot_ms: boottime_ms as u32,
-        total_capacity: total_capacity_KB as f32 / f32::powf(2.0, 10.0),
-        used_capacity: ((total_capacity_KB - available_capacity_KB) as f32) / f32::powf(2.0, 10.0),
-        available_capacity: available_capacity_KB as f32 / f32::powf(2.0, 10.0),
+        total_capacity: local_total_capacity as f32 / f32::powf(2.0, 10.0),
+        used_capacity: ((local_total_capacity - local_available_capacity) as f32)
+            / f32::powf(2.0, 10.0),
+        available_capacity: local_available_capacity as f32 / f32::powf(2.0, 10.0),
     };
 }
 

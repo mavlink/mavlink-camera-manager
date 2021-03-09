@@ -1,11 +1,7 @@
 use crate::settings;
 use crate::stream;
 
-use crate::video::{
-    types::*,
-    video_source::VideoSource,
-    video_source_local::{UsbBus, VideoSourceLocalType},
-};
+use crate::video::{types::*, video_source::VideoSource};
 use crate::video_stream::types::VideoAndStreamInformation;
 
 use log::*;
