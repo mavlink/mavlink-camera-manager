@@ -63,6 +63,9 @@
                         <p>Video: {{ stream.video_and_stream.stream_information.configuration.encode }} {{ stream.video_and_stream.stream_information.configuration.width }}x{{ stream.video_and_stream.stream_information.configuration.height }} @ {{ stream.video_and_stream.stream_information.configuration.frame_interval.denominator / stream.video_and_stream.stream_information.configuration.frame_interval.numerator}} FPS</p>
                     </div>
                     <div>
+                        <button type="button" v-on:click="deleteStream(stream.video_and_stream.name)">Delete stream</button>
+                    </div>
+                    <div>
                         <p>Endpoints:</p>
                         <div style="margin-left: 0.5em;" v-for="endpoint in stream.video_and_stream.stream_information.endpoints">
                             <p>{{ endpoint }}</p>
@@ -102,6 +105,14 @@
                     };
                     const response = await fetch(this.restAddress  + '/v4l', settings);
                     this.checkResponse(response)
+                },
+                deleteStream: async function(stream_name) {
+                    console.log(`Deleting stream: ${stream_name}`)
+
+                    const url = new URL(`${this.restAddress}/delete_stream`)
+                    url.searchParams.set("name", stream_name)
+                    const response = await fetch(url, {method: "DELETE"});
+                    this.checkResponse(response).then(() => this.requestData());
                 },
                 checkResponse: async function(response) {
                     if (!response.ok) {
