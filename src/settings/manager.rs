@@ -209,6 +209,12 @@ pub fn set_streams(streams: &Vec<VideoAndStreamInformation>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stream::types::StreamInformation;
+    use crate::video::{
+        types::{CaptureConfiguration, FrameInterval, VideoEncodeType, VideoSourceType},
+        video_source_local::{UsbBus, VideoSourceLocal, VideoSourceLocalType},
+    };
+    use url::Url;
 
     fn generate_random_settings_file_name() -> String {
         use rand::Rng;
