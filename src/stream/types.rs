@@ -1,6 +1,6 @@
 use super::stream_backend::StreamBackend;
 use super::video_stream_udp::VideoStreamUdp;
-use crate::video::types::{CaptureConfiguration, VideoEncodeType};
+use crate::video::types::CaptureConfiguration;
 use crate::video_stream::types::VideoAndStreamInformation;
 
 use serde::{Deserialize, Serialize};
