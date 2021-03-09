@@ -151,11 +151,6 @@
                     const response = await fetch(this.restAddress  + '/streams', settings);
                     this.checkResponse(response).then(() => this.requestData())
                 },
-                findStream: function(camera) {
-                    for(stream of streams) {
-                        console.log(JSON.stringify(stream.video_and_stream.video_source, undefined, 2))
-                    }
-                }
             },
             data: function() {
                 return {
@@ -270,10 +265,6 @@
                     // encode is an enum that contains the encode as string or a object that describes the encode
                     return typeof(encode) == 'object' ? Object.values(encode)[0] : encode
                 },
-                submitForm: async function() {
-                    console.log(this.stream_setting.configuration)
-                    console.log(`Stream configuration: ${JSON.stringify(this.stream_setting, undefined, 2)}`)
-                }
             },
             data: function() {
                 return {
