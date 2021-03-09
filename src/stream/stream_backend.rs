@@ -4,7 +4,6 @@ use crate::video::types::{VideoEncodeType, VideoSourceType};
 use crate::video_stream::types::VideoAndStreamInformation;
 use log::*;
 use simple_error::SimpleError;
-use url::Url;
 
 pub trait StreamBackend {
     fn start(&mut self) -> bool;
