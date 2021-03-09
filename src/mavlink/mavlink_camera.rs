@@ -1,5 +1,7 @@
+use crate::settings;
 use log::*;
 use simple_error::SimpleError;
+
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
@@ -65,7 +67,7 @@ impl Default for MavlinkCameraComponent {
 }
 
 impl MavlinkCameraInformation {
-    fn new(mavlink_connection_string: &'static str) -> Self {
+    fn new(mavlink_connection_string: &str) -> Self {
         Self {
             component: Default::default(),
             mavlink_connection_string: mavlink_connection_string.into(),
@@ -77,9 +79,10 @@ impl MavlinkCameraInformation {
 
 impl MavlinkCameraHandle {
     pub fn new() -> Self {
-        let mavlink_camera_information: Arc<Mutex<MavlinkCameraInformation>> = Arc::new(
-            Mutex::new(MavlinkCameraInformation::new("udpout:0.0.0.0:14550")),
-        );
+        let mavlink_camera_information: Arc<Mutex<MavlinkCameraInformation>> =
+            Arc::new(Mutex::new(MavlinkCameraInformation::new(
+                &settings::manager::mavlink_endpoint(),
+            )));
 
         let thread_state = Arc::new(Mutex::new(ThreadState::RUNNING));
 
