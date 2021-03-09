@@ -87,11 +87,11 @@
             },
             methods: {
                 requestData: async function() {
-                    const response_content = await fetch(this.restAddress + '/v4l');
-                    this.content = await response_content.json();
+                    const response_content = await fetch(this.restAddress + '/v4l')
+                    this.content = await response_content.json()
 
-                    const response_streams = await fetch(this.restAddress  + '/streams');
-                    this.streams = await response_streams.json();
+                    const response_streams = await fetch(this.restAddress  + '/streams')
+                    this.streams = await response_streams.json()
                 },
                 setControl: async function(camera, id, value) {
                     console.log(`Configuring: camera: ${camera}, control_id: ${id}, value: ${value}`)
@@ -102,8 +102,8 @@
                             Accept: 'application/json',
                             'Content-Type': 'application/json',
                         }
-                    };
-                    const response = await fetch(this.restAddress  + '/v4l', settings);
+                    }
+                    const response = await fetch(this.restAddress  + '/v4l', settings)
                     this.checkResponse(response)
                 },
                 deleteStream: async function(stream_name) {
@@ -111,8 +111,8 @@
 
                     const url = new URL(`${this.restAddress}/delete_stream`)
                     url.searchParams.set("name", stream_name)
-                    const response = await fetch(url, {method: "DELETE"});
-                    this.checkResponse(response).then(() => this.requestData());
+                    const response = await fetch(url, {method: "DELETE"})
+                    this.checkResponse(response).then(() => this.requestData())
                 },
                 checkResponse: async function(response) {
                     if (!response.ok) {
@@ -147,8 +147,8 @@
                             Accept: 'application/json',
                             'Content-Type': 'application/json',
                         }
-                    };
-                    const response = await fetch(this.restAddress  + '/streams', settings);
+                    }
+                    const response = await fetch(this.restAddress  + '/streams', settings)
                     this.checkResponse(response).then(() => this.requestData())
                 },
             },
@@ -162,7 +162,7 @@
                     "streams": []
                 }
             }
-        });
+        })
 
         app.component('v4lslider', {
             props: {
@@ -178,7 +178,7 @@
             data: function() {
                 return {
                     "val": this.slider.value,
-                };
+                }
             },
             template: `
                 <div>
@@ -217,7 +217,7 @@
                         this.stream = streams
                             .filter((stream) => stream.video_and_stream.video_source.Local.device_path == this.camera.camera)[0]
                         if(!this.stream) {
-                            return;
+                            return
                         }
 
                         this.stream_setting.configuration.encode = this.stream.video_and_stream.stream_information.configuration.encode
@@ -250,7 +250,7 @@
 
                         let chosen_size = stream_setting.configuration.size
                         if(chosen_size == undefined) {
-                            return;
+                            return
                         }
 
                         this.stream_options.intervals =
@@ -284,7 +284,7 @@
                         intervals: undefined,
                     },
                     stream: undefined
-                };
+                }
             },
             template: `
                 <form
