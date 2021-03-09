@@ -119,10 +119,13 @@
                         const text = await response.text()
                         console.warn(`Something went wrong: ${text}`)
                         alert(text)
-                        return undefined
                     } else {
-                        return await response.json()
+                        const contentType = response.headers.get("content-type")
+                        if(contentType && contentType.indexOf("application/json") !== -1) {
+                            return await response.json()
+                        }
                     }
+                    return undefined
                 },
                 configureStream: async function(stream) {
                     const content = {
