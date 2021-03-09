@@ -96,7 +96,7 @@ pub fn v4l(req: HttpRequest) -> HttpResponse {
         .collect();
 
     HttpResponse::Ok()
-        .content_type("text/plain")
+        .content_type("application/json")
         .body(serde_json::to_string_pretty(&cameras).unwrap())
 }
 
@@ -118,7 +118,7 @@ pub fn streams(req: HttpRequest) -> HttpResponse {
     use crate::stream::manager as stream_manager;
     let streams = stream_manager::streams();
     HttpResponse::Ok()
-        .content_type("text/plain")
+        .content_type("application/json")
         .body(serde_json::to_string_pretty(&streams).unwrap())
 }
 
@@ -145,7 +145,7 @@ pub fn streams_post(req: HttpRequest, json: web::Json<PostStream>) -> HttpRespon
         video_source,
     }) {
         Ok(_) => HttpResponse::Ok()
-            .content_type("text/plain")
+            .content_type("application/json")
             .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap()),
         Err(error) => {
             return HttpResponse::NotAcceptable()
@@ -162,7 +162,7 @@ pub fn remove_stream(req: HttpRequest, query: web::Query<RemoveStream>) -> HttpR
 
     match stream_manager::remove_stream(&query.name) {
         Ok(_) => HttpResponse::Ok()
-            .content_type("text/plain")
+            .content_type("application/json")
             .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap()),
         Err(error) => {
             return HttpResponse::NotAcceptable()
