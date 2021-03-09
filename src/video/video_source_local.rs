@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use v4l::prelude::*;
 use v4l::video::Capture;
 
-use super::types::*;
 use log::*;
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
