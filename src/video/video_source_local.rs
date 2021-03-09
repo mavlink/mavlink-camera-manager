@@ -236,14 +236,21 @@ impl VideoSource for VideoSourceLocal {
                 ),
             ));
         }
+        let control = control.unwrap();
 
         //TODO: Add control validation
-        let device = Device::with_path(&self.device_path).unwrap();
+        let device = Device::with_path(&self.device_path)?;
         //TODO: we should handle value, value64 and string
-        return device.set_control(
+        match device.set_control(
             control_id as u32,
             v4l::control::Control::Value(value as i32),
-        );
+        ) {
+            ok @ Ok(_) => ok,
+            Err(error) => {
+                warn!("Failed to set control {:#?}, error: {:#?}", control, error);
+                Err(error)
+            }
+        }
     }
 
     fn control_value_by_name(&self, control_name: &str) -> std::io::Result<i64> {
