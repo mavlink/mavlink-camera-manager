@@ -182,7 +182,7 @@ pub fn xml(xml_file_request: web::Query<XmlFileRequest>) -> HttpResponse {
     if let Some(camera) = camera {
         return HttpResponse::Ok()
             .content_type("text/xml")
-            .body(xml::from_video_source(&camera.inner()));
+            .body(xml::from_video_source(camera.inner()));
     }
     return HttpResponse::NotFound()
         .content_type("text/plain")
