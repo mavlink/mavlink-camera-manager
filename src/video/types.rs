@@ -3,6 +3,7 @@ use super::video_source_gst::VideoSourceGst;
 use super::video_source_local::VideoSourceLocal;
 use serde::{Deserialize, Serialize};
 
+//TODO: Fix enum names to follow rust standards
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum VideoSourceType {
     Gst(VideoSourceGst),

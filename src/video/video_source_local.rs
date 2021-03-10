@@ -17,6 +17,7 @@ pub struct UsbBus {
     pub usb_port: u8,
 }
 
+//TODO: Move to types
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub enum VideoSourceLocalType {
     Unknown(String),
