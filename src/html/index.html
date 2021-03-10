@@ -8,13 +8,13 @@
                     <h3>Camera: {{ item.name }}</h3>
                 </div>
                 <div>
-                    <p>Device: {{ item.camera }}</p>
+                    <p>Device: {{ item.source }}</p>
                 </div>
                 <h4>
                     Configure Stream:
                 </h4>
                 <div>
-                    <streamform :camera="item" :streams="streams" v-on:onconfigure="(value) => configureStream(value)">
+                    <streamform :device="item" :streams="streams" v-on:onconfigure="(value) => configureStream(value)">
                 </div>
                 <h4>
                     Controls:
@@ -25,7 +25,7 @@
                         <v4lslider
                             :slider="control.configuration.Slider"
                             :name="control.id.toString()"
-                            v-on:onchange="(value) => setControl(item.camera, control.id, value)"
+                            v-on:onchange="(value) => setControl(item.source, control.id, value)"
                         ></v4lslider>
                     </div>
 
@@ -33,14 +33,14 @@
                         <input
                             type="checkbox"
                             :checked="control.configuration.Bool.value == 1"
-                            @change="(event) => setControl(item.camera, control.id, event.target.checked ? 1 : 0)"
+                            @change="(event) => setControl(item.source, control.id, event.target.checked ? 1 : 0)"
                             >
                         <label>On</label>
                     </div>
 
                     <div v-if="control.configuration.Menu">
                         <select
-                            @change="(event) => setControl(item.camera, control.id, event.target.value)"
+                            @change="(event) => setControl(item.source, control.id, event.target.value)"
                         >
                             <option
                                 v-for="option in control.configuration.Menu.options"
@@ -93,11 +93,11 @@
                     const response_streams = await fetch(`${this.restAddress}/streams`)
                     this.streams = await response_streams.json()
                 },
-                setControl: async function(camera, id, value) {
-                    console.log(`Configuring: camera: ${camera}, control_id: ${id}, value: ${value}`)
+                setControl: async function(source, id, value) {
+                    console.log(`Configuring: source: ${source}, control_id: ${id}, value: ${value}`)
                     const settings = {
                         method: 'POST',
-                        body: JSON.stringify({ "device": camera, "v4l_id": Number(id), "value": Number(value) }),
+                        body: JSON.stringify({ "device": source, "v4l_id": Number(id), "value": Number(value) }),
                         headers: {
                             Accept: 'application/json',
                             'Content-Type': 'application/json',
@@ -130,7 +130,7 @@
                 configureStream: async function(stream) {
                     const content = {
                         "name": stream.name,
-                        "device_path": stream.camera,
+                        "source": stream.source,
                         "stream_information": {
                             "endpoints": stream.endpoints.split(','),
                             "configuration": {
@@ -197,7 +197,7 @@
 
         app.component('streamform', {
             props: {
-                camera: {
+                device: {
                     type: Object,
                     required: true
                 },
@@ -208,14 +208,16 @@
             },
             mounted: function() {
                 this.stream_options.encoders = this.stream_options.encoders =
-                            this.camera.formats
+                            this.device.formats
                                 .map((format) => this.encodeToStr(format.encode))
             },
             watch: {
                 streams: {
                     handler: function(streams, _) {
                         this.stream = streams
-                            .filter((stream) => stream.video_and_stream.video_source.Local.device_path == this.camera.camera)[0]
+                            .filter((stream) =>
+                                stream.video_and_stream.video_source.Local && stream.video_and_stream.video_source.Local.device_path == this.device.source
+                                || stream.video_and_stream.video_source.Gst && stream.video_and_stream.video_source.Gst.source.Fake == this.device.source)[0]
                         if(!this.stream) {
                             return
                         }
@@ -236,11 +238,11 @@
                         console.log(JSON.stringify(stream_setting, undefined, 2))
 
                         this.stream_options.encoders =
-                            this.camera.formats
+                            this.device.formats
                                 .map((format) => this.encodeToStr(format.encode))
 
                         this.stream_options.sizes =
-                            this.camera.formats
+                            this.device.formats
                                 .filter((format) => this.encodeToStr(format.encode) == stream_setting.configuration.encode)
                                 .map((format) => format.sizes)[0]
                                 // Sort width by preference
@@ -269,8 +271,8 @@
             data: function() {
                 return {
                     stream_setting: {
-                        name: this.camera.camera + ' - ' + this.camera.name,
-                        camera: this.camera.camera,
+                        name: this.device.source + ' - ' + this.device.name,
+                        source: this.device.source,
                         endpoints: undefined,
                         configuration: {
                             encode: undefined,
