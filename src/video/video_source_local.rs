@@ -1,5 +1,8 @@
 use super::types::*;
-use super::{video_source, video_source::VideoSource};
+use super::{
+    video_source,
+    video_source::{VideoSource, VideoSourceAvailable},
+};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use v4l::prelude::*;
@@ -272,48 +275,6 @@ impl VideoSource for VideoSourceLocal {
         }
     }
 
-    fn cameras_available() -> Vec<VideoSourceType> {
-        let cameras_path: Vec<String> = std::fs::read_dir("/dev/")
-            .unwrap()
-            .map(|f| String::from(f.unwrap().path().to_str().unwrap()))
-            .filter(|f| f.starts_with("/dev/video"))
-            .collect();
-
-        let mut cameras: Vec<VideoSourceType> = vec![];
-        for camera_path in &cameras_path {
-            let camera = Device::with_path(camera_path).unwrap();
-            let caps = camera.query_caps();
-
-            if let Err(error) = caps {
-                debug!(
-                    "Failed to capture caps for device: {} {:#?}",
-                    camera_path, error
-                );
-                continue;
-            }
-            let caps = caps.unwrap();
-
-            if let Err(error) = camera.format() {
-                if error.kind() != std::io::ErrorKind::InvalidInput {
-                    debug!(
-                        "Failed to capture formats for device: {}\nError: {:#?}",
-                        camera_path, error
-                    );
-                }
-                continue;
-            }
-
-            let source = VideoSourceLocal {
-                name: caps.card,
-                device_path: camera_path.clone(),
-                typ: VideoSourceLocalType::from_str(&caps.bus),
-            };
-            cameras.push(VideoSourceType::Local(source));
-        }
-
-        return cameras;
-    }
-
     fn controls(&self) -> Vec<Control> {
         //TODO: create function to encapsulate device
         let device = Device::with_path(&self.device_path).unwrap();
@@ -383,6 +344,50 @@ impl VideoSource for VideoSourceLocal {
 
     fn is_valid(&self) -> bool {
         return !self.device_path.is_empty();
+    }
+}
+
+impl VideoSourceAvailable for VideoSourceLocal {
+    fn cameras_available() -> Vec<VideoSourceType> {
+        let cameras_path: Vec<String> = std::fs::read_dir("/dev/")
+            .unwrap()
+            .map(|f| String::from(f.unwrap().path().to_str().unwrap()))
+            .filter(|f| f.starts_with("/dev/video"))
+            .collect();
+
+        let mut cameras: Vec<VideoSourceType> = vec![];
+        for camera_path in &cameras_path {
+            let camera = Device::with_path(camera_path).unwrap();
+            let caps = camera.query_caps();
+
+            if let Err(error) = caps {
+                debug!(
+                    "Failed to capture caps for device: {} {:#?}",
+                    camera_path, error
+                );
+                continue;
+            }
+            let caps = caps.unwrap();
+
+            if let Err(error) = camera.format() {
+                if error.kind() != std::io::ErrorKind::InvalidInput {
+                    debug!(
+                        "Failed to capture formats for device: {}\nError: {:#?}",
+                        camera_path, error
+                    );
+                }
+                continue;
+            }
+
+            let source = VideoSourceLocal {
+                name: caps.card,
+                device_path: camera_path.clone(),
+                typ: VideoSourceLocalType::from_str(&caps.bus),
+            };
+            cameras.push(VideoSourceType::Local(source));
+        }
+
+        return cameras;
     }
 }
 
