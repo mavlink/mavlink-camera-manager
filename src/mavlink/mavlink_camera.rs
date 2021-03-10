@@ -33,6 +33,7 @@ enum ThreadState {
     RESTART,
 }
 
+#[derive(Debug)]
 pub struct MavlinkCameraHandle {
     mavlink_camera_information: Arc<Mutex<MavlinkCameraInformation>>,
     thread_state: Arc<Mutex<ThreadState>>,
