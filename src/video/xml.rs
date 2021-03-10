@@ -112,7 +112,7 @@ impl Description {
     }
 }
 
-pub fn from_video_source(video_source: &impl VideoSource) -> String {
+pub fn from_video_source(video_source: &dyn VideoSource) -> String {
     let controls = video_source.controls();
 
     let definition = Definition {
