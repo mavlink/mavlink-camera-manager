@@ -180,7 +180,7 @@ impl VideoSource for VideoSourceLocal {
         return &self.name;
     }
 
-    fn source_string(&self) -> &String {
+    fn source_string(&self) -> &str {
         return &self.device_path;
     }
 
