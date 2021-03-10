@@ -26,7 +26,7 @@ pub fn run() {
         .map(Into::into)
         .collect();
 
-    println!("streams: {:#?}", streams);
+    debug!("streams: {:#?}", streams);
 
     for stream in streams {
         stream::manager::add_stream_and_start(stream).unwrap_or_else(|error| {
