@@ -1,6 +1,10 @@
 use super::types::*;
 use super::video_stream_udp::VideoStreamUdp;
-use crate::video::types::{VideoEncodeType, VideoSourceType};
+use crate::video::{
+    types::{VideoEncodeType, VideoSourceType},
+    video_source_gst::{VideoSourceGst, VideoSourceGstType},
+    video_source_local::VideoSourceLocal,
+};
 use crate::video_stream::types::VideoAndStreamInformation;
 use log::*;
 use simple_error::SimpleError;
@@ -133,7 +137,7 @@ fn check_scheme(
     return Ok(());
 }
 
-pub fn create_stream(
+fn create_udp_stream(
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<StreamType, SimpleError> {
     let encode = video_and_stream_information
@@ -147,23 +151,54 @@ pub fn create_stream(
         .configuration;
     let video_source = &video_and_stream_information.video_source;
 
-    // We only support local devices for now
-    let VideoSourceType::Local(video_source) = video_source;
-    let device = &video_source.device_path;
+    let video_format = match video_source {
+        VideoSourceType::Local(local_device) => {
+            if VideoEncodeType::H264 == encode {
+                format!(
+                    concat!(
+                        "v4l2src device={device}",
+                        " ! video/x-h264,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                    ),
+                    device = &local_device.device_path,
+                    width = configuration.width,
+                    height = configuration.height,
+                    interval_denominator = configuration.frame_interval.denominator,
+                    interval_numerator = configuration.frame_interval.numerator,
+                )
+            } else {
+                return Err(SimpleError::new(format!(
+                    "Unsupported encode for UDP endpoint: {:?}",
+                    encode
+                )));
+            }
+        }
+        VideoSourceType::Gst(gst_source) => match &gst_source.source {
+            VideoSourceGstType::Fake(pattern) => {
+                format!(
+                        concat!(
+                            "videotestsrc pattern={pattern}",
+                            " ! video/x-raw,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                            " ! videoconvert",
+                            " !  x264enc bitrate=5000",
+                            " ! video/x-h264, profile=baseline",
+                        ),
+                        pattern = pattern,
+                        width = configuration.width,
+                        height = configuration.height,
+                        interval_denominator = configuration.frame_interval.denominator,
+                        interval_numerator = configuration.frame_interval.numerator,
+                    )
+            }
+            _ => {
+                return Err(SimpleError::new(format!(
+                    "Unsupported GST source for UDP endpoint: {:#?}",
+                    gst_source
+                )));
+            }
+        },
+    };
 
     if VideoEncodeType::H264 == encode {
-        let video_format = format!(
-            concat!(
-                "v4l2src device={device}",
-                " ! video/x-h264,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
-            ),
-            device = device,
-            width = configuration.width,
-            height = configuration.height,
-            interval_denominator = configuration.frame_interval.denominator,
-            interval_numerator = configuration.frame_interval.numerator,
-        );
-
         let udp_encode = concat!(
             " ! h264parse",
             " ! queue",
@@ -189,6 +224,25 @@ pub fn create_stream(
         "Unsupported encode: {:?}",
         encode
     )));
+}
+
+pub fn create_stream(
+    video_and_stream_information: &VideoAndStreamInformation,
+) -> Result<StreamType, SimpleError> {
+    // The scheme was validated by "new" function
+    let endpoint = &video_and_stream_information
+        .stream_information
+        .endpoints
+        .iter()
+        .next()
+        .unwrap();
+    match endpoint.scheme() {
+        "udp" => create_udp_stream(video_and_stream_information),
+        something => Err(SimpleError::new(format!(
+            "Unsupported scheme: {}",
+            something
+        ))),
+    }
 }
 
 #[cfg(test)]
