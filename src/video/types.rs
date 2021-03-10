@@ -88,10 +88,9 @@ pub struct ControlOption {
 }
 
 impl VideoSourceType {
-    pub fn inner(&self) -> impl VideoSource {
+    pub fn inner(&self) -> &(dyn VideoSource + '_) {
         match self {
-            VideoSourceType::Local(source) => (*source).clone(),
-            _ => unreachable!(),
+            VideoSourceType::Local(local) => local,
         }
     }
 }
