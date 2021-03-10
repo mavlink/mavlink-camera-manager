@@ -5,7 +5,7 @@ use simple_error::SimpleError;
 
 pub trait VideoSource {
     fn name(&self) -> &String;
-    fn source_string(&self) -> &String;
+    fn source_string(&self) -> &str;
     fn formats(&self) -> Vec<Format>;
     fn set_control_by_name(&self, control_name: &str, value: i64) -> std::io::Result<()>;
     fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()>;
@@ -49,7 +49,7 @@ pub fn set_control(source_string: &str, control_id: u64, value: i64) -> std::io:
 
     let sources_available: Vec<String> = cameras
         .iter()
-        .map(|source| source.inner().source_string().clone())
+        .map(|source| source.inner().source_string().to_string())
         .collect();
 
     return Err(std::io::Error::new(
