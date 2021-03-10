@@ -177,7 +177,7 @@ pub fn xml(xml_file_request: web::Query<XmlFileRequest>) -> HttpResponse {
     let cameras = video_source::cameras_available();
     let camera = cameras
         .iter()
-        .find(|source| source.inner().source_string() == &xml_file_request.file);
+        .find(|source| source.inner().source_string() == xml_file_request.file);
 
     if let Some(camera) = camera {
         return HttpResponse::Ok()
