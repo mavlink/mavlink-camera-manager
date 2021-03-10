@@ -137,7 +137,7 @@ fn load() {
 
 fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> std::io::Result<()> {
     let mut file = std::fs::File::create(file_name)?;
-    println!("content: {:#?}", content);
+    debug!("content: {:#?}", content);
     let value = serde_json::to_string_pretty(content).unwrap();
     file.write_all(value.to_string().as_bytes())
 }
