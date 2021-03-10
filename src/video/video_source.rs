@@ -11,13 +11,19 @@ pub trait VideoSource {
     fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()>;
     fn control_value_by_name(&self, control_name: &str) -> std::io::Result<i64>;
     fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64>;
-    fn cameras_available() -> Vec<VideoSourceType>; //TODO: Move to namespace function
     fn controls(&self) -> Vec<Control>;
     fn is_valid(&self) -> bool;
 }
 
+pub trait VideoSourceAvailable {
+    fn cameras_available() -> Vec<VideoSourceType>;
+}
+
 pub fn cameras_available() -> Vec<VideoSourceType> {
-    return VideoSourceLocal::cameras_available();
+    return [
+        &VideoSourceLocal::cameras_available()[..],
+    ]
+    .concat();
 }
 
 pub fn get_video_source(source_string: &str) -> Result<VideoSourceType, SimpleError> {
