@@ -10,9 +10,9 @@ use log::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
-struct V4LCamera {
+struct ApiVideoSource {
     name: String,
-    camera: String,
+    source: String,
     formats: Vec<Format>,
     controls: Vec<Control>,
 }
@@ -27,7 +27,7 @@ pub struct V4lControl {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PostStream {
     name: String,
-    device_path: String,
+    source: String,
     stream_information: StreamInformation,
 }
 
@@ -73,26 +73,33 @@ pub fn root(req: HttpRequest) -> HttpResponse {
     HttpResponse::Ok().content_type("text/html").body(path)
 }
 
+//TODO: change endpoint name to sources
 pub fn v4l(req: HttpRequest) -> HttpResponse {
     debug!("{:#?}", req);
 
     let cameras = video_source::cameras_available();
-    let cameras: Vec<V4LCamera> = cameras
+    let cameras: Vec<serde_json::value::Value> = cameras
         .iter()
-        .map(|cam| {
-            if let VideoSourceType::Local(cam) = cam {
-                return Some(V4LCamera {
+        .map(|cam| match cam {
+            VideoSourceType::Local(cam) => {
+                let camera = ApiVideoSource {
                     name: cam.name().clone(),
-                    camera: cam.source_string().clone(),
+                    source: cam.source_string().to_string(),
                     formats: cam.formats(),
                     controls: cam.controls(),
-                });
-            } else {
-                return None;
+                };
+                serde_json::to_value(&camera).unwrap()
+            }
+            VideoSourceType::Gst(gst) => {
+                let camera = ApiVideoSource {
+                    name: gst.name().clone(),
+                    source: gst.source_string().to_string(),
+                    formats: gst.formats(),
+                    controls: gst.controls(),
+                };
+                serde_json::to_value(&camera).unwrap()
             }
         })
-        .take_while(|cam| cam.is_some())
-        .map(|cam| cam.unwrap())
         .collect();
 
     HttpResponse::Ok()
@@ -130,7 +137,7 @@ pub fn streams_post(req: HttpRequest, json: web::Json<PostStream>) -> HttpRespon
     use crate::stream::manager as stream_manager;
     use crate::video_stream::types::VideoAndStreamInformation;
 
-    let video_source = match video_source::get_video_source(&json.device_path) {
+    let video_source = match video_source::get_video_source(&json.source) {
         Ok(video_source) => video_source,
         Err(error) => {
             return HttpResponse::NotAcceptable()
