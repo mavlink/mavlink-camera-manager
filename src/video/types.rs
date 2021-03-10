@@ -1,9 +1,11 @@
 use super::video_source::VideoSource;
+use super::video_source_gst::VideoSourceGst;
 use super::video_source_local::VideoSourceLocal;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum VideoSourceType {
+    Gst(VideoSourceGst),
     Local(VideoSourceLocal),
 }
 
@@ -91,6 +93,7 @@ impl VideoSourceType {
     pub fn inner(&self) -> &(dyn VideoSource + '_) {
         match self {
             VideoSourceType::Local(local) => local,
+            VideoSourceType::Gst(gst) => gst,
         }
     }
 }
