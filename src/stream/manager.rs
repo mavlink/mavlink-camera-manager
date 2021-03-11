@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 struct Stream {
     stream_type: StreamType,
     video_and_stream_information: VideoAndStreamInformation,
-    mavlink_camera: Option<MavlinkCameraHandle>,
+    mavlink_camera: MavlinkCameraHandle,
 }
 
 #[derive(Default)]
@@ -65,11 +65,21 @@ pub fn add_stream_and_start(
     }
 
     let mut stream = stream_backend::new(&video_and_stream_information)?;
+    let endpoint = video_and_stream_information
+        .stream_information
+        .endpoints
+        .first()
+        .unwrap() // We have an endpoint since we have passed the point of stream creation
+        .clone();
+
     stream.mut_inner().start();
     manager.streams.push(Stream {
         stream_type: stream,
-        video_and_stream_information,
-        mavlink_camera: None,
+        video_and_stream_information: video_and_stream_information.clone(),
+        mavlink_camera: MavlinkCameraHandle::new(
+            video_and_stream_information.video_source.clone(),
+            endpoint,
+        ),
     });
 
     //TODO: Create function to update settings
