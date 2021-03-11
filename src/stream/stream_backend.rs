@@ -226,7 +226,7 @@ fn create_udp_stream(
     )));
 }
 
-pub fn create_stream(
+fn create_stream(
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<StreamType, SimpleError> {
     // The scheme was validated by "new" function
