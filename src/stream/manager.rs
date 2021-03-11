@@ -72,6 +72,7 @@ pub fn add_stream_and_start(
         mavlink_camera: None,
     });
 
+    //TODO: Create function to update settings
     let video_and_stream_informations = manager
         .streams
         .iter()
