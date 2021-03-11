@@ -30,11 +30,6 @@ pub fn new(
 fn check_endpoints(
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<(), SimpleError> {
-    let encode = video_and_stream_information
-        .stream_information
-        .configuration
-        .encode
-        .clone();
     let endpoints = &video_and_stream_information.stream_information.endpoints;
 
     if endpoints.is_empty() {
