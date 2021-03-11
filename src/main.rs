@@ -30,7 +30,6 @@ pub fn let_there_be_light() {
     stream::manager::init();
     settings::manager::set_mavlink_endpoint(cli::manager::mavlink_connection_string());
     server::manager::run(cli::manager::server_address());
-    mavlink::mavlink_camera::MavlinkCameraHandle::new();
 }
 
 fn main() {
