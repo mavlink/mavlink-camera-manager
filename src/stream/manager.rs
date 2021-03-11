@@ -88,6 +88,12 @@ pub fn remove_stream(stream_name: &str) -> Result<(), SimpleError> {
     match manager.streams.iter().position(find_stream) {
         Some(index) => {
             manager.streams.remove(index);
+            let video_and_stream_informations = manager
+                .streams
+                .iter()
+                .map(|stream| stream.video_and_stream_information.clone())
+                .collect();
+            settings::manager::set_streams(&video_and_stream_informations);
             Ok(())
         }
         None => Err(SimpleError::new(
