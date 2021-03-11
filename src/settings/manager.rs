@@ -75,11 +75,21 @@ impl Manager {
 
         let file_name = if !Path::new(file_name).is_absolute() {
             match ProjectDirs::from("com", "Blue Robotics", env!("CARGO_PKG_NAME")) {
-                Some(project) => Path::new(project.config_dir())
-                    .join(file_name)
-                    .to_str()
-                    .expect("Failed to create settings path.")
-                    .to_string(),
+                Some(project) => {
+                    let folder_path = Path::new(project.config_dir());
+                    if let Err(error) = std::fs::create_dir_all(folder_path) {
+                        error!(
+                            "Failed to create settings folder: {}, reason: {:#?}",
+                            folder_path.to_str().unwrap(),
+                            error
+                        );
+                    }
+                    Path::new(&folder_path)
+                        .join(file_name)
+                        .to_str()
+                        .expect("Failed to create settings path.")
+                        .to_string()
+                }
                 None => panic!("Failed to find user settings path."),
             }
         } else {
