@@ -1,8 +1,16 @@
+use crate::cli;
 use crate::settings;
+use crate::video::types::VideoSourceType;
+
 use log::*;
 use simple_error::SimpleError;
+use url::Url;
 
 use std::sync::{Arc, Mutex};
+
+lazy_static! {
+    static ref ID_CONTROL: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(vec![]));
+}
 
 #[derive(Clone, Debug)]
 pub struct MavlinkCameraComponent {
@@ -21,7 +29,8 @@ pub struct MavlinkCameraComponent {
 pub struct MavlinkCameraInformation {
     component: MavlinkCameraComponent,
     mavlink_connection_string: String,
-    video_stream_uri: String,
+    video_stream_uri: Url,
+    video_source_type: VideoSourceType,
     vehicle: Arc<Box<dyn mavlink::MavConnection<mavlink::common::MavMessage> + Sync + Send>>,
 }
 
@@ -48,15 +57,30 @@ impl std::fmt::Debug for MavlinkCameraInformation {
             .field("component", &self.component)
             .field("mavlink_connection_string", &self.mavlink_connection_string)
             .field("video_stream_uri", &self.video_stream_uri)
+            .field("video_source_type", &self.video_source_type)
             .finish()
     }
 }
 
 impl Default for MavlinkCameraComponent {
     fn default() -> Self {
+        let mut vector = ID_CONTROL.as_ref().lock().unwrap();
+
+        // Find the closer ID available
+        let mut id: u8 = 0;
+        loop {
+            if vector.contains(&id) {
+                id += 1;
+                continue;
+            } else {
+                vector.push(id);
+                break;
+            }
+        }
+
         Self {
             system_id: 1,
-            component_id: mavlink::common::MavComponent::MAV_COMP_ID_CAMERA as u8,
+            component_id: mavlink::common::MavComponent::MAV_COMP_ID_CAMERA as u8 + id,
 
             vendor_name: Default::default(),
             model_name: Default::default(),
@@ -67,22 +91,44 @@ impl Default for MavlinkCameraComponent {
     }
 }
 
+impl Drop for MavlinkCameraComponent {
+    fn drop(&mut self) {
+        // Remove id from used ids
+        let id = self.component_id - mavlink::common::MavComponent::MAV_COMP_ID_CAMERA as u8;
+        let mut vector = ID_CONTROL.as_ref().lock().unwrap();
+        let position = vector.iter().position(|&vec_id| vec_id == id).unwrap();
+        vector.remove(position);
+    }
+}
+
 impl MavlinkCameraInformation {
-    fn new(mavlink_connection_string: &str) -> Self {
+    fn new(
+        video_source_type: VideoSourceType,
+        mavlink_connection_string: &str,
+        video_stream_uri: Url,
+    ) -> Self {
         Self {
             component: Default::default(),
             mavlink_connection_string: mavlink_connection_string.into(),
-            video_stream_uri: "udp://0.0.0.0:5601".into(),
+            video_stream_uri,
+            video_source_type,
             vehicle: Arc::new(mavlink::connect(&mavlink_connection_string).unwrap()),
         }
     }
 }
 
 impl MavlinkCameraHandle {
-    pub fn new() -> Self {
+    pub fn new(video_source_type: VideoSourceType, endpoint: Url) -> Self {
+        debug!(
+            "Starting new MAVLink camera device for: {:#?}, endpoint: {}",
+            video_source_type, endpoint
+        );
+
         let mavlink_camera_information: Arc<Mutex<MavlinkCameraInformation>> =
             Arc::new(Mutex::new(MavlinkCameraInformation::new(
+                video_source_type,
                 &settings::manager::mavlink_endpoint(),
+                endpoint,
             )));
 
         let thread_state = Arc::new(Mutex::new(ThreadState::RUNNING));
@@ -106,6 +152,13 @@ impl MavlinkCameraHandle {
                 )
             }),
         }
+    }
+}
+
+impl Drop for MavlinkCameraHandle {
+    fn drop(&mut self) {
+        let mut state = self.thread_state.as_ref().lock().unwrap();
+        *state = ThreadState::DEAD;
     }
 }
 
@@ -159,6 +212,11 @@ fn receive_message_loop(
     drop(information);
     let vehicle = vehicle.as_ref();
     loop {
+        let loop_state = atomic_thread_state.as_ref().lock().unwrap().clone();
+        if loop_state == ThreadState::DEAD {
+            break;
+        }
+
         match vehicle.recv() {
             Ok((_header, msg)) => {
                 match msg {
@@ -167,7 +225,22 @@ fn receive_message_loop(
                         match command_long.command {
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_INFORMATION => {
                                 debug!("Sending camera_information..");
-                                if let Err(error) = vehicle.send(&header, &camera_information()) {
+                                let information =
+                                    mavlink_camera_information.as_ref().lock().unwrap();
+                                let source_string =
+                                    information.video_source_type.inner().source_string();
+                                let rest_server_address = cli::manager::server_address();
+                                let vendor_name = information.video_source_type.inner().name();
+
+                                if let Err(error) = vehicle.send(
+                                    &header,
+                                    &camera_information(
+                                        vendor_name,
+                                        vendor_name,
+                                        rest_server_address,
+                                        source_string,
+                                    ),
+                                ) {
                                     warn!("Failed to send camera_information: {:?}", error);
                                 }
                             }
@@ -196,10 +269,14 @@ fn receive_message_loop(
                                 debug!("Sending video_stream_information..");
                                 let information =
                                     mavlink_camera_information.as_ref().lock().unwrap();
-
+                                let source_string =
+                                    information.video_source_type.inner().source_string();
                                 if let Err(error) = vehicle.send(
                                     &header,
-                                    &video_stream_information(&information.video_stream_uri),
+                                    &video_stream_information(
+                                        &source_string,
+                                        &information.video_stream_uri.to_string(),
+                                    ),
                                 ) {
                                     warn!("Failed to send video_stream_information: {:?}", error);
                                 }
@@ -273,7 +350,7 @@ fn receive_message_loop(
                     // Any other message that is not a heartbeat or command_long
                     _ => {
                         let information = mavlink_camera_information.as_ref().lock().unwrap();
-                        warn!("Camera: {:#?}, Ignoring: {:#?}", information, msg);
+                        debug!("Camera: {:#?}, Ignoring: {:#?}", information, msg);
                     }
                 }
             }
@@ -309,7 +386,7 @@ fn sys_info() -> SysInfo {
         }
     }
 
-    let mut boottime_ms = match sys_info::boottime() {
+    let boottime_ms = match sys_info::boottime() {
         Ok(bootime) => bootime.tv_usec / 1000,
         Err(error) => {
             warn!("Failed to fetch boottime info: {:#?}", error);
@@ -338,18 +415,34 @@ fn heartbeat_message() -> mavlink::common::MavMessage {
     })
 }
 
-fn camera_information() -> mavlink::common::MavMessage {
+fn camera_information(
+    vendor_name: &str,
+    model_name: &str,
+    http_server_address: &str,
+    video_source_path: &str,
+) -> mavlink::common::MavMessage {
     // Create a fixed size array with the camera name
-    let name_str = String::from("name");
-    let mut name: [u8; 32] = [0; 32];
+    let name_str = String::from(vendor_name);
+    let mut vendor_name: [u8; 32] = [0; 32];
     for index in 0..name_str.len() as usize {
-        name[index] = name_str.as_bytes()[index];
+        vendor_name[index] = name_str.as_bytes()[index];
+    }
+
+    let name_str = String::from(model_name);
+    let mut model_name: [u8; 32] = [0; 32];
+    for index in 0..name_str.len() as usize {
+        model_name[index] = name_str.as_bytes()[index];
     }
 
     // Send path to our camera configuration file
-    let uri: Vec<char> = format!("{}", r"http://0.0.0.0:6020/xml?file=/dev/video0")
-        .chars()
-        .collect();
+    cli::manager::server_address();
+    let uri = format!(
+        r"http://{}/xml?file={}",
+        http_server_address, video_source_path
+    );
+
+    warn!("URI: {}", uri);
+    let uri: Vec<char> = uri.chars().collect();
 
     let sys_info = sys_info();
 
@@ -363,8 +456,8 @@ fn camera_information() -> mavlink::common::MavMessage {
         resolution_h: 0,
         resolution_v: 0,
         cam_definition_version: 0,
-        vendor_name: name,
-        model_name: name,
+        vendor_name,
+        model_name,
         lens_id: 0,
         cam_definition_uri: uri,
     })
@@ -413,8 +506,8 @@ fn camera_capture_status() -> mavlink::common::MavMessage {
     )
 }
 
-fn video_stream_information(video_uri: &str) -> mavlink::common::MavMessage {
-    let name_str = String::from("name");
+fn video_stream_information(video_name: &str, video_uri: &str) -> mavlink::common::MavMessage {
+    let name_str = String::from(video_name);
     let mut name: [char; 32] = ['\0'; 32];
     for index in 0..name_str.len() as u32 {
         name[index as usize] = name_str.as_bytes()[index as usize] as char;
