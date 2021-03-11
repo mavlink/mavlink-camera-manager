@@ -239,6 +239,17 @@ mod tests {
     }
 
     #[test]
+    fn test_no_aboslute_path() {
+        init(None);
+        let manager = MANAGER.as_ref().lock().unwrap();
+        let file_name = &manager.content.as_ref().unwrap().file_name;
+        assert!(
+            std::path::Path::new(&file_name).exists(),
+            "Settings file does not exist"
+        );
+    }
+
+    #[test]
     fn test_store() {
         init(Some(&generate_random_settings_file_name()));
 
