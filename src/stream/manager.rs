@@ -64,7 +64,7 @@ pub fn add_stream_and_start(
             .conflicts_with(&video_and_stream_information)?
     }
 
-    let mut stream = stream_backend::create_stream(&video_and_stream_information)?;
+    let mut stream = stream_backend::new(&video_and_stream_information)?;
     stream.mut_inner().start();
     manager.streams.push(Stream {
         stream_type: stream,
