@@ -8,6 +8,7 @@ mod cli;
 mod logger;
 mod master;
 mod mavlink;
+mod network;
 mod server;
 mod settings;
 mod stream;
