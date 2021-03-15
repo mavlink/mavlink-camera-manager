@@ -44,6 +44,7 @@ simple-error = "0.2"
 url = {version = "2", features = ["serde"]}
 v4l = "0.12.0"
 directories = "3.0.1"
+pnet = "0.27.2"
 
 ## Mavlink
 mavlink = {version = "0.8.6", features = ["default", "emit-extensions"]}
