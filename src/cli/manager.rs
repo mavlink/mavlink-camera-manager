@@ -54,8 +54,15 @@ pub fn matches<'a>() -> clap::ArgMatches<'a> {
 }
 
 fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
+    let version = format!(
+        "{}-{} ({})",
+        env!("CARGO_PKG_VERSION"),
+        env!("VERGEN_GIT_SHA_SHORT"),
+        env!("VERGEN_BUILD_DATE")
+    );
+
     let matches = clap::App::new(env!("CARGO_PKG_NAME"))
-        .version(env!("CARGO_PKG_VERSION"))
+        .version(version.as_str())
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .author(env!("CARGO_PKG_AUTHORS"))
         .arg(
