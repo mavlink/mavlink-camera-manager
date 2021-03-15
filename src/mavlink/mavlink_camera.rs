@@ -435,7 +435,6 @@ fn camera_information(
     }
 
     // Send path to our camera configuration file
-    cli::manager::server_address();
     let uri = format!(
         r"http://{}/xml?file={}",
         http_server_address, video_source_path
