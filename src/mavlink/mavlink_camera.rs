@@ -1,4 +1,5 @@
 use crate::cli;
+use crate::network;
 use crate::settings;
 use crate::video::types::VideoSourceType;
 
@@ -229,15 +230,17 @@ fn receive_message_loop(
                                     mavlink_camera_information.as_ref().lock().unwrap();
                                 let source_string =
                                     information.video_source_type.inner().source_string();
-                                let rest_server_address = cli::manager::server_address();
                                 let vendor_name = information.video_source_type.inner().name();
+
+                                let ips = network::utils::get_ipv4_addresses();
+                                let visible_qgc_ip_address = &ips.last().unwrap().to_string();
 
                                 if let Err(error) = vehicle.send(
                                     &header,
                                     &camera_information(
                                         vendor_name,
                                         vendor_name,
-                                        rest_server_address,
+                                        visible_qgc_ip_address,
                                         source_string,
                                     ),
                                 ) {
