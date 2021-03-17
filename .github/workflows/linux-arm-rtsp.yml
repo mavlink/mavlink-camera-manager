@@ -8,23 +8,46 @@ jobs:
     name: Build on ARMv7
     steps:
     - uses: actions/checkout@v1.0.0
-    - uses: uraimo/run-on-arch-action@v1.0.8
+    - name: Restore cache
+      uses: actions/cache@v2
+      id: cache
+      with:
+        path: /tmp/.cache
+        key: ${{ runner.os }}-cargo-v2-${{ hashFiles('Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-v2
+    - uses: uraimo/run-on-arch-action@v2.0.5
       id: runcmd
       with:
-        architecture: armv7
-        distribution: ubuntu18.04
-        run: |
+        arch: armv7
+        distro: ubuntu18.04
+        githubToken: ${{ github.token }}
+        setup: |
+          mkdir -p /tmp/.cache
+        install: |
           uname -a
           apt update
           apt install -y curl libssl-dev
           apt install -y libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev libclang-dev
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
           export PATH="$HOME/.cargo/bin:$PATH"
-          cargo build --verbose --release --features rtsp
+          cargo install sccache --no-default-features
+        dockerRunArgs: |
+          --volume "/tmp/.cache:/tmp/.cache"
+        run: |
+          export SCCACHE_DIR=/tmp/.cache
+          export PATH="$HOME/.cargo/bin:$PATH"
+          sccache --show-stats
+          RUSTC_WRAPPER=sccache cargo build --verbose --release --features rtsp
+          sccache --show-stats
 
     - name: Rename
       run: |
         cp target/release/mavlink-camera-manager mavlink-camera-manager-armv7
+
+    - name: Fix cache owner
+      run: |
+        sudo chown $(whoami) -R /tmp/.cache
 
     - uses: actions/upload-artifact@master
       with:
