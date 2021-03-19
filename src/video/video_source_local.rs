@@ -195,20 +195,24 @@ impl VideoSource for VideoSourceLocal {
             let mut sizes = vec![];
             for v4l_framesizes in device.enum_framesizes(v4l_format.fourcc).unwrap() {
                 for v4l_size in v4l_framesizes.size.to_discrete() {
-                    let intervals = convert_v4l_intervals(
-                        &device
-                            .enum_frameintervals(
-                                v4l_framesizes.fourcc,
-                                v4l_size.width,
-                                v4l_size.height,
-                            )
-                            .unwrap(),
-                    );
-                    sizes.push(Size {
-                        width: v4l_size.width,
-                        height: v4l_size.height,
-                        intervals,
-                    })
+                    match &device.enum_frameintervals(
+                        v4l_framesizes.fourcc,
+                        v4l_size.width,
+                        v4l_size.height,
+                    ) {
+                        Ok(enum_frameintervals) => {
+                            let intervals = convert_v4l_intervals(enum_frameintervals);
+                            sizes.push(Size {
+                                width: v4l_size.width,
+                                height: v4l_size.height,
+                                intervals,
+                            })
+                        }
+                        Err(error) => {
+                            warn!("Failed to fetch frameintervals for camera: {}, for encode: {:?}, for size: {:?}, error: {:#?}",
+                                &self.device_path, v4l_format.fourcc, v4l_size, error);
+                        }
+                    }
                 }
             }
             formats.push(Format {
