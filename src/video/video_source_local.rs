@@ -194,6 +194,11 @@ impl VideoSource for VideoSourceLocal {
         for v4l_format in v4l_formats {
             let mut sizes = vec![];
             for v4l_framesizes in device.enum_framesizes(v4l_format.fourcc).unwrap() {
+                if let v4l::framesize::FrameSizeEnum::Stepwise(_) = v4l_framesizes.size {
+                    warn!("Stepwise framesize not suppported for camera: {}, for configuration: {:#?}",
+                        &self.device_path, v4l_framesizes);
+                    continue;
+                }
                 for v4l_size in v4l_framesizes.size.to_discrete() {
                     match &device.enum_frameintervals(
                         v4l_framesizes.fourcc,
