@@ -5,6 +5,7 @@ extern crate simple_error;
 extern crate sys_info;
 
 mod cli;
+mod custom;
 mod logger;
 mod master;
 mod mavlink;
