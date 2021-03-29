@@ -1,6 +1,8 @@
 use clap;
 use std::sync::Arc;
 
+use crate::custom;
+
 #[derive(Debug)]
 struct Manager<'a> {
     clap_matches: clap::ArgMatches<'a>,
@@ -47,6 +49,10 @@ pub fn server_address() -> &'static str {
         .unwrap();
 }
 
+pub fn default_settings() -> Option<&'static str> {
+    return MANAGER.as_ref().clap_matches.value_of("default-settings");
+}
+
 // Return the command line used to start this application
 pub fn command_line_string() -> String {
     return std::env::args().collect::<Vec<String>>().join(" ");
@@ -76,6 +82,14 @@ fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
                 .help("Sets the mavlink connection string")
                 .takes_value(true)
                 .default_value("udpout:0.0.0.0:14550"),
+        )
+        .arg(
+            clap::Arg::with_name("default-settings")
+                .long("default-settings")
+                .value_name("NAME")
+                .possible_values(&custom::CustomEnvironment::variants())
+                .help("Default settings to be used for different vehicles or environments.")
+                .takes_value(true)
         )
         .arg(
             clap::Arg::with_name("reset")
