@@ -1,6 +1,6 @@
+use crate::custom;
 use crate::settings;
 use crate::stream;
-
 use crate::video::{types::*, video_source::VideoSource};
 use crate::video_stream::types::VideoAndStreamInformation;
 
@@ -9,6 +9,10 @@ use log::*;
 pub fn run() {
     settings::manager::init(None);
     let mut streams = settings::manager::streams();
+
+    if streams.is_empty() {
+        streams = custom::create_default_streams();
+    }
 
     // Update all local video sources to make sure that is available
     streams.iter_mut().for_each(|stream| {
