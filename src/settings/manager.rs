@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 use std::sync::{Arc, Mutex};
 
+use crate::cli;
 use crate::video_stream::types::VideoAndStreamInformation;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -125,7 +126,7 @@ fn load_settings_from_file(file_name: &str) -> SettingsStruct {
     let result = std::fs::read_to_string(file_name);
 
     debug!("loaded!");
-    if result.is_err() {
+    if result.is_err() || cli::manager::is_reset() {
         return SettingsStruct::default();
     };
 
