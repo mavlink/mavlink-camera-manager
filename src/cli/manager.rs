@@ -28,6 +28,10 @@ pub fn is_verbose() -> bool {
     return MANAGER.as_ref().clap_matches.is_present("verbose");
 }
 
+pub fn is_reset() -> bool {
+    return MANAGER.as_ref().clap_matches.is_present("reset");
+}
+
 #[allow(dead_code)]
 // Return the mavlink connection string
 pub fn mavlink_connection_string() -> &'static str {
@@ -72,6 +76,12 @@ fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
                 .help("Sets the mavlink connection string")
                 .takes_value(true)
                 .default_value("udpout:0.0.0.0:14550"),
+        )
+        .arg(
+            clap::Arg::with_name("reset")
+                .long("reset")
+                .help("Delete settings file before starting.")
+                .takes_value(false),
         )
         .arg(
             clap::Arg::with_name("rest-server")
