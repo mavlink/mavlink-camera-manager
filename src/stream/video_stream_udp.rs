@@ -148,6 +148,17 @@ fn run_video_stream_udp(
             continue;
         }
 
+        // Create dot file for the pipeline
+        gstreamer::debug_bin_to_dot_file(
+            pipeline
+                .as_ref()
+                .unwrap()
+                .downcast_ref::<gstreamer::Pipeline>()
+                .unwrap(),
+            gstreamer::DebugGraphDetails::all(),
+            "pipeline-started-video-stream-udp",
+        );
+
         // Check if we need to break external loop
         'innerLoop: loop {
             if state.lock().unwrap().kill {
