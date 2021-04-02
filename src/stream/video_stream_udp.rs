@@ -160,12 +160,39 @@ fn run_video_stream_udp(
         );
 
         // Check if we need to break external loop
+        let mut previous_position: Option<gstreamer::ClockTime> = None;
         'innerLoop: loop {
             if state.lock().unwrap().kill {
                 break 'externalLoop;
             }
             if !state.lock().unwrap().run {
                 break 'innerLoop;
+            }
+
+            // Restart pipeline if pipeline position do not change,
+            // occur if usb connection is lost and gstreamer do not detect it
+            match pipeline
+                .as_ref()
+                .unwrap()
+                .query_position::<gstreamer::ClockTime>()
+            {
+                Some(position) => {
+                    previous_position = match previous_position {
+                        Some(current_previous_position) => {
+                            if current_previous_position.nanoseconds() != Some(0)
+                                && current_previous_position.nanoseconds() == position.nanoseconds()
+                            {
+                                let _ = channel
+                                    .send(format!("Position did not change, restarting pipeline"));
+                                break 'innerLoop;
+                            }
+
+                            Some(position)
+                        }
+                        None => Some(position),
+                    }
+                }
+                None => {}
             }
 
             for msg in bus.timed_pop(gstreamer::ClockTime::from_mseconds(100)) {
