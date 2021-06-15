@@ -200,16 +200,18 @@ fn run_video_stream_udp(
 
                 match msg.view() {
                     MessageView::Eos(eos) => {
-                        let _ = channel.send(format!("GStreamer error: EOS received: {:#?}", eos));
+                        let message = format!("GStreamer error: EOS received: {:#?}", eos);
+                        let _ = channel.send(message);
                         break 'innerLoop;
                     }
                     MessageView::Error(error) => {
-                        let _ = channel.send(format!(
+                        let message = format!(
                             "GStreamer error: Error from {:?}: {} ({:?})",
                             error.get_src().map(|s| s.get_path_string()),
                             error.get_error(),
                             error.get_debug()
-                        ));
+                        );
+                        let _ = channel.send(message);
                         break 'innerLoop;
                     }
                     _ => (),
