@@ -159,8 +159,14 @@ fn run_video_stream_udp(
             "pipeline-started-video-stream-udp",
         );
 
-        // Check if we need to break external loop
+        // Check if we need to break external loop.
+        // Some cameras have a duplicated timestamp when starting.
+        // to avoid restarting the camera once and once again,
+        // this checks for a maximum of 10 lost before restarting.
         let mut previous_position: Option<gstreamer::ClockTime> = None;
+        let mut lost_timestamps: usize = 0;
+        let max_lost_timestamps: usize = 10;
+
         'innerLoop: loop {
             if state.lock().unwrap().kill {
                 break 'externalLoop;
@@ -182,8 +188,18 @@ fn run_video_stream_udp(
                             if current_previous_position.nanoseconds() != Some(0)
                                 && current_previous_position.nanoseconds() == position.nanoseconds()
                             {
+                                lost_timestamps += 1;
+                                let message =
+                                    format!("Position did not change {}", lost_timestamps);
+                                let _ = channel.send(message);
                                 let _ = channel
-                                    .send(format!("Position did not change, restarting pipeline"));
+                                    .send("Lost camera communication, restarting pipeline!".into());
+                            } else {
+                                // We are back in track, erase lost timestamps
+                                lost_timestamps = 0;
+                            }
+
+                            if lost_timestamps > max_lost_timestamps {
                                 break 'innerLoop;
                             }
 
