@@ -90,10 +90,10 @@
             },
             methods: {
                 requestData: async function() {
-                    const response_content = await fetch(`${this.restAddress}/v4l`)
+                    const response_content = await fetch('v4l')
                     this.content = await response_content.json()
 
-                    const response_streams = await fetch(`${this.restAddress}/streams`)
+                    const response_streams = await fetch('streams')
                     this.streams = await response_streams.json()
                 },
                 setControl: async function(source, id, value) {
@@ -106,13 +106,13 @@
                             'Content-Type': 'application/json',
                         }
                     }
-                    const response = await fetch(`${this.restAddress}/v4l`, settings)
+                    const response = await fetch('v4l', settings)
                     this.checkResponse(response)
                 },
                 deleteStream: async function(stream_name) {
                     console.log(`Deleting stream: ${stream_name}`)
 
-                    const url = new URL(`${this.restAddress}/delete_stream`)
+                    const url = new URL('delete_stream')
                     url.searchParams.set("name", stream_name)
                     const response = await fetch(url, {method: "DELETE"})
                     this.checkResponse(response).then(() => this.requestData())
@@ -154,13 +154,12 @@
                             'Content-Type': 'application/json',
                         }
                     }
-                    const response = await fetch(`${this.restAddress}/streams`, settings)
+                    const response = await fetch('streams', settings)
                     this.checkResponse(response).then(() => this.requestData())
                 },
             },
             data: function() {
                 return {
-                    "restAddress": `${location.protocol}//${location.hostname}${(location.port ? ':'+location.port: '')}`,
                     "content": [],
                     "streams": []
                 }
