@@ -113,7 +113,7 @@
                 deleteStream: async function(stream_name) {
                     console.log(`Deleting stream: ${stream_name}`)
 
-                    const url = new URL('delete_stream')
+                    const url = new URL('delete_stream', window.location)
                     url.searchParams.set("name", stream_name)
                     const response = await fetch(url, {method: "DELETE"})
                     this.checkResponse(response).then(() => this.requestData())
