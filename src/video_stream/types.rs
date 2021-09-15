@@ -2,12 +2,12 @@ use crate::stream::types::StreamInformation;
 use crate::video::types::VideoSourceType;
 use crate::video::video_source::VideoSource;
 
+use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 
 use simple_error::SimpleError;
-
 //TODO: move to stream ?
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct VideoAndStreamInformation {
     pub name: String,
     pub stream_information: StreamInformation,

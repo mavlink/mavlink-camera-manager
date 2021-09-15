@@ -3,6 +3,7 @@ use super::{
     video_source,
     video_source::{VideoSource, VideoSourceAvailable},
 };
+use paperclip::actix::Apiv2Schema;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use v4l::prelude::*;
@@ -10,7 +11,7 @@ use v4l::video::Capture;
 
 use log::*;
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct UsbBus {
     pub interface: String,
     pub usb_hub: u8,
@@ -18,14 +19,14 @@ pub struct UsbBus {
 }
 
 //TODO: Move to types
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub enum VideoSourceLocalType {
     Unknown(String),
     Usb(UsbBus),
     Isp(String),
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct VideoSourceLocal {
     pub name: String,
     pub device_path: String,

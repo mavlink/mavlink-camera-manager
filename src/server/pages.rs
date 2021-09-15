@@ -1,42 +1,43 @@
-use crate::stream::types::StreamInformation;
+use crate::stream::types::{StreamInformation, StreamStatus};
 use crate::video::{
     types::{Control, Format, VideoSourceType},
     video_source,
     video_source::VideoSource,
     xml,
 };
-use actix_web::{web, HttpRequest, HttpResponse};
+use actix_web::{web::{self, Json}, HttpRequest, HttpResponse};
 use log::*;
+use paperclip::actix::{api_v2_operation, Apiv2Schema};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize)]
-struct ApiVideoSource {
+#[derive(Apiv2Schema, Debug, Serialize)]
+pub struct ApiVideoSource {
     name: String,
     source: String,
     formats: Vec<Format>,
     controls: Vec<Control>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
 pub struct V4lControl {
     device: String,
     v4l_id: u64,
     value: i64,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
 pub struct PostStream {
     name: String,
     source: String,
     stream_information: StreamInformation,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Apiv2Schema, Debug, Deserialize)]
 pub struct RemoveStream {
     name: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Apiv2Schema, Debug, Deserialize)]
 pub struct XmlFileRequest {
     file: String,
 }
@@ -74,39 +75,37 @@ pub fn root(req: HttpRequest) -> HttpResponse {
 }
 
 //TODO: change endpoint name to sources
-pub fn v4l(req: HttpRequest) -> HttpResponse {
+#[api_v2_operation]
+pub async fn v4l(req: HttpRequest) -> Json<Vec<ApiVideoSource>> {
     debug!("{:#?}", req);
 
     let cameras = video_source::cameras_available();
-    let cameras: Vec<serde_json::value::Value> = cameras
+    let cameras: Vec<ApiVideoSource> = cameras
         .iter()
         .map(|cam| match cam {
             VideoSourceType::Local(cam) => {
-                let camera = ApiVideoSource {
+                ApiVideoSource {
                     name: cam.name().clone(),
                     source: cam.source_string().to_string(),
                     formats: cam.formats(),
                     controls: cam.controls(),
-                };
-                serde_json::to_value(&camera).unwrap()
+                }
             }
             VideoSourceType::Gst(gst) => {
-                let camera = ApiVideoSource {
+                ApiVideoSource {
                     name: gst.name().clone(),
                     source: gst.source_string().to_string(),
                     formats: gst.formats(),
                     controls: gst.controls(),
-                };
-                serde_json::to_value(&camera).unwrap()
+                }
             }
         })
         .collect();
 
-    HttpResponse::Ok()
-        .content_type("application/json")
-        .body(serde_json::to_string_pretty(&cameras).unwrap())
+    Json(cameras)
 }
 
+#[api_v2_operation]
 pub fn v4l_post(req: HttpRequest, json: web::Json<V4lControl>) -> HttpResponse {
     debug!("{:#?}{:?}", req, json);
     let control = json.into_inner();
@@ -120,15 +119,15 @@ pub fn v4l_post(req: HttpRequest, json: web::Json<V4lControl>) -> HttpResponse {
         .body(format!("{:#?}", answer.err().unwrap()));
 }
 
-pub fn streams(req: HttpRequest) -> HttpResponse {
+#[api_v2_operation]
+pub async fn streams(req: HttpRequest) -> Json<Vec<StreamStatus>> {
     debug!("{:#?}", req);
     use crate::stream::manager as stream_manager;
     let streams = stream_manager::streams();
-    HttpResponse::Ok()
-        .content_type("application/json")
-        .body(serde_json::to_string_pretty(&streams).unwrap())
+    Json(streams)
 }
 
+//#[api_v2_operation]
 pub fn streams_post(req: HttpRequest, json: web::Json<PostStream>) -> HttpResponse {
     debug!("{:#?}{:?}", req, json);
     let json = json.into_inner();
@@ -162,6 +161,7 @@ pub fn streams_post(req: HttpRequest, json: web::Json<PostStream>) -> HttpRespon
     }
 }
 
+#[api_v2_operation]
 pub fn remove_stream(req: HttpRequest, query: web::Query<RemoveStream>) -> HttpResponse {
     debug!("{:#?}{:?}", req, query);
     //TODO: Move stream manager to absolute scope, check others places
@@ -179,6 +179,7 @@ pub fn remove_stream(req: HttpRequest, query: web::Query<RemoveStream>) -> HttpR
     }
 }
 
+#[api_v2_operation]
 pub fn xml(xml_file_request: web::Query<XmlFileRequest>) -> HttpResponse {
     debug!("{:#?}", xml_file_request);
     let cameras = video_source::cameras_available();

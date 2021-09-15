@@ -3,8 +3,13 @@ use super::video_stream_udp::VideoStreamUdp;
 use crate::video::types::CaptureConfiguration;
 use crate::video_stream::types::VideoAndStreamInformation;
 
+use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 use url::Url;
+
+use paperclip::v2::{self, ResolvableApi};
+
+//extern crate paperclip;
 
 #[derive(Debug)]
 pub enum StreamType {
@@ -25,13 +30,17 @@ impl StreamType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+/*
+impl Apiv2Schema for Url {
+}*/
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Apiv2Schema)]
 pub struct StreamInformation {
     pub endpoints: Vec<Url>,
     pub configuration: CaptureConfiguration,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
 pub struct StreamStatus {
     pub running: bool,
     pub video_and_stream: VideoAndStreamInformation,

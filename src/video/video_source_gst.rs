@@ -5,9 +5,10 @@ use super::{
     video_source::{VideoSource, VideoSourceAvailable},
 };
 
+use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Apiv2Schema, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum VideoSourceGstType {
     // TODO: local should have a pipeline also
     Local(VideoSourceLocal),
@@ -107,8 +108,7 @@ impl VideoSource for VideoSourceGst {
             VideoSourceGstType::Local(local) => local.is_valid(),
             VideoSourceGstType::Fake(string) => match string.as_str() {
                 // All valid members are from: https://gstreamer.freedesktop.org/documentation/videotestsrc/index.html?gi-language=c#members-2
-                "ball" | "bar" | "black" | "blink" | "blue" | "checkers" | "checkers"
-                | "checkers" | "checkers" | "chroma" | "circular" | "gamut" | "gradient"
+                "ball" | "bar" | "black" | "blink" | "blue" | "chroma" | "circular" | "gamut" | "gradient"
                 | "green" | "pinwheel" | "red" | "smpte" | "smpte100" | "smpte75" | "snow"
                 | "solid" | "spokes" | "white" | "zone" => true,
                 _ => false,

@@ -1,16 +1,17 @@
 use super::video_source::VideoSource;
 use super::video_source_gst::VideoSourceGst;
 use super::video_source_local::VideoSourceLocal;
+use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 
 //TODO: Fix enum names to follow rust standards
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Apiv2Schema, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum VideoSourceType {
     Gst(VideoSourceGst),
     Local(VideoSourceLocal),
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Apiv2Schema, Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum VideoEncodeType {
     UNKNOWN(String),
     H265,
@@ -20,7 +21,7 @@ pub enum VideoEncodeType {
 }
 
 //TODO: Move to stream
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct CaptureConfiguration {
     pub encode: VideoEncodeType,
     pub height: u32,
@@ -28,26 +29,26 @@ pub struct CaptureConfiguration {
     pub frame_interval: FrameInterval,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, Deserialize, Serialize)]
 pub struct Format {
     pub encode: VideoEncodeType,
     pub sizes: Vec<Size>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, Deserialize, Serialize)]
 pub struct Size {
     pub width: u32,
     pub height: u32,
     pub intervals: Vec<FrameInterval>,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct FrameInterval {
     pub numerator: u32,
     pub denominator: u32,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, Default, Serialize)]
 pub struct Control {
     pub name: String,
     pub cpp_type: String,
@@ -55,20 +56,20 @@ pub struct Control {
     pub configuration: ControlType,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, Serialize)]
 pub enum ControlType {
     Bool(ControlBool),
     Slider(ControlSlider),
     Menu(ControlMenu),
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, Serialize)]
 pub struct ControlBool {
     pub default: i32,
     pub value: i64,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, Serialize)]
 pub struct ControlSlider {
     pub default: i32,
     pub value: i64,
@@ -77,14 +78,14 @@ pub struct ControlSlider {
     pub min: i32,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, Serialize)]
 pub struct ControlMenu {
     pub default: i32,
     pub value: i64,
     pub options: Vec<ControlOption>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, Serialize)]
 pub struct ControlOption {
     pub name: String,
     pub value: i64,

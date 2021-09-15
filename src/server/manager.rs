@@ -3,8 +3,9 @@ use super::pages;
 use actix_web::{
     error::{ErrorBadRequest, JsonPayloadError},
     rt::System,
-    web, App, HttpRequest, HttpServer,
+    App, HttpRequest, HttpServer,
 };
+use paperclip::actix::{web, OpenApiExt};
 
 use log::*;
 
@@ -24,6 +25,10 @@ pub fn run(server_address: &str) {
     let _ = System::new("http-server");
     HttpServer::new(|| {
         App::new()
+            .wrap_api()
+            .with_json_spec_at("/docs.json")
+            .with_swagger_ui_at("/docs")
+            // Record services and routes for paperclip OpenAPI plugin for Actix.
             .data(web::JsonConfig::default().error_handler(json_error_handler))
             .route("/", web::get().to(pages::root))
             .route(r"/{filename:.*(\.html|\.js)}", web::get().to(pages::root))
@@ -33,6 +38,7 @@ pub fn run(server_address: &str) {
             .route("/v4l", web::get().to(pages::v4l))
             .route("/v4l", web::post().to(pages::v4l_post))
             .route("/xml", web::get().to(pages::xml))
+            .build()
     })
     .bind(server_address)
     .unwrap()
