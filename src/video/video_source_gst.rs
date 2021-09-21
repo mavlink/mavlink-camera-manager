@@ -108,9 +108,9 @@ impl VideoSource for VideoSourceGst {
             VideoSourceGstType::Local(local) => local.is_valid(),
             VideoSourceGstType::Fake(string) => match string.as_str() {
                 // All valid members are from: https://gstreamer.freedesktop.org/documentation/videotestsrc/index.html?gi-language=c#members-2
-                "ball" | "bar" | "black" | "blink" | "blue" | "chroma" | "circular" | "gamut" | "gradient"
-                | "green" | "pinwheel" | "red" | "smpte" | "smpte100" | "smpte75" | "snow"
-                | "solid" | "spokes" | "white" | "zone" => true,
+                "ball" | "bar" | "black" | "blink" | "blue" | "chroma" | "circular" | "gamut"
+                | "gradient" | "green" | "pinwheel" | "red" | "smpte" | "smpte100" | "smpte75"
+                | "snow" | "solid" | "spokes" | "white" | "zone" => true,
                 _ => false,
             },
         }

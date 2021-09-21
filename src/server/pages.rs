@@ -5,7 +5,10 @@ use crate::video::{
     video_source::VideoSource,
     xml,
 };
-use actix_web::{web::{self, Json}, HttpRequest, HttpResponse};
+use actix_web::{
+    web::{self, Json},
+    HttpRequest, HttpResponse,
+};
 use log::*;
 use paperclip::actix::{api_v2_operation, Apiv2Schema};
 use serde::{Deserialize, Serialize};
@@ -83,22 +86,18 @@ pub async fn v4l(req: HttpRequest) -> Json<Vec<ApiVideoSource>> {
     let cameras: Vec<ApiVideoSource> = cameras
         .iter()
         .map(|cam| match cam {
-            VideoSourceType::Local(cam) => {
-                ApiVideoSource {
-                    name: cam.name().clone(),
-                    source: cam.source_string().to_string(),
-                    formats: cam.formats(),
-                    controls: cam.controls(),
-                }
-            }
-            VideoSourceType::Gst(gst) => {
-                ApiVideoSource {
-                    name: gst.name().clone(),
-                    source: gst.source_string().to_string(),
-                    formats: gst.formats(),
-                    controls: gst.controls(),
-                }
-            }
+            VideoSourceType::Local(cam) => ApiVideoSource {
+                name: cam.name().clone(),
+                source: cam.source_string().to_string(),
+                formats: cam.formats(),
+                controls: cam.controls(),
+            },
+            VideoSourceType::Gst(gst) => ApiVideoSource {
+                name: gst.name().clone(),
+                source: gst.source_string().to_string(),
+                formats: gst.formats(),
+                controls: gst.controls(),
+            },
         })
         .collect();
 

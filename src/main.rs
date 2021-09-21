@@ -1,9 +1,9 @@
 #[macro_use]
 extern crate lazy_static;
 extern crate log;
+extern crate paperclip;
 extern crate simple_error;
 extern crate sys_info;
-extern crate paperclip;
 
 mod cli;
 mod custom;
