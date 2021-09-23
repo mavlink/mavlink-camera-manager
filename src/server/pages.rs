@@ -79,6 +79,7 @@ pub fn root(req: HttpRequest) -> HttpResponse {
 
 //TODO: change endpoint name to sources
 #[api_v2_operation]
+/// Provides list of all video sources, with controls and formats
 pub async fn v4l(req: HttpRequest) -> Json<Vec<ApiVideoSource>> {
     debug!("{:#?}", req);
 
@@ -105,6 +106,7 @@ pub async fn v4l(req: HttpRequest) -> Json<Vec<ApiVideoSource>> {
 }
 
 #[api_v2_operation]
+/// Change video control for a specific source
 pub fn v4l_post(req: HttpRequest, json: web::Json<V4lControl>) -> HttpResponse {
     debug!("{:#?}{:?}", req, json);
     let control = json.into_inner();
@@ -119,6 +121,7 @@ pub fn v4l_post(req: HttpRequest, json: web::Json<V4lControl>) -> HttpResponse {
 }
 
 #[api_v2_operation]
+/// Provide a list of all streams configured
 pub async fn streams(req: HttpRequest) -> Json<Vec<StreamStatus>> {
     debug!("{:#?}", req);
     use crate::stream::manager as stream_manager;
@@ -126,7 +129,8 @@ pub async fn streams(req: HttpRequest) -> Json<Vec<StreamStatus>> {
     Json(streams)
 }
 
-//#[api_v2_operation]
+#[api_v2_operation]
+/// Create a video stream
 pub fn streams_post(req: HttpRequest, json: web::Json<PostStream>) -> HttpResponse {
     debug!("{:#?}{:?}", req, json);
     let json = json.into_inner();
@@ -161,6 +165,7 @@ pub fn streams_post(req: HttpRequest, json: web::Json<PostStream>) -> HttpRespon
 }
 
 #[api_v2_operation]
+/// Remove a desired stream
 pub fn remove_stream(req: HttpRequest, query: web::Query<RemoveStream>) -> HttpResponse {
     debug!("{:#?}{:?}", req, query);
     //TODO: Move stream manager to absolute scope, check others places
@@ -179,6 +184,7 @@ pub fn remove_stream(req: HttpRequest, query: web::Query<RemoveStream>) -> HttpR
 }
 
 #[api_v2_operation]
+/// Provides a xml description file that contains information for a specific device, based on: https://mavlink.io/en/services/camera_def.html
 pub fn xml(xml_file_request: web::Query<XmlFileRequest>) -> HttpResponse {
     debug!("{:#?}", xml_file_request);
     let cameras = video_source::cameras_available();
