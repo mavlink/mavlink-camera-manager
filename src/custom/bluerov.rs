@@ -20,7 +20,15 @@ pub fn udp() -> Vec<VideoAndStreamInformation> {
                 .iter()
                 .find(|format| format.encode == VideoEncodeType::H264)
                 .unwrap();
-            let size = format.sizes.first().unwrap();
+
+            // Get the biggest resolution possible
+            let mut sizes = format.sizes.clone();
+            sizes.sort_by(|first_size, second_size| {
+                (10 * first_size.width + first_size.height)
+                    .cmp(&(10 * second_size.width + second_size.height))
+            });
+            let size = sizes.last().unwrap();
+
             VideoAndStreamInformation {
                 name: format!("UDP Stream {}", index),
                 stream_information: StreamInformation {
