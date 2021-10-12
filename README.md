@@ -13,6 +13,10 @@ It provides a RTSP service for sharing video stream and a MAVLink camera protoco
 2. Download
 3. Run!
 
+# Warning!
+The break changes for the new release are big and this documentation may be outdated.
+For more information about the API, check: http://0.0.0.0:6020/docs
+
 # How to test it
 
 ## Get video via player
