@@ -529,7 +529,7 @@ fn video_stream_information(video_name: &str, video_uri: &str) -> mavlink::commo
             hfov: 0,
             stream_id: 1, // Starts at 1, 0 is for broadcast
             count: 0,
-            mavtype: mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
+            mavtype: mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP,
             name,
             uri,
         },
