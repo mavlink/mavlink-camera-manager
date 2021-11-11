@@ -53,6 +53,7 @@ pub struct Control {
     pub name: String,
     pub cpp_type: String,
     pub id: u64,
+    pub state: ControlState,
     pub configuration: ControlType,
 }
 
@@ -61,6 +62,12 @@ pub enum ControlType {
     Bool(ControlBool),
     Slider(ControlSlider),
     Menu(ControlMenu),
+}
+
+#[derive(Apiv2Schema, Clone, Debug, Default, Serialize)]
+pub struct ControlState {
+    pub is_disabled: bool,
+    pub is_inactive: bool,
 }
 
 #[derive(Apiv2Schema, Clone, Debug, Serialize)]

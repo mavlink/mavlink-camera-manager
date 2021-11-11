@@ -296,6 +296,10 @@ impl VideoSource for VideoSourceLocal {
             let mut control = Control {
                 name: v4l_control.name,
                 id: v4l_control.id as u64,
+                state: ControlState {
+                    is_disabled: v4l_control.flags.contains(v4l::control::Flags::DISABLED),
+                    is_inactive: v4l_control.flags.contains(v4l::control::Flags::INACTIVE),
+                },
                 ..Default::default()
             };
             let value = self.control_value_by_id(v4l_control.id as u64);
