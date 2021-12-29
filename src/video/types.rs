@@ -11,7 +11,7 @@ pub enum VideoSourceType {
     Local(VideoSourceLocal),
 }
 
-#[derive(Apiv2Schema, Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Apiv2Schema, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub enum VideoEncodeType {
     UNKNOWN(String),
     H265,
@@ -35,14 +35,14 @@ pub struct Format {
     pub sizes: Vec<Size>,
 }
 
-#[derive(Apiv2Schema, Clone, Debug, Deserialize, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct Size {
     pub width: u32,
     pub height: u32,
     pub intervals: Vec<FrameInterval>,
 }
 
-#[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct FrameInterval {
     pub numerator: u32,
     pub denominator: u32,
