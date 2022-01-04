@@ -221,6 +221,14 @@ impl VideoSource for VideoSourceLocal {
                     }
                 }
             }
+
+            sizes.sort();
+            sizes.dedup();
+            sizes.iter_mut().for_each(|s| {
+                s.intervals.sort();
+                s.intervals.dedup();
+            });
+
             formats.push(Format {
                 encode: VideoEncodeType::from_str(v4l_format.fourcc.str().unwrap()),
                 sizes,
