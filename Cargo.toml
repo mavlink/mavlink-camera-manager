@@ -38,7 +38,7 @@ chrono = "0.4.19"
 env_logger = "0.8.3"
 lazy_static = "1.4.0"
 log = "0.4"
-paperclip = { git = "https://github.com/patrickelectric/paperclip", branch = "patrick-swagger-url", features = ["actix", "swagger-ui", "url"] }
+paperclip = {version = "0.6.1", features = ["actix", "swagger-ui", "url"]}
 #TODO: Replace it with yaserde
 quick-xml = {version = "0.21", features = ["serialize"]}
 simple-error = "0.2"

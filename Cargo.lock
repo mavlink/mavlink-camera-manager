@@ -1922,8 +1922,9 @@ dependencies = [
 
 [[package]]
 name = "paperclip"
-version = "0.5.0"
-source = "git+https://github.com/patrickelectric/paperclip?branch=patrick-swagger-url#b0b4f85ca1120dd7afbbb762c2b868864682f0ba"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dae420c972d8aa793ef8f179dba06aedcbcb4f924fe09d8cddebb73ea4f0c0ab"
 dependencies = [
  "anyhow",
  "itertools 0.10.1",
@@ -1943,8 +1944,9 @@ dependencies = [
 
 [[package]]
 name = "paperclip-actix"
-version = "0.3.0"
-source = "git+https://github.com/patrickelectric/paperclip?branch=patrick-swagger-url#b0b4f85ca1120dd7afbbb762c2b868864682f0ba"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dde6ef3bdf773e80e3afeaded697397d3ebd794885c53f481c3ede1aea263731"
 dependencies = [
  "actix-service",
  "actix-web",
@@ -1959,8 +1961,9 @@ dependencies = [
 
 [[package]]
 name = "paperclip-core"
-version = "0.3.0"
-source = "git+https://github.com/patrickelectric/paperclip?branch=patrick-swagger-url#b0b4f85ca1120dd7afbbb762c2b868864682f0ba"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f83e598ac88b6bd499309669217ec6b1511f843de818d2a9b66e747424552daf"
 dependencies = [
  "actix-web",
  "mime",
@@ -1978,8 +1981,9 @@ dependencies = [
 
 [[package]]
 name = "paperclip-macros"
-version = "0.4.0"
-source = "git+https://github.com/patrickelectric/paperclip?branch=patrick-swagger-url#b0b4f85ca1120dd7afbbb762c2b868864682f0ba"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0f28bb5ce3045e59663eb5a31ede3c855a1092e698439ecc4608ae36d3d3fe3"
 dependencies = [
  "heck",
  "http",
@@ -1988,8 +1992,8 @@ dependencies = [
  "proc-macro-error",
  "proc-macro2",
  "quote 1.0.9",
- "strum 0.19.5",
- "strum_macros 0.19.4",
+ "strum 0.22.0",
+ "strum_macros 0.22.0",
  "syn",
 ]
 
@@ -2814,9 +2818,9 @@ checksum = "57bd81eb48f4c437cadc685403cad539345bf703d78e63707418431cecd4522b"
 
 [[package]]
 name = "strum"
-version = "0.19.5"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b89a286a7e3b5720b9a477b23253bc50debac207c8d21505f8e70b36792f11b5"
+checksum = "f7ac893c7d471c8a21f31cfe213ec4f6d9afeed25537c772e08ef3f005f8729e"
 
 [[package]]
 name = "strum_macros"
@@ -2832,9 +2836,9 @@ dependencies = [
 
 [[package]]
 name = "strum_macros"
-version = "0.19.4"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e61bb0be289045cb80bfce000512e32d09f8337e54c186725da381377ad1f8d5"
+checksum = "339f799d8b549e3744c7ac7feb216383e4005d94bdb22561b3ab8f3b808ae9fb"
 dependencies = [
  "heck",
  "proc-macro2",
