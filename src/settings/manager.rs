@@ -58,11 +58,7 @@ impl Default for SettingsStruct {
                 video_source: VideoSourceType::Local(VideoSourceLocal {
                     name: "Camera Manager Default Camera".into(),
                     device_path: "/dev/video0".into(),
-                    typ: VideoSourceLocalType::Usb(UsbBus {
-                        interface: "0000:08:00".into(),
-                        usb_hub: 3,
-                        usb_port: 1,
-                    }),
+                    typ: VideoSourceLocalType::Usb("0000:08:00.3-1".into()),
                 }),
             }*/],
         }
@@ -223,7 +219,7 @@ mod tests {
     use crate::stream::types::StreamInformation;
     use crate::video::{
         types::{CaptureConfiguration, FrameInterval, VideoEncodeType, VideoSourceType},
-        video_source_local::{UsbBus, VideoSourceLocal, VideoSourceLocalType},
+        video_source_local::{VideoSourceLocal, VideoSourceLocalType},
     };
     use url::Url;
 
@@ -276,13 +272,9 @@ mod tests {
                 },
             },
             video_source: VideoSourceType::Local(VideoSourceLocal {
-                name: "Fale Potato Test Video Source Camera".into(),
+                name: "Fake Potato Test Video Source Camera".into(),
                 device_path: "/dev/potatovideo".into(),
-                typ: VideoSourceLocalType::Usb(UsbBus {
-                    interface: "0420:08:47".into(),
-                    usb_hub: 42,
-                    usb_port: 77,
-                }),
+                typ: VideoSourceLocalType::Usb("usb-0420:08:47.42-77".into()),
             }),
         }];
         set_streams(&mut fake_streams.clone());
