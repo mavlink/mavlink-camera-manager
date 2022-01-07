@@ -1,7 +1,7 @@
 use crate::custom;
 use crate::settings;
 use crate::stream;
-use crate::video::{types::*, video_source::VideoSource};
+use crate::video::types::*;
 use crate::video_stream::types::VideoAndStreamInformation;
 
 use log::*;

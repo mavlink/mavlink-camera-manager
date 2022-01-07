@@ -7,10 +7,6 @@ use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use paperclip::v2::{self, ResolvableApi};
-
-//extern crate paperclip;
-
 #[derive(Debug)]
 pub enum StreamType {
     UDP(VideoStreamUdp),

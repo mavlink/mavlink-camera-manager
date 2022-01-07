@@ -1,9 +1,6 @@
 use super::types::*;
+use super::video_source::{VideoSource, VideoSourceAvailable};
 use super::video_source_local::VideoSourceLocal;
-use super::{
-    video_source,
-    video_source::{VideoSource, VideoSourceAvailable},
-};
 
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
