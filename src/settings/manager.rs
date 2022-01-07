@@ -257,7 +257,7 @@ mod tests {
         set_mavlink_endpoint(fake_mavlink_endpoint);
         assert_eq!(mavlink_endpoint(), fake_mavlink_endpoint);
 
-        let mut fake_streams = vec![VideoAndStreamInformation {
+        let fake_streams = vec![VideoAndStreamInformation {
             name: "PotatoTestStream".into(),
             stream_information: StreamInformation {
                 endpoints: vec![Url::parse("udp://potatohost:4242").unwrap()],
