@@ -1,6 +1,5 @@
 use crate::stream::types::StreamInformation;
 use crate::video::types::VideoSourceType;
-use crate::video::video_source::VideoSource;
 
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};

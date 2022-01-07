@@ -2,8 +2,7 @@ use super::types::*;
 use super::video_stream_udp::VideoStreamUdp;
 use crate::video::{
     types::{VideoEncodeType, VideoSourceType},
-    video_source_gst::{VideoSourceGst, VideoSourceGstType},
-    video_source_local::VideoSourceLocal,
+    video_source_gst::VideoSourceGstType,
 };
 use crate::video_stream::types::VideoAndStreamInformation;
 use log::*;

@@ -17,8 +17,6 @@ mod stream;
 mod video;
 mod video_stream;
 
-use log::*;
-
 /**
  * Start our managers
  */

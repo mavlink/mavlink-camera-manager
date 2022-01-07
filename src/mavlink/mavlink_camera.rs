@@ -1,4 +1,3 @@
-use crate::cli;
 use crate::network;
 use crate::settings;
 use crate::video::types::VideoSourceType;

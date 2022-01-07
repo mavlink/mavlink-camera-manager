@@ -180,11 +180,10 @@ pub fn from_video_source(video_source: &dyn VideoSource) -> String {
 mod tests {
     use super::*;
     use quick_xml::se::to_string;
-    use serde::Deserialize;
 
     #[test]
     fn test_device() {
-        use crate::video::{video_source, video_source::VideoSource};
+        use crate::video::video_source;
         for camera in video_source::cameras_available() {
             if let VideoSourceType::Local(camera) = camera {
                 let xml_string = from_video_source(&camera);
