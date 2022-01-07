@@ -23,6 +23,6 @@ pub fn create_default_streams() -> Vec<VideoAndStreamInformation> {
     };
 
     match default_environment {
-        BlueROVUDP => bluerov::udp(),
+        CustomEnvironment::BlueROVUDP => bluerov::udp(),
     }
 }
