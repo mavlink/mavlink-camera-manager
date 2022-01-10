@@ -335,13 +335,13 @@ fn receive_message_loop(
                             error!("Failed to parse control id: {:#?}", error);
                             continue;
                         }
-                        let control_id = control_id.unwrap();
+                        let _control_id = control_id.unwrap();
 
                         if let Err(error) = control_value {
                             error!("Failed to parse parameter value: {:#?}", error);
                             continue;
                         }
-                        let control_value = control_value.unwrap();
+                        let _control_value = control_value.unwrap();
 
                         //TODO: Control V4L
                     }

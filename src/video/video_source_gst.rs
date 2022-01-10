@@ -68,28 +68,28 @@ impl VideoSource for VideoSourceGst {
         }
     }
 
-    fn set_control_by_name(&self, control_name: &str, value: i64) -> std::io::Result<()> {
+    fn set_control_by_name(&self, _control_name: &str, _value: i64) -> std::io::Result<()> {
         Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             "Source doesn't have controls.",
         ))
     }
 
-    fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()> {
+    fn set_control_by_id(&self, _control_id: u64, _value: i64) -> std::io::Result<()> {
         Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             "Source doesn't have controls.",
         ))
     }
 
-    fn control_value_by_name(&self, control_name: &str) -> std::io::Result<i64> {
+    fn control_value_by_name(&self, _control_name: &str) -> std::io::Result<i64> {
         Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             "Source doesn't have controls.",
         ))
     }
 
-    fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64> {
+    fn control_value_by_id(&self, _control_id: u64) -> std::io::Result<i64> {
         Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             "Source doesn't have controls.",
