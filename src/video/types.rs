@@ -4,7 +4,6 @@ use super::video_source_local::VideoSourceLocal;
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 
-//TODO: Fix enum names to follow rust standards
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum VideoSourceType {
     Gst(VideoSourceGst),
