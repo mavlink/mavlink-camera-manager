@@ -6,6 +6,7 @@ use log::*;
 use simple_error::SimpleError;
 use url::Url;
 
+use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 
 lazy_static! {
@@ -312,7 +313,6 @@ fn receive_message_loop(
                         let param_id: String = param_ext_set.param_id.iter().collect();
                         let control_id = param_id.parse::<u64>();
 
-                        use std::convert::TryInto;
                         let bytes: Vec<u8> =
                             param_ext_set.param_value.iter().map(|c| *c as u8).collect();
                         let control_value = match param_ext_set.param_type {

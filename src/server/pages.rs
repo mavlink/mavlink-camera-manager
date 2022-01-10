@@ -1,10 +1,14 @@
-use crate::stream::types::{StreamInformation, StreamStatus};
+use crate::stream::{
+    manager as stream_manager,
+    types::{StreamInformation, StreamStatus},
+};
 use crate::video::{
     types::{Control, Format, VideoSourceType},
     video_source,
     video_source::VideoSource,
     xml,
 };
+use crate::video_stream::types::VideoAndStreamInformation;
 use actix_web::{
     web::{self, Json},
     HttpRequest, HttpResponse,
@@ -12,6 +16,8 @@ use actix_web::{
 use log::*;
 use paperclip::actix::{api_v2_operation, Apiv2Schema};
 use serde::{Deserialize, Serialize};
+
+use std::io::prelude::*;
 
 #[derive(Apiv2Schema, Debug, Serialize)]
 pub struct ApiVideoSource {
@@ -48,7 +54,6 @@ pub struct XmlFileRequest {
 pub fn load_file(file_name: &str) -> String {
     // Load files at runtime only in debug builds
     if cfg!(debug_assertions) {
-        use std::io::prelude::*;
         let html_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/html/");
         let mut file = std::fs::File::open(html_path.join(file_name)).unwrap();
         let mut contents = String::new();
@@ -124,7 +129,6 @@ pub fn v4l_post(req: HttpRequest, json: web::Json<V4lControl>) -> HttpResponse {
 /// Provide a list of all streams configured
 pub async fn streams(req: HttpRequest) -> Json<Vec<StreamStatus>> {
     debug!("{:#?}", req);
-    use crate::stream::manager as stream_manager;
     let streams = stream_manager::streams();
     Json(streams)
 }
@@ -135,9 +139,6 @@ pub fn streams_post(req: HttpRequest, json: web::Json<PostStream>) -> HttpRespon
     debug!("{:#?}{:?}", req, json);
     let json = json.into_inner();
     //json.
-    //TODO: Move stream manager to absolute scope, check others places
-    use crate::stream::manager as stream_manager;
-    use crate::video_stream::types::VideoAndStreamInformation;
 
     let video_source = match video_source::get_video_source(&json.source) {
         Ok(video_source) => video_source,
@@ -168,8 +169,6 @@ pub fn streams_post(req: HttpRequest, json: web::Json<PostStream>) -> HttpRespon
 /// Remove a desired stream
 pub fn remove_stream(req: HttpRequest, query: web::Query<RemoveStream>) -> HttpResponse {
     debug!("{:#?}{:?}", req, query);
-    //TODO: Move stream manager to absolute scope, check others places
-    use crate::stream::manager as stream_manager;
 
     match stream_manager::remove_stream(&query.name) {
         Ok(_) => HttpResponse::Ok()
