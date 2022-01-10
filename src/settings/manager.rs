@@ -164,6 +164,7 @@ pub fn save() {
     }
 }
 
+#[allow(dead_code)]
 pub fn header() -> HeaderSettingsFile {
     let manager = MANAGER.as_ref().lock().unwrap();
     return manager.content.as_ref().unwrap().config.header.clone();
