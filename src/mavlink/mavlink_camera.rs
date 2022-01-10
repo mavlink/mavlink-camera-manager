@@ -14,6 +14,7 @@ lazy_static! {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct MavlinkCameraComponent {
     // MAVLink specific information
     system_id: u8,
@@ -44,6 +45,7 @@ enum ThreadState {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct MavlinkCameraHandle {
     mavlink_camera_information: Arc<Mutex<MavlinkCameraInformation>>,
     thread_state: Arc<Mutex<ThreadState>>,

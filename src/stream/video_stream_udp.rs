@@ -18,6 +18,7 @@ struct VideoStreamUdpState {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct VideoStreamUdp {
     state: Arc<Mutex<VideoStreamUdpState>>,
     thread: Option<std::thread::JoinHandle<()>>,

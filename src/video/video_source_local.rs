@@ -418,6 +418,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn simple_test() {
         for camera in VideoSourceLocal::cameras_available() {
             if let VideoSourceType::Local(camera) = camera {

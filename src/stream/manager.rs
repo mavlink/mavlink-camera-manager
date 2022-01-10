@@ -7,6 +7,7 @@ use log::*;
 use simple_error::SimpleError;
 use std::sync::{Arc, Mutex};
 
+#[allow(dead_code)]
 struct Stream {
     stream_type: StreamType,
     video_and_stream_information: VideoAndStreamInformation,
@@ -27,6 +28,7 @@ pub fn init() {
 }
 
 // Start all streams that are not running
+#[allow(dead_code)]
 pub fn start() {
     let mut manager = MANAGER.as_ref().lock().unwrap();
     for stream in &mut manager.streams {
