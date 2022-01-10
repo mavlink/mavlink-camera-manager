@@ -4,6 +4,8 @@ use crate::video::types::VideoSourceType;
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 
+use std::collections::HashSet;
+
 use simple_error::SimpleError;
 //TODO: move to stream ?
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -29,7 +31,6 @@ impl VideoAndStreamInformation {
             )));
         }
 
-        use std::collections::HashSet;
         let our_endpoints: HashSet<_> = self.stream_information.endpoints.iter().collect();
         let other_endpoints: HashSet<_> = other.stream_information.endpoints.iter().collect();
         let common_endpoints: HashSet<_> = our_endpoints.intersection(&other_endpoints).collect();

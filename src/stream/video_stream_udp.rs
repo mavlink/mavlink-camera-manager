@@ -6,6 +6,7 @@ use std::thread;
 
 use gstreamer;
 use gstreamer::prelude::*;
+use gstreamer::MessageView;
 use log::*;
 
 #[derive(Debug)]
@@ -212,8 +213,6 @@ fn run_video_stream_udp(
             }
 
             for msg in bus.timed_pop(gstreamer::ClockTime::from_mseconds(100)) {
-                use gstreamer::MessageView;
-
                 match msg.view() {
                     MessageView::Eos(eos) => {
                         let message = format!("GStreamer error: EOS received: {:#?}", eos);

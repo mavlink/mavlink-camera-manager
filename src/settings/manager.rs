@@ -1,6 +1,8 @@
+use directories::ProjectDirs;
 use log::*;
 use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use crate::cli;
@@ -67,9 +69,6 @@ impl Default for SettingsStruct {
 
 impl Manager {
     fn new(file_name: &str) -> ManagerStruct {
-        use directories::ProjectDirs;
-        use std::path::Path;
-
         let file_name = if !Path::new(file_name).is_absolute() {
             match ProjectDirs::from("com", "Blue Robotics", env!("CARGO_PKG_NAME")) {
                 Some(project) => {
