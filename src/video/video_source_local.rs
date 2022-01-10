@@ -126,7 +126,7 @@ fn convert_v4l_intervals(v4l_intervals: &[v4l::FrameInterval]) -> Vec<FrameInter
                 numerator: fraction.numerator,
                 denominator: fraction.denominator,
             },
-            v4l::frameinterval::FrameIntervalEnum::Stepwise(stepwise) => {
+            v4l::frameinterval::FrameIntervalEnum::Stepwise(_stepwise) => {
                 warn!(
                     "Unsupported stepwise frame interval: {:#?}",
                     v4l_interval.interval
@@ -239,7 +239,7 @@ impl VideoSource for VideoSourceLocal {
         }
     }
 
-    fn control_value_by_name(&self, control_name: &str) -> std::io::Result<i64> {
+    fn control_value_by_name(&self, _control_name: &str) -> std::io::Result<i64> {
         unimplemented!();
     }
 
