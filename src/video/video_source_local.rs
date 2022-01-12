@@ -190,6 +190,7 @@ impl VideoSource for VideoSourceLocal {
             sizes.dedup();
             sizes.iter_mut().for_each(|s| {
                 s.intervals.sort();
+                s.intervals.reverse();
                 s.intervals.dedup();
             });
 
