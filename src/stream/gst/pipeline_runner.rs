@@ -50,7 +50,7 @@ fn simple_pipeline_loop(pipeline_runner: &PipelineRunner) -> Result<(), SimpleEr
             {
                 return Err(SimpleError::new(format!(
                     "GStreamer error: Missing element(s): {:?}",
-                    context.get_missing_elements()
+                    context.missing_elements()
                 )));
             }
             return Err(SimpleError::new(format!(
@@ -61,7 +61,7 @@ fn simple_pipeline_loop(pipeline_runner: &PipelineRunner) -> Result<(), SimpleEr
     };
     let pipeline = pipeline?;
 
-    let bus = pipeline.get_bus().unwrap();
+    let bus = pipeline.bus().unwrap();
 
     if let Err(error) = pipeline.set_state(gstreamer::State::Playing) {
         return Err(SimpleError::new(format!(
@@ -84,9 +84,9 @@ fn simple_pipeline_loop(pipeline_runner: &PipelineRunner) -> Result<(), SimpleEr
                 MessageView::Error(error) => {
                     return Err(SimpleError::new(format!(
                         "GStreamer error: Error from {:?}: {} ({:?})",
-                        error.get_src().map(|s| s.get_path_string()),
-                        error.get_error(),
-                        error.get_debug()
+                        error.src().map(|s| s.path_string()),
+                        error.error(),
+                        error.debug()
                     )));
                 }
                 _ => (),

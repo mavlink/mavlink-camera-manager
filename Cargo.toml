@@ -51,9 +51,9 @@ pnet = "0.27.2"
 mavlink = {version = "0.8.6", features = ["default", "emit-extensions"]}
 
 ## RTSP server
-glib = {version = "0.10.2", optional = true}
-gstreamer = {version = "0.16.3", optional = true}
-gstreamer-rtsp-server = {version = "0.16.3", optional = true}
+glib = {version = "0.14.8", optional = true}
+gstreamer = {version = "0.17.4", optional = true}
+gstreamer-rtsp-server = {version = "0.17.2", optional = true}
 
 [dev-dependencies]
 rand = "0.8"

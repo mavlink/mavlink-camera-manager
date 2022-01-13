@@ -124,7 +124,7 @@ fn run_video_stream_udp(
                 {
                     let _ = channel.send(format!(
                         "GStreamer error: Missing element(s): {:?}",
-                        context.get_missing_elements()
+                        context.missing_elements()
                     ));
                 } else {
                     let _ = channel.send(format!(
@@ -136,7 +136,7 @@ fn run_video_stream_udp(
             }
         };
 
-        let bus = pipeline.as_ref().unwrap().get_bus().unwrap();
+        let bus = pipeline.as_ref().unwrap().bus().unwrap();
 
         if let Err(error) = pipeline
             .as_ref()
@@ -187,8 +187,8 @@ fn run_video_stream_udp(
                 Some(position) => {
                     previous_position = match previous_position {
                         Some(current_previous_position) => {
-                            if current_previous_position.nanoseconds() != Some(0)
-                                && current_previous_position.nanoseconds() == position.nanoseconds()
+                            if current_previous_position.nseconds() != 0
+                                && current_previous_position.nseconds() == position.nseconds()
                             {
                                 lost_timestamps += 1;
                                 let message =
@@ -223,9 +223,9 @@ fn run_video_stream_udp(
                     MessageView::Error(error) => {
                         let message = format!(
                             "GStreamer error: Error from {:?}: {} ({:?})",
-                            error.get_src().map(|s| s.get_path_string()),
-                            error.get_error(),
-                            error.get_debug()
+                            error.src().map(|s| s.path_string()),
+                            error.error(),
+                            error.debug()
                         );
                         let _ = channel.send(message);
                         break 'innerLoop;
