@@ -1,3 +1,4 @@
+use crate::cli;
 use crate::network;
 use crate::settings;
 use crate::video::types::VideoSourceType;
@@ -236,13 +237,16 @@ fn receive_message_loop(
 
                                 let ips = network::utils::get_ipv4_addresses();
                                 let visible_qgc_ip_address = &ips.last().unwrap().to_string();
+                                let server_port = cli::manager::server_address()
+                                    .split(":")
+                                    .collect::<Vec<&str>>()[1];
 
                                 if let Err(error) = vehicle.send(
                                     &header,
                                     &camera_information(
                                         vendor_name,
                                         vendor_name,
-                                        visible_qgc_ip_address,
+                                        &format!("{visible_qgc_ip_address}:{server_port}"),
                                         source_string,
                                     ),
                                 ) {
