@@ -33,6 +33,9 @@ jobs:
           apt install -y libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev libclang-dev
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
           export PATH="$HOME/.cargo/bin:$PATH"
+          rustup update stable
+          rustup default stable
+          rustc --version
           cargo install sccache --no-default-features
         dockerRunArgs: |
           --volume "/tmp/.cache:/tmp/.cache"
