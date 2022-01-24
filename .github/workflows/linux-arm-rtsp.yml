@@ -1,6 +1,6 @@
 name: Deploy ARMv7
 
-on: [push]
+on: [push, workflow_dispatch]
 
 jobs:
   armv7_job:
