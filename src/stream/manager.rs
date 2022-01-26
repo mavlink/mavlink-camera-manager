@@ -36,6 +36,9 @@ pub fn start() {
             StreamType::UDP(stream) => {
                 stream.start();
             }
+            StreamType::RTSP(stream) => {
+                stream.start();
+            }
         }
     }
 }
