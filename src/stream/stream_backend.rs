@@ -1,4 +1,5 @@
 use super::types::*;
+use super::video_stream_rtsp::VideoStreamRtsp;
 use super::video_stream_udp::VideoStreamUdp;
 use crate::video::{
     types::{VideoEncodeType, VideoSourceType},
@@ -220,6 +221,116 @@ fn create_udp_stream(
     )));
 }
 
+fn create_rtsp_stream(
+    video_and_stream_information: &VideoAndStreamInformation,
+) -> Result<StreamType, SimpleError> {
+    let encode = video_and_stream_information
+        .stream_information
+        .configuration
+        .encode
+        .clone();
+    let endpoint = &video_and_stream_information.stream_information.endpoints[0];
+    if endpoint.scheme() != "rtsp" {
+        return Err(SimpleError::new(format!(
+            "The URL's scheme for RTSP endpoints should be \"rtsp\", but was: {:?}",
+            endpoint.scheme()
+        )));
+    }
+    if endpoint.host_str() != "0.0.0.0".into() {
+        return Err(SimpleError::new(format!(
+            "The URL's host for RTSP endpoints should be \"0.0.0.0\", but was: {:?}",
+            endpoint.host_str()
+        )));
+    }
+    if endpoint.port() != Some(8554) {
+        return Err(SimpleError::new(format!(
+            "The URL's port for RTSP endpoints should be \"8554\", but was: {:?}",
+            endpoint.port()
+        )));
+    }
+    if endpoint.path_segments().iter().count() != 1 {
+        return Err(SimpleError::new(format!(
+            "The URL's path for RTSP endpoints should have only one segment (e.g.: \"segmentA\" and not \"segmentA/segmentB\"), but was: {:?}",
+            endpoint.path()
+        )));
+    }
+
+    let configuration = &video_and_stream_information
+        .stream_information
+        .configuration;
+    let video_source = &video_and_stream_information.video_source;
+
+    let video_format = match video_source {
+        VideoSourceType::Local(local_device) => {
+            if VideoEncodeType::H264 == encode {
+                format!(
+                    concat!(
+                        "v4l2src device={device}",
+                        " ! video/x-h264,width={width},height={height},framerate={interval_denominator}/{interval_numerator},type=video",
+                    ),
+                    device = &local_device.device_path,
+                    width = configuration.width,
+                    height = configuration.height,
+                    interval_denominator = configuration.frame_interval.denominator,
+                    interval_numerator = configuration.frame_interval.numerator,
+                )
+            } else {
+                return Err(SimpleError::new(format!(
+                    "Unsupported encode for RTSP endpoint: {:?}",
+                    encode
+                )));
+            }
+        }
+
+        VideoSourceType::Gst(gst_source) => match &gst_source.source {
+            VideoSourceGstType::Fake(pattern) => {
+                format!(
+                        concat!(
+                            "videotestsrc pattern={pattern}",
+                            " ! video/x-raw,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                            " ! videoconvert",
+                            " ! x264enc bitrate=5000",
+                            " ! video/x-h264, profile=baseline",
+                        ),
+                        pattern = pattern,
+                        width = configuration.width,
+                        height = configuration.height,
+                        interval_denominator = configuration.frame_interval.denominator,
+                        interval_numerator = configuration.frame_interval.numerator,
+                    )
+            }
+            _ => {
+                return Err(SimpleError::new(format!(
+                    "Unsupported GST source for RTSP endpoint: {:#?}",
+                    gst_source
+                )));
+            }
+        },
+    };
+
+    if VideoEncodeType::H264 == encode {
+        let rtsp_encode = concat!(
+            " ! h264parse",
+            " ! queue",
+            " ! rtph264pay name=pay0 config-interval=10 pt=96",
+        );
+
+        let pipeline = [&video_format, rtsp_encode].join("");
+        dbg!(&pipeline);
+        info!("Created pipeline: {}", &pipeline);
+        let mut stream = VideoStreamRtsp::default();
+        stream.set_endpoint_path(&endpoint.path());
+        stream.set_pipeline_description(&pipeline);
+        dbg!(&stream);
+        return Ok(StreamType::RTSP(stream));
+    }
+
+    return Err(SimpleError::new(format!(
+        "Unsupported encode: {:?}",
+        encode
+    )));
+}
+
 fn create_stream(
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<StreamType, SimpleError> {
@@ -232,6 +343,7 @@ fn create_stream(
         .unwrap();
     match endpoint.scheme() {
         "udp" => create_udp_stream(video_and_stream_information),
+        "rtsp" => create_rtsp_stream(video_and_stream_information),
         something => Err(SimpleError::new(format!(
             "Unsupported scheme: {}",
             something
