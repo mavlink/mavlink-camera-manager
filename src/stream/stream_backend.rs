@@ -385,9 +385,45 @@ mod tests {
         });
 
         assert!(result.is_ok());
-        let result = result.unwrap();
+        let result = &result.unwrap();
 
-        let StreamType::UDP(video_stream_udp) = result;
-        assert_eq!(video_stream_udp.pipeline(), "v4l2src device=/dev/video42 ! video/x-h264,width=1080,height=720,framerate=30/1 ! h264parse ! queue ! rtph264pay config-interval=10 pt=96 ! multiudpsink clients=192.168.0.1:42");
+        let result = match result {
+            StreamType::UDP(video_stream_udp) => video_stream_udp,
+            _any_other_stream_type => panic!("Failed to create UDP stream: {:?}.", result),
+        };
+        assert_eq!(result.pipeline(), "v4l2src device=/dev/video42 ! video/x-h264,width=1080,height=720,framerate=30/1 ! h264parse ! queue ! rtph264pay config-interval=10 pt=96 ! multiudpsink clients=192.168.0.1:42");
+    }
+
+    #[test]
+    fn test_rtsp() {
+        let result = create_stream(&VideoAndStreamInformation {
+            name: "Test".into(),
+            stream_information: StreamInformation {
+                endpoints: vec![Url::parse("rtsp://0.0.0.0:8554/test").unwrap()],
+                configuration: CaptureConfiguration {
+                    encode: VideoEncodeType::H264,
+                    height: 720,
+                    width: 1080,
+                    frame_interval: FrameInterval {
+                        numerator: 1,
+                        denominator: 30,
+                    },
+                },
+            },
+            video_source: VideoSourceType::Local(VideoSourceLocal {
+                name: "PotatoCam".into(),
+                device_path: "/dev/video42".into(),
+                typ: VideoSourceLocalType::Unknown("TestPotatoCam".into()),
+            }),
+        });
+
+        assert!(result.is_ok());
+        let result = &result.unwrap();
+
+        let result = match result {
+            StreamType::RTSP(video_stream_rtsp) => video_stream_rtsp,
+            _any_other_stream_type => panic!("Failed to create RTSP stream: {:?}.", result),
+        };
+        assert_eq!(result.pipeline(), "v4l2src device=/dev/video42 ! video/x-h264,width=1080,height=720,framerate=30/1,type=video ! h264parse ! queue ! rtph264pay name=pay0 config-interval=10 pt=96");
     }
 }
