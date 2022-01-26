@@ -174,7 +174,7 @@ fn create_udp_stream(
                             "videotestsrc pattern={pattern}",
                             " ! video/x-raw,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                             " ! videoconvert",
-                            " !  x264enc bitrate=5000",
+                            " ! x264enc bitrate=5000",
                             " ! video/x-h264, profile=baseline",
                         ),
                         pattern = pattern,
