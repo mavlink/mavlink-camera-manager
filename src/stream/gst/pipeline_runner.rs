@@ -8,17 +8,8 @@ pub struct Pipeline {
     pub description: String,
 }
 
-#[derive(Default)]
 pub struct PipelineRunner {
     pub pipeline: Pipeline,
-}
-
-impl Default for Pipeline {
-    fn default() -> Self {
-        Pipeline {
-            description: "videotestsrc pattern=ball ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc bitrate=5000 ! video/x-h264, profile=baseline ! rtph264pay ! udpsink host=0.0.0.0 port=5600".into(),
-        }
-    }
 }
 
 #[allow(dead_code)]
