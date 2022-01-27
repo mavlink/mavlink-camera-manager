@@ -32,6 +32,7 @@ pub struct MavlinkCameraComponent {
 pub struct MavlinkCameraInformation {
     component: MavlinkCameraComponent,
     mavlink_connection_string: String,
+    mavlink_stream_type: mavlink::common::VideoStreamType,
     video_stream_uri: Url,
     video_source_type: VideoSourceType,
     vehicle: Arc<Box<dyn mavlink::MavConnection<mavlink::common::MavMessage> + Sync + Send>>,
@@ -60,6 +61,7 @@ impl std::fmt::Debug for MavlinkCameraInformation {
         f.debug_struct("MavlinkCameraInformation")
             .field("component", &self.component)
             .field("mavlink_connection_string", &self.mavlink_connection_string)
+            .field("mavlink_stream_type", &self.mavlink_stream_type)
             .field("video_stream_uri", &self.video_stream_uri)
             .field("video_source_type", &self.video_source_type)
             .finish()
@@ -110,10 +112,12 @@ impl MavlinkCameraInformation {
         video_source_type: VideoSourceType,
         mavlink_connection_string: &str,
         video_stream_uri: Url,
+        mavlink_stream_type: mavlink::common::VideoStreamType,
     ) -> Self {
         Self {
             component: Default::default(),
             mavlink_connection_string: mavlink_connection_string.into(),
+            mavlink_stream_type,
             video_stream_uri,
             video_source_type,
             vehicle: Arc::new(mavlink::connect(&mavlink_connection_string).unwrap()),
@@ -122,7 +126,11 @@ impl MavlinkCameraInformation {
 }
 
 impl MavlinkCameraHandle {
-    pub fn new(video_source_type: VideoSourceType, endpoint: Url) -> Self {
+    pub fn new(
+        video_source_type: VideoSourceType,
+        endpoint: Url,
+        mavlink_stream_type: mavlink::common::VideoStreamType,
+    ) -> Self {
         debug!(
             "Starting new MAVLink camera device for: {:#?}, endpoint: {}",
             video_source_type, endpoint
@@ -133,6 +141,7 @@ impl MavlinkCameraHandle {
                 video_source_type,
                 &settings::manager::mavlink_endpoint(),
                 endpoint,
+                mavlink_stream_type,
             )));
 
         let thread_state = Arc::new(Mutex::new(ThreadState::RUNNING));
@@ -285,6 +294,7 @@ fn receive_message_loop(
                                     &video_stream_information(
                                         &source_string,
                                         &information.video_stream_uri.to_string(),
+                                        information.mavlink_stream_type,
                                     ),
                                 ) {
                                     warn!("Failed to send video_stream_information: {:?}", error);
@@ -513,7 +523,11 @@ fn camera_capture_status() -> mavlink::common::MavMessage {
     )
 }
 
-fn video_stream_information(video_name: &str, video_uri: &str) -> mavlink::common::MavMessage {
+fn video_stream_information(
+    video_name: &str,
+    video_uri: &str,
+    mavtype: mavlink::common::VideoStreamType,
+) -> mavlink::common::MavMessage {
     let name_str = String::from(video_name);
     let mut name: [char; 32] = ['\0'; 32];
     for index in 0..name_str.len() as u32 {
@@ -534,7 +548,7 @@ fn video_stream_information(video_name: &str, video_uri: &str) -> mavlink::commo
             hfov: 0,
             stream_id: 1, // Starts at 1, 0 is for broadcast
             count: 0,
-            mavtype: mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP,
+            mavtype: mavtype,
             name,
             uri,
         },
