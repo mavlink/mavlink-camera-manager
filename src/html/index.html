@@ -136,7 +136,7 @@
                         "name": stream.name,
                         "source": stream.source,
                         "stream_information": {
-                            "endpoints": stream.endpoints.split(','),
+                            "endpoints": stream.endpoints ? stream.endpoints.split(',') : ["udp://0.0.0.0:5600"],
                             "configuration": {
                                 "encode": stream.configuration.encode,
                                 "height": Number(stream.configuration.size.height),
