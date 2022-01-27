@@ -77,6 +77,11 @@ pub fn add_stream_and_start(
         .unwrap() // We have an endpoint since we have passed the point of stream creation
         .clone();
 
+    let mavtype: mavlink::common::VideoStreamType = match &stream {
+        StreamType::UDP(_) => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP,
+        StreamType::RTSP(_) => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
+    };
+
     stream.mut_inner().start();
     manager.streams.push(Stream {
         stream_type: stream,
@@ -84,6 +89,7 @@ pub fn add_stream_and_start(
         mavlink_camera: MavlinkCameraHandle::new(
             video_and_stream_information.video_source.clone(),
             endpoint,
+            mavtype,
         ),
     });
 
