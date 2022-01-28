@@ -36,6 +36,7 @@ pub struct MavlinkCameraInformation {
     mavlink_stream_type: mavlink::common::VideoStreamType,
     video_stream_uri: Url,
     video_source_type: VideoSourceType,
+    thermal: bool,
     vehicle: Arc<Box<dyn mavlink::MavConnection<mavlink::common::MavMessage> + Sync + Send>>,
 }
 
@@ -65,6 +66,7 @@ impl std::fmt::Debug for MavlinkCameraInformation {
             .field("mavlink_stream_type", &self.mavlink_stream_type)
             .field("video_stream_uri", &self.video_stream_uri)
             .field("video_source_type", &self.video_source_type)
+            .field("thermal", &self.thermal)
             .finish()
     }
 }
@@ -114,6 +116,7 @@ impl MavlinkCameraInformation {
         mavlink_connection_string: &str,
         video_stream_uri: Url,
         mavlink_stream_type: mavlink::common::VideoStreamType,
+        thermal: bool,
     ) -> Self {
         Self {
             component: Default::default(),
@@ -121,6 +124,7 @@ impl MavlinkCameraInformation {
             mavlink_stream_type,
             video_stream_uri,
             video_source_type,
+            thermal,
             vehicle: Arc::new(mavlink::connect(&mavlink_connection_string).unwrap()),
         }
     }
@@ -131,6 +135,7 @@ impl MavlinkCameraHandle {
         video_source_type: VideoSourceType,
         endpoint: Url,
         mavlink_stream_type: mavlink::common::VideoStreamType,
+        thermal: bool,
     ) -> Self {
         debug!(
             "Starting new MAVLink camera device for: {:#?}, endpoint: {}",
@@ -143,6 +148,7 @@ impl MavlinkCameraHandle {
                 &settings::manager::mavlink_endpoint(),
                 endpoint,
                 mavlink_stream_type,
+                thermal,
             )));
 
         let thread_state = Arc::new(Mutex::new(ThreadState::RUNNING));
@@ -310,6 +316,7 @@ fn receive_message_loop(
                                         &source_string,
                                         &video_url.to_string(),
                                         information.mavlink_stream_type,
+                                        information.thermal,
                                     ),
                                 ) {
                                     warn!("Failed to send video_stream_information: {:?}", error);
@@ -542,6 +549,7 @@ fn video_stream_information(
     video_name: &str,
     video_uri: &str,
     mavtype: mavlink::common::VideoStreamType,
+    thermal: bool,
 ) -> mavlink::common::MavMessage {
     let name_str = String::from(video_name);
     let mut name: [char; 32] = ['\0'; 32];
@@ -551,12 +559,18 @@ fn video_stream_information(
 
     let uri: Vec<char> = format!("{}\0", video_uri).chars().collect();
 
+    let flags = if thermal {
+        mavlink::common::VideoStreamStatusFlags::VIDEO_STREAM_STATUS_FLAGS_THERMAL
+    } else {
+        mavlink::common::VideoStreamStatusFlags::VIDEO_STREAM_STATUS_FLAGS_RUNNING
+    };
+
     //The only important information here is the mavtype and uri variables, everything else is fake
     mavlink::common::MavMessage::VIDEO_STREAM_INFORMATION(
         mavlink::common::VIDEO_STREAM_INFORMATION_DATA {
             framerate: 30.0,
             bitrate: 1000,
-            flags: mavlink::common::VideoStreamStatusFlags::VIDEO_STREAM_STATUS_FLAGS_RUNNING,
+            flags: flags,
             resolution_h: 1000,
             resolution_v: 1000,
             rotation: 0,
