@@ -90,6 +90,11 @@ pub fn add_stream_and_start(
             video_and_stream_information.video_source.clone(),
             endpoint,
             mavtype,
+            video_and_stream_information
+                .stream_information
+                .extended_configuration
+                .unwrap_or_default()
+                .thermal,
         ),
     });
 
