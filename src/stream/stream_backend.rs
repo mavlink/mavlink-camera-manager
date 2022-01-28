@@ -354,8 +354,9 @@ fn create_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stream::types::CaptureConfiguration;
     use crate::video::{
-        types::{CaptureConfiguration, FrameInterval},
+        types::FrameInterval,
         video_source_local::{VideoSourceLocal, VideoSourceLocalType},
     };
 
@@ -376,6 +377,7 @@ mod tests {
                         denominator: 30,
                     },
                 },
+                extended_configuration: None,
             },
             video_source: VideoSourceType::Local(VideoSourceLocal {
                 name: "PotatoCam".into(),
@@ -409,6 +411,7 @@ mod tests {
                         denominator: 30,
                     },
                 },
+                extended_configuration: None,
             },
             video_source: VideoSourceType::Local(VideoSourceLocal {
                 name: "PotatoCam".into(),

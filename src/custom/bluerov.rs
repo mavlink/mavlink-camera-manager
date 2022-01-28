@@ -41,6 +41,7 @@ pub fn udp() -> Vec<VideoAndStreamInformation> {
                         width: size.width,
                         frame_interval: size.intervals.first().unwrap().clone(),
                     },
+                    extended_configuration: None,
                 },
                 video_source: cam.clone(),
             }

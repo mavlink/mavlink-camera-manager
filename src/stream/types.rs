@@ -44,10 +44,22 @@ pub struct CaptureConfiguration {
     pub frame_interval: FrameInterval,
 }
 
+#[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct ExtendedConfiguration {
+    pub thermal: bool,
+}
+
+impl Default for ExtendedConfiguration {
+    fn default() -> Self {
+        Self { thermal: false }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Apiv2Schema)]
 pub struct StreamInformation {
     pub endpoints: Vec<Url>,
     pub configuration: CaptureConfiguration,
+    pub extended_configuration: Option<ExtendedConfiguration>,
 }
 
 #[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
