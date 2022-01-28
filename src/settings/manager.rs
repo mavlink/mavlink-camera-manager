@@ -270,6 +270,7 @@ mod tests {
                         denominator: 47,
                     },
                 },
+                extended_configuration: None,
             },
             video_source: VideoSourceType::Local(VideoSourceLocal {
                 name: "Fake Potato Test Video Source Camera".into(),
