@@ -216,9 +216,9 @@ pub fn set_streams(streams: &Vec<VideoAndStreamInformation>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stream::types::StreamInformation;
+    use crate::stream::types::{CaptureConfiguration, StreamInformation};
     use crate::video::{
-        types::{CaptureConfiguration, FrameInterval, VideoEncodeType, VideoSourceType},
+        types::{FrameInterval, VideoEncodeType, VideoSourceType},
         video_source_local::{VideoSourceLocal, VideoSourceLocalType},
     };
     use url::Url;
