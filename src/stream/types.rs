@@ -1,8 +1,10 @@
 use super::stream_backend::StreamBackend;
 use super::video_stream_rtsp::VideoStreamRtsp;
 use super::video_stream_udp::VideoStreamUdp;
-use crate::video::types::CaptureConfiguration;
-use crate::video_stream::types::VideoAndStreamInformation;
+use crate::{
+    video::types::{FrameInterval, VideoEncodeType},
+    video_stream::types::VideoAndStreamInformation,
+};
 
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
@@ -33,6 +35,14 @@ impl StreamType {
 /*
 impl Apiv2Schema for Url {
 }*/
+
+#[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct CaptureConfiguration {
+    pub encode: VideoEncodeType,
+    pub height: u32,
+    pub width: u32,
+    pub frame_interval: FrameInterval,
+}
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Apiv2Schema)]
 pub struct StreamInformation {

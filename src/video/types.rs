@@ -19,15 +19,6 @@ pub enum VideoEncodeType {
     YUYV,
 }
 
-//TODO: Move to stream
-#[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
-pub struct CaptureConfiguration {
-    pub encode: VideoEncodeType,
-    pub height: u32,
-    pub width: u32,
-    pub frame_interval: FrameInterval,
-}
-
 #[derive(Apiv2Schema, Clone, Debug, Deserialize, Serialize)]
 pub struct Format {
     pub encode: VideoEncodeType,
