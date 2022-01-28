@@ -8,6 +8,7 @@ use simple_error::SimpleError;
 use url::Url;
 
 use std::convert::TryInto;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 lazy_static! {
@@ -289,11 +290,25 @@ fn receive_message_loop(
                                     mavlink_camera_information.as_ref().lock().unwrap();
                                 let source_string =
                                     information.video_source_type.inner().source_string();
+
+                                // Remove localhost address with public ip
+                                let mut video_url = information.video_stream_uri.clone();
+                                if let Ok(address) = std::net::Ipv4Addr::from_str(
+                                    video_url.host_str().unwrap_or_default(),
+                                ) {
+                                    if address == std::net::Ipv4Addr::UNSPECIFIED {
+                                        let ips = network::utils::get_ipv4_addresses();
+                                        let visible_qgc_ip_address =
+                                            &ips.last().unwrap().to_string();
+                                        let _ = video_url.set_host(Some(visible_qgc_ip_address));
+                                    }
+                                }
+
                                 if let Err(error) = vehicle.send(
                                     &header,
                                     &video_stream_information(
                                         &source_string,
-                                        &information.video_stream_uri.to_string(),
+                                        &video_url.to_string(),
                                         information.mavlink_stream_type,
                                     ),
                                 ) {
