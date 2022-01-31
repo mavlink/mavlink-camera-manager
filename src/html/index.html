@@ -132,17 +132,33 @@
                     return undefined
                 },
                 configureStream: async function(stream) {
+
+                    const configuration = (() => {
+                        switch (stream.source) {
+                            case "Redirect": return {
+                                "encode": {"UNKNOWN": "Redirect"},
+                                "height": 0,
+                                "width": 0,
+                                "frame_interval": {
+                                    "numerator": 0,
+                                    "denominator": 0,
+                                },
+                            }
+                            default: return {
+                                "encode": stream.configuration.encode,
+                                "height": Number(stream.configuration.size.height),
+                                "width": Number(stream.configuration.size.width),
+                                "frame_interval": stream.configuration.interval,
+                            }
+                        }
+                    })()
+
                     const content = {
                         "name": stream.name,
                         "source": stream.source,
                         "stream_information": {
                             "endpoints": stream.endpoints ? stream.endpoints.split(',') : ["udp://0.0.0.0:5600"],
-                            "configuration": {
-                                "encode": stream.configuration.encode,
-                                "height": Number(stream.configuration.size.height),
-                                "width": Number(stream.configuration.size.width),
-                                "frame_interval": stream.configuration.interval,
-                            },
+                            "configuration": configuration,
                             "extended_configuration": {
                                 "thermal": Boolean(stream.extended_configuration.thermal),
                             },
@@ -313,7 +329,10 @@
 
                     <div>
                         <label>Encode: </label>
-                        <select v-model="stream_setting.configuration.encode">
+                        <select
+                            v-model="stream_setting.configuration.encode"
+                            v-bind:disabled="stream_setting.source == 'Redirect'"
+                        >
                             <option
                                 v-for="encode in stream_options.encoders"
                                 :value="encode"
@@ -324,7 +343,10 @@
                     </div>
                     <div>
                         <label>Size: </label>
-                        <select v-model="stream_setting.configuration.size">
+                        <select
+                            v-model="stream_setting.configuration.size"
+                            v-bind:disabled="stream_setting.source == 'Redirect'"
+                        >
                             <option
                                 v-for="size in stream_options.sizes"
                                 v-bind:value="{width: size.width, height: size.height}"
@@ -335,7 +357,10 @@
                     </div>
                     <div>
                         <label>FPS: </label>
-                        <select v-model="stream_setting.configuration.interval">
+                        <select
+                            v-model="stream_setting.configuration.interval"
+                            v-bind:disabled="stream_setting.source == 'Redirect'"
+                        >
                             <option
                                 v-for="interval in this.stream_options.intervals"
                                 v-bind:value="interval"
