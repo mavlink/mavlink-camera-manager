@@ -260,7 +260,7 @@
                                 .filter((format) => this.encodeToStr(format.encode) == stream_setting.configuration.encode)
                                 .map((format) => format.sizes)[0]
                                 // Sort width by preference
-                                .sort((size1, size2) => (10 * size2.width + size2.height) - (10 * size1.width + size1.height))
+                                ?.sort((size1, size2) => (10 * size2.width + size2.height) - (10 * size1.width + size1.height))
 
                         console.log(this.stream_options.sizes)
 
