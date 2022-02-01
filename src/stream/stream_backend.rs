@@ -4,6 +4,7 @@ use super::video_stream_udp::VideoStreamUdp;
 use crate::video::{
     types::{VideoEncodeType, VideoSourceType},
     video_source_gst::VideoSourceGstType,
+    video_source_redirect::VideoSourceRedirectType,
 };
 use crate::video_stream::types::VideoAndStreamInformation;
 use log::*;
@@ -58,19 +59,24 @@ fn check_encode(
         .encode
         .clone();
 
-    if let VideoEncodeType::UNKNOWN(name) = encode {
+    match &encode {
+        VideoEncodeType::UNKNOWN(name) => match video_and_stream_information.video_source {
+            VideoSourceType::Redirect(_) => (),
+            _ => {
         return Err(SimpleError::new(format!(
-            "Encode is not supported: {}",
+                    "Encode is not supported and also unknown: {}",
             name
-        )));
+                )))
     }
-
-    if VideoEncodeType::H264 != encode {
+        },
+        VideoEncodeType::H264 => (),
+        _ => {
         return Err(SimpleError::new(format!(
             "Only H264 encode is supported now, used: {:?}",
             encode
         )));
     }
+    };
 
     return Ok(());
 }
