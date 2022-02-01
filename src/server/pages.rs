@@ -104,6 +104,12 @@ pub async fn v4l(req: HttpRequest) -> Json<Vec<ApiVideoSource>> {
                 formats: gst.formats(),
                 controls: gst.controls(),
             },
+            VideoSourceType::Redirect(redirect) => ApiVideoSource {
+                name: redirect.name().clone(),
+                source: redirect.source_string().to_string(),
+                formats: redirect.formats(),
+                controls: redirect.controls(),
+            },
         })
         .collect();
 
