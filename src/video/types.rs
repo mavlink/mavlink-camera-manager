@@ -1,6 +1,7 @@
 use super::video_source::VideoSource;
 use super::video_source_gst::VideoSourceGst;
 use super::video_source_local::VideoSourceLocal;
+use super::video_source_redirect::VideoSourceRedirect;
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +9,7 @@ use serde::{Deserialize, Serialize};
 pub enum VideoSourceType {
     Gst(VideoSourceGst),
     Local(VideoSourceLocal),
+    Redirect(VideoSourceRedirect),
 }
 
 #[derive(Apiv2Schema, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
@@ -93,6 +95,7 @@ impl VideoSourceType {
         match self {
             VideoSourceType::Local(local) => local,
             VideoSourceType::Gst(gst) => gst,
+            VideoSourceType::Redirect(redirect) => redirect,
         }
     }
 }
