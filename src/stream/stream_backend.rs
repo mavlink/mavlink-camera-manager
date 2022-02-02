@@ -348,7 +348,6 @@ fn create_rtsp_stream(
         let mut stream = VideoStreamRtsp::default();
         stream.set_endpoint_path(&endpoint.path());
         stream.set_pipeline_description(&pipeline);
-        dbg!(&stream);
         return Ok(StreamType::RTSP(stream));
     }
 
