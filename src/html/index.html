@@ -64,7 +64,7 @@
                         <h3>Name: {{ stream.video_and_stream.name }}</h3>
                     </div>
                     <div>
-                        <p>Video: {{ stream.video_and_stream.stream_information.configuration.encode }} {{ stream.video_and_stream.stream_information.configuration.width }}x{{ stream.video_and_stream.stream_information.configuration.height }} @ {{ stream.video_and_stream.stream_information.configuration.frame_interval.denominator / stream.video_and_stream.stream_information.configuration.frame_interval.numerator}} FPS, Thermal: {{stream.video_and_stream.stream_information.configuration.thermal}}</p>
+                        <p>Video: {{ stream.video_and_stream.stream_information.configuration.encode }} {{ stream.video_and_stream.stream_information.configuration.width }}x{{ stream.video_and_stream.stream_information.configuration.height }} @ {{ stream.video_and_stream.stream_information.configuration.frame_interval.denominator / stream.video_and_stream.stream_information.configuration.frame_interval.numerator}} FPS, Thermal: {{stream.video_and_stream.stream_information.extended_configuration.thermal}}</p>
                     </div>
                     <div>
                         <button type="button" v-on:click="deleteStream(stream.video_and_stream.name)">Delete stream</button>
@@ -144,7 +144,7 @@
                                 "frame_interval": stream.configuration.interval,
                             },
                             "extended_configuration": {
-                                "thermal": Boolean(stream.configuration.thermal),
+                                "thermal": Boolean(stream.extended_configuration.thermal),
                             },
                         }
                     }
@@ -234,7 +234,7 @@
                             width: this.stream.video_and_stream.stream_information.configuration.width
                         }
                         this.stream_setting.configuration.interval = this.stream.video_and_stream.stream_information.configuration.frame_interval
-                        this.stream_setting.configuration.thermal = this.stream.video_and_stream.stream_information.configuration.thermal
+                        this.stream_setting.extended_configuration.thermal = this.stream.video_and_stream.stream_information.extended_configuration.thermal
                         this.stream_setting.configuration.endpoints = this.stream.video_and_stream.stream_information.endpoints ?
                             this.stream.video_and_stream.stream_information.endpoints.join(", ") : ""
                     },
@@ -285,8 +285,10 @@
                             encode: undefined,
                             size: undefined,
                             interval: undefined,
+                        },
+                        extended_configuration: {
                             thermal: undefined,
-                        }
+                        },
                     },
                     stream_options: {
                         encoders: undefined,
@@ -346,7 +348,7 @@
                         <label>Thermal: </label>
                         <input 
                             type="checkbox" 
-                            v-model="stream_setting.configuration.thermal"
+                            v-model="stream_setting.extended_configuration.thermal"
                         >
                     </div>
 
