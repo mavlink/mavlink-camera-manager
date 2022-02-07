@@ -24,7 +24,10 @@ impl VideoAndStreamInformation {
             )));
         }
 
-        if self.video_source.inner().source_string() == other.video_source.inner().source_string() {
+        if !matches!(self.video_source, VideoSourceType::Redirect(_))
+            && (self.video_source.inner().source_string()
+                == other.video_source.inner().source_string())
+        {
             return Err(SimpleError::new(format!(
                 "Streams have same source: {}",
                 self.video_source.inner().source_string()
