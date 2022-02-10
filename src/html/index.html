@@ -64,7 +64,14 @@
                         <h3>Name: {{ stream.video_and_stream.name }}</h3>
                     </div>
                     <div>
-                        <p>Video: {{ stream.video_and_stream.stream_information.configuration.encode }} {{ stream.video_and_stream.stream_information.configuration.width }}x{{ stream.video_and_stream.stream_information.configuration.height }} @ {{ stream.video_and_stream.stream_information.configuration.frame_interval.denominator / stream.video_and_stream.stream_information.configuration.frame_interval.numerator}} FPS, Thermal: {{stream.video_and_stream.stream_information.extended_configuration.thermal}}</p>
+                        <p>Video: {{ stream.video_and_stream.stream_information.configuration.encode }} {{
+                            stream.video_and_stream.stream_information.configuration.width }}x{{
+                            stream.video_and_stream.stream_information.configuration.height }} @ {{
+                            stream.video_and_stream.stream_information.configuration.frame_interval.denominator /
+                            stream.video_and_stream.stream_information.configuration.frame_interval.numerator}} FPS,
+                            Thermal: {{stream.video_and_stream.stream_information.extended_configuration?.thermal ??
+                            false}}
+                        </p>
                     </div>
                     <div>
                         <button type="button" v-on:click="deleteStream(stream.video_and_stream.name)">Delete stream</button>
@@ -234,7 +241,7 @@
                             width: this.stream.video_and_stream.stream_information.configuration.width
                         }
                         this.stream_setting.configuration.interval = this.stream.video_and_stream.stream_information.configuration.frame_interval
-                        this.stream_setting.extended_configuration.thermal = this.stream.video_and_stream.stream_information.extended_configuration.thermal
+                        this.stream_setting.extended_configuration.thermal = Boolean(this.stream.video_and_stream.stream_information.extended_configuration?.thermal)
                         this.stream_setting.configuration.endpoints = this.stream.video_and_stream.stream_information.endpoints ?
                             this.stream.video_and_stream.stream_information.endpoints.join(", ") : ""
                     },
