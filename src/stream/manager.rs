@@ -39,6 +39,7 @@ pub fn start() {
             StreamType::RTSP(stream) => {
                 stream.start();
             }
+            StreamType::REDIRECT(_) => (),
         }
     }
 }
@@ -69,7 +70,6 @@ pub fn add_stream_and_start(
             .conflicts_with(&video_and_stream_information)?
     }
 
-    let mut stream = stream_backend::new(&video_and_stream_information)?;
     let endpoint = video_and_stream_information
         .stream_information
         .endpoints
@@ -77,9 +77,16 @@ pub fn add_stream_and_start(
         .unwrap() // We have an endpoint since we have passed the point of stream creation
         .clone();
 
+    let mut stream = stream_backend::new(&video_and_stream_information)?;
     let mavtype: mavlink::common::VideoStreamType = match &stream {
         StreamType::UDP(_) => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP,
         StreamType::RTSP(_) => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
+        StreamType::REDIRECT(video_strem_redirect) => match video_strem_redirect.scheme.as_str() {
+            "rtsp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
+            "mpegts" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_MPEG_TS_H264,
+            "tcp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_TCP_MPEG,
+            "udp" | _ => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP,
+        },
     };
 
     stream.mut_inner().start();
