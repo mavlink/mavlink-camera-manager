@@ -24,7 +24,7 @@ impl VideoAndStreamInformation {
             )));
         }
 
-        if !matches!(self.video_source, VideoSourceType::Redirect(_))
+        if (!self.video_source.inner().is_shareable())
             && (self.video_source.inner().source_string()
                 == other.video_source.inner().source_string())
         {
