@@ -333,6 +333,10 @@ impl VideoSource for VideoSourceLocal {
     fn is_valid(&self) -> bool {
         return !self.device_path.is_empty();
     }
+
+    fn is_shareable(&self) -> bool {
+        return false;
+    }
 }
 
 impl VideoSourceAvailable for VideoSourceLocal {

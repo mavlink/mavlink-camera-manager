@@ -15,6 +15,7 @@ pub trait VideoSource {
     fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64>;
     fn controls(&self) -> Vec<Control>;
     fn is_valid(&self) -> bool;
+    fn is_shareable(&self) -> bool;
 }
 
 pub trait VideoSourceAvailable {

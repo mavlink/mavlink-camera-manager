@@ -112,6 +112,10 @@ impl VideoSource for VideoSourceGst {
             },
         }
     }
+
+    fn is_shareable(&self) -> bool {
+        return true;
+    }
 }
 
 impl VideoSourceAvailable for VideoSourceGst {

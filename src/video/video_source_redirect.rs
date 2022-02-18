@@ -71,6 +71,10 @@ impl VideoSource for VideoSourceRedirect {
             VideoSourceRedirectType::Redirect(_) => true,
         }
     }
+
+    fn is_shareable(&self) -> bool {
+        return true;
+    }
 }
 
 impl VideoSourceAvailable for VideoSourceRedirect {
