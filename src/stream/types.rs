@@ -37,16 +37,22 @@ impl StreamType {
     }
 }
 
-/*
-impl Apiv2Schema for Url {
-}*/
-
-#[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
-pub struct CaptureConfiguration {
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct VideoCaptureConfiguration {
     pub encode: VideoEncodeType,
     pub height: u32,
     pub width: u32,
     pub frame_interval: FrameInterval,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct RedirectCaptureConfiguration {}
+
+#[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum CaptureConfiguration {
+    VIDEO(VideoCaptureConfiguration),
+    REDIRECT(RedirectCaptureConfiguration),
 }
 
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
