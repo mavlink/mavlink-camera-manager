@@ -53,22 +53,20 @@ fn check_endpoints(
 fn check_encode(
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<(), SimpleError> {
-    let encode = video_and_stream_information
+    let encode = match &video_and_stream_information
         .stream_information
         .configuration
-        .encode
-        .clone();
+    {
+        CaptureConfiguration::VIDEO(configuration) => configuration.encode.clone(),
+        CaptureConfiguration::REDIRECT(_) => return Ok(()),
+    };
 
     match &encode {
-        VideoEncodeType::UNKNOWN(name) => match video_and_stream_information.video_source {
-            VideoSourceType::Redirect(_) => (),
-            _ => {
-                return Err(SimpleError::new(format!(
-                    "Encode is not supported and also unknown: {}",
-                    name
-                )))
-            }
-        },
+        VideoEncodeType::UNKNOWN(name) => {
+            return Err(SimpleError::new(format!(
+                "Encode is not supported and also unknown: {name}",
+            )))
+        }
         VideoEncodeType::H264 => (),
         _ => {
             return Err(SimpleError::new(format!(
@@ -85,11 +83,13 @@ fn check_scheme(
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<(), SimpleError> {
     let endpoints = &video_and_stream_information.stream_information.endpoints;
-    let encode = video_and_stream_information
+    let encode = match &video_and_stream_information
         .stream_information
         .configuration
-        .encode
-        .clone();
+    {
+        CaptureConfiguration::VIDEO(configuration) => configuration.encode.clone(),
+        CaptureConfiguration::REDIRECT(_) => VideoEncodeType::UNKNOWN("".into()),
+    };
     let scheme = endpoints.first().unwrap().scheme();
 
     if let VideoSourceType::Redirect(_) = video_and_stream_information.video_source {
@@ -151,15 +151,15 @@ fn check_scheme(
 fn create_udp_stream(
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<StreamType, SimpleError> {
-    let encode = video_and_stream_information
+    let configuration = match &video_and_stream_information
         .stream_information
         .configuration
-        .encode
-        .clone();
+    {
+        CaptureConfiguration::VIDEO(configuration) => configuration,
+        _ => return Err(SimpleError::new("Unsupported CaptureConfiguration.")),
+    };
+    let encode = configuration.encode.clone();
     let endpoints = &video_and_stream_information.stream_information.endpoints;
-    let configuration = &video_and_stream_information
-        .stream_information
-        .configuration;
     let video_source = &video_and_stream_information.video_source;
 
     let video_format = match video_source {
@@ -246,11 +246,18 @@ fn create_udp_stream(
 fn create_rtsp_stream(
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<StreamType, SimpleError> {
-    let encode = video_and_stream_information
+    let configuration = match &video_and_stream_information
         .stream_information
         .configuration
-        .encode
-        .clone();
+    {
+        CaptureConfiguration::VIDEO(configuration) => configuration,
+        configuration @ _ => {
+            return Err(SimpleError::new(format!(
+                "Unsupported configuration: {configuration:#?}."
+            )))
+        }
+    };
+    let encode = configuration.encode.clone();
     let endpoint = &video_and_stream_information.stream_information.endpoints[0];
     if endpoint.scheme() != "rtsp" {
         return Err(SimpleError::new(format!(
@@ -277,9 +284,6 @@ fn create_rtsp_stream(
         )));
     }
 
-    let configuration = &video_and_stream_information
-        .stream_information
-        .configuration;
     let video_source = &video_and_stream_information.video_source;
 
     let video_format = match video_source {
@@ -407,7 +411,7 @@ mod tests {
             name: "Test".into(),
             stream_information: StreamInformation {
                 endpoints: vec![Url::parse("udp://192.168.0.1:42").unwrap()],
-                configuration: CaptureConfiguration {
+                configuration: CaptureConfiguration::VIDEO(VideoCaptureConfiguration {
                     encode: VideoEncodeType::H264,
                     height: 720,
                     width: 1080,
@@ -415,7 +419,7 @@ mod tests {
                         numerator: 1,
                         denominator: 30,
                     },
-                },
+                }),
                 extended_configuration: None,
             },
             video_source: VideoSourceType::Local(VideoSourceLocal {
@@ -441,7 +445,7 @@ mod tests {
             name: "Test".into(),
             stream_information: StreamInformation {
                 endpoints: vec![Url::parse("rtsp://0.0.0.0:8554/test").unwrap()],
-                configuration: CaptureConfiguration {
+                configuration: CaptureConfiguration::VIDEO(VideoCaptureConfiguration {
                     encode: VideoEncodeType::H264,
                     height: 720,
                     width: 1080,
@@ -449,7 +453,7 @@ mod tests {
                         numerator: 1,
                         denominator: 30,
                     },
-                },
+                }),
                 extended_configuration: None,
             },
             video_source: VideoSourceType::Local(VideoSourceLocal {
