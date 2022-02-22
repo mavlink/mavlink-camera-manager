@@ -35,12 +35,12 @@ pub fn udp() -> Vec<VideoAndStreamInformation> {
                     endpoints: vec![
                         Url::parse(&format!("udp://192.168.2.1:{}", 5600 + index)).unwrap()
                     ],
-                    configuration: CaptureConfiguration {
+                    configuration: CaptureConfiguration::VIDEO(VideoCaptureConfiguration {
                         encode: format.encode.clone(),
                         height: size.height,
                         width: size.width,
                         frame_interval: size.intervals.first().unwrap().clone(),
-                    },
+                    }),
                     extended_configuration: None,
                 },
                 video_source: cam.clone(),
