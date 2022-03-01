@@ -5,7 +5,10 @@ use actix_web::{
     rt::System,
     App, HttpRequest, HttpServer,
 };
-use paperclip::actix::{web, OpenApiExt};
+use paperclip::{
+    actix::{web, OpenApiExt},
+    v2::models::{Api, Info},
+};
 
 use log::*;
 
@@ -25,7 +28,19 @@ pub fn run(server_address: &str) {
     let _ = System::new("http-server");
     HttpServer::new(|| {
         App::new()
-            .wrap_api()
+            .wrap_api_with_spec(Api {
+                info: Info {
+                    version: format!(
+                        "{}-{} ({})",
+                        env!("CARGO_PKG_VERSION"),
+                        env!("VERGEN_GIT_SHA_SHORT"),
+                        env!("VERGEN_BUILD_DATE")
+                    ),
+                    title: env!("CARGO_PKG_NAME").to_string(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
             .with_json_spec_at("/docs.json")
             .with_swagger_ui_at("/docs")
             // Record services and routes for paperclip OpenAPI plugin for Actix.
