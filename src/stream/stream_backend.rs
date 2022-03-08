@@ -2,6 +2,9 @@ use super::types::*;
 use super::video_stream_redirect::VideoStreamRedirect;
 use super::video_stream_rtsp::VideoStreamRtsp;
 use super::video_stream_udp::VideoStreamUdp;
+use crate::stream::signalling_server::DEFAULT_SIGNALLING_ENDPOINT;
+use crate::stream::turn_server::{DEFAULT_STUN_ENDPOINT, DEFAULT_TURN_ENDPOINT};
+use crate::stream::video_stream_webrtc::VideoStreamWebRTC;
 use crate::video::{
     types::{VideoEncodeType, VideoSourceType},
     video_source_gst::VideoSourceGstType,
@@ -37,13 +40,18 @@ fn check_endpoints(
         return Err(SimpleError::new("Endpoints are empty".to_string()));
     }
 
-    let endpoints_have_same_scheme = endpoints
+    let endpoints_have_different_schemes = endpoints
         .windows(2)
-        .all(|win| win[0].scheme() == win[1].scheme());
-    if !endpoints_have_same_scheme {
+        .any(|win| win[0].scheme() != win[1].scheme());
+
+    let is_custom_webrtc = endpoints.iter().any(|endpoint| {
+        endpoint.scheme() == "stun" || endpoint.scheme() == "turn" || endpoint.scheme() == "ws"
+    });
+
+    // We only allow different schemes for custom WebRTC
+    if endpoints_have_different_schemes && !is_custom_webrtc {
         return Err(SimpleError::new(format!(
-            "Endpoints scheme are not the same: {:#?}",
-            endpoints
+            "Endpoints scheme are not the same: {endpoints:#?}",
         )));
     }
 
@@ -134,6 +142,22 @@ fn check_scheme(
             "udp265" => {
                 if VideoEncodeType::H265 != encode {
                     return Err(SimpleError::new(format!("Endpoint with udp265 scheme only supports H265 encode. Encode: {:?}, Endpoints: {:#?}", encode, endpoints)));
+                }
+            }
+            "webrtc" | "stun" | "turn" | "ws" => {
+                if VideoEncodeType::H264 != encode {
+                    return Err(SimpleError::new(format!("Endpoint with 'webrtc://', 'stun://', 'turn://' or 'ws://' schemes only supports H264 encode. Encode: {encode:?}, Endpoints: {endpoints:#?}")));
+                }
+
+                let incomplete_endpoint = endpoints.iter().any(|endpoint| {
+                    (endpoint.scheme() != "webrtc")
+                        && (endpoint.host().is_none() || endpoint.port().is_none())
+                });
+
+                if incomplete_endpoint {
+                    return Err(SimpleError::new(format!(
+                        "Endpoint with 'stun://', 'turn://' and 'ws://' schemes should have a host and port, like \"stun://0.0.0.0:3478\". Endpoints: {endpoints:#?}",
+                    )));
                 }
             }
             _ => {
@@ -370,6 +394,177 @@ fn create_redirect_stream(
     return Ok(StreamType::REDIRECT(stream));
 }
 
+fn create_webrtc_turn_stream(
+    video_and_stream_information: &VideoAndStreamInformation,
+) -> Result<StreamType, SimpleError> {
+    let usage_hint = concat!(
+        "To use the default local servers, pass just one 'webrtc://'. ",
+        "Alternatively, custom servers can be used in place of the default local ones ",
+        "by passing a comma-separated list with up to one of each: ",
+        " 'stun://<ip>:<port>' for the STUN server, and/or",
+        " 'turn://[<user>:<password>@]<ip>:<port>' for the TURN server, and/or",
+        " 'wp://<ip>:<port>' for the SIGNALLING server using the webrtcsink's protocol."
+    );
+
+    let endpoints = &video_and_stream_information.stream_information.endpoints;
+
+    if endpoints
+        .iter()
+        .filter(|endpoint| endpoint.scheme() == "webrtc")
+        .count()
+        > 1
+    {
+        return Err(SimpleError::new(format!(
+            "More than one 'webrtc://' scheme was passed. {usage_hint}. The endpoints passed were: {endpoints:#?}",
+        )));
+    }
+    if endpoints
+        .iter()
+        .filter(|endpoint| endpoint.scheme() == "stun")
+        .count()
+        > 1
+    {
+        return Err(SimpleError::new(format!(
+            "More than one 'stun://' scheme was passed. {usage_hint}. The endpoints passed were: {endpoints:#?}",
+        )));
+    }
+    if endpoints
+        .iter()
+        .filter(|endpoint| endpoint.scheme() == "turn")
+        .count()
+        > 1
+    {
+        return Err(SimpleError::new(format!(
+            "More than one 'turn://' scheme was passed. {usage_hint}. The endpoints passed were: {endpoints:#?}",
+        )));
+    }
+    if endpoints
+        .iter()
+        .filter(|endpoint| endpoint.scheme() == "ws")
+        .count()
+        > 1
+    {
+        return Err(SimpleError::new(format!(
+            "More than one 'ws://' scheme was passed. {usage_hint}. The endpoints passed were: {endpoints:#?}",
+        )));
+    }
+    if endpoints
+        .iter()
+        .any(|endpoint| endpoint.scheme() == "webrtc")
+        && endpoints.len() > 1
+    {
+        return Err(SimpleError::new(format!(
+            "'stun://', 'turn://' or 'ws://' schemes cannot be passed along with a 'webrtc://' scheme. {usage_hint}. The endpoints passed were: {endpoints:#?}",
+        )));
+    }
+
+    let mut stun_endpoint = url::Url::parse(DEFAULT_STUN_ENDPOINT).unwrap();
+    let mut turn_endpoint = url::Url::parse(DEFAULT_TURN_ENDPOINT).unwrap();
+    let mut signalling_endpoint = url::Url::parse(DEFAULT_SIGNALLING_ENDPOINT).unwrap();
+
+    for endpoint in endpoints.iter() {
+        match endpoint.scheme() {
+            "webrtc" => (),
+            "stun" => stun_endpoint = endpoint.to_owned(),
+            "turn" => turn_endpoint = endpoint.to_owned(),
+            "ws" => signalling_endpoint = endpoint.to_owned(),
+            _ => {
+                return Err(SimpleError::new(format!(
+                    "Only 'webrtc://', 'stun://', 'turn://' and 'ws://' schemes are accepted. {usage_hint}. The scheme passed was: {:#?}\"",
+                    endpoint.scheme()
+                )))
+            }
+        }
+    }
+    debug!("Using the following endpoint for the STUN Server: \"{stun_endpoint}\"");
+    debug!("Using the following endpoint for the TURN Server: \"{turn_endpoint}\"",);
+    debug!("Using the following endpoint for the Signalling Server: \"{signalling_endpoint}\"",);
+
+    let configuration = match &video_and_stream_information
+        .stream_information
+        .configuration
+    {
+        CaptureConfiguration::VIDEO(configuration) => configuration,
+        _ => return Err(SimpleError::new(format!(
+            "The only accepted configuration type is the VideoCaptureConfiguration, which is like {supported_configuration}, but was {given_configuration:#?} ",
+            supported_configuration="VideoCaptureConfiguration { \"encode\": <string>, \"height\": <integer>, \"width\": <integer>, \"frame_interval\": <integer/integer> }",
+            given_configuration=video_and_stream_information.stream_information.configuration,
+        ))),
+    };
+    let video_format = format!(
+        "width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+        width = configuration.width,
+        height = configuration.height,
+        interval_denominator = configuration.frame_interval.denominator,
+        interval_numerator = configuration.frame_interval.numerator,
+    );
+
+    let encode = configuration.encode.clone();
+    let video_source = &video_and_stream_information.video_source;
+    let pipeline = match video_source {
+        VideoSourceType::Local(local_device) => {
+            if VideoEncodeType::H264 == encode {
+                format!(
+                    concat!(
+                        "v4l2src device={device}",
+                        " ! video/x-h264,{video_format}",
+                        " ! decodebin3",
+                        " ! videoconvert",
+                        " ! webrtcsink stun-server={stun_server} turn-server={turn_server} signaller::address={signaller_server}",
+                        " video-caps=video/x-h264,{video_format}",
+                    ),
+                    device = &local_device.device_path,
+                    video_format = video_format,
+                    stun_server = stun_endpoint,
+                    turn_server = turn_endpoint,
+                    signaller_server = signalling_endpoint,
+                )
+            } else {
+                return Err(SimpleError::new(format!(
+                    "Unsupported encode for WebRTC endpoint: {encode:?}"
+                )));
+            }
+        }
+        VideoSourceType::Gst(gst_source) => match &gst_source.source {
+            VideoSourceGstType::Fake(pattern) => {
+                format!(
+                        concat!(
+                            "videotestsrc pattern={pattern}",
+                            " ! video/x-raw,{video_format}",
+                            " ! videoconvert",
+                            " ! webrtcsink stun-server={stun_server} turn-server={turn_server} signaller::address={signaller_server}",
+                            " video-caps=video/x-h264,{video_format}",
+                        ),
+                        pattern = pattern,
+                        video_format = video_format,
+                        stun_server = stun_endpoint,
+                        turn_server = turn_endpoint,
+                        signaller_server = signalling_endpoint,
+                    )
+            }
+            _ => {
+                return Err(SimpleError::new(format!(
+                    "Unsupported GST source for WebRTC endpoint: {gst_source:#?}"
+                )));
+            }
+        },
+        something => {
+            return Err(SimpleError::new(format!(
+                "Unsupported VideoSourceType stream creation: {something:#?}"
+            )));
+        }
+    };
+
+    if VideoEncodeType::H264 != encode {
+        return Err(SimpleError::new(format!("Unsupported encode: {encode:?}",)));
+    }
+
+    info!("Created pipeline: {pipeline}");
+    let mut stream = VideoStreamWebRTC::default();
+    stream.set_pipeline_description(&pipeline);
+    return Ok(StreamType::WEBRTC(stream));
+}
+
 fn create_stream(
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<StreamType, SimpleError> {
@@ -386,10 +581,10 @@ fn create_stream(
         match endpoint.scheme() {
             "udp" => create_udp_stream(video_and_stream_information),
             "rtsp" => create_rtsp_stream(video_and_stream_information),
-            something => Err(SimpleError::new(format!(
-                "Unsupported scheme: {}",
-                something
-            ))),
+            "webrtc" | "stun" | "turn" | "ws" => {
+                create_webrtc_turn_stream(video_and_stream_information)
+            }
+            something => Err(SimpleError::new(format!("Unsupported scheme: {something}"))),
         }
     }
 }
@@ -471,5 +666,103 @@ mod tests {
             _any_other_stream_type => panic!("Failed to create RTSP stream: {:?}.", result),
         };
         assert_eq!(result.pipeline(), "v4l2src device=/dev/video42 ! video/x-h264,width=1080,height=720,framerate=30/1,type=video ! h264parse ! queue ! rtph264pay name=pay0 config-interval=10 pt=96");
+    }
+
+    #[test]
+    fn test_webrtc_default_servers() {
+        let result = create_stream(&VideoAndStreamInformation {
+            name: "Test".into(),
+            stream_information: StreamInformation {
+                endpoints: vec![Url::parse("webrtc://").unwrap()],
+                configuration: CaptureConfiguration::VIDEO(VideoCaptureConfiguration {
+                    encode: VideoEncodeType::H264,
+                    height: 720,
+                    width: 1080,
+                    frame_interval: FrameInterval {
+                        numerator: 1,
+                        denominator: 30,
+                    },
+                }),
+                extended_configuration: None,
+            },
+            video_source: VideoSourceType::Local(VideoSourceLocal {
+                name: "PotatoCam".into(),
+                device_path: "/dev/video42".into(),
+                typ: VideoSourceLocalType::Unknown("TestPotatoCam".into()),
+            }),
+        });
+
+        assert!(result.is_ok());
+        let result = &result.unwrap();
+
+        let result = match result {
+            StreamType::WEBRTC(video_stream_webrtc) => video_stream_webrtc,
+            _any_other_stream_type => panic!("Failed to create WebRTC stream: {:?}.", result),
+        };
+        assert_eq!(
+            result.pipeline(),
+            concat!(
+                "v4l2src device=/dev/video42",
+                " ! video/x-h264,width=1080,height=720,framerate=30/1",
+                " ! decodebin3",
+                " ! videoconvert",
+                " ! webrtcsink",
+                " stun-server=stun://0.0.0.0:3478",
+                " turn-server=turn://user:pwd@0.0.0.0:3478",
+                " signaller::address=ws://0.0.0.0:6021/",
+                " video-caps=video/x-h264,width=1080,height=720,framerate=30/1",
+            )
+        );
+    }
+
+    #[test]
+    fn test_webrtc_custom_servers() {
+        let result = create_stream(&VideoAndStreamInformation {
+            name: "Test".into(),
+            stream_information: StreamInformation {
+                endpoints: vec![
+                    Url::parse("stun://stun.l.google.com:19302").unwrap(),
+                    Url::parse("turn://test:1qaz2wsx@turn.homeneural.net:3478").unwrap(),
+                    Url::parse("ws://192.168.3.4:44019").unwrap(),
+                ],
+                configuration: CaptureConfiguration::VIDEO(VideoCaptureConfiguration {
+                    encode: VideoEncodeType::H264,
+                    height: 720,
+                    width: 1080,
+                    frame_interval: FrameInterval {
+                        numerator: 1,
+                        denominator: 30,
+                    },
+                }),
+                extended_configuration: None,
+            },
+            video_source: VideoSourceType::Local(VideoSourceLocal {
+                name: "PotatoCam".into(),
+                device_path: "/dev/video42".into(),
+                typ: VideoSourceLocalType::Unknown("TestPotatoCam".into()),
+            }),
+        });
+
+        assert!(result.is_ok());
+        let result = &result.unwrap();
+
+        let result = match result {
+            StreamType::WEBRTC(video_stream_webrtc) => video_stream_webrtc,
+            _any_other_stream_type => panic!("Failed to create WebRTC stream: {:?}.", result),
+        };
+        assert_eq!(
+            result.pipeline(),
+            concat!(
+                "v4l2src device=/dev/video42",
+                " ! video/x-h264,width=1080,height=720,framerate=30/1",
+                " ! decodebin3",
+                " ! videoconvert",
+                " ! webrtcsink",
+                " stun-server=stun://stun.l.google.com:19302",
+                " turn-server=turn://test:1qaz2wsx@turn.homeneural.net:3478",
+                " signaller::address=ws://192.168.3.4:44019/",
+                " video-caps=video/x-h264,width=1080,height=720,framerate=30/1",
+            )
+        );
     }
 }
