@@ -39,4 +39,8 @@ impl StreamBackend for VideoStreamRedirect {
     fn pipeline(&self) -> String {
         "".into()
     }
+
+    fn allow_same_endpoints(&self) -> bool {
+        false
+    }
 }
