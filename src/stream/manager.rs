@@ -68,9 +68,11 @@ pub fn add_stream_and_start(
     let mut manager = MANAGER.as_ref().lock().unwrap();
 
     for stream in manager.streams.iter() {
-        stream
-            .video_and_stream_information
-            .conflicts_with(&video_and_stream_information)?
+        if !stream.stream_type.inner().allow_same_endpoints() {
+            stream
+                .video_and_stream_information
+                .conflicts_with(&video_and_stream_information)?
+        }
     }
 
     let endpoint = video_and_stream_information

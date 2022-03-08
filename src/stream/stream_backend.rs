@@ -20,6 +20,7 @@ pub trait StreamBackend {
     fn restart(&mut self);
     fn set_pipeline_description(&mut self, description: &str);
     fn pipeline(&self) -> String;
+    fn allow_same_endpoints(&self) -> bool;
 }
 
 pub fn new(

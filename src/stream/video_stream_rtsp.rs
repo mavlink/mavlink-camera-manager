@@ -59,4 +59,8 @@ impl StreamBackend for VideoStreamRtsp {
     fn pipeline(&self) -> String {
         self.pipeline.description.clone()
     }
+
+    fn allow_same_endpoints(&self) -> bool {
+        false
+    }
 }

@@ -52,4 +52,8 @@ impl StreamBackend for VideoStreamUdp {
     fn pipeline(&self) -> String {
         self.pipeline_runner.pipeline()
     }
+
+    fn allow_same_endpoints(&self) -> bool {
+        false
+    }
 }

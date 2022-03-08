@@ -80,6 +80,10 @@ impl StreamBackend for PipelineRunner {
     fn is_running(&self) -> bool {
         return self.state.lock().unwrap().run;
     }
+
+    fn allow_same_endpoints(&self) -> bool {
+        false
+    }
 }
 
 impl Drop for PipelineRunner {
