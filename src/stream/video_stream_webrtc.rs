@@ -2,7 +2,7 @@ use super::{
     gst::pipeline_runner::{Pipeline, PipelineRunner},
     signalling_server::DEFAULT_SIGNALLING_ENDPOINT,
     stream_backend::StreamBackend,
-    // turn_server::TurnServer,
+    turn_server::{TurnServer, DEFAULT_STUN_ENDPOINT, DEFAULT_TURN_ENDPOINT},
 };
 
 #[derive(Debug)]
@@ -43,10 +43,12 @@ impl Drop for VideoStreamWebRTC {
 
 impl StreamBackend for VideoStreamWebRTC {
     fn start(&mut self) -> bool {
+        TurnServer::notify_start();
         self.pipeline_runner.start()
     }
 
     fn stop(&mut self) -> bool {
+        TurnServer::notify_stop();
         self.pipeline_runner.stop()
     }
 
