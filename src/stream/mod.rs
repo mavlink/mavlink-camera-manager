@@ -2,6 +2,7 @@ mod gst;
 pub mod manager;
 pub mod rtsp_server;
 pub mod stream_backend;
+pub mod turn_server;
 pub mod types;
 pub mod video_stream_redirect;
 pub mod video_stream_rtsp;
