@@ -50,7 +50,10 @@ pub fn run(server_address: &str) {
             // Record services and routes for paperclip OpenAPI plugin for Actix.
             .data(web::JsonConfig::default().error_handler(json_error_handler))
             .route("/", web::get().to(pages::root))
-            .route(r"/{filename:.*(\.html|\.js)}", web::get().to(pages::root))
+            .route(
+                r"/{filename:.*(\.html|\.js|\.css)}",
+                web::get().to(pages::root),
+            )
             .route("/delete_stream", web::delete().to(pages::remove_stream))
             .route("/streams", web::get().to(pages::streams))
             .route("/streams", web::post().to(pages::streams_post))
