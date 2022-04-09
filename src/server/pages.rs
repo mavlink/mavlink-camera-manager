@@ -51,6 +51,8 @@ pub struct XmlFileRequest {
     file: String,
 }
 
+use std::{ffi::OsStr, path::Path};
+
 pub fn load_file(file_name: &str) -> String {
     // Load files at runtime only in debug builds
     if cfg!(debug_assertions) {
@@ -69,10 +71,9 @@ pub fn load_file(file_name: &str) -> String {
 }
 
 pub fn root(req: HttpRequest) -> HttpResponse {
-    let filename = req.match_info().query("filename");
-    let path = match filename {
-        "" | "index.html" => load_file("index.html"),
-        "vue.js" => load_file("vue.js"),
+    let filename = match req.match_info().query("filename") {
+        "" | "index.html" => "index.html",
+        "vue.js" => "vue.js",
         something => {
             //TODO: do that in load_file
             return HttpResponse::NotFound()
@@ -80,15 +81,13 @@ pub fn root(req: HttpRequest) -> HttpResponse {
                 .body(format!("Page does not exist: {}", something));
         }
     };
-    if filename.ends_with(".js") {
-        return HttpResponse::Ok()
-            .content_type("text/javascript")
-            .body(path);
-    }
-    if filename.ends_with(".css") {
-        return HttpResponse::Ok().content_type("text/css").body(path);
-    }
-    return HttpResponse::Ok().content_type("text/html").body(path);
+    let content = load_file(filename);
+    let extension = Path::new(&filename)
+        .extension()
+        .and_then(OsStr::to_str)
+        .unwrap_or("");
+    let mime = actix_files::file_extension_to_mime(extension).to_string();
+    return HttpResponse::Ok().content_type(mime).body(&content);
 }
 
 //TODO: change endpoint name to sources
