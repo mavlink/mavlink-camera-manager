@@ -31,36 +31,45 @@ pub fn run(server_address: &str) {
     // Start HTTP server thread
     let _ = System::new("http-server");
     HttpServer::new(|| {
-        App::new()
-            .wrap_api_with_spec(Api {
-                info: Info {
-                    version: format!(
-                        "{}-{} ({})",
-                        env!("CARGO_PKG_VERSION"),
-                        env!("VERGEN_GIT_SHA_SHORT"),
-                        env!("VERGEN_BUILD_DATE")
-                    ),
-                    title: env!("CARGO_PKG_NAME").to_string(),
-                    ..Default::default()
-                },
+        let mut app = App::new();
+
+        if let Some(path) = cli::manager::www_path() {
+            // Load static files from configured www-path
+            info!("Using the www-path: {path:?}.");
+            app = app.service(
+                actix_files::Files::new("webrtc", format!("{path}/webrtc/"))
+                    .index_file("index.html"),
+            );
+        };
+        app.wrap_api_with_spec(Api {
+            info: Info {
+                version: format!(
+                    "{}-{} ({})",
+                    env!("CARGO_PKG_VERSION"),
+                    env!("VERGEN_GIT_SHA_SHORT"),
+                    env!("VERGEN_BUILD_DATE")
+                ),
+                title: env!("CARGO_PKG_NAME").to_string(),
                 ..Default::default()
-            })
-            .with_json_spec_at("/docs.json")
-            .with_swagger_ui_at("/docs")
-            // Record services and routes for paperclip OpenAPI plugin for Actix.
-            .data(web::JsonConfig::default().error_handler(json_error_handler))
-            .route("/", web::get().to(pages::root))
-            .route(
-                r"/{filename:.*(\.html|\.js|\.css)}",
-                web::get().to(pages::root),
-            )
-            .route("/delete_stream", web::delete().to(pages::remove_stream))
-            .route("/streams", web::get().to(pages::streams))
-            .route("/streams", web::post().to(pages::streams_post))
-            .route("/v4l", web::get().to(pages::v4l))
-            .route("/v4l", web::post().to(pages::v4l_post))
-            .route("/xml", web::get().to(pages::xml))
-            .build()
+            },
+            ..Default::default()
+        })
+        .with_json_spec_at("/docs.json")
+        .with_swagger_ui_at("/docs")
+        // Record services and routes for paperclip OpenAPI plugin for Actix.
+        .data(web::JsonConfig::default().error_handler(json_error_handler))
+        .route("/", web::get().to(pages::root))
+        .route(
+            r"/{filename:.*(\.html|\.js|\.css)}",
+            web::get().to(pages::root),
+        )
+        .route("/delete_stream", web::delete().to(pages::remove_stream))
+        .route("/streams", web::get().to(pages::streams))
+        .route("/streams", web::post().to(pages::streams_post))
+        .route("/v4l", web::get().to(pages::v4l))
+        .route("/v4l", web::post().to(pages::v4l_post))
+        .route("/xml", web::get().to(pages::xml))
+        .build()
     })
     .bind(server_address)
     .unwrap()
