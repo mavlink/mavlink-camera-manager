@@ -1,5 +1,5 @@
 use super::pages;
-use crate::stream::signalling_server::SignallingServer;
+use crate::{cli, stream::signalling_server::SignallingServer};
 
 use actix_web::{
     error::{ErrorBadRequest, JsonPayloadError},
