@@ -2053,6 +2053,7 @@ dependencies = [
  "rand 0.8.5",
  "regex",
  "reqwest",
+ "semver 1.0.7",
  "serde",
  "serde_derive",
  "serde_json",
