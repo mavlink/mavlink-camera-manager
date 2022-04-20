@@ -47,6 +47,7 @@ url = { version = "2.2.2", features = ["serde"] }
 v4l = "0.12.1"
 directories = "4.0.1"
 pnet = "0.29.0"
+semver = "1.0.7"
 
 ## Mavlink
 mavlink = { version = "0.10.0", features = ["default", "emit-extensions"] }
