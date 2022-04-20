@@ -2,9 +2,11 @@ use super::types::*;
 use super::video_stream_redirect::VideoStreamRedirect;
 use super::video_stream_rtsp::VideoStreamRtsp;
 use super::video_stream_udp::VideoStreamUdp;
-use crate::stream::signalling_server::DEFAULT_SIGNALLING_ENDPOINT;
-use crate::stream::turn_server::{DEFAULT_STUN_ENDPOINT, DEFAULT_TURN_ENDPOINT};
 use crate::stream::video_stream_webrtc::VideoStreamWebRTC;
+use crate::stream::webrtc::{
+    signalling_server::DEFAULT_SIGNALLING_ENDPOINT,
+    turn_server::{DEFAULT_STUN_ENDPOINT, DEFAULT_TURN_ENDPOINT},
+};
 use crate::video::{
     types::{VideoEncodeType, VideoSourceType},
     video_source_gst::VideoSourceGstType,
