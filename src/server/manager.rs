@@ -1,6 +1,6 @@
 use super::pages;
 use crate::cli;
-use crate::stream::webrtc::signalling_server::SignallingServer;
+use crate::stream::webrtc::{signalling_server::SignallingServer, utils::is_webrtcsink_available};
 
 use actix_web::{
     error::{ErrorBadRequest, JsonPayloadError},
@@ -24,23 +24,33 @@ fn json_error_handler(error: JsonPayloadError, _: &HttpRequest) -> actix_web::Er
 
 // Start REST API server with the desired address
 pub fn run(server_address: &str) {
-    // Start WebRTC signalling server before the HTTP so it can answer any request comming from the http front-end.
-    SignallingServer::start();
+    let webrtc_available = is_webrtcsink_available();
+    if webrtc_available {
+        // Start WebRTC signalling server before the HTTP so it can answer any request comming from the http front-end.
+        SignallingServer::start();
+    } else {
+        warn!(
+            "WebRTC front-end cannot be started because the gstreamer webrtcsink plugin is not available. {}",
+            crate::stream::webrtc::utils::webrtcsink_installation_instructions()
+        );
+    }
 
     let server_address = server_address.to_string();
 
     // Start HTTP server thread
     let _ = System::new("http-server");
-    HttpServer::new(|| {
+    HttpServer::new(move || {
         let mut app = App::new();
 
         if let Some(path) = cli::manager::www_path() {
-            // Load static files from configured www-path
-            info!("Using the www-path: {path:?}.");
-            app = app.service(
-                actix_files::Files::new("webrtc", format!("{path}/webrtc/"))
-                    .index_file("index.html"),
-            );
+            if webrtc_available {
+                // Load static files from configured www-path
+                info!("Using the www-path: {path:?}.");
+                app = app.service(
+                    actix_files::Files::new("webrtc", format!("{path}/webrtc/"))
+                        .index_file("index.html"),
+                );
+            }
         };
         app.wrap_api_with_spec(Api {
             info: Info {
