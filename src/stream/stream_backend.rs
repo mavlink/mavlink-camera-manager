@@ -6,6 +6,7 @@ use crate::stream::video_stream_webrtc::VideoStreamWebRTC;
 use crate::stream::webrtc::{
     signalling_server::DEFAULT_SIGNALLING_ENDPOINT,
     turn_server::{DEFAULT_STUN_ENDPOINT, DEFAULT_TURN_ENDPOINT},
+    utils::is_webrtcsink_available,
 };
 use crate::video::{
     types::{VideoEncodeType, VideoSourceType},
@@ -400,6 +401,13 @@ fn create_redirect_stream(
 fn create_webrtc_turn_stream(
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<StreamType, SimpleError> {
+    if !is_webrtcsink_available() {
+        return Err(SimpleError::new(format!(
+                "WebRTC stream cannot be created because the gstreamer webrtcsink plugin is not available. {}",
+                crate::stream::webrtc::utils::webrtcsink_installation_instructions()
+        )));
+    }
+
     let usage_hint = concat!(
         "To use the default local servers, pass just one 'webrtc://'. ",
         "Alternatively, custom servers can be used in place of the default local ones ",
