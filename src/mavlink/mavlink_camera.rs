@@ -373,15 +373,42 @@ fn receive_message_loop(
                             error!("Failed to parse control id: {:#?}", error);
                             continue;
                         }
-                        let _control_id = control_id.unwrap();
+                        let control_id = control_id.unwrap();
 
                         if let Err(error) = control_value {
                             error!("Failed to parse parameter value: {:#?}", error);
                             continue;
                         }
-                        let _control_value = control_value.unwrap();
+                        let control_value = control_value.unwrap();
 
-                        //TODO: Control V4L
+                        let mut param_result = mavlink::common::ParamAck::PARAM_ACK_ACCEPTED;
+                        if let Err(error) = mavlink_camera_information
+                            .as_ref()
+                            .lock()
+                            .unwrap()
+                            .video_source_type
+                            .inner()
+                            .set_control_by_id(control_id, control_value)
+                        {
+                            error!(
+                                "Failed to set parameter {control_id:?} with value {control_value:?}. Reason: {error:#?}",
+                            );
+                            param_result = mavlink::common::ParamAck::PARAM_ACK_FAILED;
+                        }
+
+                        if let Err(error) = vehicle.send(
+                            &header,
+                            &mavlink::common::MavMessage::PARAM_EXT_ACK(
+                                mavlink::common::PARAM_EXT_ACK_DATA {
+                                    param_id: param_ext_set.param_id,
+                                    param_value: param_ext_set.param_value,
+                                    param_type: param_ext_set.param_type,
+                                    param_result,
+                                },
+                            ),
+                        ) {
+                            warn!("Failed to send video_stream_information: {error:?}");
+                        }
                     }
 
                     //TODO: Handle all necessary QGC messages to setup camera
