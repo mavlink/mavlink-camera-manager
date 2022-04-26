@@ -53,6 +53,54 @@ pub fn get_video_source(source_string: &str) -> Result<VideoSourceType, std::io:
     ));
 }
 
+pub fn set_control(source_string: &str, control_id: u64, value: i64) -> std::io::Result<()> {
+    let camera = get_video_source(source_string)?;
+    debug!("Set camera ({source_string}) control ({control_id}) value ({value}).");
+    return camera.inner().set_control_by_id(control_id, value);
+}
+
+pub fn reset_controls(source_string: &str) -> Result<(), Vec<std::io::Error>> {
+    let camera = get_video_source(source_string);
+    if let Err(error) = camera {
+        return Err(vec![error]);
+    }
+    let camera = camera.unwrap();
+
+    debug!("Resetting all controls of camera ({source_string}).",);
+
+    let mut errors: Vec<std::io::Error> = Default::default();
+    for control in camera.inner().controls() {
+        if control.state.is_inactive {
+            continue;
+        }
+
+        let default_value = match &control.configuration {
+            ControlType::Bool(bool) => bool.default,
+            ControlType::Slider(slider) => slider.default,
+            ControlType::Menu(menu) => menu.default,
+        };
+
+        if let Err(error) = camera
+            .inner()
+            .set_control_by_id(control.id, default_value as i64)
+        {
+            let error_message = format!(
+                "Error when trying to reset control '{}' (id {}). Error: {}.",
+                control.name,
+                control.id,
+                error.to_string()
+            );
+            errors.push(std::io::Error::new(error.kind(), error_message));
+        }
+    }
+    if errors.is_empty() {
+        return Ok(());
+    }
+
+    error!("{errors:#?}");
+    return Err(errors);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
