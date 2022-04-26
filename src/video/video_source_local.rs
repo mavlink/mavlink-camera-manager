@@ -275,6 +275,14 @@ impl VideoSource for VideoSourceLocal {
                 },
                 ..Default::default()
             };
+
+            if matches!(v4l_control.typ, v4l::control::Type::CtrlClass) {
+                // CtrlClass is not a control, so we are skipping it to avoid any access to it, as it will raise an
+                // IO error #13: Permission Denied. To better understand, look for 'V4L2_CTRL_TYPE_CTRL_CLASS' on
+                // this doc: https://www.kernel.org/doc/html/v5.5/media/uapi/v4l/vidioc-queryctrl.html#c.v4l2_ctrl_type
+                continue;
+            }
+
             let value = self.control_value_by_id(v4l_control.id as u64);
             if let Err(error) = value {
                 error!(
