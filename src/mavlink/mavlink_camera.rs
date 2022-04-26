@@ -338,6 +338,40 @@ fn receive_message_loop(
                                     warn!("Failed to send video_stream_information: {:?}", error);
                                 }
                             }
+                            mavlink::common::MavCmd::MAV_CMD_RESET_CAMERA_SETTINGS => {
+                                let information =
+                                    &mavlink_camera_information.as_ref().lock().unwrap();
+                                let source_string =
+                                    information.video_source_type.inner().source_string();
+                                let component = &information.component;
+                                drop(information);
+
+                                let mut param_result =
+                                    mavlink::common::MavResult::MAV_RESULT_ACCEPTED;
+                                if let Err(error) =
+                                    crate::video::video_source::reset_controls(source_string)
+                                {
+                                    error!(
+                                        "Failed to reset {source_string:?} controls with its default values. Reason: {error:#?}",
+                                    );
+                                    param_result = mavlink::common::MavResult::MAV_RESULT_DENIED;
+                                }
+
+                                if let Err(error) = vehicle.send(
+                                    &header,
+                                    &mavlink::common::MavMessage::COMMAND_ACK(
+                                        mavlink::common::COMMAND_ACK_DATA {
+                                            command: mavlink::common::MavCmd::MAV_CMD_RESET_CAMERA_SETTINGS,
+                                            result: param_result,
+                                            target_system: component.system_id,
+                                            target_component: component.component_id,
+                                            ..Default::default()
+                                        }
+                                    ),
+                                ) {
+                                    warn!("Failed to send COMMAND_ACK for MAV_CMD_RESET_CAMERA_SETTINGS: {error:?}");
+                                }
+                            }
                             _ => {
                                 let information =
                                     mavlink_camera_information.as_ref().lock().unwrap();
