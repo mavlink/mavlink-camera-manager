@@ -10,8 +10,14 @@ jobs:
     - uses: actions/checkout@v2
     - name: Install libraries
       run: |
+        sudo su -c "echo 'deb http://deb.debian.org/debian unstable main' >> /etc/apt/sources.list"
+        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 648ACFD622F3D138 0E98404D386FA1D9
         sudo apt update
-        sudo apt install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-dev libclang-dev openssl
+        sudo apt install -y libclang-dev libssl-dev pkg-config libmount-dev libsepol-dev libselinux1-dev libglib2.0-dev libgudev-1.0-dev
+        sudo apt install -t unstable -y gstreamer1.0-tools libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev libgstrtspserver-1.0-dev
+        git clone https://github.com/centricular/webrtcsink && cd webrtcsink && git checkout 55d30db5 && cargo build --package webrtcsink --lib --release
+        sudo cp target/release/*.so  $(dirname $(gst-inspect-1.0 tee | grep Filename | awk '{print $2}'))
+        cd .. && rm -rf webrtcsink
     - uses: actions-rs/toolchain@v1.0.1
       with:
         toolchain: stable
