@@ -48,6 +48,11 @@ pub struct RemoveStream {
 }
 
 #[derive(Apiv2Schema, Debug, Deserialize)]
+pub struct ResetCameraControls {
+    device: String,
+}
+
+#[derive(Apiv2Schema, Debug, Deserialize)]
 pub struct XmlFileRequest {
     file: String,
 }
@@ -192,6 +197,35 @@ pub fn remove_stream(req: HttpRequest, query: web::Query<RemoveStream>) -> HttpR
             return HttpResponse::NotAcceptable()
                 .content_type("text/plain")
                 .body(format!("{:#?}", error.to_string()));
+        }
+    }
+}
+
+#[api_v2_operation]
+/// Reset controls from a given camera source
+pub fn camera_reset_controls(
+    req: HttpRequest,
+    json: web::Json<ResetCameraControls>,
+) -> HttpResponse {
+    debug!("{req:#?}{json:?}");
+
+    match video_source::reset_controls(&json.device) {
+        Ok(_) => HttpResponse::Ok()
+            .content_type("application/json")
+            .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap()),
+        Err(errors) => {
+            let mut error: String = Default::default();
+            errors.iter().enumerate().for_each(|(i, e)| {
+                error
+                    .push_str(format!("{}: {}\n", i + 1, SimpleError::from(e).to_string()).as_str())
+            });
+            let error = SimpleError::new(error);
+            return HttpResponse::NotAcceptable()
+                .content_type("text/plain")
+                .body(format!(
+                    "One or more controls were not reseted due to the following errors: \n{}",
+                    error.to_string()
+                ));
         }
     }
 }

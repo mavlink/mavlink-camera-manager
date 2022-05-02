@@ -79,6 +79,10 @@ pub fn run(server_address: &str) {
         .route("/streams", web::post().to(pages::streams_post))
         .route("/v4l", web::get().to(pages::v4l))
         .route("/v4l", web::post().to(pages::v4l_post))
+        .route(
+            "/camera/reset_controls",
+            web::post().to(pages::camera_reset_controls),
+        )
         .route("/xml", web::get().to(pages::xml))
         .build()
     })
