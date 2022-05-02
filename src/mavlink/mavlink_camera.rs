@@ -356,12 +356,12 @@ fn receive_message_loop(
                                     warn!("Failed to send COMMAND_ACK for MAV_CMD_RESET_CAMERA_SETTINGS: {error:?}");
                                 }
                             }
-                            _ => {
+                            message => {
                                 let information =
                                     mavlink_camera_information.as_ref().lock().unwrap();
                                 warn!(
-                                    "Camera: {:#?}, ignoring command: {:#?}",
-                                    information, command_long.command
+                                    "Message {message:#?}, Camera: {information:#?}, ignoring command: {:#?}",
+                                    command_long.command
                                 );
                             }
                         }
