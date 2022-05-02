@@ -23,6 +23,9 @@
                 <h4>
                     Controls:
                 </h4>
+                <div>
+                    <button type="button" v-on:click="resetControls(item.source)">Reset controls</button>
+                </div>
                 <div v-for="control in item.controls">
                     <h5>Name: {{ control.name }}</h5>
                     <div v-if="control.configuration.Slider">
@@ -124,6 +127,19 @@
                         }
                     }
                     const response = await fetch('v4l', settings)
+                    this.checkResponse(response)
+                },
+                resetControls: async function(source) {
+                    console.log(`Resetting: source: ${source} controls to its default values.`)
+                    const settings = {
+                        method: 'POST',
+                        body: JSON.stringify({ "device": source }),
+                        headers: {
+                            Accept: 'application/json',
+                            'Content-Type': 'application/json',
+                        }
+                    }
+                    const response = await fetch('camera/reset_controls', settings)
                     this.checkResponse(response)
                 },
                 deleteStream: async function(stream_name) {
