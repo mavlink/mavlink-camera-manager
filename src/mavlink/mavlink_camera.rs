@@ -468,7 +468,65 @@ fn receive_message_loop(
                             warn!("Failed to send video_stream_information: {error:?}");
                         }
                     }
+                    mavlink::common::MavMessage::PARAM_EXT_REQUEST_LIST(param_ext_req) => {
+                        if param_ext_req.target_system != header.system_id {
+                            debug!(
+                                "Ignoring PARAM_EXT_REQUEST_LIST, wrong system id: expect {}, but got {}.",
+                                header.system_id,
+                                param_ext_req.target_system
+                            );
+                            continue;
+                        }
 
+                        if param_ext_req.target_component != header.component_id {
+                            debug!(
+                                "Ignoring PARAM_EXT_REQUEST_LIST, wrong component id: expect {}, but got {}.",
+                                header.component_id,
+                                param_ext_req.target_component
+                            );
+                            continue;
+                        }
+
+                        let controls = mavlink_camera_information
+                            .as_ref()
+                            .lock()
+                            .unwrap()
+                            .video_source_type
+                            .inner()
+                            .controls();
+
+                        controls
+                        .iter()
+                        .enumerate()
+                        .for_each(|(param_index, control)| {
+                            let param_id = param_id_from_control_id(control.id);
+
+                            let control_value = match &control.configuration {
+                                crate::video::types::ControlType::Bool(bool) => bool.value,
+                                crate::video::types::ControlType::Slider(slider) => slider.value,
+                                crate::video::types::ControlType::Menu(menu) => menu.value,
+                            };
+
+                            let param_value = param_value_from_control_value(control_value, 128);
+
+                            if let Err(error) = vehicle.send(
+                                &header,
+                                &mavlink::common::MavMessage::PARAM_EXT_VALUE(
+                                    mavlink::common::PARAM_EXT_VALUE_DATA {
+                                        param_count: controls.len() as u16,
+                                        param_index: param_index as u16,
+                                        param_id,
+                                        param_value,
+                                        param_type:
+                                            mavlink::common::MavParamExtType::MAV_PARAM_EXT_TYPE_INT64,
+                                    },
+                                ),
+                            ) {
+                                warn!("Failed to send video_stream_information: {error:?}");
+                            }
+
+                        });
+                    }
                     //TODO: Handle all necessary QGC messages to setup camera
                     // We receive a bunch of heartbeat messages, we can ignore it
                     mavlink::common::MavMessage::HEARTBEAT(_) => {}
