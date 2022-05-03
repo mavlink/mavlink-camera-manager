@@ -16,6 +16,7 @@ use actix_web::{
 use log::*;
 use paperclip::actix::{api_v2_operation, Apiv2Schema};
 use serde::{Deserialize, Serialize};
+use simple_error::SimpleError;
 
 use std::io::prelude::*;
 
@@ -152,14 +153,13 @@ pub async fn streams(req: HttpRequest) -> Json<Vec<StreamStatus>> {
 pub fn streams_post(req: HttpRequest, json: web::Json<PostStream>) -> HttpResponse {
     debug!("{:#?}{:?}", req, json);
     let json = json.into_inner();
-    //json.
 
     let video_source = match video_source::get_video_source(&json.source) {
         Ok(video_source) => video_source,
         Err(error) => {
             return HttpResponse::NotAcceptable()
                 .content_type("text/plain")
-                .body(format!("{:#?}", error.to_string()));
+                .body(format!("{:#?}", SimpleError::from(error).to_string()));
         }
     };
 
