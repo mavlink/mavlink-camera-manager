@@ -353,29 +353,13 @@ fn receive_message_loop(
                             None => continue,
                         };
 
-                        let bytes: Vec<u8> =
-                            param_ext_set.param_value.iter().map(|c| *c as u8).collect();
-                        let control_value = match param_ext_set.param_type {
-                            mavlink::common::MavParamExtType::MAV_PARAM_EXT_TYPE_UINT8 => {
-                                Ok(u8::from_ne_bytes(bytes[0..1].try_into().unwrap()) as i64)
-                            }
-                            mavlink::common::MavParamExtType::MAV_PARAM_EXT_TYPE_INT32 => {
-                                Ok(i32::from_ne_bytes(bytes[0..4].try_into().unwrap()) as i64)
-                            }
-                            mavlink::common::MavParamExtType::MAV_PARAM_EXT_TYPE_INT64 => {
-                                Ok(i64::from_ne_bytes(bytes[0..8].try_into().unwrap()))
-                            }
-                            something_else => Err(SimpleError::new(format!(
-                                "Received parameter of untreatable type: {:#?}",
-                                something_else
-                            ))),
+                        let control_value = match control_value_from_param_value(
+                            &param_ext_set.param_value,
+                            &param_ext_set.param_type,
+                        ) {
+                            Some(value) => value,
+                            None => continue,
                         };
-
-                        if let Err(error) = control_value {
-                            error!("Failed to parse parameter value: {:#?}", error);
-                            continue;
-                        }
-                        let control_value = control_value.unwrap();
 
                         let mut param_result = mavlink::common::ParamAck::PARAM_ACK_ACCEPTED;
                         if let Err(error) = mavlink_camera_information
@@ -434,6 +418,32 @@ fn param_value_from_control_value(control_value: i64, length: usize) -> Vec<char
     // Workaround for https://github.com/mavlink/rust-mavlink/issues/111
     param_value.resize(length, Default::default());
     param_value
+}
+
+fn control_value_from_param_value(
+    param_value: &Vec<char>,
+    param_type: &mavlink::common::MavParamExtType,
+) -> Option<i64> {
+    let bytes: Vec<u8> = param_value.iter().map(|c| *c as u8).collect();
+    let control_value = match param_type {
+        mavlink::common::MavParamExtType::MAV_PARAM_EXT_TYPE_UINT8 => {
+            Ok(u8::from_ne_bytes(bytes[0..1].try_into().unwrap()) as i64)
+        }
+        mavlink::common::MavParamExtType::MAV_PARAM_EXT_TYPE_INT32 => {
+            Ok(i32::from_ne_bytes(bytes[0..4].try_into().unwrap()) as i64)
+        }
+        mavlink::common::MavParamExtType::MAV_PARAM_EXT_TYPE_INT64 => {
+            Ok(i64::from_ne_bytes(bytes[0..8].try_into().unwrap()))
+        }
+        something_else => Err(SimpleError::new(format!(
+            "Received parameter of untreatable type: {something_else:#?}",
+        ))),
+    };
+    if let Err(error) = control_value {
+        error!("Failed to parse parameter value: {error:#?}");
+        return None;
+    }
+    control_value.ok()
 }
 
 fn control_id_from_param_id(param_id: &[char; 16]) -> Option<u64> {
