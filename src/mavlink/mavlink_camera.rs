@@ -348,8 +348,10 @@ fn receive_message_loop(
                             );
                         }
 
-                        let param_id: String = param_ext_set.param_id.iter().collect();
-                        let control_id = param_id.trim_end_matches(char::from(0)).parse::<u64>();
+                        let control_id = match control_id_from_param_id(&param_ext_set.param_id) {
+                            Some(value) => value,
+                            None => continue,
+                        };
 
                         let bytes: Vec<u8> =
                             param_ext_set.param_value.iter().map(|c| *c as u8).collect();
@@ -368,12 +370,6 @@ fn receive_message_loop(
                                 something_else
                             ))),
                         };
-
-                        if let Err(error) = control_id {
-                            error!("Failed to parse control id: {:#?}", error);
-                            continue;
-                        }
-                        let control_id = control_id.unwrap();
 
                         if let Err(error) = control_value {
                             error!("Failed to parse parameter value: {:#?}", error);
@@ -427,6 +423,19 @@ fn receive_message_loop(
             }
         }
     }
+}
+
+fn control_id_from_param_id(param_id: &[char; 16]) -> Option<u64> {
+    let control_id = param_id
+        .iter()
+        .collect::<String>()
+        .trim_end_matches(char::from(0))
+        .parse::<u64>();
+    if let Err(error) = control_id {
+        error!("Failed to parse control id: {error:#?}");
+        return None;
+    }
+    control_id.ok()
 }
 
 #[derive(Debug)]
