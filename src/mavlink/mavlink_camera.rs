@@ -446,6 +446,37 @@ fn control_value_from_param_value(
     control_value.ok()
 }
 
+fn get_param_index_and_control_id(
+    param_ext_req: &mavlink::common::PARAM_EXT_REQUEST_READ_DATA,
+    controls: &Vec<crate::video::types::Control>,
+) -> Option<(u16, u64)> {
+    let param_index = param_ext_req.param_index;
+    // Use param_index if it is !=1, otherwise, use param_id. For more information: https://mavlink.io/en/messages/common.html#PARAM_EXT_REQUEST_READ
+    let (param_index, control_id) = if param_index == -1 {
+        let control_id = match control_id_from_param_id(&param_ext_req.param_id) {
+            Some(value) => value,
+            None => return None,
+        };
+
+        match &controls.iter().position(|control| control_id == control.id) {
+            Some(param_index) => (*param_index as i16, control_id),
+            None => {
+                error!("Failed to find control id {control_id}.");
+                return None;
+            }
+        }
+    } else {
+        match &controls.get(param_index as usize) {
+            Some(control) => (param_index, control.id),
+            None => {
+                error!("Failed to find control index {param_index}.");
+                return None;
+            }
+        }
+    };
+    Some((param_index as u16, control_id))
+}
+
 fn control_id_from_param_id(param_id: &[char; 16]) -> Option<u64> {
     let control_id = param_id
         .iter()
