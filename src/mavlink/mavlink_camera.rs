@@ -242,6 +242,22 @@ fn receive_message_loop(
                 match msg {
                     // Check if there is any camera information request from gcs
                     mavlink::common::MavMessage::COMMAND_LONG(command_long) => {
+                        if command_long.target_system != header.system_id {
+                            debug!(
+                                "Ignoring COMMAND_LONG, wrong system id: expect {}, but got {}.",
+                                header.system_id, command_long.target_system
+                            );
+                            continue;
+                        }
+
+                        if command_long.target_component != header.component_id {
+                            debug!(
+                                "Ignoring COMMAND_LONG, wrong component id: expect {}, but got {}.",
+                                header.component_id, command_long.target_component
+                            );
+                            continue;
+                        }
+
                         match command_long.command {
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_INFORMATION => {
                                 debug!("Sending camera_information..");
