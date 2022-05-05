@@ -425,6 +425,17 @@ fn receive_message_loop(
     }
 }
 
+fn param_value_from_control_value(control_value: i64, length: usize) -> Vec<char> {
+    let mut param_value = control_value
+        .to_le_bytes()
+        .iter()
+        .map(|&byte| byte as char)
+        .collect::<Vec<char>>();
+    // Workaround for https://github.com/mavlink/rust-mavlink/issues/111
+    param_value.resize(length, Default::default());
+    param_value
+}
+
 fn control_id_from_param_id(param_id: &[char; 16]) -> Option<u64> {
     let control_id = param_id
         .iter()
