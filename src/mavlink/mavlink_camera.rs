@@ -335,17 +335,19 @@ fn receive_message_loop(
                     mavlink::common::MavMessage::PARAM_EXT_SET(param_ext_set) => {
                         if param_ext_set.target_system != header.system_id {
                             debug!(
-                                "Ignoring PARAM_EXT_SET, wrong system id: {}",
-                                param_ext_set.target_system
+                                "Ignoring PARAM_EXT_SET, wrong system id: expect {}, but got {}.",
+                                header.system_id, param_ext_set.target_system
                             );
                             continue;
                         }
 
                         if param_ext_set.target_component != header.component_id {
                             debug!(
-                                "Ignoring PARAM_EXT_SET, wrong component id: {}",
+                                "Ignoring PARAM_EXT_SET, wrong component id: expect {}, but got {}.",
+                                header.component_id,
                                 param_ext_set.target_component
                             );
+                            continue;
                         }
 
                         let control_id = match control_id_from_param_id(&param_ext_set.param_id) {
