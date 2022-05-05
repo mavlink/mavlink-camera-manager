@@ -477,6 +477,15 @@ fn get_param_index_and_control_id(
     Some((param_index as u16, control_id))
 }
 
+fn param_id_from_control_id(id: u64) -> [char; 16] {
+    let mut param_id: [char; 16] = Default::default();
+    id.to_string()
+        .chars()
+        .zip(param_id.iter_mut())
+        .for_each(|(a, b)| *b = a);
+    param_id
+}
+
 fn control_id_from_param_id(param_id: &[char; 16]) -> Option<u64> {
     let control_id = param_id
         .iter()
