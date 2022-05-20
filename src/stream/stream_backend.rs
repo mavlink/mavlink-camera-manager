@@ -611,16 +611,18 @@ mod tests {
 
     use url::Url;
 
-    #[test]
-    fn test_udp() {
-        let result = create_stream(&VideoAndStreamInformation {
+    fn stream_type_fabricator(
+        stream_endpoints: &Vec<Url>,
+        video_encode_type: &VideoEncodeType,
+    ) -> StreamType {
+        let stream = create_stream(&VideoAndStreamInformation {
             name: "Test".into(),
             stream_information: StreamInformation {
-                endpoints: vec![Url::parse("udp://192.168.0.1:42").unwrap()],
+                endpoints: stream_endpoints.clone(),
                 configuration: CaptureConfiguration::VIDEO(VideoCaptureConfiguration {
-                    encode: VideoEncodeType::H264,
+                    encode: video_encode_type.clone(),
                     height: 720,
-                    width: 1080,
+                    width: 1280,
                     frame_interval: FrameInterval {
                         numerator: 1,
                         denominator: 30,
@@ -635,83 +637,52 @@ mod tests {
             }),
         });
 
-        assert!(result.is_ok());
-        let result = &result.unwrap();
+        assert!(stream.is_ok());
+        stream.unwrap()
+    }
 
-        let result = match result {
-            StreamType::UDP(video_stream_udp) => video_stream_udp,
-            _any_other_stream_type => panic!("Failed to create UDP stream: {:?}.", result),
-        };
-        assert_eq!(result.pipeline(), "v4l2src device=/dev/video42 ! video/x-h264,width=1080,height=720,framerate=30/1 ! h264parse ! queue ! rtph264pay config-interval=10 pt=96 ! multiudpsink clients=192.168.0.1:42");
+    #[test]
+    fn test_udp() {
+        let pipeline_testing = vec![
+            (VideoEncodeType::H264, "v4l2src device=/dev/video42 ! video/x-h264,width=1080,height=720,framerate=30/1 ! h264parse ! queue ! rtph264pay config-interval=10 pt=96 ! multiudpsink clients=192.168.0.1:42"),
+        ];
+
+        for (encode_type, expected_pipeline) in pipeline_testing.iter() {
+            let stream = stream_type_fabricator(
+                &vec![Url::parse("udp://192.168.0.1:42").unwrap()],
+                encode_type,
+            );
+            let pipeline = match &stream {
+                StreamType::UDP(video_stream_udp) => video_stream_udp.pipeline(),
+                _any_other_stream_type => panic!("Failed to create UDP stream: {stream:?}."),
+            };
+            assert_eq!(&pipeline, expected_pipeline);
+        }
     }
 
     #[test]
     fn test_rtsp() {
-        let result = create_stream(&VideoAndStreamInformation {
-            name: "Test".into(),
-            stream_information: StreamInformation {
-                endpoints: vec![Url::parse("rtsp://0.0.0.0:8554/test").unwrap()],
-                configuration: CaptureConfiguration::VIDEO(VideoCaptureConfiguration {
-                    encode: VideoEncodeType::H264,
-                    height: 720,
-                    width: 1080,
-                    frame_interval: FrameInterval {
-                        numerator: 1,
-                        denominator: 30,
-                    },
-                }),
-                extended_configuration: None,
-            },
-            video_source: VideoSourceType::Local(VideoSourceLocal {
-                name: "PotatoCam".into(),
-                device_path: "/dev/video42".into(),
-                typ: VideoSourceLocalType::Unknown("TestPotatoCam".into()),
-            }),
-        });
+        let pipeline_testing = vec![
+            (VideoEncodeType::H264, "v4l2src device=/dev/video42 ! video/x-h264,width=1080,height=720,framerate=30/1,type=video ! h264parse ! queue ! rtph264pay name=pay0 config-interval=10 pt=96"),
+        ];
 
-        assert!(result.is_ok());
-        let result = &result.unwrap();
-
-        let result = match result {
-            StreamType::RTSP(video_stream_rtsp) => video_stream_rtsp,
-            _any_other_stream_type => panic!("Failed to create RTSP stream: {:?}.", result),
-        };
-        assert_eq!(result.pipeline(), "v4l2src device=/dev/video42 ! video/x-h264,width=1080,height=720,framerate=30/1,type=video ! h264parse ! queue ! rtph264pay name=pay0 config-interval=10 pt=96");
+        for (encode_type, expected_pipeline) in pipeline_testing.iter() {
+            let stream = stream_type_fabricator(
+                &vec![Url::parse("rtsp://0.0.0.0:8554/test").unwrap()],
+                encode_type,
+            );
+            let pipeline = match &stream {
+                StreamType::RTSP(video_stream_rtsp) => video_stream_rtsp.pipeline(),
+                _any_other_stream_type => panic!("Failed to create RTSP stream: {stream:?}."),
+            };
+            assert_eq!(&pipeline, expected_pipeline);
+        }
     }
 
     #[test]
     fn test_webrtc_default_servers() {
-        let result = create_stream(&VideoAndStreamInformation {
-            name: "Test".into(),
-            stream_information: StreamInformation {
-                endpoints: vec![Url::parse("webrtc://").unwrap()],
-                configuration: CaptureConfiguration::VIDEO(VideoCaptureConfiguration {
-                    encode: VideoEncodeType::H264,
-                    height: 720,
-                    width: 1080,
-                    frame_interval: FrameInterval {
-                        numerator: 1,
-                        denominator: 30,
-                    },
-                }),
-                extended_configuration: None,
-            },
-            video_source: VideoSourceType::Local(VideoSourceLocal {
-                name: "PotatoCam".into(),
-                device_path: "/dev/video42".into(),
-                typ: VideoSourceLocalType::Unknown("TestPotatoCam".into()),
-            }),
-        });
-
-        assert!(result.is_ok());
-        let result = &result.unwrap();
-
-        let result = match result {
-            StreamType::WEBRTC(video_stream_webrtc) => video_stream_webrtc,
-            _any_other_stream_type => panic!("Failed to create WebRTC stream: {:?}.", result),
-        };
-        assert_eq!(
-            result.pipeline(),
+        let pipeline_testing = vec![(
+            VideoEncodeType::H264,
             concat!(
                 "v4l2src device=/dev/video42",
                 " ! video/x-h264,width=1080,height=720,framerate=30/1",
@@ -722,47 +693,24 @@ mod tests {
                 " turn-server=turn://user:pwd@0.0.0.0:3478",
                 " signaller::address=ws://0.0.0.0:6021/",
                 " video-caps=video/x-h264,width=1080,height=720,framerate=30/1",
-            )
-        );
+            ),
+        )];
+
+        for (encode_type, expected_pipeline) in pipeline_testing.iter() {
+            let stream =
+                stream_type_fabricator(&vec![Url::parse("webrtc://").unwrap()], encode_type);
+            let pipeline = match &stream {
+                StreamType::WEBRTC(video_stream_webrtc) => video_stream_webrtc.pipeline(),
+                _any_other_stream_type => panic!("Failed to create WebRTC stream: {stream:?}."),
+            };
+            assert_eq!(&pipeline, expected_pipeline);
+        }
     }
 
     #[test]
     fn test_webrtc_custom_servers() {
-        let result = create_stream(&VideoAndStreamInformation {
-            name: "Test".into(),
-            stream_information: StreamInformation {
-                endpoints: vec![
-                    Url::parse("stun://stun.l.google.com:19302").unwrap(),
-                    Url::parse("turn://test:1qaz2wsx@turn.homeneural.net:3478").unwrap(),
-                    Url::parse("ws://192.168.3.4:44019").unwrap(),
-                ],
-                configuration: CaptureConfiguration::VIDEO(VideoCaptureConfiguration {
-                    encode: VideoEncodeType::H264,
-                    height: 720,
-                    width: 1080,
-                    frame_interval: FrameInterval {
-                        numerator: 1,
-                        denominator: 30,
-                    },
-                }),
-                extended_configuration: None,
-            },
-            video_source: VideoSourceType::Local(VideoSourceLocal {
-                name: "PotatoCam".into(),
-                device_path: "/dev/video42".into(),
-                typ: VideoSourceLocalType::Unknown("TestPotatoCam".into()),
-            }),
-        });
-
-        assert!(result.is_ok());
-        let result = &result.unwrap();
-
-        let result = match result {
-            StreamType::WEBRTC(video_stream_webrtc) => video_stream_webrtc,
-            _any_other_stream_type => panic!("Failed to create WebRTC stream: {:?}.", result),
-        };
-        assert_eq!(
-            result.pipeline(),
+        let pipeline_testing = vec![(
+            VideoEncodeType::H264,
             concat!(
                 "v4l2src device=/dev/video42",
                 " ! video/x-h264,width=1080,height=720,framerate=30/1",
@@ -773,7 +721,23 @@ mod tests {
                 " turn-server=turn://test:1qaz2wsx@turn.homeneural.net:3478",
                 " signaller::address=ws://192.168.3.4:44019/",
                 " video-caps=video/x-h264,width=1080,height=720,framerate=30/1",
-            )
-        );
+            ),
+        )];
+
+        for (encode_type, expected_pipeline) in pipeline_testing.iter() {
+            let stream = stream_type_fabricator(
+                &vec![
+                    Url::parse("stun://stun.l.google.com:19302").unwrap(),
+                    Url::parse("turn://test:1qaz2wsx@turn.homeneural.net:3478").unwrap(),
+                    Url::parse("ws://192.168.3.4:44019").unwrap(),
+                ],
+                encode_type,
+            );
+            let pipeline = match &stream {
+                StreamType::WEBRTC(video_stream_webrtc) => video_stream_webrtc.pipeline(),
+                _any_other_stream_type => panic!("Failed to create WebRTC stream: {stream:?}."),
+            };
+            assert_eq!(&pipeline, expected_pipeline);
+        }
     }
 }
