@@ -123,10 +123,6 @@ fn check_scheme(
                 }
             }
             "udp" => {
-                if VideoEncodeType::H264 != encode {
-                    return Err(SimpleError::new(format!("Endpoint with udp scheme only supports H264 encode. Encode: {:?}, Endpoints: {:#?}", encode, endpoints)));
-                }
-
                 if VideoEncodeType::H265 == encode {
                     return Err(SimpleError::new("Endpoint with udp scheme only supports H264, encode type is H265, the scheme should be udp265.".to_string()));
                 }
