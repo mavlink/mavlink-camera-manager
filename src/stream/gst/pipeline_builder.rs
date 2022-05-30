@@ -50,6 +50,7 @@ impl Pipeline {
             VideoSourceType::Gst(_) => "video/x-raw",
             _ => match encode {
                 VideoEncodeType::H264 => "video/x-h264",
+                VideoEncodeType::YUYV => "video/x-raw,format=YUY2",
                 video_encode_type => {
                     return Err(SimpleError::new(format!(
                         "Unsupported VideoEncodeType: {video_encode_type:#?}",
@@ -153,6 +154,13 @@ impl Pipeline {
                 " ! h264parse",
                 " ! queue",
                 " ! rtph264pay name=pay0 config-interval=10 pt=96",
+            ),
+            VideoEncodeType::YUYV => concat!(
+                " ! rtpvrawpay name=pay0",
+                // Again, as we are always using the "UYVY" format for raw
+                // application/rtp payloads, "YCbCr-4:2:2" will always be
+                // the right one to pick.
+                " ! application/x-rtp,payload=96,sampling=YCbCr-4:2:2",
             ),
             video_encode_type => {
                 return Err(SimpleError::new(format!(
