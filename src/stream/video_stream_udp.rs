@@ -1,5 +1,5 @@
 use super::{
-    gst::pipeline_runner::{Pipeline, PipelineRunner},
+    gst::pipeline_builder::Pipeline, gst::pipeline_runner::PipelineRunner,
     stream_backend::StreamBackend,
 };
 
@@ -9,22 +9,19 @@ pub struct VideoStreamUdp {
     pipeline_runner: PipelineRunner,
 }
 
-impl Default for VideoStreamUdp {
-    fn default() -> Self {
-        Self {
-            pipeline_runner: PipelineRunner::new(Pipeline {
-                description: concat!(
-                    "videotestsrc pattern=blink",
-                    " ! video/x-raw,width=640,height=480",
-                    " ! videoconvert",
-                    " ! x264enc bitrate=5000",
-                    " ! video/x-h264, profile=baseline",
-                    " ! rtph264pay",
-                    " ! udpsink host=0.0.0.0 port=5600",
-                )
-                .to_string(),
-            }),
-        }
+impl VideoStreamUdp {
+    pub fn new(
+        video_and_stream_information: &crate::video_stream::types::VideoAndStreamInformation,
+    ) -> Result<Self, simple_error::SimpleError> {
+        Ok(VideoStreamUdp {
+            pipeline_runner: PipelineRunner::new(Pipeline::new(video_and_stream_information)?),
+        })
+    }
+}
+
+impl Drop for VideoStreamUdp {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
@@ -43,10 +40,6 @@ impl StreamBackend for VideoStreamUdp {
 
     fn is_running(&self) -> bool {
         self.pipeline_runner.is_running()
-    }
-
-    fn set_pipeline_description(&mut self, description: &str) {
-        self.pipeline_runner.set_pipeline_description(description);
     }
 
     fn pipeline(&self) -> String {

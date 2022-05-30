@@ -19,3 +19,15 @@ pub fn webrtcsink_installation_instructions() -> String {
         WEBRTCSINK_VERSION
     )
 }
+
+pub fn webrtc_usage_hint() -> String {
+    concat!(
+        "To use the default local servers, pass just one 'webrtc://'. ",
+        "Alternatively, custom servers can be used in place of the default local ones ",
+        "by passing a comma-separated list with up to one of each: ",
+        " 'stun://<ip>:<port>' for the STUN server, and/or",
+        " 'turn://[<user>:<password>@]<ip>:<port>' for the TURN server, and/or",
+        " 'wp://<ip>:<port>' for the SIGNALLING server using the webrtcsink's protocol."
+    )
+    .to_string()
+}
