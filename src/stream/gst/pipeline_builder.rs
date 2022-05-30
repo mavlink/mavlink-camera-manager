@@ -46,9 +46,18 @@ impl Pipeline {
     fn build_capability_string(
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<String, SimpleError> {
-        let format = match video_source {
-            VideoSourceType::Gst(_) => "video/x-raw",
-            _ => match encode {
+        let configuration =
+            Pipeline::get_video_capture_configuration(&video_and_stream_information)?;
+
+        let format = match video_and_stream_information.video_source {
+            // Fakes (videotestsrc) are only "video/x-raw" or "video/x-bayer",
+            // and to be able to encode it, we need to define an available
+            // format for both its src the next element's sink pad.
+            // We are choosing "UYVY" because it is compatible by the
+            // application-rtp template capabilities.
+            // For more information: https://gstreamer.freedesktop.org/documentation/additional/design/mediatype-video-raw.html?gi-language=c#formats
+            VideoSourceType::Gst(_) => "video/x-raw,format=UYVY",
+            _ => match &configuration.encode {
                 VideoEncodeType::H264 => "video/x-h264",
                 VideoEncodeType::YUYV => "video/x-raw,format=YUY2",
                 VideoEncodeType::MJPG => "image/jpeg",
@@ -126,6 +135,13 @@ impl Pipeline {
                     " ! video/x-h264,profile=baseline",
                 ),
                 VideoEncodeType::MJPG => concat!(" ! jpegenc",),
+                _ => "",
+            },
+            VideoSourceType::Local(_) => match configuration.encode {
+                // Because application-rtp templates doesn't accept "YUY2", we
+                // need to transcode it. We are arbitrarily chosing the closest
+                // format available ("UYVY").
+                VideoEncodeType::YUYV => concat!(" ! videoconvert", " ! video/x-raw,format=UYVY",),
                 _ => "",
             },
             video_source_type => {
