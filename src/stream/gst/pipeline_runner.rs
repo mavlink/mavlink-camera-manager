@@ -8,10 +8,7 @@ use log::debug;
 
 use crate::stream::stream_backend::StreamBackend;
 
-#[derive(Clone, Debug, Default)]
-pub struct Pipeline {
-    pub description: String,
-}
+use super::pipeline_builder::Pipeline;
 
 #[derive(Debug, Default)]
 pub struct PipelineRunnerState {
@@ -53,10 +50,6 @@ impl PipelineRunner {
 }
 
 impl StreamBackend for PipelineRunner {
-    fn set_pipeline_description(&mut self, description: &str) {
-        self.state.lock().unwrap().pipeline.description = description.to_string();
-    }
-
     fn pipeline(&self) -> String {
         let string = self.state.lock().unwrap().pipeline.description.clone();
         return string;
