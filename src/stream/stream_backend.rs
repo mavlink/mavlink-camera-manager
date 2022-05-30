@@ -388,67 +388,84 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_webrtc_default_servers() {
-        let pipeline_testing = vec![
+    fn get_webrtc_test_pipeline(default_endpoints: bool) -> Vec<(VideoEncodeType, String)> {
+        let (stun, turn, signaller) = match default_endpoints {
+            true => (
+                "stun://0.0.0.0:3478",
+                "turn://user:pwd@0.0.0.0:3478",
+                "ws://0.0.0.0:6021/",
+            ),
+            false => (
+                "stun://stun.l.google.com:19302",
+                "turn://test:1qaz2wsx@turn.homeneural.net:3478",
+                "ws://192.168.3.4:44019/",
+            ),
+        };
+
+        vec![
             (
                 VideoEncodeType::H264,
-                concat!(
-                    "v4l2src device=/dev/video42",
-                    " ! video/x-h264,width=1280,height=720,framerate=30/1",
-                    " ! decodebin3",
-                    " ! videoconvert",
-                    " ! webrtcsink",
-                    " stun-server=stun://0.0.0.0:3478",
-                    " turn-server=turn://user:pwd@0.0.0.0:3478",
-                    " signaller::address=ws://0.0.0.0:6021/",
-                    " video-caps=video/x-h264",
-                    " display-name=\"Test\"",
-                    " congestion-control=0",
-                    " do-retransmission=false",
-                    " do-fec=false",
-                    " enable-data_channel_navigation=false",
+                format!(
+                    "v4l2src device=/dev/video42 \
+                    ! video/x-h264,width=1280,height=720,framerate=30/1 \
+                    ! decodebin3 \
+                    ! videoconvert \
+                    ! webrtcsink \
+                    stun-server={stun} \
+                    turn-server={turn} \
+                    signaller::address={signaller} \
+                    video-caps=video/x-h264 \
+                    display-name=\"Test\" \
+                    congestion-control=0 \
+                    do-retransmission=false \
+                    do-fec=false \
+                    enable-data_channel_navigation=false"
                 ),
             ),
             (
                 VideoEncodeType::YUYV,
-                concat!(
-                    "v4l2src device=/dev/video42",
-                    " ! video/x-raw,format=YUY2,width=1280,height=720,framerate=30/1",
-                    " ! decodebin3",
-                    " ! videoconvert",
-                    " ! webrtcsink",
-                    " stun-server=stun://0.0.0.0:3478",
-                    " turn-server=turn://user:pwd@0.0.0.0:3478",
-                    " signaller::address=ws://0.0.0.0:6021/",
-                    " video-caps=video/x-h264",
-                    " display-name=\"Test\"",
-                    " congestion-control=0",
-                    " do-retransmission=false",
-                    " do-fec=false",
-                    " enable-data_channel_navigation=false",
+                format!(
+                    "v4l2src device=/dev/video42 \
+                    ! video/x-raw,format=YUY2,width=1280,height=720,framerate=30/1 \
+                    ! decodebin3 \
+                    ! videoconvert \
+                    ! webrtcsink \
+                    stun-server={stun} \
+                    turn-server={turn} \
+                    signaller::address={signaller} \
+                    video-caps=video/x-h264 \
+                    display-name=\"Test\" \
+                    congestion-control=0 \
+                    do-retransmission=false \
+                    do-fec=false \
+                    enable-data_channel_navigation=false"
                 ),
             ),
             (
                 VideoEncodeType::MJPG,
-                concat!(
-                    "v4l2src device=/dev/video42",
-                    " ! image/jpeg,width=1280,height=720,framerate=30/1",
-                    " ! decodebin3",
-                    " ! videoconvert",
-                    " ! webrtcsink",
-                    " stun-server=stun://0.0.0.0:3478",
-                    " turn-server=turn://user:pwd@0.0.0.0:3478",
-                    " signaller::address=ws://0.0.0.0:6021/",
-                    " video-caps=video/x-h264",
-                    " display-name=\"Test\"",
-                    " congestion-control=0",
-                    " do-retransmission=false",
-                    " do-fec=false",
-                    " enable-data_channel_navigation=false",
+                format!(
+                    "v4l2src device=/dev/video42 \
+                    ! image/jpeg,width=1280,height=720,framerate=30/1 \
+                    ! decodebin3 \
+                    ! videoconvert \
+                    ! webrtcsink \
+                    stun-server={stun} \
+                    turn-server={turn} \
+                    signaller::address={signaller} \
+                    video-caps=video/x-h264 \
+                    display-name=\"Test\" \
+                    congestion-control=0 \
+                    do-retransmission=false \
+                    do-fec=false \
+                    enable-data_channel_navigation=false"
                 ),
             ),
-        ];
+        ]
+    }
+
+    #[test]
+    fn test_webrtc_default_servers() {
+        let pipeline_testing = get_webrtc_test_pipeline(true);
         for (encode_type, expected_pipeline) in pipeline_testing.iter() {
             let stream =
                 stream_type_fabricator(&vec![Url::parse("webrtc://").unwrap()], encode_type);
@@ -462,65 +479,7 @@ mod tests {
 
     #[test]
     fn test_webrtc_custom_servers() {
-        let pipeline_testing = vec![
-            (
-                VideoEncodeType::H264,
-                concat!(
-                    "v4l2src device=/dev/video42",
-                    " ! video/x-h264,width=1280,height=720,framerate=30/1",
-                    " ! decodebin3",
-                    " ! videoconvert",
-                    " ! webrtcsink",
-                    " stun-server=stun://stun.l.google.com:19302",
-                    " turn-server=turn://test:1qaz2wsx@turn.homeneural.net:3478",
-                    " signaller::address=ws://192.168.3.4:44019/",
-                    " video-caps=video/x-h264",
-                    " display-name=\"Test\"",
-                    " congestion-control=0",
-                    " do-retransmission=false",
-                    " do-fec=false",
-                    " enable-data_channel_navigation=false",
-                ),
-            ),
-            (
-                VideoEncodeType::YUYV,
-                concat!(
-                    "v4l2src device=/dev/video42",
-                    " ! video/x-raw,format=YUY2,width=1280,height=720,framerate=30/1",
-                    " ! decodebin3",
-                    " ! videoconvert",
-                    " ! webrtcsink",
-                    " stun-server=stun://stun.l.google.com:19302",
-                    " turn-server=turn://test:1qaz2wsx@turn.homeneural.net:3478",
-                    " signaller::address=ws://192.168.3.4:44019/",
-                    " video-caps=video/x-h264",
-                    " display-name=\"Test\"",
-                    " congestion-control=0",
-                    " do-retransmission=false",
-                    " do-fec=false",
-                    " enable-data_channel_navigation=false",
-                ),
-            ),
-            (
-                VideoEncodeType::MJPG,
-                concat!(
-                    "v4l2src device=/dev/video42",
-                    " ! image/jpeg,width=1280,height=720,framerate=30/1",
-                    " ! decodebin3",
-                    " ! videoconvert",
-                    " ! webrtcsink",
-                    " stun-server=stun://stun.l.google.com:19302",
-                    " turn-server=turn://test:1qaz2wsx@turn.homeneural.net:3478",
-                    " signaller::address=ws://192.168.3.4:44019/",
-                    " video-caps=video/x-h264",
-                    " display-name=\"Test\"",
-                    " congestion-control=0",
-                    " do-retransmission=false",
-                    " do-fec=false",
-                    " enable-data_channel_navigation=false",
-                ),
-            ),
-        ];
+        let pipeline_testing = get_webrtc_test_pipeline(false);
 
         for (encode_type, expected_pipeline) in pipeline_testing.iter() {
             let stream = stream_type_fabricator(
