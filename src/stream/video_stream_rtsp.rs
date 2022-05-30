@@ -1,4 +1,4 @@
-use super::gst::pipeline_runner::Pipeline;
+use super::gst::pipeline_builder::Pipeline;
 use super::stream_backend::StreamBackend;
 
 use super::rtsp_server::RTSPServer;
@@ -9,20 +9,17 @@ pub struct VideoStreamRtsp {
     endpoint_path: String,
 }
 
-impl Default for VideoStreamRtsp {
-    fn default() -> Self {
-        Self {
-            pipeline: Pipeline {
-                description: "videotestsrc pattern=ball ! video/x-raw,width=640,height=480,framerate=30/1 ! videoconvert ! x264enc bitrate=5000 ! video/x-h264, profile=baseline ! h264parse ! queue ! rtph264pay name=pay0".into()
-            },
-            endpoint_path: "/test".into(),
-        }
-    }
-}
-
 impl VideoStreamRtsp {
-    pub fn set_endpoint_path(&mut self, path: &str) {
-        self.endpoint_path = path.into();
+    pub fn new(
+        video_and_stream_information: &crate::video_stream::types::VideoAndStreamInformation,
+        endpoint_path: String,
+    ) -> Result<Self, simple_error::SimpleError> {
+        let pipeline = Pipeline::new(video_and_stream_information)?;
+        RTSPServer::add_pipeline(&pipeline.description, &endpoint_path)?;
+        Ok(VideoStreamRtsp {
+            pipeline,
+            endpoint_path,
+        })
     }
 }
 
@@ -49,11 +46,6 @@ impl StreamBackend for VideoStreamRtsp {
 
     fn is_running(&self) -> bool {
         RTSPServer::is_running()
-    }
-
-    fn set_pipeline_description(&mut self, description: &str) {
-        RTSPServer::add_pipeline(description, &self.endpoint_path);
-        self.pipeline.description = description.to_string();
     }
 
     fn pipeline(&self) -> String {
