@@ -4209,7 +4209,7 @@ dependencies = [
 [[package]]
 name = "webrtcsink-protocol"
 version = "0.1.0"
-source = "git+https://github.com/centricular/webrtcsink?rev=55d30db53bb3931f6477b6c1bad4de2a5ec5f7e4#55d30db53bb3931f6477b6c1bad4de2a5ec5f7e4"
+source = "git+https://github.com/centricular/webrtcsink?rev=2c855b9cfe1cf10c7447aa6ca5e3d5444e2459e0#2c855b9cfe1cf10c7447aa6ca5e3d5444e2459e0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4218,7 +4218,7 @@ dependencies = [
 [[package]]
 name = "webrtcsink-signalling"
 version = "0.1.0"
-source = "git+https://github.com/centricular/webrtcsink?rev=55d30db53bb3931f6477b6c1bad4de2a5ec5f7e4#55d30db53bb3931f6477b6c1bad4de2a5ec5f7e4"
+source = "git+https://github.com/centricular/webrtcsink?rev=2c855b9cfe1cf10c7447aa6ca5e3d5444e2459e0#2c855b9cfe1cf10c7447aa6ca5e3d5444e2459e0"
 dependencies = [
  "anyhow",
  "async-native-tls 0.3.3",
