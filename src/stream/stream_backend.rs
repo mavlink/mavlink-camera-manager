@@ -403,6 +403,7 @@ mod tests {
                     " turn-server=turn://user:pwd@0.0.0.0:3478",
                     " signaller::address=ws://0.0.0.0:6021/",
                     " video-caps=video/x-h264",
+                    " display-name=\"Test\"",
                 ),
             ),
             (
@@ -417,6 +418,7 @@ mod tests {
                     " turn-server=turn://user:pwd@0.0.0.0:3478",
                     " signaller::address=ws://0.0.0.0:6021/",
                     " video-caps=video/x-h264",
+                    " display-name=\"Test\"",
                 ),
             ),
             (
@@ -431,6 +433,7 @@ mod tests {
                     " turn-server=turn://user:pwd@0.0.0.0:3478",
                     " signaller::address=ws://0.0.0.0:6021/",
                     " video-caps=video/x-h264",
+                    " display-name=\"Test\"",
                 ),
             ),
         ];
@@ -460,6 +463,7 @@ mod tests {
                     " turn-server=turn://test:1qaz2wsx@turn.homeneural.net:3478",
                     " signaller::address=ws://192.168.3.4:44019/",
                     " video-caps=video/x-h264",
+                    " display-name=\"Test\"",
                 ),
             ),
             (
@@ -474,6 +478,7 @@ mod tests {
                     " turn-server=turn://test:1qaz2wsx@turn.homeneural.net:3478",
                     " signaller::address=ws://192.168.3.4:44019/",
                     " video-caps=video/x-h264",
+                    " display-name=\"Test\"",
                 ),
             ),
             (
@@ -488,6 +493,7 @@ mod tests {
                     " turn-server=turn://test:1qaz2wsx@turn.homeneural.net:3478",
                     " signaller::address=ws://192.168.3.4:44019/",
                     " video-caps=video/x-h264",
+                    " display-name=\"Test\"",
                 ),
             ),
         ];

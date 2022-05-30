@@ -25,16 +25,10 @@ impl Pipeline {
     pub fn new(
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self, SimpleError> {
-        let encode = configuration.encode.clone();
-        let endpoints = &video_and_stream_information.stream_information.endpoints;
-        let video_source = &video_and_stream_information.video_source;
-
-        let capability = Pipeline::build_capability_string(video_source, &encode, &configuration)?;
-
-        let source = Pipeline::build_pipeline_source(video_source, &capability)?;
-        let transcode = Pipeline::build_pipeline_transcode(video_source, &encode, is_webrtcsink)?;
-        let payload = Pipeline::build_pipeline_payload(&encode, is_webrtcsink)?;
-        let sink = Pipeline::build_pipeline_sink(&endpoints, is_webrtcsink)?;
+        let source = Pipeline::build_pipeline_source(&video_and_stream_information)?;
+        let transcode = Pipeline::build_pipeline_transcode(&video_and_stream_information)?;
+        let payload = Pipeline::build_pipeline_payload(&video_and_stream_information)?;
+        let sink = Pipeline::build_pipeline_sink(&video_and_stream_information)?;
 
         let description = format!("{source}{transcode}{payload}{sink}");
 
@@ -191,19 +185,20 @@ impl Pipeline {
     }
 
     fn build_pipeline_sink(
-        endpoints: &Vec<url::Url>,
-        is_webrtcsink: bool,
+        video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<String, SimpleError> {
         if Pipeline::is_webrtcsink(&video_and_stream_information) {
             let (stun_endpoint, turn_endpoint, signalling_endpoint) =
                 Pipeline::build_webrtc_endpoints(&video_and_stream_information)?;
             let capability = "video/x-h264"; // We could also choose for video/x-vp9 here.
+            let webrtc_name = webrtc_name.unwrap();
                                              // WebRTCSink's congestion control
             return Ok(format!(
                 " ! webrtcsink stun-server={stun_endpoint} \
                     turn-server={turn_endpoint} \
                     signaller::address={signalling_endpoint} \
-                    video-caps={capability}"
+                    video-caps={capability} \
+                    display-name={webrtc_name:?}"
             ));
         }
         let endpoints = &video_and_stream_information.stream_information.endpoints;
