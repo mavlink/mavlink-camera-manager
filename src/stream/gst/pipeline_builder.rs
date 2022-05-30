@@ -51,6 +51,7 @@ impl Pipeline {
             _ => match encode {
                 VideoEncodeType::H264 => "video/x-h264",
                 VideoEncodeType::YUYV => "video/x-raw,format=YUY2",
+                VideoEncodeType::MJPG => "image/jpeg",
                 video_encode_type => {
                     return Err(SimpleError::new(format!(
                         "Unsupported VideoEncodeType: {video_encode_type:#?}",
@@ -124,6 +125,7 @@ impl Pipeline {
                     " ! x264enc bitrate=5000",
                     " ! video/x-h264,profile=baseline",
                 ),
+                VideoEncodeType::MJPG => concat!(" ! jpegenc",),
                 _ => "",
             },
             video_source_type => {
@@ -162,6 +164,7 @@ impl Pipeline {
                 // the right one to pick.
                 " ! application/x-rtp,payload=96,sampling=YCbCr-4:2:2",
             ),
+            VideoEncodeType::MJPG => " ! rtpjpegpay name=pay0 pt=96",
             video_encode_type => {
                 return Err(SimpleError::new(format!(
                     "Unsupported VideoEncodeType: {video_encode_type:#?}"

@@ -70,10 +70,10 @@ fn check_encode(
                 "Encode is not supported and also unknown: {name}",
             )))
         }
-        VideoEncodeType::H264 | VideoEncodeType::YUYV => (),
+        VideoEncodeType::H264 | VideoEncodeType::YUYV | VideoEncodeType::MJPG => (),
         _ => {
             return Err(SimpleError::new(format!(
-                "Only H264 and YUYV encodes are supported now, used: {encode:?}",
+                "Only H264, YUYV and MJPG encodes are supported now, used: {encode:?}",
             )));
         }
     };
@@ -135,10 +135,6 @@ fn check_scheme(
                 }
             }
             "webrtc" | "stun" | "turn" | "ws" => {
-                if !matches!(encode, VideoEncodeType::H264 | VideoEncodeType::YUYV) {
-                    return Err(SimpleError::new(format!("Endpoint with 'webrtc://', 'stun://', 'turn://' or 'ws://' schemes only supports H264 and YUYV encodes. Encode: {encode:?}, Endpoints: {endpoints:#?}")));
-                }
-
                 let incomplete_endpoint = endpoints.iter().any(|endpoint| {
                     (endpoint.scheme() != "webrtc")
                         && (endpoint.host().is_none() || endpoint.port().is_none())
@@ -355,6 +351,7 @@ mod tests {
         let pipeline_testing = vec![
             (VideoEncodeType::H264, "v4l2src device=/dev/video42 ! video/x-h264,width=1280,height=720,framerate=30/1 ! h264parse ! queue ! rtph264pay name=pay0 config-interval=10 pt=96 ! multiudpsink clients=192.168.0.1:42"),
             (VideoEncodeType::YUYV, "v4l2src device=/dev/video42 ! video/x-raw,format=YUY2,width=1280,height=720,framerate=30/1 ! videoconvert ! video/x-raw,format=UYVY ! rtpvrawpay name=pay0 ! application/x-rtp,payload=96,sampling=YCbCr-4:2:2 ! multiudpsink clients=192.168.0.1:42"),
+            (VideoEncodeType::MJPG, "v4l2src device=/dev/video42 ! image/jpeg,width=1280,height=720,framerate=30/1 ! rtpjpegpay name=pay0 pt=96 ! multiudpsink clients=192.168.0.1:42"),
         ];
 
         for (encode_type, expected_pipeline) in pipeline_testing.iter() {
@@ -375,6 +372,7 @@ mod tests {
         let pipeline_testing = vec![
             (VideoEncodeType::H264, "v4l2src device=/dev/video42 ! video/x-h264,width=1280,height=720,framerate=30/1 ! h264parse ! queue ! rtph264pay name=pay0 config-interval=10 pt=96"),
             (VideoEncodeType::YUYV, "v4l2src device=/dev/video42 ! video/x-raw,format=YUY2,width=1280,height=720,framerate=30/1 ! videoconvert ! video/x-raw,format=UYVY ! rtpvrawpay name=pay0 ! application/x-rtp,payload=96,sampling=YCbCr-4:2:2"),
+            (VideoEncodeType::MJPG, "v4l2src device=/dev/video42 ! image/jpeg,width=1280,height=720,framerate=30/1 ! rtpjpegpay name=pay0 pt=96"),
         ];
 
         for (encode_type, expected_pipeline) in pipeline_testing.iter() {
@@ -421,10 +419,21 @@ mod tests {
                     " video-caps=video/x-h264",
                 ),
             ),
-                " video-caps=video/x-h264,width=1080,height=720,framerate=30/1",
+            (
+                VideoEncodeType::MJPG,
+                concat!(
+                    "v4l2src device=/dev/video42",
+                    " ! image/jpeg,width=1280,height=720,framerate=30/1",
+                    " ! decodebin3",
+                    " ! videoconvert",
+                    " ! webrtcsink",
+                    " stun-server=stun://0.0.0.0:3478",
+                    " turn-server=turn://user:pwd@0.0.0.0:3478",
+                    " signaller::address=ws://0.0.0.0:6021/",
+                    " video-caps=video/x-h264",
+                ),
             ),
-        )];
-
+        ];
         for (encode_type, expected_pipeline) in pipeline_testing.iter() {
             let stream =
                 stream_type_fabricator(&vec![Url::parse("webrtc://").unwrap()], encode_type);
@@ -467,9 +476,21 @@ mod tests {
                     " video-caps=video/x-h264",
                 ),
             ),
-                " video-caps=video/x-h264,width=1080,height=720,framerate=30/1",
+            (
+                VideoEncodeType::MJPG,
+                concat!(
+                    "v4l2src device=/dev/video42",
+                    " ! image/jpeg,width=1280,height=720,framerate=30/1",
+                    " ! decodebin3",
+                    " ! videoconvert",
+                    " ! webrtcsink",
+                    " stun-server=stun://stun.l.google.com:19302",
+                    " turn-server=turn://test:1qaz2wsx@turn.homeneural.net:3478",
+                    " signaller::address=ws://192.168.3.4:44019/",
+                    " video-caps=video/x-h264",
+                ),
             ),
-        )];
+        ];
 
         for (encode_type, expected_pipeline) in pipeline_testing.iter() {
             let stream = stream_type_fabricator(
