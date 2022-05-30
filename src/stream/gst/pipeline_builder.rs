@@ -191,14 +191,21 @@ impl Pipeline {
             let (stun_endpoint, turn_endpoint, signalling_endpoint) =
                 Pipeline::build_webrtc_endpoints(&video_and_stream_information)?;
             let capability = "video/x-h264"; // We could also choose for video/x-vp9 here.
-            let webrtc_name = webrtc_name.unwrap();
-                                             // WebRTCSink's congestion control
+            let webrtc_name = &video_and_stream_information.name;
+            // TODO: Test if we can get any benefit from WebRTCSink's
+            // congestion control, fec and retransmission. A simple test was done
+            // with all these options enabled vs disabled, we got a much higher
+            // stability and quality for the streams when disabled..
             return Ok(format!(
                 " ! webrtcsink stun-server={stun_endpoint} \
                     turn-server={turn_endpoint} \
                     signaller::address={signalling_endpoint} \
                     video-caps={capability} \
-                    display-name={webrtc_name:?}"
+                    display-name={webrtc_name:?} \
+                    congestion-control=0 \
+                    do-retransmission=false \
+                    do-fec=false \
+                    enable-data_channel_navigation=false"
             ));
         }
         let endpoints = &video_and_stream_information.stream_information.endpoints;
