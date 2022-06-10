@@ -81,6 +81,33 @@ fn check_encode(
     return Ok(());
 }
 
+fn check_for_multiple_endpoints(
+    endpoints: &Vec<url::Url>,
+    scheme: &str,
+) -> Result<(), SimpleError> {
+    if endpoints.len() > 1 {
+        let scheme = scheme.to_uppercase();
+        return Err(SimpleError::new(format!(
+            "Multiple {scheme} endpoints are not acceptable: {endpoints:#?}",
+        )));
+    }
+    Ok(())
+}
+
+fn check_for_host_and_port(endpoints: &Vec<url::Url>, scheme: &str) -> Result<(), SimpleError> {
+    let no_host_or_port = endpoints
+        .iter()
+        .any(|endpoint| endpoint.host().is_none() || endpoint.port().is_none());
+
+    if no_host_or_port {
+        let scheme = scheme.to_uppercase();
+        return Err(SimpleError::new(format!(
+            "Endpoint with {scheme} scheme should contain host and port. Endpoints: {endpoints:#?}",
+        )));
+    }
+    Ok(())
+}
+
 fn check_scheme(
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<(), SimpleError> {
@@ -105,28 +132,14 @@ fn check_scheme(
     } else {
         match scheme {
             "rtsp" => {
-                if endpoints.len() > 1 {
-                    return Err(SimpleError::new(format!(
-                        "Multiple RTSP endpoints are not acceptable: {:#?}",
-                        endpoints
-                    )));
-                }
+                check_for_multiple_endpoints(&endpoints, &scheme)?;
+                check_for_host_and_port(&endpoints, &scheme)?;
             }
             "udp" => {
+                check_for_host_and_port(&endpoints, &scheme)?;
+
                 if VideoEncodeType::H265 == encode {
                     return Err(SimpleError::new("Endpoint with udp scheme only supports H264, encode type is H265, the scheme should be udp265.".to_string()));
-                }
-
-                //UDP endpoints should contain both host and port
-                let no_host_or_port = endpoints
-                    .iter()
-                    .any(|endpoint| endpoint.host().is_none() || endpoint.port().is_none());
-
-                if no_host_or_port {
-                    return Err(SimpleError::new(format!(
-                        "Endpoint with udp scheme should contain host and port. Endpoints: {:#?}",
-                        endpoints
-                    )));
                 }
             }
             "udp265" => {
@@ -226,46 +239,33 @@ fn create_webrtc_turn_stream(
 
     let endpoints = &video_and_stream_information.stream_information.endpoints;
 
-    if endpoints
-        .iter()
-        .filter(|endpoint| endpoint.scheme() == "webrtc")
-        .count()
-        > 1
+    if check_for_host_and_port(
+        &endpoints
+            .clone()
+            .into_iter()
+            .filter(|endpoint| endpoint.scheme() != "webrtc")
+            .collect(),
+    )
+    .is_err()
     {
         return Err(SimpleError::new(format!(
-            "More than one 'webrtc://' scheme was passed. {usage_hint}. The endpoints passed were: {endpoints:#?}",
+            "Endpoint with 'stun://', 'turn://' and 'ws://' schemes should have a host and port. {usage_hint}. The endpoints passed were: {endpoints:#?}",
         )));
     }
-    if endpoints
-        .iter()
-        .filter(|endpoint| endpoint.scheme() == "stun")
-        .count()
-        > 1
-    {
-        return Err(SimpleError::new(format!(
-            "More than one 'stun://' scheme was passed. {usage_hint}. The endpoints passed were: {endpoints:#?}",
-        )));
+
+    for scheme in vec!["webrtc", "stun", "turn", "ws"] {
+        if endpoints
+            .iter()
+            .filter(|endpoint| endpoint.scheme() == scheme)
+            .count()
+            > 1
+        {
+            return Err(SimpleError::new(format!(
+                "More than one 'webrtc://' {scheme} was passed. {usage_hint}. The endpoints passed were: {endpoints:#?}",
+            )));
+        }
     }
-    if endpoints
-        .iter()
-        .filter(|endpoint| endpoint.scheme() == "turn")
-        .count()
-        > 1
-    {
-        return Err(SimpleError::new(format!(
-            "More than one 'turn://' scheme was passed. {usage_hint}. The endpoints passed were: {endpoints:#?}",
-        )));
-    }
-    if endpoints
-        .iter()
-        .filter(|endpoint| endpoint.scheme() == "ws")
-        .count()
-        > 1
-    {
-        return Err(SimpleError::new(format!(
-            "More than one 'ws://' scheme was passed. {usage_hint}. The endpoints passed were: {endpoints:#?}",
-        )));
-    }
+
     if endpoints
         .iter()
         .any(|endpoint| endpoint.scheme() == "webrtc")
