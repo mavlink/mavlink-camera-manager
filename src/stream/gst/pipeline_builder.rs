@@ -53,6 +53,7 @@ impl Pipeline {
             VideoSourceType::Gst(_) => "video/x-raw,format=UYVY",
             _ => match &configuration.encode {
                 VideoEncodeType::H264 => "video/x-h264",
+                VideoEncodeType::H265 => "video/x-h265",
                 VideoEncodeType::YUYV => "video/x-raw,format=YUY2",
                 VideoEncodeType::MJPG => "image/jpeg",
                 video_encode_type => {
@@ -122,11 +123,16 @@ impl Pipeline {
         let pipeline_transcode = match &video_and_stream_information.video_source {
             VideoSourceType::Gst(_) => match configuration.encode {
                 // Fake sources are video/x-raw, so we need to encode it to
-                // have h264 or mjpg.
+                // be video/x-h264, video/x-h265 or image/jpeg.
                 VideoEncodeType::H264 => concat!(
                     " ! videoconvert",
                     " ! x264enc bitrate=5000",
                     " ! video/x-h264,profile=baseline",
+                ),
+                VideoEncodeType::H265 => concat!(
+                    " ! videoconvert",
+                    " ! x265enc bitrate=5000",
+                    " ! video/x-h265,profile=baseline",
                 ),
                 VideoEncodeType::MJPG => concat!(" ! jpegenc",),
                 _ => "",
@@ -166,6 +172,11 @@ impl Pipeline {
                 " ! h264parse",
                 " ! queue",
                 " ! rtph264pay name=pay0 config-interval=10 pt=96",
+            ),
+            VideoEncodeType::H265 => concat!(
+                " ! h265parse",
+                " ! queue",
+                " ! rtph265pay name=pay0 config-interval=10 pt=96",
             ),
             VideoEncodeType::YUYV => concat!(
                 " ! rtpvrawpay name=pay0",

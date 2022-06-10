@@ -71,10 +71,13 @@ fn check_encode_support(
                 "Encode is not supported and also unknown: {name}",
             )))
         }
-        VideoEncodeType::H264 | VideoEncodeType::YUYV | VideoEncodeType::MJPG => (),
+        VideoEncodeType::H264
+        | VideoEncodeType::H265
+        | VideoEncodeType::YUYV
+        | VideoEncodeType::MJPG => (),
         _ => {
             return Err(SimpleError::new(format!(
-                "Only H264, YUYV and MJPG encodes are supported now, used: {encode:?}",
+                "Only H264, H265, YUYV and MJPG encodes are supported now, used: {encode:?}",
             )));
         }
     };
