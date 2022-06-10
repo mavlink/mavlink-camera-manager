@@ -143,7 +143,7 @@ fn get_stream_mavtype(stream_type: &StreamType) -> Option<mavlink::common::Video
         StreamType::REDIRECT(video_strem_redirect) => match video_strem_redirect.scheme.as_str() {
             "rtsp" => Some(mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP),
             "mpegts" => Some(mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_MPEG_TS_H264),
-            "tcp" => Some(mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_TCP_MPEG),
+            "tcpmpeg" => Some(mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_TCP_MPEG),
             "udp" => Some(mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP),
             _ => None,
         },
