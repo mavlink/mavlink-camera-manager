@@ -36,6 +36,9 @@ pub fn start() {
             StreamType::UDP(stream) => {
                 stream.start();
             }
+            StreamType::TCP(stream) => {
+                stream.start();
+            }
             StreamType::RTSP(stream) => {
                 stream.start();
             }
@@ -139,6 +142,7 @@ pub fn remove_stream(stream_name: &str) -> Result<(), SimpleError> {
 fn get_stream_mavtype(stream_type: &StreamType) -> Option<mavlink::common::VideoStreamType> {
     match stream_type {
         StreamType::UDP(_) => Some(mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP),
+        StreamType::TCP(_) => None,
         StreamType::RTSP(_) => Some(mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP),
         StreamType::REDIRECT(video_strem_redirect) => match video_strem_redirect.scheme.as_str() {
             "rtsp" => Some(mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP),

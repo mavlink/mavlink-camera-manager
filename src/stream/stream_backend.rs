@@ -1,6 +1,7 @@
 use super::types::*;
 use super::video_stream_redirect::VideoStreamRedirect;
 use super::video_stream_rtsp::VideoStreamRtsp;
+use super::video_stream_tcp::VideoStreamTcp;
 use super::video_stream_udp::VideoStreamUdp;
 use super::video_stream_webrtc::VideoStreamWebRTC;
 use super::webrtc::utils::{is_webrtcsink_available, webrtc_usage_hint};
@@ -104,7 +105,7 @@ fn check_scheme_and_encoding_compatibility(
         };
     } else {
         match scheme {
-            "udp" | "rtsp" | "webrtc" | "stun" | "turn" | "ws" => (), // No encoding restrictions for these schemes.
+            "udp" | "tcp" | "rtsp" | "webrtc" | "stun" | "turn" | "ws" => (), // No encoding restrictions for these schemes.
             "udp265" => {
                 if VideoEncodeType::H265 != encode {
                     return Err(SimpleError::new(format!("Endpoint with \"udp265\" scheme only supports H265 encode. Encode: {encode:?}, Endpoints: {endpoints:#?}")));
@@ -196,6 +197,19 @@ fn create_rtsp_stream(
     )?))
 }
 
+fn create_tcp_stream(
+    video_and_stream_information: &VideoAndStreamInformation,
+) -> Result<StreamType, SimpleError> {
+    let endpoints = &video_and_stream_information.stream_information.endpoints;
+
+    check_for_host_and_port(endpoints)?;
+    check_for_multiple_endpoints(endpoints)?;
+
+    Ok(StreamType::TCP(VideoStreamTcp::new(
+        video_and_stream_information,
+    )?))
+}
+
 fn create_redirect_stream(
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<StreamType, SimpleError> {
@@ -277,6 +291,7 @@ fn create_stream(
             .unwrap();
         match endpoint.scheme() {
             "udp" => create_udp_stream(video_and_stream_information),
+            "tcp" => create_tcp_stream(video_and_stream_information),
             "rtsp" => create_rtsp_stream(video_and_stream_information),
             "webrtc" | "stun" | "turn" | "ws" => {
                 create_webrtc_turn_stream(video_and_stream_information)
