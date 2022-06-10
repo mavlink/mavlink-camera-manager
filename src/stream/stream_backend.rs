@@ -100,20 +100,15 @@ fn check_scheme_and_encoding_compatibility(
 
     if let VideoSourceType::Redirect(_) = video_and_stream_information.video_source {
         match scheme {
-            "udp" | "udp265"| "rtsp" | "mpegts" | "tcpmpeg" => scheme.to_string(),
+            "udp" | "rtsp" | "mpegts" | "tcpmpeg" => scheme.to_string(),
             "tcp" => return Err(SimpleError::new(format!("Endpoints with the \"tcp\" scheme are not supported by Mavlink, REDIRECT is meant to advertise an already existing stream using Mavlink protocol, but Mavlink protocol doesn't specify any TCP with RTP. If you meant to use TPC with MPEG, you should use the perhaps you meant \"tcpmpeg\" scheme. Encode: {encode:?}, Endpoints: {endpoints:#?}"))),
             _ => return Err(SimpleError::new(format!(
-                "The URL's scheme for REDIRECT endpoints should be \"udp\", \"udp265\", \"rtsp\", \"mpegts\" \"tcpmpeg\", but was: {scheme:?}",
+                "The URL's scheme for REDIRECT endpoints should be \"udp\", \"rtsp\", \"mpegts\" \"tcpmpeg\", but was: {scheme:?}",
             )))
         };
     } else {
         match scheme {
             "udp" | "tcp" | "rtsp" | "webrtc" | "stun" | "turn" | "ws" => (), // No encoding restrictions for these schemes.
-            "udp265" => {
-                if VideoEncodeType::H265 != encode {
-                    return Err(SimpleError::new(format!("Endpoint with \"udp265\" scheme only supports H265 encode. Encode: {encode:?}, Endpoints: {endpoints:#?}")));
-                }
-            }
             "mpegts" | "tcpmpeg" | _ => {
                 return Err(SimpleError::new(format!(
                     "Scheme is not accepted as stream endpoint: {scheme}",
