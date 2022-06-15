@@ -105,6 +105,7 @@ impl VideoEncodeType {
     pub fn from_str(fourcc: &str) -> VideoEncodeType {
         return match fourcc {
             "H264" => VideoEncodeType::H264,
+            "H265" => VideoEncodeType::H265,
             "MJPG" => VideoEncodeType::MJPG,
             "YUYV" => VideoEncodeType::YUYV,
             _ => VideoEncodeType::UNKNOWN(fourcc.to_string()),
