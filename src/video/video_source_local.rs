@@ -158,41 +158,73 @@ impl VideoSource for VideoSourceLocal {
         debug!("Checking resolutions for camera: {}", &self.device_path);
         for v4l_format in v4l_formats {
             let mut sizes = vec![];
+            let mut errors: Vec<String> = vec![];
+
             for v4l_framesizes in device.enum_framesizes(v4l_format.fourcc).unwrap() {
-                if let v4l::framesize::FrameSizeEnum::Stepwise(_) = v4l_framesizes.size {
-                    warn!("Stepwise framesize not suppported for camera: {}, for configuration: {:#?}",
-                        &self.device_path, v4l_framesizes);
-                    continue;
-                }
-                for v4l_size in v4l_framesizes.size.to_discrete() {
-                    match &device.enum_frameintervals(
-                        v4l_framesizes.fourcc,
-                        v4l_size.width,
-                        v4l_size.height,
-                    ) {
-                        Ok(enum_frameintervals) => {
-                            let intervals = convert_v4l_intervals(enum_frameintervals);
-                            sizes.push(Size {
-                                width: v4l_size.width,
-                                height: v4l_size.height,
-                                intervals,
-                            })
+                match v4l_framesizes.size {
+                    v4l::framesize::FrameSizeEnum::Discrete(v4l_size) => {
+                        match &device.enum_frameintervals(
+                            v4l_framesizes.fourcc,
+                            v4l_size.width,
+                            v4l_size.height,
+                        ) {
+                            Ok(enum_frameintervals) => {
+                                let intervals = convert_v4l_intervals(enum_frameintervals);
+                                sizes.push(Size {
+                                    width: v4l_size.width,
+                                    height: v4l_size.height,
+                                    intervals: intervals.into(),
+                                })
+                            }
+                            Err(error) => {
+                                errors.push(format!(
+                                    "encode: {encode:?}, for size: {v4l_size:?}, error: {error:#?}",
+                                    encode = v4l_format.fourcc,
+                                ));
+                            }
                         }
-                        Err(error) => {
-                            warn!("Failed to fetch frameintervals for camera: {}, for encode: {:?}, for size: {:?}, error: {:#?}",
-                                &self.device_path, v4l_format.fourcc, v4l_size, error);
-                        }
+                    }
+                    v4l::framesize::FrameSizeEnum::Stepwise(v4l_size) => {
+                        let mut std_sizes: Vec<(u32, u32)> = STANDARD_SIZES.to_vec();
+                        std_sizes.push((v4l_size.max_width, v4l_size.max_height));
+
+                        std_sizes.iter().for_each(|(width, height)| {
+                            match &device.enum_frameintervals(
+                                v4l_framesizes.fourcc,
+                                *width,
+                                *height,
+                            ) {
+                                Ok(enum_frameintervals) => {
+                                    let intervals = convert_v4l_intervals(enum_frameintervals);
+                                    sizes.push(Size {
+                                        width: *width,
+                                        height: *height,
+                                        intervals: intervals.into(),
+                                    });
+                                }
+                                Err(error) => {
+                                    errors.push(format!(
+                                        "encode: {encode:?}, for size: {v4l_size:?}, error: {error:#?}",
+                                        encode = v4l_format.fourcc,
+                                        v4l_size = (width, height),
+                                    ));
+                                }
+                            };
+                        });
                     }
                 }
             }
 
             sizes.sort();
             sizes.dedup();
-            sizes.iter_mut().for_each(|s| {
-                s.intervals.sort();
-                s.intervals.reverse();
-                s.intervals.dedup();
-            });
+            sizes.reverse();
+
+            if !errors.is_empty() {
+                debug!(
+                    "Failed to fetch frameintervals for camera {}: {errors:#?}",
+                    &self.device_path
+                );
+            }
 
             formats.push(Format {
                 encode: VideoEncodeType::from_str(v4l_format.fourcc.str().unwrap()),
@@ -200,7 +232,10 @@ impl VideoSource for VideoSourceLocal {
             });
         }
 
-        return formats;
+        formats.sort();
+        formats.dedup();
+
+        formats
     }
 
     fn set_control_by_name(&self, _control_name: &str, _value: i64) -> std::io::Result<()> {

@@ -21,7 +21,7 @@ pub enum VideoEncodeType {
     YUYV,
 }
 
-#[derive(Apiv2Schema, Clone, Debug, Deserialize, Serialize)]
+#[derive(Apiv2Schema, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct Format {
     pub encode: VideoEncodeType,
     pub sizes: Vec<Size>,
@@ -120,3 +120,22 @@ impl Default for ControlType {
         })
     }
 }
+
+pub static STANDARD_SIZES: &[(u32, u32); 16] = &[
+    (7680, 4320),
+    (7200, 3060),
+    (3840, 2160),
+    (2560, 1440),
+    (1920, 1080),
+    (1600, 1200),
+    (1440, 1080),
+    (1280, 1080),
+    (1280, 720),
+    (1024, 768),
+    (960, 720),
+    (800, 600),
+    (640, 480),
+    (640, 360),
+    (320, 240),
+    (256, 144),
+];
