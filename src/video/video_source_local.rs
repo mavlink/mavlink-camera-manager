@@ -1,3 +1,5 @@
+use std::cmp::max;
+
 use super::types::*;
 use super::{
     video_source,
@@ -119,26 +121,49 @@ impl VideoSourceLocal {
 }
 
 fn convert_v4l_intervals(v4l_intervals: &[v4l::FrameInterval]) -> Vec<FrameInterval> {
-    let intervals: Vec<FrameInterval> = v4l_intervals
+    let mut intervals: Vec<FrameInterval> = vec![];
+
+    v4l_intervals
         .iter()
-        .map(|v4l_interval| match &v4l_interval.interval {
-            v4l::frameinterval::FrameIntervalEnum::Discrete(fraction) => FrameInterval {
-                numerator: fraction.numerator,
-                denominator: fraction.denominator,
-            },
-            v4l::frameinterval::FrameIntervalEnum::Stepwise(_stepwise) => {
-                warn!(
-                    "Unsupported stepwise frame interval: {:#?}",
-                    v4l_interval.interval
-                );
-                FrameInterval {
-                    numerator: 0,
-                    denominator: 0,
+        .for_each(|v4l_interval| match &v4l_interval.interval {
+            v4l::frameinterval::FrameIntervalEnum::Discrete(fraction) => {
+                intervals.push(FrameInterval {
+                    numerator: fraction.numerator,
+                    denominator: fraction.denominator,
+                })
+            }
+            v4l::frameinterval::FrameIntervalEnum::Stepwise(stepwise) => {
+                // To avoid a having a huge number of numerator/denominators, we
+                // arbitrarely set a minimum step of 5 units
+                let min_step = 5;
+                let numerator_step = max(stepwise.step.numerator, min_step);
+                let denominator_step = max(stepwise.step.denominator, min_step);
+
+                let numerators = (0..=stepwise.min.numerator)
+                    .step_by(numerator_step as usize)
+                    .chain(vec![stepwise.max.numerator])
+                    .collect::<Vec<u32>>();
+                let denominators = (0..=stepwise.min.denominator)
+                    .step_by(denominator_step as usize)
+                    .chain(vec![stepwise.max.denominator])
+                    .collect::<Vec<u32>>();
+
+                for numerator in &numerators {
+                    for denominator in &denominators {
+                        intervals.push(FrameInterval {
+                            numerator: max(1, *numerator),
+                            denominator: max(1, *denominator),
+                        });
+                    }
                 }
             }
-        })
-        .collect();
-    return intervals;
+        });
+
+    intervals.sort();
+    intervals.dedup();
+    intervals.reverse();
+
+    intervals
 }
 
 impl VideoSource for VideoSourceLocal {
