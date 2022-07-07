@@ -18,7 +18,7 @@ use log::*;
 pub enum VideoSourceLocalType {
     Unknown(String),
     Usb(String),
-    Isp(String),
+    V4l2(String),
 }
 
 #[derive(Apiv2Schema, Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -48,13 +48,12 @@ impl VideoSourceLocalType {
             return result;
         }
 
-        if let Some(result) = VideoSourceLocalType::isp_from_str(description) {
+        if let Some(result) = VideoSourceLocalType::v4l2_from_str(description) {
             return result;
         }
 
         warn!(
-            "Unable to identify the local camera connection type, please report the problem: {}",
-            description
+            "Unable to identify the local camera connection type, please report the problem: {description}",
         );
         return VideoSourceLocalType::Unknown(description.into());
     }
@@ -69,10 +68,10 @@ impl VideoSourceLocalType {
         return None;
     }
 
-    fn isp_from_str(description: &str) -> Option<Self> {
-        let regex = Regex::new(r"platform:(?P<device>\S+)-isp").unwrap();
+    fn v4l2_from_str(description: &str) -> Option<Self> {
+        let regex = Regex::new(r"platform:(?P<device>\S+)-v4l2-[0-9]").unwrap();
         if regex.is_match(description) {
-            return Some(VideoSourceLocalType::Isp(description.into()));
+            return Some(VideoSourceLocalType::V4l2(description.into()));
         }
         return None;
     }
@@ -475,9 +474,9 @@ mod tests {
                 "usb-3f980000.usb-1.4",
             ),
             (
-                // Provided by the raspberry pi with a ISP device
-                VideoSourceLocalType::Isp("platform:bcm2835-isp".into()),
-                "platform:bcm2835-isp",
+                // Provided by the raspberry pi with a libcamera device (using the v4l2 compatibility layer)
+                VideoSourceLocalType::V4l2("platform:bcm2835-v4l2-0".into()),
+                "platform:bcm2835-v4l2-0",
             ),
             (
                 // Sanity test
