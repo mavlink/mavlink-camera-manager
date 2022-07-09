@@ -1,7 +1,7 @@
 use super::{
     stream_backend::StreamBackend, video_stream_redirect::VideoStreamRedirect,
-    video_stream_rtsp::VideoStreamRtsp, video_stream_udp::VideoStreamUdp,
-    video_stream_webrtc::VideoStreamWebRTC,
+    video_stream_rtsp::VideoStreamRtsp, video_stream_tcp::VideoStreamTcp,
+    video_stream_udp::VideoStreamUdp, video_stream_webrtc::VideoStreamWebRTC,
 };
 use crate::{
     video::types::{FrameInterval, VideoEncodeType},
@@ -16,6 +16,7 @@ use url::Url;
 #[allow(dead_code)]
 pub enum StreamType {
     UDP(VideoStreamUdp),
+    TCP(VideoStreamTcp),
     RTSP(VideoStreamRtsp),
     REDIRECT(VideoStreamRedirect),
     WEBRTC(VideoStreamWebRTC),
@@ -25,6 +26,7 @@ impl StreamType {
     pub fn inner(&self) -> &(dyn StreamBackend + '_) {
         match self {
             StreamType::UDP(backend) => backend,
+            StreamType::TCP(backend) => backend,
             StreamType::RTSP(backend) => backend,
             StreamType::REDIRECT(backend) => backend,
             StreamType::WEBRTC(backend) => backend,
@@ -34,6 +36,7 @@ impl StreamType {
     pub fn mut_inner(&mut self) -> &mut (dyn StreamBackend + '_) {
         match self {
             StreamType::UDP(backend) => backend,
+            StreamType::TCP(backend) => backend,
             StreamType::RTSP(backend) => backend,
             StreamType::REDIRECT(backend) => backend,
             StreamType::WEBRTC(backend) => backend,

@@ -181,7 +181,15 @@ impl Pipeline {
                 )))
             }
         };
-        Ok(pipeline_payload.to_string())
+
+        let mut pipeline_payload = pipeline_payload.to_string();
+
+        // We need to add RTP Stream Payloader when using TCP endpoints (https://datatracker.ietf.org/doc/html/rfc4571)
+        if video_and_stream_information.stream_information.endpoints[0].scheme() == "tcp" {
+            pipeline_payload = format!("{pipeline_payload} ! rtpstreampay");
+        }
+
+        Ok(pipeline_payload)
     }
 
     fn build_pipeline_sink(
@@ -219,6 +227,11 @@ impl Pipeline {
                     .collect::<Vec<String>>()
                     .join(",");
                 format!(" ! multiudpsink clients={clients}")
+            }
+            "tcp" => {
+                let host = endpoints[0].host().unwrap();
+                let port = endpoints[0].port().unwrap();
+                format!(" ! tcpserversink host={host} port={port}")
             }
             _ => "".to_string(),
         };
