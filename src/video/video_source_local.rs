@@ -18,7 +18,7 @@ use log::*;
 pub enum VideoSourceLocalType {
     Unknown(String),
     Usb(String),
-    V4l2(String),
+    LegacyRpiCam(String),
 }
 
 #[derive(Apiv2Schema, Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -71,7 +71,7 @@ impl VideoSourceLocalType {
     fn v4l2_from_str(description: &str) -> Option<Self> {
         let regex = Regex::new(r"platform:(?P<device>\S+)-v4l2-[0-9]").unwrap();
         if regex.is_match(description) {
-            return Some(VideoSourceLocalType::V4l2(description.into()));
+            return Some(VideoSourceLocalType::LegacyRpiCam(description.into()));
         }
         return None;
     }
@@ -474,8 +474,8 @@ mod tests {
                 "usb-3f980000.usb-1.4",
             ),
             (
-                // Provided by the raspberry pi with a libcamera device (using the v4l2 compatibility layer)
-                VideoSourceLocalType::V4l2("platform:bcm2835-v4l2-0".into()),
+                // Provided by the raspberry pi with a Raspberry Pi camera when in to use legacy camera mode
+                VideoSourceLocalType::LegacyRpiCam("platform:bcm2835-v4l2-0".into()),
                 "platform:bcm2835-v4l2-0",
             ),
             (
