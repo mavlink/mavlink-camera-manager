@@ -150,7 +150,7 @@ pub fn v4l_post(json: web::Json<V4lControl>) -> HttpResponse {
 
 #[api_v2_operation]
 /// Reset service settings
-pub async fn reset_settings(req: HttpRequest, query: web::Query<ResetSettings>) -> HttpResponse {
+pub async fn reset_settings(query: web::Query<ResetSettings>) -> HttpResponse {
     if query.all.unwrap_or_default() {
         settings::manager::reset();
         stream_manager::start_default();
