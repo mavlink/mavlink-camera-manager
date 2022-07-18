@@ -1,5 +1,8 @@
 use super::pages;
 use crate::cli;
+
+use actix_service::Service;
+
 use crate::stream::webrtc::{signalling_server::SignallingServer, utils::is_webrtcsink_available};
 
 use actix_web::{
@@ -52,7 +55,14 @@ pub fn run(server_address: &str) {
                 );
             }
         };
-        app.wrap_api_with_spec(Api {
+
+        // Add debug call for API access
+        app.wrap_fn(|req, srv| {
+            debug!("{:#?}", &req);
+            let fut = srv.call(req);
+            async { Ok(fut.await?) }
+        })
+        .wrap_api_with_spec(Api {
             info: Info {
                 version: format!(
                     "{}-{} ({})",
