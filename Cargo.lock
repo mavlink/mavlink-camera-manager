@@ -2033,6 +2033,7 @@ name = "mavlink-camera-manager"
 version = "0.2.4"
 dependencies = [
  "actix-files",
+ "actix-service",
  "actix-web",
  "anyhow",
  "async-native-tls 0.4.0",
