@@ -1,3 +1,4 @@
+use crate::settings;
 use crate::stream::{
     manager as stream_manager,
     types::{StreamInformation, StreamStatus},
@@ -45,6 +46,11 @@ pub struct PostStream {
 #[derive(Apiv2Schema, Debug, Deserialize)]
 pub struct RemoveStream {
     name: String,
+}
+
+#[derive(Apiv2Schema, Debug, Deserialize)]
+pub struct ResetSettings {
+    all: Option<bool>,
 }
 
 #[derive(Apiv2Schema, Debug, Deserialize)]
@@ -140,6 +146,20 @@ pub fn v4l_post(json: web::Json<V4lControl>) -> HttpResponse {
     return HttpResponse::NotAcceptable()
         .content_type("text/plain")
         .body(format!("{:#?}", answer.err().unwrap()));
+}
+
+#[api_v2_operation]
+/// Reset service settings
+pub async fn reset_settings(req: HttpRequest, query: web::Query<ResetSettings>) -> HttpResponse {
+    if query.all.unwrap_or_default() {
+        settings::manager::reset();
+        stream_manager::start_default();
+        return HttpResponse::Ok().finish();
+    }
+
+    return HttpResponse::NotAcceptable()
+        .content_type("text/plain")
+        .body("Missing argument for reset_settings.");
 }
 
 #[api_v2_operation]
