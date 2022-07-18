@@ -145,7 +145,7 @@ impl MavlinkCameraHandle {
         let mavlink_camera_information: Arc<Mutex<MavlinkCameraInformation>> =
             Arc::new(Mutex::new(MavlinkCameraInformation::new(
                 video_source_type,
-                &settings::manager::mavlink_endpoint(),
+                &settings::manager::mavlink_endpoint().unwrap(),
                 endpoint,
                 mavlink_stream_type,
                 thermal,
