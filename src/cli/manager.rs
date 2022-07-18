@@ -47,8 +47,8 @@ pub fn is_reset() -> bool {
 
 #[allow(dead_code)]
 // Return the mavlink connection string
-pub fn mavlink_connection_string() -> &'static str {
-    return MANAGER.as_ref().clap_matches.value_of("mavlink").unwrap();
+pub fn mavlink_connection_string() -> Option<&'static str> {
+    return MANAGER.as_ref().clap_matches.value_of("mavlink");
 }
 
 // Return the desired address for the REST API
@@ -132,7 +132,6 @@ fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
                 .value_name("TYPE:<IP/SERIAL>:<PORT/BAUDRATE>")
                 .help("Sets the mavlink connection string")
                 .takes_value(true)
-                .default_value("udpout:0.0.0.0:14550"),
         )
         .arg(
             clap::Arg::with_name("www-path")
@@ -181,6 +180,5 @@ mod tests {
     #[test]
     fn default_arguments() {
         assert_eq!(is_verbose(), false);
-        assert_eq!(mavlink_connection_string(), "udpout:0.0.0.0:14550");
     }
 }
