@@ -213,6 +213,15 @@ pub fn set_streams(streams: &Vec<VideoAndStreamInformation>) {
     save();
 }
 
+pub fn reset() {
+    // Take care of scope mutex
+    {
+        let mut manager = MANAGER.lock().unwrap();
+        manager.content.as_mut().unwrap().config = SettingsStruct::default();
+    }
+    save();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
