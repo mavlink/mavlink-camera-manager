@@ -29,7 +29,9 @@ pub fn let_there_be_light() {
     settings::manager::init(None);
 
     stream::manager::init();
-    settings::manager::set_mavlink_endpoint(cli::manager::mavlink_connection_string());
+    if let Some(endpoint) = cli::manager::mavlink_connection_string() {
+        settings::manager::set_mavlink_endpoint(endpoint);
+    }
     server::manager::run(cli::manager::server_address());
 }
 

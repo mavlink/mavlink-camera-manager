@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 struct Stream {
     stream_type: StreamType,
     video_and_stream_information: VideoAndStreamInformation,
-    mavlink_camera: MavlinkCameraHandle,
+    mavlink_camera: Option<MavlinkCameraHandle>,
 }
 
 #[derive(Default)]
@@ -98,20 +98,27 @@ pub fn add_stream_and_start(
         StreamType::WEBRTC(_) => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
     };
 
-    stream.mut_inner().start();
-    manager.streams.push(Stream {
-        stream_type: stream,
-        video_and_stream_information: video_and_stream_information.clone(),
-        mavlink_camera: MavlinkCameraHandle::new(
+    let mavlink_camera = if settings::manager::mavlink_endpoint().is_some() {
+        Some(MavlinkCameraHandle::new(
             video_and_stream_information.video_source.clone(),
             endpoint,
             mavtype,
             video_and_stream_information
                 .stream_information
                 .extended_configuration
+                .clone()
                 .unwrap_or_default()
                 .thermal,
-        ),
+        ))
+    } else {
+        None
+    };
+
+    stream.mut_inner().start();
+    manager.streams.push(Stream {
+        stream_type: stream,
+        video_and_stream_information: video_and_stream_information.clone(),
+        mavlink_camera,
     });
 
     //TODO: Create function to update settings

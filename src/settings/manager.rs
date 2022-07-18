@@ -17,7 +17,7 @@ pub struct HeaderSettingsFile {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SettingsStruct {
     pub header: HeaderSettingsFile,
-    pub mavlink_endpoint: String, //TODO: Move to URL
+    pub mavlink_endpoint: Option<String>, //TODO: Move to URL
     pub streams: Vec<VideoAndStreamInformation>,
 }
 
@@ -42,7 +42,7 @@ impl Default for SettingsStruct {
                 name: "Camera Manager".to_string(),
                 version: 0,
             },
-            mavlink_endpoint: "udpout:0.0.0.0:14550".to_string(),
+            mavlink_endpoint: None,
             streams: vec![/*VideoAndStreamInformation {
                 name: "Test".into(),
                 stream_information: StreamInformation {
@@ -170,7 +170,7 @@ pub fn header() -> HeaderSettingsFile {
     return manager.content.as_ref().unwrap().config.header.clone();
 }
 
-pub fn mavlink_endpoint() -> String {
+pub fn mavlink_endpoint() -> Option<String> {
     let manager = MANAGER.as_ref().lock().unwrap();
     return manager
         .content
@@ -186,7 +186,7 @@ pub fn set_mavlink_endpoint(endpoint: &str) {
     {
         let mut manager = MANAGER.lock().unwrap();
         let mut content = manager.content.as_mut();
-        content.as_mut().unwrap().config.mavlink_endpoint = endpoint.into();
+        content.as_mut().unwrap().config.mavlink_endpoint = Some(endpoint.into());
     }
     save();
 }
@@ -257,7 +257,7 @@ mod tests {
 
         let fake_mavlink_endpoint = "tcp:potatohost:42";
         set_mavlink_endpoint(fake_mavlink_endpoint);
-        assert_eq!(mavlink_endpoint(), fake_mavlink_endpoint);
+        assert_eq!(mavlink_endpoint(), Some(fake_mavlink_endpoint.into()));
 
         let fake_streams = vec![VideoAndStreamInformation {
             name: "PotatoTestStream".into(),
