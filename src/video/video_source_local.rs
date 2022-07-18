@@ -285,6 +285,8 @@ impl VideoSource for VideoSourceLocal {
                         .filter(|interval| interval.numerator * interval.denominator <= max_fps)
                         .collect();
                 });
+
+                format.sizes.dedup();
             });
         }
 
