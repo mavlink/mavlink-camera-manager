@@ -99,9 +99,7 @@ pub fn root(req: HttpRequest) -> HttpResponse {
 //TODO: change endpoint name to sources
 #[api_v2_operation]
 /// Provides list of all video sources, with controls and formats
-pub async fn v4l(req: HttpRequest) -> Json<Vec<ApiVideoSource>> {
-    debug!("{:#?}", req);
-
+pub async fn v4l() -> Json<Vec<ApiVideoSource>> {
     let cameras = video_source::cameras_available();
     let cameras: Vec<ApiVideoSource> = cameras
         .iter()
@@ -132,8 +130,7 @@ pub async fn v4l(req: HttpRequest) -> Json<Vec<ApiVideoSource>> {
 
 #[api_v2_operation]
 /// Change video control for a specific source
-pub fn v4l_post(req: HttpRequest, json: web::Json<V4lControl>) -> HttpResponse {
-    debug!("{:#?}{:?}", req, json);
+pub fn v4l_post(json: web::Json<V4lControl>) -> HttpResponse {
     let control = json.into_inner();
     let answer = video_source::set_control(&control.device, control.v4l_id, control.value);
     if answer.is_ok() {
@@ -147,16 +144,14 @@ pub fn v4l_post(req: HttpRequest, json: web::Json<V4lControl>) -> HttpResponse {
 
 #[api_v2_operation]
 /// Provide a list of all streams configured
-pub async fn streams(req: HttpRequest) -> Json<Vec<StreamStatus>> {
-    debug!("{:#?}", req);
+pub async fn streams() -> Json<Vec<StreamStatus>> {
     let streams = stream_manager::streams();
     Json(streams)
 }
 
 #[api_v2_operation]
 /// Create a video stream
-pub fn streams_post(req: HttpRequest, json: web::Json<PostStream>) -> HttpResponse {
-    debug!("{:#?}{:?}", req, json);
+pub fn streams_post(json: web::Json<PostStream>) -> HttpResponse {
     let json = json.into_inner();
 
     let video_source = match video_source::get_video_source(&json.source) {
@@ -186,9 +181,7 @@ pub fn streams_post(req: HttpRequest, json: web::Json<PostStream>) -> HttpRespon
 
 #[api_v2_operation]
 /// Remove a desired stream
-pub fn remove_stream(req: HttpRequest, query: web::Query<RemoveStream>) -> HttpResponse {
-    debug!("{:#?}{:?}", req, query);
-
+pub fn remove_stream(query: web::Query<RemoveStream>) -> HttpResponse {
     match stream_manager::remove_stream(&query.name) {
         Ok(_) => HttpResponse::Ok()
             .content_type("application/json")
@@ -203,12 +196,7 @@ pub fn remove_stream(req: HttpRequest, query: web::Query<RemoveStream>) -> HttpR
 
 #[api_v2_operation]
 /// Reset controls from a given camera source
-pub fn camera_reset_controls(
-    req: HttpRequest,
-    json: web::Json<ResetCameraControls>,
-) -> HttpResponse {
-    debug!("{req:#?}{json:?}");
-
+pub fn camera_reset_controls(json: web::Json<ResetCameraControls>) -> HttpResponse {
     match video_source::reset_controls(&json.device) {
         Ok(_) => HttpResponse::Ok()
             .content_type("application/json")
