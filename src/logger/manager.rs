@@ -17,12 +17,11 @@ fn colored_level<'a>(style: &'a mut Style, level: Level) -> StyledValue<'a, &'st
 
 // Start logger, should be done inside main
 pub fn init() {
-    let default_filter = if cli::manager::is_verbose() {
-        "debug"
-    } else {
-        "info"
-    };
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default_filter))
+    if cli::manager::is_verbose() {
+        std::env::set_var("RUST_LOG", "debug");
+    }
+
+    env_logger::Builder::from_env(env_logger::Env::default())
         .format(|buf, record| {
             let mut style = buf.style();
             let level = colored_level(&mut style, record.level());
