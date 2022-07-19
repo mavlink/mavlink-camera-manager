@@ -50,10 +50,11 @@ pub struct VideoCaptureConfiguration {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
 pub struct RedirectCaptureConfiguration {}
 
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[serde(untagged, rename_all = "lowercase")]
 pub enum CaptureConfiguration {
     VIDEO(VideoCaptureConfiguration),
     REDIRECT(RedirectCaptureConfiguration),
