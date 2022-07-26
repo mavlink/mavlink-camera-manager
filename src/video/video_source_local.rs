@@ -351,6 +351,14 @@ impl VideoSource for VideoSourceLocal {
     }
 
     fn controls(&self) -> Vec<Control> {
+        if matches!(&self.typ, VideoSourceLocalType::LegacyRpiCam(_)) {
+            // Raspiberry Pi Cameras are using `rpicamsrc`, which doesn't
+            // interact with v4l2 controls, instead, an entire new
+            // interface needs to be implemented to expose and interact
+            // with the rpicamsrc element properties.
+            warn!("Raspiberry Pi Cameras are using rpicamsrc, skipping all v4l2 controls.");
+            return vec![];
+        }
         //TODO: create function to encapsulate device
         let device = Device::with_path(&self.device_path).unwrap();
         let v4l_controls = device.query_controls().unwrap_or_default();
