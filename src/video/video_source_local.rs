@@ -321,10 +321,10 @@ impl VideoSource for VideoSourceLocal {
         //TODO: Add control validation
         let device = Device::with_path(&self.device_path)?;
         //TODO: we should handle value, value64 and string
-        match device.set_control(
-            control_id as u32,
-            v4l::control::Control::Value(value as i32),
-        ) {
+        match device.set_control(v4l::Control {
+            id: control_id as u32,
+            value: v4l::control::Value::Integer(value),
+        }) {
             ok @ Ok(_) => ok,
             Err(error) => {
                 warn!("Failed to set control {:#?}, error: {:#?}", control, error);
@@ -339,16 +339,15 @@ impl VideoSource for VideoSourceLocal {
 
     fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64> {
         let device = Device::with_path(&self.device_path)?;
-        let value = device.control(control_id as u32)?;
+        let value = device.control(control_id as u32)?.value;
         match value {
-            v4l::control::Control::String(_) => {
+            v4l::control::Value::Integer(value) => Ok(value),
+            othertype => {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
-                    "String control type is not supported.",
+                    format!("Control type is not supported: {othertype:#?}"),
                 ));
             }
-            v4l::control::Control::Value(value) => return Ok(value as i64),
-            v4l::control::Control::Value64(value) => return Ok(value),
         }
     }
 
@@ -384,23 +383,29 @@ impl VideoSource for VideoSourceLocal {
                 );
                 continue;
             }
-            let value = value.unwrap();
-            let default = v4l_control.default;
+            let value = value.unwrap_or_default();
+            let default_value = v4l_control.default.try_into().unwrap_or_default();
+            let step = v4l_control.step.try_into().unwrap_or_default();
+            let max = v4l_control.maximum.try_into().unwrap_or_default();
+            let min = v4l_control.minimum.try_into().unwrap_or_default();
 
             match v4l_control.typ {
                 v4l::control::Type::Boolean => {
                     control.cpp_type = "bool".to_string();
-                    control.configuration = ControlType::Bool(ControlBool { default, value });
+                    control.configuration = ControlType::Bool(ControlBool {
+                        default: default_value,
+                        value,
+                    });
                     controls.push(control);
                 }
                 v4l::control::Type::Integer | v4l::control::Type::Integer64 => {
                     control.cpp_type = "int64".to_string();
                     control.configuration = ControlType::Slider(ControlSlider {
-                        default,
+                        default: default_value,
                         value,
-                        step: v4l_control.step,
-                        max: v4l_control.maximum,
-                        min: v4l_control.minimum,
+                        step,
+                        max,
+                        min,
                     });
                     controls.push(control);
                 }
@@ -418,7 +423,7 @@ impl VideoSource for VideoSourceLocal {
                             })
                             .collect();
                         control.configuration = ControlType::Menu(ControlMenu {
-                            default,
+                            default: default_value,
                             value,
                             options,
                         });

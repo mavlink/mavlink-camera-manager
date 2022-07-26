@@ -3993,9 +3993,9 @@ dependencies = [
 
 [[package]]
 name = "v4l"
-version = "0.12.1"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f6eca58bca86b4b353b55e18828694f91e83dd7e9c4d7f127515e4687d5a8e9"
+checksum = "950f4328645beeb19551e4a884600adf4e4714fe96f45c46f85eb706f4d786ce"
 dependencies = [
  "bitflags 1.3.2",
  "libc",
