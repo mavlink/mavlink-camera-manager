@@ -44,7 +44,7 @@ paperclip = { version = "0.6.1", features = ["actix", "swagger-ui", "url"] }
 quick-xml = { version = "0.23.0", features = ["serialize"] }
 simple-error = "0.2.3"
 url = { version = "2.2.2", features = ["serde"] }
-v4l = "0.12.1"
+v4l = "0.13.0"
 directories = "4.0.1"
 pnet = { version = "0.31.0", features = ["std"] }
 semver = "1.0.12"
