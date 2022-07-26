@@ -16,10 +16,8 @@ mod stream;
 mod video;
 mod video_stream;
 
-/**
- * Start our managers
- */
-pub fn let_there_be_light() {
+#[actix_web::main]
+async fn main() -> Result<(), std::io::Error> {
     // CLI should be started before logger to allow control over verbosity
     cli::manager::init();
     // Logger should start before everything else to register any log information
@@ -31,15 +29,8 @@ pub fn let_there_be_light() {
     if let Some(endpoint) = cli::manager::mavlink_connection_string() {
         settings::manager::set_mavlink_endpoint(endpoint);
     }
-    server::manager::run(cli::manager::server_address());
-}
-
-fn main() {
-    let_there_be_light();
 
     stream::manager::start_default();
 
-    loop {
-        std::thread::sleep(std::time::Duration::from_secs(1));
-    }
+    server::manager::run(cli::manager::server_address()).await
 }

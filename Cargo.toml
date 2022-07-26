@@ -27,9 +27,9 @@ regex = "1.6.0"
 
 #TODO: Investigate rweb to use openapi spec for free
 # https://github.com/kdy1/rweb
-actix-files = "0.5.0"
-actix-web = "3.3.3"
-actix-service = "1.0.6"
+actix-files = "0.6.2"
+actix-web = "4.1.0"
+actix-service = "2.0.2"
 serde = { version = "1.0.140", features = ["derive"] }
 serde_json = "1.0.82"
 
@@ -39,7 +39,7 @@ chrono = "0.4.19"
 env_logger = "0.9.0"
 lazy_static = "1.4.0"
 log = "0.4.17"
-paperclip = { version = "0.6.1", features = ["actix", "swagger-ui", "url"] }
+paperclip = { version = "0.7.0", features = ["paperclip-actix", "actix4", "swagger-ui", "url"] }
 #TODO: Replace it with yaserde
 quick-xml = { version = "0.23.0", features = ["serialize"] }
 simple-error = "0.2.3"

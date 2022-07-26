@@ -1,15 +1,10 @@
 use super::pages;
 use crate::cli;
 
-use actix_service::Service;
-
 use crate::stream::webrtc::{signalling_server::SignallingServer, utils::is_webrtcsink_available};
 
-use actix_web::{
-    error::{ErrorBadRequest, JsonPayloadError},
-    rt::System,
-    App, HttpRequest, HttpServer,
-};
+use actix_service::Service;
+use actix_web::{error::JsonPayloadError, App, HttpRequest, HttpServer};
 use paperclip::{
     actix::{web, OpenApiExt},
     v2::models::{Api, Info},
@@ -18,15 +13,12 @@ use paperclip::{
 use log::*;
 
 fn json_error_handler(error: JsonPayloadError, _: &HttpRequest) -> actix_web::Error {
-    warn!("Problem with json: {}", error.to_string());
-    match error {
-        JsonPayloadError::Overflow => JsonPayloadError::Overflow.into(),
-        _ => ErrorBadRequest(error.to_string()),
-    }
+    warn!("Problem with json: {error}");
+    error.into()
 }
 
 // Start REST API server with the desired address
-pub fn run(server_address: &str) {
+pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
     let webrtc_available = is_webrtcsink_available();
     if webrtc_available {
         // Start WebRTC signalling server before the HTTP so it can answer any request comming from the http front-end.
@@ -40,8 +32,6 @@ pub fn run(server_address: &str) {
 
     let server_address = server_address.to_string();
 
-    // Start HTTP server thread
-    let _ = System::new("http-server");
     HttpServer::new(move || {
         let mut app = App::new();
 
@@ -78,7 +68,7 @@ pub fn run(server_address: &str) {
         .with_json_spec_at("/docs.json")
         .with_swagger_ui_at("/docs")
         // Record services and routes for paperclip OpenAPI plugin for Actix.
-        .data(web::JsonConfig::default().error_handler(json_error_handler))
+        .app_data(web::JsonConfig::default().error_handler(json_error_handler))
         .route("/", web::get().to(pages::root))
         .route(
             r"/{filename:.*(\.html|\.js|\.css)}",
@@ -99,5 +89,6 @@ pub fn run(server_address: &str) {
     })
     .bind(server_address)
     .unwrap()
-    .run();
+    .run()
+    .await
 }
