@@ -3,6 +3,7 @@ use crate::{
     video::{
         types::{VideoEncodeType, VideoSourceType},
         video_source_gst::VideoSourceGstType,
+        video_source_local::VideoSourceLocalType,
     },
 };
 use crate::{
@@ -87,26 +88,16 @@ impl Pipeline {
                     )));
                 }
             },
-            VideoSourceType::Local(local_device) => {
-                match &local_device.typ {
-                    crate::video::video_source_local::VideoSourceLocalType::Usb(_) => {
-                        format!("v4l2src device={}", &local_device.device_path)
-                    }
-                    // For raspberry pi cameras (in Legacy Mode), rpicamsrc
-                    // is used to be used insted v4l2src as a workaround to
-                    // prevent Kernel Oops caused by setting a unsupported but
-                    // wrongly stated as supported by v4l2 Frame Size and/or
-                    // FPS.
-                    crate::video::video_source_local::VideoSourceLocalType::LegacyRpiCam(_) => {
-                        format!("rpicamsrc camera-number=0")
-                    }
-                    typ => {
-                        return Err(SimpleError::new(format!(
-                            "Unsuported VideoSourceLocal: {typ:#?}."
-                        )))
-                    }
+            VideoSourceType::Local(local_device) => match &local_device.typ {
+                VideoSourceLocalType::Usb(_) | VideoSourceLocalType::LegacyRpiCam(_) => {
+                    format!("v4l2src device={}", &local_device.device_path)
                 }
-            }
+                typ => {
+                    return Err(SimpleError::new(format!(
+                        "Unsuported VideoSourceLocal: {typ:#?}."
+                    )))
+                }
+            },
             video_source_type => {
                 return Err(SimpleError::new(format!(
                     "Unsupported VideoSourceType: {video_source_type:#?}.",
