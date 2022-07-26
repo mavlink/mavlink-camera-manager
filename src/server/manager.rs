@@ -52,6 +52,7 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
             let fut = srv.call(req);
             async { Ok(fut.await?) }
         })
+        .wrap(actix_web::middleware::Logger::default())
         .wrap_api_with_spec(Api {
             info: Info {
                 version: format!(
