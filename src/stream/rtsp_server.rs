@@ -8,7 +8,7 @@ use gstreamer_rtsp_server;
 use gstreamer_rtsp_server::prelude::{
     RTSPMediaFactoryExt, RTSPMountPointsExt, RTSPServerExt, RTSPServerExtManual,
 };
-use simple_error::SimpleError;
+use simple_error::{simple_error, SimpleResult};
 
 #[allow(dead_code)]
 pub struct RTSPServer {
@@ -89,7 +89,7 @@ impl RTSPServer {
         }
     }
 
-    pub fn add_pipeline(pipeline_description: &str, path: &str) -> Result<(), SimpleError> {
+    pub fn add_pipeline(pipeline_description: &str, path: &str) -> SimpleResult<()> {
         // Initialize the singleton before calling gstreamer factory
         let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
 
@@ -101,7 +101,7 @@ impl RTSPServer {
             .path_to_factory
             .insert(path.to_string(), factory)
         {
-            Some(server) => Err(SimpleError::new(format!("Error: required path already exists! The older was updated with the new configurations: {server:#?}"))),
+            Some(server) => Err(simple_error!(format!("Error: required path already exists! The older was updated with the new configurations: {server:#?}"))),
             None => Ok(())
         }
     }

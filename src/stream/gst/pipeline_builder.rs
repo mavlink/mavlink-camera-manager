@@ -15,7 +15,7 @@ use crate::{
     video_stream::types::VideoAndStreamInformation,
 };
 use log::*;
-use simple_error::SimpleError;
+use simple_error::{simple_error, SimpleResult};
 
 #[derive(Clone, Debug, Default)]
 pub struct Pipeline {
@@ -23,13 +23,11 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    pub fn new(
-        video_and_stream_information: &VideoAndStreamInformation,
-    ) -> Result<Self, SimpleError> {
-        let source = Pipeline::build_pipeline_source(&video_and_stream_information)?;
-        let transcode = Pipeline::build_pipeline_transcode(&video_and_stream_information)?;
-        let payload = Pipeline::build_pipeline_payload(&video_and_stream_information)?;
-        let sink = Pipeline::build_pipeline_sink(&video_and_stream_information)?;
+    pub fn new(video_and_stream_information: &VideoAndStreamInformation) -> SimpleResult<Self> {
+        let source = Pipeline::build_pipeline_source(video_and_stream_information)?;
+        let transcode = Pipeline::build_pipeline_transcode(video_and_stream_information)?;
+        let payload = Pipeline::build_pipeline_payload(video_and_stream_information)?;
+        let sink = Pipeline::build_pipeline_sink(video_and_stream_information)?;
 
         let description = format!("{source}{transcode}{payload}{sink}");
 
@@ -40,7 +38,7 @@ impl Pipeline {
 
     fn build_capability_string(
         video_and_stream_information: &VideoAndStreamInformation,
-    ) -> Result<String, SimpleError> {
+    ) -> SimpleResult<String> {
         let configuration =
             Pipeline::get_video_capture_configuration(&video_and_stream_information)?;
 
@@ -57,7 +55,7 @@ impl Pipeline {
                 VideoEncodeType::YUYV => "video/x-raw,format=YUY2",
                 VideoEncodeType::MJPG => "image/jpeg",
                 video_encode_type => {
-                    return Err(SimpleError::new(format!(
+                    return Err(simple_error!(format!(
                         "Unsupported VideoEncodeType: {video_encode_type:#?}",
                     )))
                 }
@@ -78,12 +76,12 @@ impl Pipeline {
 
     fn build_pipeline_source(
         video_and_stream_information: &VideoAndStreamInformation,
-    ) -> Result<String, SimpleError> {
+    ) -> SimpleResult<String> {
         let pipeline_source = match &video_and_stream_information.video_source {
             VideoSourceType::Gst(gst_source) => match &gst_source.source {
                 VideoSourceGstType::Fake(pattern) => format!("videotestsrc pattern={pattern}"),
                 VideoSourceGstType::Local(_) => {
-                    return Err(SimpleError::new(format!(
+                    return Err(simple_error!(format!(
                         "Unsupported GST source endpoint: {gst_source:#?}",
                     )));
                 }
@@ -93,13 +91,13 @@ impl Pipeline {
                     format!("v4l2src device={}", &local_device.device_path)
                 }
                 typ => {
-                    return Err(SimpleError::new(format!(
+                    return Err(simple_error!(format!(
                         "Unsuported VideoSourceLocal: {typ:#?}."
                     )))
                 }
             },
             video_source_type => {
-                return Err(SimpleError::new(format!(
+                return Err(simple_error!(format!(
                     "Unsupported VideoSourceType: {video_source_type:#?}.",
                 )));
             }
@@ -111,7 +109,7 @@ impl Pipeline {
 
     fn build_pipeline_transcode(
         video_and_stream_information: &VideoAndStreamInformation,
-    ) -> Result<String, SimpleError> {
+    ) -> SimpleResult<String> {
         if Pipeline::is_webrtcsink(&video_and_stream_information) {
             return Ok(concat!(
                 // WebRTCSink requires a raw sink, so whatever is the source's
@@ -147,7 +145,7 @@ impl Pipeline {
                 _ => "",
             },
             video_source_type => {
-                return Err(SimpleError::new(format!(
+                return Err(simple_error!(format!(
                     "Unsupported VideoSourceType: {video_source_type:#?}.",
                 )));
             }
@@ -157,7 +155,7 @@ impl Pipeline {
 
     fn build_pipeline_payload(
         video_and_stream_information: &VideoAndStreamInformation,
-    ) -> Result<String, SimpleError> {
+    ) -> SimpleResult<String> {
         if Pipeline::is_webrtcsink(&video_and_stream_information) {
             // WebRTCSink requires no payload.
             return Ok("".to_string());
@@ -184,7 +182,7 @@ impl Pipeline {
             ),
             VideoEncodeType::MJPG => " ! rtpjpegpay name=pay0 pt=96",
             video_encode_type => {
-                return Err(SimpleError::new(format!(
+                return Err(simple_error!(format!(
                     "Unsupported VideoEncodeType: {video_encode_type:#?}"
                 )))
             }
@@ -194,7 +192,7 @@ impl Pipeline {
 
     fn build_pipeline_sink(
         video_and_stream_information: &VideoAndStreamInformation,
-    ) -> Result<String, SimpleError> {
+    ) -> SimpleResult<String> {
         if Pipeline::is_webrtcsink(&video_and_stream_information) {
             let (stun_endpoint, turn_endpoint, signalling_endpoint) =
                 Pipeline::build_webrtc_endpoints(&video_and_stream_information)?;
@@ -235,7 +233,7 @@ impl Pipeline {
 
     fn build_webrtc_endpoints(
         video_and_stream_information: &VideoAndStreamInformation,
-    ) -> Result<(url::Url, url::Url, url::Url), SimpleError> {
+    ) -> SimpleResult<(url::Url, url::Url, url::Url)> {
         let endpoints = &video_and_stream_information.stream_information.endpoints;
         let mut stun_endpoint = url::Url::parse(DEFAULT_STUN_ENDPOINT).unwrap();
         let mut turn_endpoint = url::Url::parse(DEFAULT_TURN_ENDPOINT).unwrap();
@@ -247,7 +245,7 @@ impl Pipeline {
                 "turn" => turn_endpoint = endpoint.to_owned(),
                 "ws" => signalling_endpoint = endpoint.to_owned(),
                 _ => {
-                    return Err(SimpleError::new(format!(
+                    return Err(simple_error!(format!(
                         "Only 'webrtc://', 'stun://', 'turn://' and 'ws://' schemes are accepted. {usage_hint}. The scheme passed was: {scheme:#?}\"",
                         usage_hint=webrtc_usage_hint(),
                         scheme=endpoint.scheme()
@@ -275,15 +273,15 @@ impl Pipeline {
 
     fn get_video_capture_configuration(
         video_and_stream_information: &VideoAndStreamInformation,
-    ) -> Result<&VideoCaptureConfiguration, SimpleError> {
+    ) -> SimpleResult<&VideoCaptureConfiguration> {
         let configuration = match &video_and_stream_information
             .stream_information
             .configuration
         {
             crate::stream::types::CaptureConfiguration::VIDEO(configuration) => configuration,
             crate::stream::types::CaptureConfiguration::REDIRECT(_) => {
-                return Err(SimpleError::new(
-                    "Error: Cannot create a pipeline from a REDIRECT source!",
+                return Err(simple_error!(
+                    "Error: Cannot create a pipeline from a REDIRECT source!"
                 ))
             }
         };

@@ -6,7 +6,7 @@ use crate::settings;
 use crate::video::types::VideoSourceType;
 use crate::video_stream::types::VideoAndStreamInformation;
 use log::*;
-use simple_error::SimpleError;
+use simple_error::{simple_error, SimpleResult};
 use std::sync::{Arc, Mutex};
 
 #[allow(dead_code)]
@@ -98,7 +98,7 @@ pub fn streams() -> Vec<StreamStatus> {
 
 pub fn add_stream_and_start(
     video_and_stream_information: VideoAndStreamInformation,
-) -> Result<(), SimpleError> {
+) -> SimpleResult<()> {
     //TODO: Check if stream can handle caps
     let mut manager = MANAGER.as_ref().lock().unwrap();
 
@@ -131,7 +131,7 @@ pub fn add_stream_and_start(
     return Ok(());
 }
 
-pub fn remove_stream(stream_name: &str) -> Result<(), SimpleError> {
+pub fn remove_stream(stream_name: &str) -> SimpleResult<()> {
     let find_stream = |stream: &Stream| stream.video_and_stream_information.name == *stream_name;
 
     let mut manager = MANAGER.as_ref().lock().unwrap();
@@ -146,9 +146,7 @@ pub fn remove_stream(stream_name: &str) -> Result<(), SimpleError> {
             settings::manager::set_streams(&video_and_stream_informations);
             Ok(())
         }
-        None => Err(SimpleError::new(
-            "Identification does not match any stream.",
-        )),
+        None => Err(simple_error!("Identification does not match any stream.")),
     }
 }
 
