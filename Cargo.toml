@@ -23,35 +23,34 @@ path = "src/main.rs"
 
 [dependencies]
 clap = "2"
-regex = "1.5.4"
+regex = "1.6.0"
 
 #TODO: Investigate rweb to use openapi spec for free
 # https://github.com/kdy1/rweb
 actix-files = "0.5.0"
 actix-web = "3.3.3"
 actix-service = "1.0.6"
-serde = "1.0.133"
-serde_derive = "1.0.133"
-serde_json = "1.0.75"
+serde = { version = "1.0.140", features = ["derive"] }
+serde_json = "1.0.82"
 
 ## FINAL
 sys-info = "0.9.1"
 chrono = "0.4.19"
 env_logger = "0.9.0"
 lazy_static = "1.4.0"
-log = "0.4.16"
+log = "0.4.17"
 paperclip = { version = "0.6.1", features = ["actix", "swagger-ui", "url"] }
 #TODO: Replace it with yaserde
-quick-xml = { version = "0.22.0", features = ["serialize"] }
+quick-xml = { version = "0.23.0", features = ["serialize"] }
 simple-error = "0.2.3"
 url = { version = "2.2.2", features = ["serde"] }
 v4l = "0.12.1"
 directories = "4.0.1"
-pnet = "0.29.0"
-semver = "1.0.7"
+pnet = { version = "0.31.0", features = ["std"] }
+semver = "1.0.12"
 
 ## Mavlink
-mavlink = { version = "0.10.0", features = ["default", "emit-extensions"] }
+mavlink = { version = "0.10.1", features = ["default", "emit-extensions"] }
 
 ## GSTREAMER
 glib = { version = "0.15.2", optional = true }
@@ -62,17 +61,17 @@ gstreamer-rtsp-server = { version = "0.18.0", optional = true }
 anyhow = "1"
 async-std = "1"
 async-native-tls = "0.4"
-tokio = "1.19"
+tokio = "1.20"
 turn = "0.5"
 util = { package = "webrtc-util", version = "0.5", default-features = false, features = ["vnet"] }
 webrtcsink-signalling = { version = "0.1.0", git = "https://github.com/centricular/webrtcsink", rev = "2c855b9cfe1cf10c7447aa6ca5e3d5444e2459e0" }
 
 [dev-dependencies]
-rand = "0.8.4"
+rand = "0.8.5"
 
 [build-dependencies]
-reqwest = { version = "0.11.9", features = ["blocking"] }
-vergen = { version = "6.0.0", default-features = false, features = ["build", "git"] }
+reqwest = { version = "0.11.11", features = ["blocking"] }
+vergen = { version = "7.3.1", default-features = false, features = ["build", "git"] }
 
 [features]
 default = ["rtsp"]
