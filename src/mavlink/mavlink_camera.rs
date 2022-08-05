@@ -8,7 +8,6 @@ use simple_error::SimpleError;
 use url::Url;
 
 use std::convert::TryInto;
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 lazy_static! {
@@ -21,12 +20,18 @@ pub struct MavlinkCameraComponent {
     // MAVLink specific information
     system_id: u8,
     component_id: u8,
+    stream_id: u8,
 
     vendor_name: String,
     model_name: String,
     firmware_version: u32,
-    resolution_h: f32,
-    resolution_v: f32,
+    resolution_h: u16,
+    resolution_v: u16,
+    framerate: f32,
+    bitrate: u32,
+    rotation: u16,
+    hfov: u16,
+    thermal: bool,
 }
 
 #[derive(Clone)]
@@ -35,8 +40,8 @@ pub struct MavlinkCameraInformation {
     mavlink_connection_string: String,
     mavlink_stream_type: mavlink::common::VideoStreamType,
     video_stream_uri: Url,
+    video_stream_name: String,
     video_source_type: VideoSourceType,
-    thermal: bool,
     vehicle: Arc<Box<dyn mavlink::MavConnection<mavlink::common::MavMessage> + Sync + Send>>,
 }
 
@@ -66,7 +71,6 @@ impl std::fmt::Debug for MavlinkCameraInformation {
             .field("mavlink_stream_type", &self.mavlink_stream_type)
             .field("video_stream_uri", &self.video_stream_uri)
             .field("video_source_type", &self.video_source_type)
-            .field("thermal", &self.thermal)
             .finish()
     }
 }
@@ -127,6 +131,26 @@ impl MavlinkCameraInformation {
             thermal,
             vehicle: Arc::new(mavlink::connect(&mavlink_connection_string).unwrap()),
         }
+
+    pub fn cam_definition_uri(&self) -> Option<Url> {
+        // Get the current remotely accessible link (from default interface)
+        // to our camera XML file.
+        // This can't be a parameter because the default network route might
+        // change between the time of the MavlinkCameraInformation creation
+        // and the time MAVLink connection is negotiated with the other MAVLink
+        // systems.
+        let visible_qgc_ip_address = network::utils::get_ipv4_addresses()
+            .last()
+            .unwrap_or(&std::net::Ipv4Addr::UNSPECIFIED)
+            .to_string();
+        let server_port = cli::manager::server_address()
+            .split(':')
+            .collect::<Vec<&str>>()[1];
+        let video_source_path = self.video_source_type.inner().source_string();
+        Url::parse(&format!(
+            "http://{visible_qgc_ip_address}:{server_port}/xml?file={video_source_path}"
+        ))
+        .ok()
     }
 }
 
@@ -722,33 +746,13 @@ fn heartbeat_message() -> mavlink::common::MavMessage {
     })
 }
 
-fn camera_information(
-    vendor_name: &str,
-    model_name: &str,
-    http_server_address: &str,
-    video_source_path: &str,
-) -> mavlink::common::MavMessage {
-    // Create a fixed size array with the camera name
-    let name_str = String::from(vendor_name);
-    let mut vendor_name: [u8; 32] = [0; 32];
-    for index in 0..name_str.len() as usize {
-        vendor_name[index] = name_str.as_bytes()[index];
-    }
-
-    let name_str = String::from(model_name);
-    let mut model_name: [u8; 32] = [0; 32];
-    for index in 0..name_str.len() as usize {
-        model_name[index] = name_str.as_bytes()[index];
-    }
-
-    // Send path to our camera configuration file
-    let uri = format!(
-        r"http://{}/xml?file={}",
-        http_server_address, video_source_path
+fn camera_information(information: &MavlinkCameraInformation) -> mavlink::common::MavMessage {
+    let vendor_name = from_string_to_u8_array_with_size_32(&information.component.vendor_name);
+    let model_name = from_string_to_u8_array_with_size_32(&information.component.vendor_name);
+    let cam_definition_uri = from_string_to_vec_char_with_defined_size_and_null_terminator(
+        &information.cam_definition_uri().unwrap().to_string(),
+        140,
     );
-
-    warn!("URI: {}", uri);
-    let uri: Vec<char> = uri.chars().collect();
 
     let sys_info = sys_info();
 
@@ -759,13 +763,13 @@ fn camera_information(
         sensor_size_h: 0.0,
         sensor_size_v: 0.0,
         flags: mavlink::common::CameraCapFlags::CAMERA_CAP_FLAGS_HAS_VIDEO_STREAM,
-        resolution_h: 0,
-        resolution_v: 0,
+        resolution_h: information.component.resolution_h,
+        resolution_v: information.component.resolution_v,
         cam_definition_version: 0,
         vendor_name,
         model_name,
         lens_id: 0,
-        cam_definition_uri: uri,
+        cam_definition_uri,
     })
 }
 
@@ -812,41 +816,63 @@ fn camera_capture_status() -> mavlink::common::MavMessage {
     )
 }
 
-fn video_stream_information(
-    video_name: &str,
-    video_uri: &str,
-    mavtype: mavlink::common::VideoStreamType,
-    thermal: bool,
-) -> mavlink::common::MavMessage {
-    let name_str = String::from(video_name);
-    let mut name: [char; 32] = ['\0'; 32];
-    for index in 0..name_str.len() as u32 {
-        name[index as usize] = name_str.as_bytes()[index as usize] as char;
-    }
-
-    let uri: Vec<char> = format!("{}\0", video_uri).chars().collect();
-
-    let flags = if thermal {
-        mavlink::common::VideoStreamStatusFlags::VIDEO_STREAM_STATUS_FLAGS_THERMAL
-    } else {
-        mavlink::common::VideoStreamStatusFlags::VIDEO_STREAM_STATUS_FLAGS_RUNNING
-    };
+fn video_stream_information(information: &MavlinkCameraInformation) -> mavlink::common::MavMessage {
+    let name = from_string_to_char_array_with_size_32(&information.video_stream_name);
+    let uri = from_string_to_vec_char_with_defined_size_and_null_terminator(
+        &information.video_stream_uri.to_string(),
+        140,
+    );
 
     //The only important information here is the mavtype and uri variables, everything else is fake
     mavlink::common::MavMessage::VIDEO_STREAM_INFORMATION(
         mavlink::common::VIDEO_STREAM_INFORMATION_DATA {
-            framerate: 30.0,
-            bitrate: 1000,
-            flags: flags,
-            resolution_h: 1000,
-            resolution_v: 1000,
-            rotation: 0,
-            hfov: 0,
-            stream_id: 1, // Starts at 1, 0 is for broadcast
+            framerate: information.component.framerate,
+            bitrate: information.component.bitrate,
+            flags: get_stream_status_flag(&information.component),
+            resolution_h: information.component.resolution_h,
+            resolution_v: information.component.resolution_v,
+            rotation: information.component.rotation,
+            hfov: information.component.hfov,
+            stream_id: information.component.stream_id,
             count: 0,
-            mavtype: mavtype,
+            mavtype: information.mavlink_stream_type,
             name,
             uri,
         },
     )
+}
+
+fn from_string_to_u8_array_with_size_32(src: &String) -> [u8; 32] {
+    let bytes = src.as_bytes();
+    let mut dst = [0u8; 32];
+    let len = std::cmp::min(bytes.len(), 32);
+    dst[..len].copy_from_slice(&bytes[..len]);
+    dst
+}
+
+fn from_string_to_char_array_with_size_32(src: &String) -> [char; 32] {
+    let chars: Vec<char> = src.chars().collect();
+    let mut dst = ['\0'; 32];
+    let len = std::cmp::min(chars.len(), 32);
+    dst[..len].copy_from_slice(&chars[..len]);
+    dst
+}
+
+fn from_string_to_vec_char_with_defined_size_and_null_terminator(
+    src: &String,
+    size: usize,
+) -> Vec<char> {
+    let mut uri = src.chars().collect::<Vec<char>>();
+    uri.truncate(size);
+    uri.push('\0');
+    uri
+}
+
+fn get_stream_status_flag(
+    component: &MavlinkCameraComponent,
+) -> mavlink::common::VideoStreamStatusFlags {
+    match component.thermal {
+        true => mavlink::common::VideoStreamStatusFlags::VIDEO_STREAM_STATUS_FLAGS_THERMAL,
+        false => mavlink::common::VideoStreamStatusFlags::VIDEO_STREAM_STATUS_FLAGS_RUNNING,
+    }
 }
