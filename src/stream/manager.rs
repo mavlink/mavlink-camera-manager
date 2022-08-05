@@ -110,44 +110,9 @@ pub fn add_stream_and_start(
         }
     }
 
-    let endpoint = video_and_stream_information
-        .stream_information
-        .endpoints
-        .first()
-        .unwrap() // We have an endpoint since we have passed the point of stream creation
-        .clone();
-
     let mut stream = stream_backend::new(&video_and_stream_information)?;
-    let mavtype: mavlink::common::VideoStreamType = match &stream {
-        StreamType::UDP(_) => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP,
-        StreamType::RTSP(_) => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
-        StreamType::REDIRECT(video_strem_redirect) => match video_strem_redirect.scheme.as_str() {
-            "rtsp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
-            "mpegts" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_MPEG_TS_H264,
-            "tcp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_TCP_MPEG,
-            "udp" | _ => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP,
-        },
-        // TODO: update WEBRTC arm with the correct type once mavlink starts to support it.
-        // Note: For now this is fine because most of the clients doesn't seems to be using mavtype to determine the stream type,
-        // instead, they're parsing the URI's scheme itself, so as long as we pass a known scheme, it should be enough.
-        StreamType::WEBRTC(_) => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
-    };
 
-    let mavlink_camera = if settings::manager::mavlink_endpoint().is_some() {
-        Some(MavlinkCameraHandle::new(
-            video_and_stream_information.video_source.clone(),
-            endpoint,
-            mavtype,
-            video_and_stream_information
-                .stream_information
-                .extended_configuration
-                .clone()
-                .unwrap_or_default()
-                .thermal,
-        ))
-    } else {
-        None
-    };
+    let mavlink_camera = MavlinkCameraHandle::try_new(&video_and_stream_information, &stream);
 
     stream.mut_inner().start();
     manager.streams.push(Stream {

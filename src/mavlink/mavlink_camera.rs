@@ -1,7 +1,9 @@
 use crate::cli;
 use crate::network;
 use crate::settings;
+use crate::stream::types::StreamType;
 use crate::video::types::VideoSourceType;
+use crate::video_stream::types::VideoAndStreamInformation;
 
 use log::*;
 use simple_error::SimpleError;
@@ -75,9 +77,9 @@ impl std::fmt::Debug for MavlinkCameraInformation {
     }
 }
 
-impl Default for MavlinkCameraComponent {
-    fn default() -> Self {
-        let mut vector = ID_CONTROL.as_ref().lock().unwrap();
+impl MavlinkCameraComponent {
+    fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Option<Self> {
+        let mut vector = ID_CONTROL.lock().unwrap();
 
         // Find the closer ID available
         let mut id: u8 = 0;
@@ -91,16 +93,45 @@ impl Default for MavlinkCameraComponent {
             }
         }
 
-        Self {
+        let (resolution_h, resolution_v, framerate) = match &video_and_stream_information
+            .stream_information
+            .configuration
+        {
+            crate::stream::types::CaptureConfiguration::VIDEO(cfg) => {
+                let framerate =
+                    cfg.frame_interval.denominator as f32 / cfg.frame_interval.numerator as f32;
+                (cfg.height as u16, cfg.width as u16, framerate)
+            }
+            crate::stream::types::CaptureConfiguration::REDIRECT(_) => (0, 0, 0.0),
+        };
+
+        let thermal = video_and_stream_information
+            .stream_information
+            .extended_configuration
+            .clone()
+            .unwrap_or_default()
+            .thermal;
+
+        Some(Self {
             system_id: 1,
             component_id: mavlink::common::MavComponent::MAV_COMP_ID_CAMERA as u8 + id,
+            stream_id: 1, // Starts at 1, 0 is for broadcast.
 
-            vendor_name: Default::default(),
-            model_name: Default::default(),
+            vendor_name: video_and_stream_information
+                .video_source
+                .inner()
+                .name()
+                .to_string(), // TODO: see what is more appropriate
+            model_name: video_and_stream_information.name.clone(), // TODO: see what is more appropriate
             firmware_version: 0,
-            resolution_h: 0.0,
-            resolution_v: 0.0,
-        }
+            resolution_h,
+            resolution_v,
+            bitrate: 5000,
+            rotation: 0,
+            hfov: 90,
+            framerate,
+            thermal,
+        })
     }
 }
 
@@ -108,29 +139,72 @@ impl Drop for MavlinkCameraComponent {
     fn drop(&mut self) {
         // Remove id from used ids
         let id = self.component_id - mavlink::common::MavComponent::MAV_COMP_ID_CAMERA as u8;
-        let mut vector = ID_CONTROL.as_ref().lock().unwrap();
+        let mut vector = ID_CONTROL.lock().unwrap();
         let position = vector.iter().position(|&vec_id| vec_id == id).unwrap();
         vector.remove(position);
     }
 }
 
+impl From<&StreamType> for mavlink::common::VideoStreamType {
+    fn from(stream: &StreamType) -> Self {
+        match stream {
+            StreamType::UDP(_) => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP,
+            StreamType::RTSP(_) => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
+            StreamType::REDIRECT(video_strem_redirect) => {
+                match video_strem_redirect.scheme.as_str() {
+                    "rtsp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
+                    "mpegts" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_MPEG_TS_H264,
+                    "tcp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_TCP_MPEG,
+                    "udp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP,
+                    format @ _ => {
+                        debug!("Unknown format: {format:#?}, using UDP as fallback.");
+                        mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP
+                    }
+                }
+            }
+            // TODO: update WEBRTC arm with the correct type once mavlink starts to support it.
+            // Note: For now this is fine because most of the clients doesn't seems to be using mavtype to determine the stream type,
+            // instead, they're parsing the URI's scheme itself, so as long as we pass a known scheme, it should be enough.
+            StreamType::WEBRTC(_) => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
+        }
+    }
+}
+
 impl MavlinkCameraInformation {
-    fn new(
-        video_source_type: VideoSourceType,
-        mavlink_connection_string: &str,
-        video_stream_uri: Url,
-        mavlink_stream_type: mavlink::common::VideoStreamType,
-        thermal: bool,
-    ) -> Self {
-        Self {
-            component: Default::default(),
-            mavlink_connection_string: mavlink_connection_string.into(),
+    fn try_new(
+        video_and_stream_information: &VideoAndStreamInformation,
+        stream: &StreamType,
+    ) -> Option<Self> {
+        let video_stream_uri = video_and_stream_information
+            .stream_information
+            .endpoints
+            .first()?
+            .to_owned();
+
+        let video_stream_name = video_and_stream_information.name.clone();
+
+        let mavlink_stream_type = mavlink::common::VideoStreamType::from(stream);
+        let video_source_type = video_and_stream_information.video_source.clone();
+
+        let component = MavlinkCameraComponent::try_new(video_and_stream_information)?;
+
+        let mavlink_connection_string = settings::manager::mavlink_endpoint()?;
+        let vehicle = Arc::new(mavlink::connect(&mavlink_connection_string).unwrap());
+
+        let this = Self {
+            component,
+            mavlink_connection_string,
             mavlink_stream_type,
             video_stream_uri,
+            video_stream_name,
             video_source_type,
-            thermal,
-            vehicle: Arc::new(mavlink::connect(&mavlink_connection_string).unwrap()),
-        }
+            vehicle,
+        };
+
+        debug!("Starting new MAVLink camera: {this:#?}");
+
+        Some(this)
+    }
 
     pub fn cam_definition_uri(&self) -> Option<Url> {
         // Get the current remotely accessible link (from default interface)
@@ -155,25 +229,15 @@ impl MavlinkCameraInformation {
 }
 
 impl MavlinkCameraHandle {
-    pub fn new(
-        video_source_type: VideoSourceType,
-        endpoint: Url,
-        mavlink_stream_type: mavlink::common::VideoStreamType,
-        thermal: bool,
-    ) -> Self {
-        debug!(
-            "Starting new MAVLink camera device for: {:#?}, endpoint: {}",
-            video_source_type, endpoint
-        );
-
+    pub fn try_new(
+        video_and_stream_information: &VideoAndStreamInformation,
+        stream: &StreamType,
+    ) -> Option<Self> {
         let mavlink_camera_information: Arc<Mutex<MavlinkCameraInformation>> =
-            Arc::new(Mutex::new(MavlinkCameraInformation::new(
-                video_source_type,
-                &settings::manager::mavlink_endpoint().unwrap(),
-                endpoint,
-                mavlink_stream_type,
-                thermal,
-            )));
+            Arc::new(Mutex::new(MavlinkCameraInformation::try_new(
+                video_and_stream_information,
+                stream,
+            )?));
 
         let thread_state = Arc::new(Mutex::new(ThreadState::RUNNING));
 
@@ -183,25 +247,23 @@ impl MavlinkCameraHandle {
         let heartbeat_state = thread_state.clone();
         let receive_message_state = thread_state.clone();
 
-        Self {
-            mavlink_camera_information: mavlink_camera_information.clone(),
-            thread_state: thread_state.clone(),
+        Some(Self {
+            mavlink_camera_information,
+            thread_state,
             heartbeat_thread: std::thread::spawn(move || {
-                heartbeat_loop(heartbeat_state.clone(), heartbeat_mavlink_information)
+                heartbeat_loop(heartbeat_state, heartbeat_mavlink_information)
             }),
             receive_message_thread: std::thread::spawn(move || {
-                receive_message_loop(
-                    receive_message_state.clone(),
-                    receive_message_mavlink_information,
-                )
+                receive_message_loop(receive_message_state, receive_message_mavlink_information)
             }),
-        }
+        })
     }
 }
 
 impl Drop for MavlinkCameraHandle {
     fn drop(&mut self) {
-        let mut state = self.thread_state.as_ref().lock().unwrap();
+        debug!("Dropping {self:#?}");
+        let mut state = self.thread_state.lock().unwrap();
         *state = ThreadState::DEAD;
     }
 }
