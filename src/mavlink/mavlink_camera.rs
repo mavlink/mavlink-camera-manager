@@ -274,16 +274,16 @@ fn heartbeat_loop(
     mavlink_camera_information: Arc<Mutex<MavlinkCameraInformation>>,
 ) {
     let mut header = mavlink::MavHeader::default();
-    let mavlink_camera_information = mavlink_camera_information.as_ref().lock().unwrap();
-    header.system_id = mavlink_camera_information.component.system_id;
-    header.component_id = mavlink_camera_information.component.component_id;
-    let vehicle = mavlink_camera_information.vehicle.clone();
-    drop(mavlink_camera_information);
+    let information = mavlink_camera_information.lock().unwrap();
+    header.system_id = information.component.system_id;
+    header.component_id = information.component.component_id;
+    let vehicle = information.vehicle.clone();
+    drop(information);
 
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let mut heartbeat_state = atomic_thread_state.as_ref().lock().unwrap().clone();
+        let mut heartbeat_state = atomic_thread_state.lock().unwrap().clone();
         if heartbeat_state == ThreadState::ZOMBIE {
             continue;
         }
@@ -299,9 +299,16 @@ fn heartbeat_loop(
             continue;
         }
 
-        debug!("sending heartbeat");
+        trace!(
+            "Sent heartbeat as {:#?}:{:#?}.",
+            header.system_id,
+            header.component_id
+        );
         if let Err(error) = vehicle.as_ref().send(&header, &heartbeat_message()) {
-            error!("Failed to send heartbeat: {:?}", error);
+            error!(
+                "Failed to send heartbeat as {:#?}:{:#?}. Reason: {error}",
+                header.system_id, header.component_id
+            );
         }
     }
 }
@@ -310,16 +317,15 @@ fn receive_message_loop(
     atomic_thread_state: Arc<Mutex<ThreadState>>,
     mavlink_camera_information: Arc<Mutex<MavlinkCameraInformation>>,
 ) {
-    let mut header = mavlink::MavHeader::default();
-    let information = mavlink_camera_information.as_ref().lock().unwrap();
-    header.system_id = information.component.system_id;
-    header.component_id = information.component.component_id;
-
+    let mut our_header = mavlink::MavHeader::default();
+    let information = mavlink_camera_information.lock().unwrap();
+    our_header.system_id = information.component.system_id;
+    our_header.component_id = information.component.component_id;
     let vehicle = information.vehicle.clone();
     drop(information);
-    let vehicle = vehicle.as_ref();
+
     loop {
-        let loop_state = atomic_thread_state.as_ref().lock().unwrap().clone();
+        let loop_state = atomic_thread_state.lock().unwrap().clone();
         if loop_state == ThreadState::DEAD {
             break;
         }
@@ -901,7 +907,7 @@ fn control_value_from_param_value(
         ))),
     };
     if let Err(error) = control_value {
-        error!("Failed to parse parameter value: {error:#?}");
+        error!("Failed to parse parameter value: {error:#?}.");
         return None;
     }
     control_value.ok()
@@ -954,7 +960,7 @@ fn control_id_from_param_id(param_id: &[char; 16]) -> Option<u64> {
         .trim_end_matches(char::from(0))
         .parse::<u64>();
     if let Err(error) = control_id {
-        error!("Failed to parse control id: {error:#?}");
+        error!("Failed to parse control id: {error:#?}.");
         return None;
     }
     control_id.ok()
@@ -980,25 +986,25 @@ fn sys_info() -> SysInfo {
         }
 
         Err(error) => {
-            warn!("Failed to fetch disk info: {:#?}", error);
+            warn!("Failed to fetch disk info: {error:#?}.");
         }
     }
 
     let boottime_ms = match sys_info::boottime() {
         Ok(bootime) => bootime.tv_usec / 1000,
         Err(error) => {
-            warn!("Failed to fetch boottime info: {:#?}", error);
+            warn!("Failed to fetch boottime info: {error:#?}.");
             0
         }
     };
 
-    return SysInfo {
+    SysInfo {
         time_boot_ms: boottime_ms as u32,
         total_capacity: local_total_capacity as f32 / f32::powf(2.0, 10.0),
         used_capacity: ((local_total_capacity - local_available_capacity) as f32)
             / f32::powf(2.0, 10.0),
         available_capacity: local_available_capacity as f32 / f32::powf(2.0, 10.0),
-    };
+    }
 }
 
 //TODO: finish this messages
