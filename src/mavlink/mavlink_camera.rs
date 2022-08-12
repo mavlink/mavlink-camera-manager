@@ -254,15 +254,30 @@ impl MavlinkCameraHandle {
         let heartbeat_state = thread_state.clone();
         let receive_message_state = thread_state.clone();
 
+        let system_id = heartbeat_mavlink_information
+            .lock()
+            .unwrap()
+            .component
+            .system_id;
+        let component_id = heartbeat_mavlink_information
+            .lock()
+            .unwrap()
+            .component
+            .component_id;
+
         Some(Self {
             mavlink_camera_information,
             thread_state,
-            heartbeat_thread: std::thread::spawn(move || {
-                heartbeat_loop(heartbeat_state, heartbeat_mavlink_information)
-            }),
-            receive_message_thread: std::thread::spawn(move || {
-                receive_message_loop(receive_message_state, receive_message_mavlink_information)
-            }),
+            heartbeat_thread: std::thread::Builder::new()
+                .name(format!("heartbeat_{system_id:#?}:{component_id:#?}"))
+                .spawn(move || heartbeat_loop(heartbeat_state, heartbeat_mavlink_information))
+                .unwrap(),
+            receive_message_thread: std::thread::Builder::new()
+                .name(format!("receive_message_{system_id:#?}:{component_id:#?}"))
+                .spawn(move || {
+                    receive_message_loop(receive_message_state, receive_message_mavlink_information)
+                })
+                .unwrap(),
         })
     }
 }
