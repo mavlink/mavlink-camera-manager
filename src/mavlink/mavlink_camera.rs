@@ -194,9 +194,8 @@ impl MavlinkCameraInformation {
         let component = MavlinkCameraComponent::try_new(video_and_stream_information)?;
 
         let mavlink_connection_string = settings::manager::mavlink_endpoint()?;
-        let vehicle = Arc::new(RwLock::new(
-            mavlink::connect(&mavlink_connection_string).unwrap(),
-        ));
+
+        let vehicle = Arc::new(RwLock::new(connect(&component, &mavlink_connection_string)));
 
         let this = Self {
             component,
@@ -304,30 +303,30 @@ fn heartbeat_loop(
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let mut heartbeat_state = atomic_thread_state.lock().unwrap().clone();
-        if heartbeat_state == ThreadState::ZOMBIE {
+        if let Ok(state) = atomic_thread_state.lock().as_deref_mut() {
+            match state {
+                ThreadState::DEAD => break,
+                ThreadState::RUNNING => (),
+                ThreadState::RESTART => {
+                    *vehicle.write().as_deref_mut().unwrap() =
+                        reconnect(&mavlink_camera_information.lock().unwrap().clone());
+                    *state = ThreadState::RUNNING;
+                }
+                ThreadState::ZOMBIE => continue,
+            }
+        } else {
             continue;
         }
-        if heartbeat_state == ThreadState::DEAD {
-            break;
-        }
 
-        if heartbeat_state == ThreadState::RESTART {
-            heartbeat_state = ThreadState::RUNNING;
-            drop(heartbeat_state);
-
-            std::thread::sleep(std::time::Duration::from_secs(3));
-            continue;
-        }
-
-        trace!(
-            "Sent heartbeat as {:#?}:{:#?}.",
-            header.system_id,
-            header.component_id
-        );
-        if let Err(error) = vehicle.as_ref().send(&header, &heartbeat_message()) {
+        if let Err(error) = vehicle.read().unwrap().send(&header, &heartbeat_message()) {
             error!(
                 "Failed to send heartbeat as {:#?}:{:#?}. Reason: {error}",
+                header.system_id, header.component_id
+            );
+            *atomic_thread_state.lock().unwrap() = ThreadState::RESTART;
+        } else {
+            debug!(
+                "Sent heartbeat as {:#?}:{:#?}.",
                 header.system_id, header.component_id
             );
         }
@@ -346,9 +345,21 @@ fn receive_message_loop(
     drop(information);
 
     loop {
-        let loop_state = atomic_thread_state.lock().unwrap().clone();
-        if loop_state == ThreadState::DEAD {
-            break;
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        if let Ok(state) = atomic_thread_state.lock().as_deref_mut() {
+            match state {
+                ThreadState::DEAD => break,
+                ThreadState::RUNNING => (),
+                ThreadState::RESTART => {
+                    *vehicle.write().as_deref_mut().unwrap() =
+                        reconnect(&mavlink_camera_information.lock().unwrap().clone());
+                    *state = ThreadState::RUNNING;
+                }
+                ThreadState::ZOMBIE => continue,
+            }
+        } else {
+            continue;
         }
 
         match vehicle.read().unwrap().recv() {
@@ -815,6 +826,7 @@ fn receive_message_loop(
                 error!("Error receiving a message as {:#?}:{:#?}. Reason: {error:#?}. Camera: {information:#?}",
                     our_header.system_id, our_header.component_id
                 );
+                *atomic_thread_state.lock().unwrap() = ThreadState::RESTART;
             }
         }
     }
@@ -913,6 +925,48 @@ fn send_param_ext_ack(
             our_header.component_id
         );
     }
+}
+
+fn connect(
+    component: &MavlinkCameraComponent,
+    mavlink_connection_string: &str,
+) -> Box<dyn MavConnection<MavMessage> + Send + std::marker::Sync> {
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        match mavlink::connect(mavlink_connection_string) {
+            Ok(connection) => {
+                info!(
+                    "Component {:#?}:{:#?} successfully reconnected to MAVLink endpoint {:#?}.",
+                    component.system_id, component.component_id, mavlink_connection_string
+                );
+                return connection;
+            }
+            Err(error) => {
+                error!(
+                    "Component {:#?}:{:#?} failed to reconnect to MAVLink endpoint {:#?}, trying again in one second. Reason: {:#?}.",
+                    component.system_id, component.component_id,
+                    mavlink_connection_string,
+                    error.kind()
+                );
+            }
+        }
+    }
+}
+
+fn reconnect(
+    information: &MavlinkCameraInformation,
+) -> Box<dyn MavConnection<MavMessage> + Send + std::marker::Sync> {
+    debug!(
+        "Restarting connection of component {:#?}:{:#?} to MAVLink endpoint {:#?}.",
+        information.component.system_id,
+        information.component.component_id,
+        information.mavlink_connection_string
+    );
+    connect(
+        &information.component,
+        &information.mavlink_connection_string,
+    )
 }
 
 fn param_value_from_control_value(control_value: i64, length: usize) -> Vec<char> {
