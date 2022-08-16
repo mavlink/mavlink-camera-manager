@@ -158,9 +158,9 @@
                 },
                 checkResponse: async function(response) {
                     if (!response.ok) {
-                        const text = await response.text()
+                        const text = await response.text().replaceAll("\\n", "\n").replaceAll("\\\"", "\"")
                         console.warn(`Something went wrong: ${text}`)
-                        alert(text.replace("\\n", "\n"))
+                        alert(text)
                     } else {
                         const contentType = response.headers.get("content-type")
                         if(contentType && contentType.indexOf("application/json") !== -1) {
