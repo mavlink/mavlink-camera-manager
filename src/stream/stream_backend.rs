@@ -173,12 +173,6 @@ fn create_rtsp_stream(
             endpoint.scheme()
         )));
     }
-    if endpoint.host_str() != "0.0.0.0".into() {
-        return Err(simple_error!(format!(
-            "The URL's host for RTSP endpoints should be \"0.0.0.0\", but was: {:?}",
-            endpoint.host_str()
-        )));
-    }
     if endpoint.port() != Some(8554) {
         return Err(simple_error!(format!(
             "The URL's port for RTSP endpoints should be \"8554\", but was: {:?}",
