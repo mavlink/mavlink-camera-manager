@@ -146,6 +146,8 @@ impl Drop for MavlinkCameraComponent {
         let mut vector = ID_CONTROL.lock().unwrap();
         if let Some(position) = vector.iter().position(|&vec_id| vec_id == id) {
             vector.remove(position);
+        } else {
+            error!("Id {id} not found when Dropping MavlinkCameraComponent {self:#?}.");
         }
     }
 }
