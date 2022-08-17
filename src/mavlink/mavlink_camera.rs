@@ -321,6 +321,12 @@ fn heartbeat_loop(
         }
 
         if let Err(error) = vehicle.read().unwrap().send(&header, &heartbeat_message()) {
+            {
+                let mavlink::error::MessageWriteError::Io(io_error) = &error;
+                if io_error.kind() == std::io::ErrorKind::WouldBlock {
+                    continue;
+                }
+            }
             error!(
                 "Failed to send heartbeat as {:#?}:{:#?}. Reason: {error}",
                 header.system_id, header.component_id
@@ -825,6 +831,11 @@ fn receive_message_loop(
             }
             Err(error) => {
                 let information = mavlink_camera_information.lock().unwrap();
+                if let mavlink::error::MessageReadError::Io(io_error) = &error {
+                    if io_error.kind() == std::io::ErrorKind::WouldBlock {
+                        continue;
+                    }
+                }
                 error!("Error receiving a message as {:#?}:{:#?}. Reason: {error:#?}. Camera: {information:#?}",
                     our_header.system_id, our_header.component_id
                 );
