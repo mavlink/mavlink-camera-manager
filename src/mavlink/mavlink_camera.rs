@@ -325,6 +325,12 @@ fn heartbeat_loop(
                 "Failed to send heartbeat as {:#?}:{:#?}. Reason: {error}",
                 header.system_id, header.component_id
             );
+            {
+                let mavlink::error::MessageWriteError::Io(io_error) = &error;
+                if io_error.kind() == std::io::ErrorKind::WouldBlock {
+                    continue;
+                }
+            }
             *atomic_thread_state.lock().unwrap() = ThreadState::RESTART;
         } else {
             debug!(
@@ -830,6 +836,11 @@ fn receive_message_loop(
                 error!("Error receiving a message as {:#?}:{:#?}. Reason: {error:#?}. Camera: {information:#?}",
                     our_header.system_id, our_header.component_id
                 );
+                if let mavlink::error::MessageReadError::Io(io_error) = &error {
+                    if io_error.kind() == std::io::ErrorKind::WouldBlock {
+                        continue;
+                    }
+                }
                 *atomic_thread_state.lock().unwrap() = ThreadState::RESTART;
             }
         }
