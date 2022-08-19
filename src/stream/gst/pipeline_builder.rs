@@ -198,6 +198,9 @@ impl Pipeline {
                 Pipeline::build_webrtc_endpoints(&video_and_stream_information)?;
             let capability = "video/x-h264"; // We could also choose for video/x-vp9 here.
             let webrtc_name = &video_and_stream_information.name;
+            let metadata =
+                gstreamer::Structure::new("meta", &[(&"display-name", &webrtc_name)]).to_string();
+
             // TODO: Test if we can get any benefit from WebRTCSink's
             // congestion control, fec and retransmission. A simple test was done
             // with all these options enabled vs disabled, we got a much higher
@@ -207,7 +210,7 @@ impl Pipeline {
                     turn-server={turn_endpoint} \
                     signaller::address={signalling_endpoint} \
                     video-caps={capability} \
-                    display-name={webrtc_name:?} \
+                    meta={metadata:?} \
                     congestion-control=0 \
                     do-retransmission=false \
                     do-fec=false \

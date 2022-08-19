@@ -65,9 +65,9 @@ anyhow = "1"
 async-std = "1"
 async-native-tls = "0.4"
 tokio = "1.20"
-turn = "0.5"
-util = { package = "webrtc-util", version = "0.5", default-features = false, features = ["vnet"] }
-webrtcsink-signalling = { version = "0.1.0", git = "https://github.com/centricular/webrtcsink", rev = "2c855b9cfe1cf10c7447aa6ca5e3d5444e2459e0" }
+turn = "0.6"
+util = { package = "webrtc-util", version = "0.6", default-features = false, features = ["vnet"] }
+webrtcsink-signalling = { version = "0.1.0", git = "https://github.com/centricular/webrtcsink", rev = "ef9c81852273bf5265d0aa81302db1e07b982fbd" }
 
 [dev-dependencies]
 rand = "0.8.5"
