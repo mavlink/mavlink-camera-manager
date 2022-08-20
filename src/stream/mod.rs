@@ -1,4 +1,4 @@
-mod gst;
+pub mod gst;
 pub mod manager;
 pub mod rtsp_server;
 pub mod stream_backend;
