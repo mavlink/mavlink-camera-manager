@@ -163,14 +163,14 @@ fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
         .arg(
             clap::Arg::with_name("mavlink")
                 .long("mavlink")
-                .value_name("TYPE:<IP/SERIAL>:<PORT/BAUDRATE>")
+                .value_name("TYPE>:<IP/SERIAL>:<PORT/BAUDRATE")
                 .help("Sets the mavlink connection string")
                 .takes_value(true)
         )
         .arg(
             clap::Arg::with_name("www-path")
                 .long("www-path")
-                .value_name("NAME")
+                .value_name("PATH")
                 .help("Sets the WWW path")
                 .takes_value(true)
                 .default_value(find_www_path())
@@ -186,12 +186,13 @@ fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
         .arg(
             clap::Arg::with_name("reset")
                 .long("reset")
-                .help("Delete settings file before starting.")
+                .help("Deletes settings file before starting.")
                 .takes_value(false),
         )
         .arg(
             clap::Arg::with_name("rest-server")
                 .long("rest-server")
+                .value_name("IP>:<PORT")
                 .help("Sets the address for the REST API server")
                 .takes_value(true)
                 .default_value("0.0.0.0:6020"),
@@ -200,7 +201,7 @@ fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
             clap::Arg::with_name("verbose")
                 .short("v")
                 .long("verbose")
-                .help("Turn all log categories up to Debug, for more information check RUST_LOG env variable.")
+                .help("Turns all log categories up to Debug, for more information check RUST_LOG env variable.")
                 .takes_value(false),
         )
         .arg(
