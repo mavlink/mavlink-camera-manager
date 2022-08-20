@@ -27,6 +27,23 @@ lazy_static! {
 
 pub fn init() {
     debug!("Starting video stream service.");
+
+    config_gstreamer_plugins();
+}
+
+fn config_gstreamer_plugins() {
+    let plugins_config = crate::cli::manager::gst_feature_rank();
+
+    for config in plugins_config {
+        match crate::stream::gst::utils::set_plugin_rank(config.name.as_str(), config.rank) {
+            Ok(_) => info!(
+                "Gstreamer Plugin {name:#?} configured with rank {rank:#?}.",
+                name = config.name,
+                rank = config.rank,
+            ),
+            Err(error) => error!("Error when trying to configure plugin {name:#?} rank to {rank:#?}. Reason: {error}", name = config.name, rank = config.rank, error=error.to_string()),
+        }
+    }
 }
 
 pub fn start_default() {
