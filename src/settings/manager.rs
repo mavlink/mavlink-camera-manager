@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use crate::cli;
+use crate::custom;
 use crate::video_stream::types::VideoAndStreamInformation;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -43,26 +44,7 @@ impl Default for SettingsStruct {
                 version: 0,
             },
             mavlink_endpoint: None,
-            streams: vec![/*VideoAndStreamInformation {
-                name: "Test".into(),
-                stream_information: StreamInformation {
-                    endpoints: vec![Url::parse("udp://0.0.0.0:5601").unwrap()],
-                    configuration: CaptureConfiguration {
-                        encode: VideoEncodeType::H264,
-                        height: 720,
-                        width: 1080,
-                        frame_interval: FrameInterval {
-                            numerator: 1,
-                            denominator: 30,
-                        },
-                    },
-                },
-                video_source: VideoSourceType::Local(VideoSourceLocal {
-                    name: "Camera Manager Default Camera".into(),
-                    device_path: "/dev/video0".into(),
-                    typ: VideoSourceLocalType::Usb("0000:08:00.3-1".into()),
-                }),
-            }*/],
+            streams: custom::create_default_streams(),
         }
     }
 }
