@@ -1,6 +1,5 @@
 use super::types::*;
 use super::{stream_backend, stream_backend::StreamBackend};
-use crate::custom;
 use crate::mavlink::mavlink_camera::MavlinkCameraHandle;
 use crate::settings;
 use crate::video::types::VideoSourceType;
@@ -50,10 +49,6 @@ pub fn start_default() {
     MANAGER.as_ref().lock().unwrap().streams.clear();
 
     let mut streams = settings::manager::streams();
-
-    if streams.is_empty() {
-        streams = custom::create_default_streams();
-    }
 
     // Update all local video sources to make sure that is available
     streams.iter_mut().for_each(|stream| {
