@@ -11,6 +11,7 @@ use paperclip::{
 };
 
 use tracing::*;
+use tracing_actix_web::TracingLogger;
 
 fn json_error_handler(error: JsonPayloadError, _: &HttpRequest) -> actix_web::Error {
     warn!("Problem with json: {error}");
@@ -52,6 +53,7 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
             let fut = srv.call(req);
             async { Ok(fut.await?) }
         })
+        .wrap(TracingLogger::default())
         .wrap(actix_web::middleware::Logger::default())
         .wrap_api_with_spec(Api {
             info: Info {
