@@ -4,7 +4,7 @@ use std::thread;
 use gstreamer::prelude::*;
 use gstreamer::{self, MessageView};
 
-use log::debug;
+use tracing::debug;
 
 use crate::stream::stream_backend::StreamBackend;
 

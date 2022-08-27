@@ -14,10 +14,10 @@ use actix_web::{
     web::{self, Json},
     HttpRequest, HttpResponse,
 };
-use log::*;
 use paperclip::actix::{api_v2_operation, Apiv2Schema};
 use serde::{Deserialize, Serialize};
 use simple_error::SimpleError;
+use tracing::*;
 
 use std::io::prelude::*;
 

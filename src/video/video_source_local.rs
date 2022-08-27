@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use v4l::prelude::*;
 use v4l::video::Capture;
 
-use log::*;
+use tracing::*;
 
 //TODO: Move to types
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]

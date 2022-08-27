@@ -2,7 +2,7 @@ use super::types::*;
 use super::video_source_gst::VideoSourceGst;
 use super::video_source_local::VideoSourceLocal;
 use super::video_source_redirect::VideoSourceRedirect;
-use log::*;
+use tracing::*;
 
 pub trait VideoSource {
     fn name(&self) -> &String;

@@ -14,8 +14,8 @@ use crate::{
     },
     video_stream::types::VideoAndStreamInformation,
 };
-use log::*;
 use simple_error::{simple_error, SimpleResult};
+use tracing::*;
 
 #[derive(Clone, Debug, Default)]
 pub struct Pipeline {

@@ -1,9 +1,9 @@
 use directories::ProjectDirs;
-use log::*;
 use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use tracing::*;
 
 use crate::cli;
 use crate::custom;

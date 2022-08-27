@@ -1,5 +1,5 @@
-use log::*;
 use pnet;
+use tracing::*;
 
 pub fn get_ipv4_addresses() -> Vec<std::net::Ipv4Addr> {
     // Start with 0.0.0.0

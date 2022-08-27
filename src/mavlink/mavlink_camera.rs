@@ -5,10 +5,10 @@ use crate::stream::types::StreamType;
 use crate::video::types::VideoSourceType;
 use crate::video_stream::types::VideoAndStreamInformation;
 
-use log::*;
 use mavlink::common::MavMessage;
 use mavlink::MavConnection;
 use simple_error::simple_error;
+use tracing::*;
 use url::Url;
 
 use std::convert::TryInto;
