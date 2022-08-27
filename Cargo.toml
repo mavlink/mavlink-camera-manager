@@ -36,9 +36,7 @@ serde_json = "1.0.82"
 ## FINAL
 sys-info = "0.9.1"
 chrono = "0.4.19"
-env_logger = "0.9.0"
 lazy_static = "1.4.0"
-log = "0.4.17"
 paperclip = { version = "0.7.0", features = ["paperclip-actix", "actix4", "swagger-ui", "url"] }
 #TODO: Replace it with yaserde
 quick-xml = { version = "0.23.0", features = ["serialize"] }
@@ -48,6 +46,9 @@ v4l = "0.12.1"
 directories = "4.0.1"
 pnet = { version = "0.31.0", features = ["std"] }
 semver = "1.0.12"
+tracing = { version = "0.1.36", features = ["log", "async-await"] }
+tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
+tracing-log = "0.1.3"
 
 ## Mavlink
 mavlink = { version = "0.10.1", features = ["default", "emit-extensions"] }
