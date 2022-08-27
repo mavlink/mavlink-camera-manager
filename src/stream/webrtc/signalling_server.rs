@@ -9,7 +9,7 @@ use async_std::task;
 use webrtcsink_signalling::handlers::Handler;
 use webrtcsink_signalling::server::Server;
 
-use log::*;
+use tracing::*;
 
 pub const DEFAULT_SIGNALLING_ENDPOINT: &str = "ws://0.0.0.0:6021";
 

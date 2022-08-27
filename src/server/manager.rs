@@ -10,7 +10,7 @@ use paperclip::{
     v2::models::{Api, Info},
 };
 
-use log::*;
+use tracing::*;
 
 fn json_error_handler(error: JsonPayloadError, _: &HttpRequest) -> actix_web::Error {
     warn!("Problem with json: {error}");

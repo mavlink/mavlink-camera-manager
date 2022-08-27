@@ -13,7 +13,7 @@ use turn::relay::relay_static::*;
 use turn::server::{config::*, *};
 use turn::Error;
 
-use log::*;
+use tracing::*;
 
 pub const DEFAULT_TURN_ENDPOINT: &str = "turn://user:pwd@0.0.0.0:3478";
 pub const DEFAULT_STUN_ENDPOINT: &str = "stun://0.0.0.0:3478";

@@ -4,9 +4,9 @@ use crate::mavlink::mavlink_camera::MavlinkCameraHandle;
 use crate::settings;
 use crate::video::types::VideoSourceType;
 use crate::video_stream::types::VideoAndStreamInformation;
-use log::*;
 use simple_error::{simple_error, SimpleResult};
 use std::sync::{Arc, Mutex};
+use tracing::*;
 
 #[allow(dead_code)]
 struct Stream {
