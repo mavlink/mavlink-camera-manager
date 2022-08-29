@@ -1,6 +1,6 @@
 use clap;
-use log::error;
 use std::sync::Arc;
+use tracing::error;
 
 use crate::{custom, stream::gst::utils::PluginRankConfig};
 
@@ -49,6 +49,15 @@ pub fn is_reset() -> bool {
 // Return the mavlink connection string
 pub fn mavlink_connection_string() -> Option<&'static str> {
     return MANAGER.as_ref().clap_matches.value_of("mavlink");
+}
+
+pub fn log_path() -> String {
+    MANAGER
+        .as_ref()
+        .clap_matches
+        .value_of("log-path")
+        .expect("Clap arg \"log-path\" should always be \"Some(_)\" because of the default value.")
+        .to_string()
 }
 
 // Return the desired address for the REST API
@@ -214,6 +223,13 @@ fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
             .empty_values(false)
             .case_insensitive(true)
             .validator(gst_feature_rank_validator)
+        )
+        .arg(
+            clap::Arg::with_name("log-path")
+                .long("log-path")
+                .help("Specifies the path in witch the logs will be stored.")
+                .default_value("./logs")
+                .takes_value(true),
         );
 
     matches.get_matches()
