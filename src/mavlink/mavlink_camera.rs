@@ -347,8 +347,6 @@ fn receive_message_loop(
     drop(information);
 
     loop {
-        std::thread::sleep(std::time::Duration::from_millis(10));
-
         if let Ok(state) = atomic_thread_state.lock().as_deref_mut() {
             match state {
                 ThreadState::DEAD => break,
@@ -358,9 +356,13 @@ fn receive_message_loop(
                         reconnect(&mavlink_camera_information.lock().unwrap().clone());
                     *state = ThreadState::RUNNING;
                 }
-                ThreadState::ZOMBIE => continue,
+                ThreadState::ZOMBIE => {
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                    continue;
+                }
             }
         } else {
+            std::thread::sleep(std::time::Duration::from_millis(10));
             continue;
         }
 
