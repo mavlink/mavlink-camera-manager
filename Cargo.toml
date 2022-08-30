@@ -75,6 +75,7 @@ rand = "0.8.5"
 [build-dependencies]
 reqwest = { version = "0.11.11", features = ["blocking"] }
 vergen = { version = "7.3.1", default-features = false, features = ["build", "git"] }
+enum-iterator = "~1.1.3" # `enum-iterator` is a dependency for `vergen`, but because `v1.2.0` is causing the `error[E0658]`, we are restricting its version by defining it as `~1.1.3` here.
 
 [features]
 default = ["rtsp"]
