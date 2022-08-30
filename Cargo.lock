@@ -1796,7 +1796,6 @@ dependencies = [
  "chrono",
  "clap 2.34.0",
  "directories",
- "enum-iterator",
  "glib",
  "gstreamer",
  "gstreamer-rtsp-server",
@@ -3381,9 +3380,9 @@ checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
 
 [[package]]
 name = "vergen"
-version = "7.4.0"
+version = "7.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ffa80ed519f45995741e70664d4abcf147d2a47b8c7ea0a4aa495548ef9474f"
+checksum = "83d00118b08fb5c40b58177a494dfc8a34b43ba0757938e98e87ed11b9c58485"
 dependencies = [
  "anyhow",
  "cfg-if",
