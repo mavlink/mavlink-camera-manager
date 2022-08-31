@@ -8,7 +8,10 @@ use crate::video::types::{VideoEncodeType, VideoSourceType};
 use crate::video_stream::types::VideoAndStreamInformation;
 use simple_error::{simple_error, SimpleError};
 
-pub trait StreamBackend {
+pub trait StreamBackend
+where
+    Self: Drop,
+{
     fn start(&mut self) -> bool;
     fn stop(&mut self) -> bool;
     fn is_running(&self) -> bool;
