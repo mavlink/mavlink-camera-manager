@@ -43,7 +43,7 @@ impl Default for SettingsStruct {
                 name: "Camera Manager".to_string(),
                 version: 0,
             },
-            mavlink_endpoint: None,
+            mavlink_endpoint: cli::manager::mavlink_connection_string().map(String::from),
             streams: custom::create_default_streams(),
         }
     }
