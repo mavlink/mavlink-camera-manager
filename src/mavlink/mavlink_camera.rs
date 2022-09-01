@@ -606,6 +606,14 @@ fn receive_message_loop(
                                 );
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_MESSAGE => {
+                                send_command_ack(
+                                    &vehicle,
+                                    &our_header,
+                                    &their_header,
+                                    command_long.command,
+                                    mavlink::common::MavResult::MAV_RESULT_UNSUPPORTED,
+                                );
+
                                 error!("MAVLink message \"MAV_CMD_REQUEST_MESSAGE\" is not supported yet, please report this issue so we can prioritize it. Meanwhile, you can use the original definitions for the MAVLink Camera Protocol. Read more in: https://mavlink.io/en/services/camera.html#migration-notes-for-gcs--mavlink-sdks");
                             }
                             message => {
