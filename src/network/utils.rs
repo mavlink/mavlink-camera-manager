@@ -1,6 +1,18 @@
 use pnet;
 use tracing::*;
 
+use crate::cli::manager::vehicle_ddns;
+
+pub fn get_visible_qgc_address() -> String {
+    match vehicle_ddns() {
+        Some(ddns) => ddns.to_string(),
+        None => get_ipv4_addresses()
+            .last()
+            .unwrap_or(&std::net::Ipv4Addr::UNSPECIFIED)
+            .to_string(),
+    }
+}
+
 pub fn get_ipv4_addresses() -> Vec<std::net::Ipv4Addr> {
     // Start with 0.0.0.0
     let mut ips = vec![std::net::Ipv4Addr::UNSPECIFIED];
