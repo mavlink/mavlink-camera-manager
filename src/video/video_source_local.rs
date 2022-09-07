@@ -52,9 +52,13 @@ impl VideoSourceLocalType {
             return result;
         }
 
-        warn!(
-            "Unable to identify the local camera connection type, please report the problem: {description}",
-        );
+        let msg = format!("Unable to identify the local camera connection type, please report the problem: {description}");
+        if description == "platform:bcm2835-isp" {
+            // Filter out the log for this particular device, because regarding to Raspberry Pis, it will always be there and we will never use it.
+            trace!(msg);
+        } else {
+            warn!(msg);
+        }
         return VideoSourceLocalType::Unknown(description.into());
     }
 
