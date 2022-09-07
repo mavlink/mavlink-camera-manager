@@ -1,5 +1,5 @@
 use crate::cli;
-use crate::network;
+use crate::network::utils::get_visible_qgc_address;
 use crate::settings;
 use crate::stream::types::StreamType;
 use crate::video::types::VideoSourceType;
@@ -221,10 +221,7 @@ impl MavlinkCameraInformation {
         // change between the time of the MavlinkCameraInformation creation
         // and the time MAVLink connection is negotiated with the other MAVLink
         // systems.
-        let visible_qgc_ip_address = network::utils::get_ipv4_addresses()
-            .last()
-            .unwrap_or(&std::net::Ipv4Addr::UNSPECIFIED)
-            .to_string();
+        let visible_qgc_ip_address = get_visible_qgc_address().to_string();
         let server_port = cli::manager::server_address()
             .split(':')
             .collect::<Vec<&str>>()[1];
