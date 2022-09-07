@@ -49,7 +49,7 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
 
         // Add debug call for API access
         app.wrap_fn(|req, srv| {
-            debug!("{:#?}", &req);
+            trace!("{:#?}", &req);
             let fut = srv.call(req);
             async { Ok(fut.await?) }
         })
