@@ -69,6 +69,10 @@ pub fn server_address() -> &'static str {
         .unwrap();
 }
 
+pub fn vehicle_ddns() -> Option<&'static str> {
+    MANAGER.as_ref().clap_matches.value_of("vehicle-ddns")
+}
+
 pub fn www_path() -> Option<&'static str> {
     if let Some(argument_www_path) = MANAGER.as_ref().clap_matches.value_of("www-path") {
         if std::path::Path::new(&format!("{argument_www_path}/webrtc/adapter")).exists() {
@@ -229,6 +233,12 @@ fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
                 .long("log-path")
                 .help("Specifies the path in witch the logs will be stored.")
                 .default_value("./logs")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("vehicle-ddns")
+                .long("vehicle-ddns")
+                .help("Specifies the Dynamic DNS to use as vehicle IP when advertising streams via mavlink.")
                 .takes_value(true),
         );
 
