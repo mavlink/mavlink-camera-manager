@@ -183,7 +183,7 @@ impl VideoSource for VideoSourceLocal {
         let v4l_formats = device.enum_formats().unwrap_or_default();
         let mut formats = vec![];
 
-        debug!("Checking resolutions for camera: {}", &self.device_path);
+        trace!("Checking resolutions for camera: {}", &self.device_path);
         for v4l_format in v4l_formats {
             let mut sizes = vec![];
             let mut errors: Vec<String> = vec![];
@@ -248,7 +248,7 @@ impl VideoSource for VideoSourceLocal {
             sizes.reverse();
 
             if !errors.is_empty() {
-                debug!(
+                trace!(
                     "Failed to fetch frameintervals for camera {}: {errors:#?}",
                     &self.device_path
                 );
