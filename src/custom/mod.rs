@@ -11,6 +11,7 @@ arg_enum! {
     #[derive(PartialEq, Debug)]
     pub enum CustomEnvironment {
         BlueROVUDP,
+        BlueROVRTSP,
     }
 }
 
@@ -24,5 +25,6 @@ pub fn create_default_streams() -> Vec<VideoAndStreamInformation> {
 
     match default_environment {
         CustomEnvironment::BlueROVUDP => bluerov::udp(),
+        CustomEnvironment::BlueROVRTSP => bluerov::rtsp(),
     }
 }
