@@ -5,7 +5,7 @@ use crate::stream::types::StreamType;
 use crate::video::types::VideoSourceType;
 use crate::video_stream::types::VideoAndStreamInformation;
 
-use mavlink::common::MavMessage;
+use mavlink::common::{MavCmd, MavMessage};
 use mavlink::MavConnection;
 use simple_error::simple_error;
 use tracing::*;
@@ -52,6 +52,7 @@ pub struct MavlinkCameraInformation {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[allow(dead_code)]
 enum ThreadState {
     DEAD,
     RUNNING,
@@ -197,7 +198,7 @@ impl MavlinkCameraInformation {
 
         let mavlink_connection_string = settings::manager::mavlink_endpoint()?;
 
-        let vehicle = Arc::new(RwLock::new(connect(&component, &mavlink_connection_string)));
+        let vehicle = Arc::new(RwLock::new(connect(&mavlink_connection_string)));
 
         let this = Self {
             component,
@@ -292,15 +293,22 @@ fn heartbeat_loop(
     atomic_thread_state: Arc<Mutex<ThreadState>>,
     mavlink_camera_information: Arc<Mutex<MavlinkCameraInformation>>,
 ) {
-    let mut header = mavlink::MavHeader::default();
+    let mut our_header = mavlink::MavHeader::default();
     let information = mavlink_camera_information.lock().unwrap();
-    header.system_id = information.component.system_id;
-    header.component_id = information.component.component_id;
+    our_header.system_id = information.component.system_id;
+    our_header.component_id = information.component.component_id;
     let vehicle = information.vehicle.clone();
     drop(information);
 
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let _heartbeat_span = span!(
+            Level::INFO,
+            "heartbeat",
+            "as" = format!("{}:{}", our_header.system_id, our_header.component_id),
+        )
+        .entered();
 
         if let Ok(state) = atomic_thread_state.lock().as_deref_mut() {
             match state {
@@ -317,11 +325,12 @@ fn heartbeat_loop(
             continue;
         }
 
-        if let Err(error) = vehicle.read().unwrap().send(&header, &heartbeat_message()) {
-            error!(
-                "Failed to send heartbeat as {:#?}:{:#?}. Reason: {error}",
-                header.system_id, header.component_id
-            );
+        if let Err(error) = vehicle
+            .read()
+            .unwrap()
+            .send(&our_header, &heartbeat_message())
+        {
+            error!("Failed to send heartbeat. Reason: {error}");
             {
                 let mavlink::error::MessageWriteError::Io(io_error) = &error;
                 if io_error.kind() == std::io::ErrorKind::WouldBlock {
@@ -330,10 +339,7 @@ fn heartbeat_loop(
             }
             *atomic_thread_state.lock().unwrap() = ThreadState::RESTART;
         } else {
-            debug!(
-                "Sent heartbeat as {:#?}:{:#?}.",
-                header.system_id, header.component_id
-            );
+            debug!("Sent heartbeat.");
         }
     }
 }
@@ -350,6 +356,13 @@ fn receive_message_loop(
     drop(information);
 
     loop {
+        let _heartbeat_span = span!(
+            Level::INFO,
+            "message",
+            "as" = format!("{}:{}", our_header.system_id, our_header.component_id),
+        )
+        .entered();
+
         if let Ok(state) = atomic_thread_state.lock().as_deref_mut() {
             match state {
                 ThreadState::DEAD => break,
@@ -371,476 +384,61 @@ fn receive_message_loop(
 
         match vehicle.read().unwrap().recv() {
             Ok((their_header, msg)) => {
+                let _message_received_span = span!(
+                    Level::DEBUG,
+                    "message",
+                    "from" = format!("{}:{}", their_header.system_id, their_header.component_id),
+                )
+                .entered();
+
                 match &msg {
                     MavMessage::COMMAND_LONG(command_long) => {
-                        let command_name = format!("COMMAND_LONG({:#?})", command_long.command);
-                        if let ControlFlow::Break(_) = break_if_wrong_ids(
-                            command_long.target_system,
-                            command_long.target_component,
-                            our_header.system_id,
-                            our_header.component_id,
-                            command_name.as_str(),
-                        ) {
-                            send_command_ack(
-                                &vehicle,
-                                &our_header,
-                                &their_header,
-                                command_long.command,
-                                mavlink::common::MavResult::MAV_RESULT_DENIED,
-                            );
-                            continue;
-                        }
-
-                        debug!(
-                            "Received {:#?} from {:#?}:{:#?} as {:#?}:{:#?}.",
-                            command_name,
-                            their_header.system_id,
-                            their_header.component_id,
-                            our_header.system_id,
-                            our_header.component_id,
+                        mav_message_command_long(
+                            command_long,
+                            &vehicle,
+                            &our_header,
+                            &their_header,
+                            &mavlink_camera_information,
                         );
-
-                        match command_long.command {
-                            mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_INFORMATION => {
-                                let information = mavlink_camera_information.lock().unwrap();
-
-                                send_command_ack(
-                                    &vehicle,
-                                    &our_header,
-                                    &their_header,
-                                    command_long.command,
-                                    mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
-                                );
-
-                                if let Err(error) = vehicle
-                                    .read()
-                                    .unwrap()
-                                    .send(&our_header, &camera_information(&information))
-                                {
-                                    warn!(
-                                        "Failed to send camera_informationfrom {:#?}:{:#?}. Reason: {error:?}.",
-                                        our_header.system_id,
-                                        our_header.component_id,
-                                    );
-                                }
-                                debug!(
-                                    "Sent camera_information as {:#?}:{:#?}.",
-                                    our_header.system_id, our_header.component_id,
-                                );
-                            }
-                            mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_SETTINGS => {
-                                send_command_ack(
-                                    &vehicle,
-                                    &our_header,
-                                    &their_header,
-                                    command_long.command,
-                                    mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
-                                );
-
-                                if let Err(error) = vehicle
-                                    .read()
-                                    .unwrap()
-                                    .send(&our_header, &camera_settings())
-                                {
-                                    warn!(
-                                        "Failed to send camera_settings as {:#?}:{:#?}. Reason: {error:?}.",
-                                        our_header.system_id,
-                                        our_header.component_id,
-                                    );
-                                }
-                                debug!(
-                                    "Sent camera_settings as {:#?}:{:#?}.",
-                                    our_header.system_id, our_header.component_id,
-                                );
-                            }
-                            mavlink::common::MavCmd::MAV_CMD_REQUEST_STORAGE_INFORMATION => {
-                                send_command_ack(
-                                    &vehicle,
-                                    &our_header,
-                                    &their_header,
-                                    command_long.command,
-                                    mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
-                                );
-
-                                if let Err(error) = vehicle
-                                    .read()
-                                    .unwrap()
-                                    .send(&our_header, &camera_storage_information())
-                                {
-                                    warn!("Failed to send camera_storage_information as {:#?}:{:#?} Reason: {error:?}.", our_header.system_id, our_header.component_id);
-                                }
-                                debug!(
-                                    "Sent camera_storage_information as {:#?}:{:#?}.",
-                                    our_header.system_id, our_header.component_id
-                                );
-                            }
-                            mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_CAPTURE_STATUS => {
-                                send_command_ack(
-                                    &vehicle,
-                                    &our_header,
-                                    &their_header,
-                                    command_long.command,
-                                    mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
-                                );
-
-                                if let Err(error) = vehicle
-                                    .read()
-                                    .unwrap()
-                                    .send(&our_header, &camera_capture_status())
-                                {
-                                    warn!("Failed to send camera_capture_status as {:#?}:{:#?} Reason: {error:?}.", our_header.system_id, our_header.component_id);
-                                }
-                                debug!(
-                                    "Sent camera_capture_status as {:#?}:{:#?}.",
-                                    our_header.system_id, our_header.component_id
-                                );
-                            }
-                            mavlink::common::MavCmd::MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION => {
-                                let information = mavlink_camera_information.lock().unwrap();
-
-                                const ALL_CAMERAS: u8 = 0u8;
-                                if command_long.param2 != (information.component.stream_id as f32)
-                                    && command_long.param2 != (ALL_CAMERAS as f32)
-                                {
-                                    warn!(
-                                        "Received {:#?} from {:#?}:{:#?} as {:#?}{:#?} asking for an unknown stream id: {:#?}.",
-                                        their_header.system_id,their_header.component_id,
-                                        our_header.system_id, our_header.component_id,
-                                        command_long.command, command_long.param2
-                                    );
-                                    send_command_ack(
-                                        &vehicle,
-                                        &our_header,
-                                        &their_header,
-                                        command_long.command,
-                                        mavlink::common::MavResult::MAV_RESULT_UNSUPPORTED,
-                                    );
-                                    continue;
-                                }
-
-                                send_command_ack(
-                                    &vehicle,
-                                    &our_header,
-                                    &their_header,
-                                    command_long.command,
-                                    mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
-                                );
-
-                                if let Err(error) = vehicle
-                                    .read()
-                                    .unwrap()
-                                    .send(&our_header, &video_stream_information(&information))
-                                {
-                                    warn!("Failed to send video_stream_information as {:#?}:{:#?} Reason: {error:?}.", our_header.system_id, our_header.component_id);
-                                }
-                                debug!(
-                                    "Sent video_stream_information as {:#?}:{:#?}.",
-                                    our_header.system_id, our_header.component_id
-                                );
-                            }
-                            mavlink::common::MavCmd::MAV_CMD_RESET_CAMERA_SETTINGS => {
-                                let information = &mavlink_camera_information.lock().unwrap();
-                                let source_string =
-                                    information.video_source_type.inner().source_string();
-                                drop(information);
-
-                                send_command_ack(
-                                    &vehicle,
-                                    &our_header,
-                                    &their_header,
-                                    command_long.command,
-                                    mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
-                                );
-
-                                let mut param_result =
-                                    mavlink::common::MavResult::MAV_RESULT_ACCEPTED;
-                                if let Err(error) =
-                                    crate::video::video_source::reset_controls(source_string)
-                                {
-                                    error!("Failed to reset {source_string:?} controls with its default values as {:#?}:{:#?}. Reason: {error:?}.", our_header.system_id, our_header.component_id);
-                                    param_result = mavlink::common::MavResult::MAV_RESULT_DENIED;
-                                }
-
-                                send_command_ack(
-                                    &vehicle,
-                                    &our_header,
-                                    &their_header,
-                                    command_long.command,
-                                    param_result,
-                                );
-                            }
-                            mavlink::common::MavCmd::MAV_CMD_REQUEST_VIDEO_STREAM_STATUS => {
-                                let information = mavlink_camera_information.lock().unwrap();
-
-                                send_command_ack(
-                                    &vehicle,
-                                    &our_header,
-                                    &their_header,
-                                    command_long.command,
-                                    mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
-                                );
-
-                                if let Err(error) = vehicle.read().unwrap().send(
-                                    &our_header,
-                                    &MavMessage::VIDEO_STREAM_STATUS(
-                                        mavlink::common::VIDEO_STREAM_STATUS_DATA {
-                                            framerate: information.component.framerate,
-                                            bitrate: information.component.bitrate,
-                                            flags: get_stream_status_flag(&information.component),
-                                            resolution_h: information.component.resolution_h,
-                                            resolution_v: information.component.resolution_v,
-                                            rotation: information.component.rotation,
-                                            hfov: information.component.hfov,
-                                            stream_id: information.component.stream_id,
-                                        },
-                                    ),
-                                ) {
-                                    warn!("Failed to send video_stream_information as {:#?}:{:#?} Reason: {error:?}.", our_header.system_id, our_header.component_id);
-                                }
-                                debug!(
-                                    "Sent video stream status as {:#?}:{:#?}.",
-                                    our_header.system_id, our_header.component_id
-                                );
-                            }
-                            mavlink::common::MavCmd::MAV_CMD_REQUEST_MESSAGE => {
-                                send_command_ack(
-                                    &vehicle,
-                                    &our_header,
-                                    &their_header,
-                                    command_long.command,
-                                    mavlink::common::MavResult::MAV_RESULT_UNSUPPORTED,
-                                );
-
-                                error!("MAVLink message \"MAV_CMD_REQUEST_MESSAGE\" is not supported yet, please report this issue so we can prioritize it. Meanwhile, you can use the original definitions for the MAVLink Camera Protocol. Read more in: https://mavlink.io/en/services/camera.html#migration-notes-for-gcs--mavlink-sdks");
-                            }
-                            message => {
-                                send_command_ack(
-                                    &vehicle,
-                                    &our_header,
-                                    &their_header,
-                                    command_long.command,
-                                    mavlink::common::MavResult::MAV_RESULT_UNSUPPORTED,
-                                );
-
-                                warn!(
-                                    "Message {message:#?}, Camera: {:#?}:{:#?}, ignoring command: {:#?}", our_header.system_id, our_header.component_id, command_long.command
-                                );
-                            }
-                        }
                     }
                     MavMessage::PARAM_EXT_SET(param_ext_set) => {
-                        if let ControlFlow::Break(_) = break_if_wrong_ids(
-                            param_ext_set.target_system,
-                            param_ext_set.target_component,
-                            our_header.system_id,
-                            our_header.component_id,
-                            "PARAM_EXT_SET",
-                        ) {
-                            send_param_ext_ack(
-                                &vehicle,
-                                &our_header,
-                                &their_header,
-                                &param_ext_set,
-                                mavlink::common::ParamAck::PARAM_ACK_VALUE_UNSUPPORTED,
-                            );
-                            continue;
-                        }
-
-                        let control_id = match control_id_from_param_id(&param_ext_set.param_id) {
-                            Some(value) => value,
-                            None => {
-                                send_param_ext_ack(
-                                    &vehicle,
-                                    &our_header,
-                                    &their_header,
-                                    &param_ext_set,
-                                    mavlink::common::ParamAck::PARAM_ACK_VALUE_UNSUPPORTED,
-                                );
-                                continue;
-                            }
-                        };
-
-                        let control_value = match control_value_from_param_value(
-                            &param_ext_set.param_value,
-                            &param_ext_set.param_type,
-                        ) {
-                            Some(value) => value,
-                            None => {
-                                send_param_ext_ack(
-                                    &vehicle,
-                                    &our_header,
-                                    &their_header,
-                                    &param_ext_set,
-                                    mavlink::common::ParamAck::PARAM_ACK_VALUE_UNSUPPORTED,
-                                );
-                                continue;
-                            }
-                        };
-                        send_param_ext_ack(
+                        mav_message_param_ext_set(
+                            param_ext_set,
                             &vehicle,
                             &our_header,
-                            &their_header,
-                            &param_ext_set,
-                            mavlink::common::ParamAck::PARAM_ACK_IN_PROGRESS,
-                        );
-
-                        let mut param_result = mavlink::common::ParamAck::PARAM_ACK_ACCEPTED;
-                        if let Err(error) = mavlink_camera_information
-                            .as_ref()
-                            .lock()
-                            .unwrap()
-                            .video_source_type
-                            .inner()
-                            .set_control_by_id(control_id, control_value)
-                        {
-                            error!("Failed to set parameter {control_id:?} with value {control_value:?} for {:#?}. Reason: {error:?}.", our_header.component_id);
-                            param_result = mavlink::common::ParamAck::PARAM_ACK_FAILED;
-                        }
-
-                        send_param_ext_ack(
-                            &vehicle,
-                            &our_header,
-                            &their_header,
-                            &param_ext_set,
-                            param_result,
+                            &mavlink_camera_information,
                         );
                     }
                     MavMessage::PARAM_EXT_REQUEST_READ(param_ext_req) => {
-                        if let ControlFlow::Break(_) = break_if_wrong_ids(
-                            param_ext_req.target_system,
-                            param_ext_req.target_component,
-                            our_header.system_id,
-                            our_header.component_id,
-                            "PARAM_EXT_REQUEST_READ",
-                        ) {
-                            continue;
-                        }
-
-                        let information = mavlink_camera_information.lock().unwrap();
-                        let controls = &information.video_source_type.inner().controls();
-                        let (param_index, control_id) =
-                            match get_param_index_and_control_id(param_ext_req, controls) {
-                                Some(value) => value,
-                                None => continue,
-                            };
-
-                        let param_id = param_id_from_control_id(control_id);
-
-                        let control_value = match information
-                            .video_source_type
-                            .inner()
-                            .control_value_by_id(control_id)
-                        {
-                            Ok(value) => value,
-                            Err(error) => {
-                                error!("Failed to get parameter {control_id:?} from {:#?}. Reason: {error:?}.", our_header.component_id);
-                                continue;
-                            }
-                        };
-
-                        let param_value = param_value_from_control_value(control_value, 128);
-
-                        if let Err(error) = vehicle.read().unwrap().send(
+                        mav_message_param_ext_request_read(
+                            param_ext_req,
+                            &vehicle,
                             &our_header,
-                            &MavMessage::PARAM_EXT_VALUE(mavlink::common::PARAM_EXT_VALUE_DATA {
-                                param_count: 1,
-                                param_index,
-                                param_id,
-                                param_value,
-                                param_type:
-                                    mavlink::common::MavParamExtType::MAV_PARAM_EXT_TYPE_INT64,
-                            }),
-                        ) {
-                            warn!(
-                                "Failed to send video_stream_information as {:#?}:{:#?}: {error:?}.", our_header.system_id, our_header.component_id
-                            );
-                        }
-                        debug!(
-                            "Sent video_stream_information as {:#?}:{:#?}.",
-                            our_header.system_id, our_header.component_id
+                            &mavlink_camera_information,
                         );
                     }
                     MavMessage::PARAM_EXT_REQUEST_LIST(param_ext_req) => {
-                        if let ControlFlow::Break(_) = break_if_wrong_ids(
-                            param_ext_req.target_system,
-                            param_ext_req.target_component,
-                            our_header.system_id,
-                            our_header.component_id,
-                            "PARAM_EXT_REQUEST_LIST",
-                        ) {
-                            continue;
-                        }
-
-                        let controls = mavlink_camera_information
-                            .as_ref()
-                            .lock()
-                            .unwrap()
-                            .video_source_type
-                            .inner()
-                            .controls();
-
-                        let mut no_errors = true;
-                        controls
-                        .iter()
-                        .enumerate()
-                        .for_each(|(param_index, control)| {
-                            let param_id = param_id_from_control_id(control.id);
-
-                            let control_value = match &control.configuration {
-                                crate::video::types::ControlType::Bool(bool) => bool.value,
-                                crate::video::types::ControlType::Slider(slider) => slider.value,
-                                crate::video::types::ControlType::Menu(menu) => menu.value,
-                            };
-
-                            let param_value = param_value_from_control_value(control_value, 128);
-
-                            if let Err(error) = vehicle.read().unwrap().send(
-                                &our_header,
-                                &MavMessage::PARAM_EXT_VALUE(
-                                    mavlink::common::PARAM_EXT_VALUE_DATA {
-                                        param_count: controls.len() as u16,
-                                        param_index: param_index as u16,
-                                        param_id,
-                                        param_value,
-                                        param_type:
-                                            mavlink::common::MavParamExtType::MAV_PARAM_EXT_TYPE_INT64,
-                                    },
-                                ),
-                            ) {
-                                warn!("Failed to send PARAM_EXT_VALUE as {:#?}:{:#?} Reason: {error:?}.", our_header.system_id, our_header.component_id);
-                                no_errors = false;
-                            }
-                        });
-                        if !no_errors {
-                            debug!(
-                                "Sent PARAM_EXT_VALUE as {:#?}:{:#?}.",
-                                our_header.system_id, our_header.component_id
-                            );
-                        }
+                        mav_message_param_ext_request_list(
+                            param_ext_req,
+                            &vehicle,
+                            &our_header,
+                            &mavlink_camera_information,
+                        );
                     }
                     MavMessage::HEARTBEAT(heartbeat_data) => {
                         // We receive a bunch of heartbeat messages, we can ignore it, but as it can be useful for debugging...
-                        trace!(
-                            "Received heartbeat from {:#?}:{:#?} as camera: {:#?}:{:#?}: {heartbeat_data:#?}",
-                            their_header.system_id, their_header.component_id,
-                            our_header.system_id, our_header.component_id
-                        );
+                        trace!("Received heartbeat: {heartbeat_data:#?}");
                     }
                     other_message => {
                         // Any other message that is not a heartbeat or command_long
                         trace!(
-                            "Received an unsupported message from {:#?}:{:#?} as {:#?}:{:#?}, ignoring it. Message: {other_message:#?}",
-                            their_header.system_id, their_header.component_id,
-                            our_header.system_id, our_header.component_id
+                            "Received an unsupported message, ignoring it. Message: {other_message:#?}"
                         );
                     }
                 }
             }
             Err(error) => {
-                let information = mavlink_camera_information.lock().unwrap();
-                error!("Error receiving a message as {:#?}:{:#?}. Reason: {error:#?}. Camera: {information:#?}",
-                    our_header.system_id, our_header.component_id
-                );
+                error!("Error receiving a message. Reason: {error:?}");
                 if let mavlink::error::MessageReadError::Io(io_error) = &error {
                     if io_error.kind() == std::io::ErrorKind::WouldBlock {
                         continue;
@@ -852,29 +450,527 @@ fn receive_message_loop(
     }
 }
 
+fn mav_message_param_ext_request_list(
+    param_ext_req: &mavlink::common::PARAM_EXT_REQUEST_LIST_DATA,
+    vehicle: &Arc<RwLock<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
+    our_header: &mavlink::MavHeader,
+    mavlink_camera_information: &Arc<Mutex<MavlinkCameraInformation>>,
+) {
+    if let ControlFlow::Break(_) = break_if_wrong_ids(
+        param_ext_req.target_system,
+        param_ext_req.target_component,
+        our_header.system_id,
+        our_header.component_id,
+    ) {
+        return;
+    }
+    let controls = mavlink_camera_information
+        .as_ref()
+        .lock()
+        .unwrap()
+        .video_source_type
+        .inner()
+        .controls();
+    let mut no_errors = true;
+    controls
+        .iter()
+        .enumerate()
+        .for_each(|(param_index, control)| {
+            let param_id = param_id_from_control_id(control.id);
+
+            let control_value = match &control.configuration {
+                crate::video::types::ControlType::Bool(bool) => bool.value,
+                crate::video::types::ControlType::Slider(slider) => slider.value,
+                crate::video::types::ControlType::Menu(menu) => menu.value,
+            };
+
+            let param_value = param_value_from_control_value(control_value, 128);
+
+            if let Err(error) = vehicle.read().unwrap().send(
+                &our_header,
+                &MavMessage::PARAM_EXT_VALUE(mavlink::common::PARAM_EXT_VALUE_DATA {
+                    param_count: controls.len() as u16,
+                    param_index: param_index as u16,
+                    param_id,
+                    param_value,
+                    param_type: mavlink::common::MavParamExtType::MAV_PARAM_EXT_TYPE_INT64,
+                }),
+            ) {
+                warn!("Failed to send PARAM_EXT_VALUE Reason: {error:?}.");
+                no_errors = false;
+            }
+        });
+    if !no_errors {
+        debug!("Sent PARAM_EXT_VALUE.");
+    }
+}
+
+fn mav_message_param_ext_request_read(
+    param_ext_req: &mavlink::common::PARAM_EXT_REQUEST_READ_DATA,
+    vehicle: &Arc<RwLock<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
+    our_header: &mavlink::MavHeader,
+    mavlink_camera_information: &Arc<Mutex<MavlinkCameraInformation>>,
+) {
+    if let ControlFlow::Break(_) = break_if_wrong_ids(
+        param_ext_req.target_system,
+        param_ext_req.target_component,
+        our_header.system_id,
+        our_header.component_id,
+    ) {
+        return;
+    }
+    let information = mavlink_camera_information.lock().unwrap();
+    let controls = &information.video_source_type.inner().controls();
+    let (param_index, control_id) = match get_param_index_and_control_id(param_ext_req, controls) {
+        Some(value) => value,
+        None => return,
+    };
+    let param_id = param_id_from_control_id(control_id);
+    let control_value = match information
+        .video_source_type
+        .inner()
+        .control_value_by_id(control_id)
+    {
+        Ok(value) => value,
+        Err(error) => {
+            error!("Failed to get parameter {control_id:?}. Reason: {error:?}.",);
+            return;
+        }
+    };
+    let param_value = param_value_from_control_value(control_value, 128);
+    if let Err(error) = vehicle.read().unwrap().send(
+        &our_header,
+        &MavMessage::PARAM_EXT_VALUE(mavlink::common::PARAM_EXT_VALUE_DATA {
+            param_count: 1,
+            param_index,
+            param_id,
+            param_value,
+            param_type: mavlink::common::MavParamExtType::MAV_PARAM_EXT_TYPE_INT64,
+        }),
+    ) {
+        warn!("Failed to send video_stream_information: {error:?}.");
+    }
+    debug!("Sent video_stream_information.");
+}
+
+fn mav_message_param_ext_set(
+    param_ext_set: &mavlink::common::PARAM_EXT_SET_DATA,
+    vehicle: &Arc<RwLock<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
+    our_header: &mavlink::MavHeader,
+    mavlink_camera_information: &Arc<Mutex<MavlinkCameraInformation>>,
+) {
+    if let ControlFlow::Break(_) = break_if_wrong_ids(
+        param_ext_set.target_system,
+        param_ext_set.target_component,
+        our_header.system_id,
+        our_header.component_id,
+    ) {
+        send_param_ext_ack(
+            vehicle,
+            our_header,
+            param_ext_set,
+            mavlink::common::ParamAck::PARAM_ACK_VALUE_UNSUPPORTED,
+        );
+        return;
+    }
+    let control_id = match control_id_from_param_id(&param_ext_set.param_id) {
+        Some(value) => value,
+        None => {
+            send_param_ext_ack(
+                vehicle,
+                our_header,
+                param_ext_set,
+                mavlink::common::ParamAck::PARAM_ACK_VALUE_UNSUPPORTED,
+            );
+            return;
+        }
+    };
+    let control_value =
+        match control_value_from_param_value(&param_ext_set.param_value, &param_ext_set.param_type)
+        {
+            Some(value) => value,
+            None => {
+                send_param_ext_ack(
+                    vehicle,
+                    our_header,
+                    param_ext_set,
+                    mavlink::common::ParamAck::PARAM_ACK_VALUE_UNSUPPORTED,
+                );
+                return;
+            }
+        };
+    send_param_ext_ack(
+        vehicle,
+        our_header,
+        param_ext_set,
+        mavlink::common::ParamAck::PARAM_ACK_IN_PROGRESS,
+    );
+    let mut param_result = mavlink::common::ParamAck::PARAM_ACK_ACCEPTED;
+    if let Err(error) = mavlink_camera_information
+        .as_ref()
+        .lock()
+        .unwrap()
+        .video_source_type
+        .inner()
+        .set_control_by_id(control_id, control_value)
+    {
+        error!("Failed to set parameter {control_id:?} with value {control_value:?} for {:#?}. Reason: {error:?}.", our_header.component_id);
+        param_result = mavlink::common::ParamAck::PARAM_ACK_FAILED;
+    }
+    send_param_ext_ack(vehicle, our_header, param_ext_set, param_result);
+}
+
+fn mav_message_command_long(
+    command_long: &mavlink::common::COMMAND_LONG_DATA,
+    vehicle: &Arc<RwLock<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
+    our_header: &mavlink::MavHeader,
+    their_header: &mavlink::MavHeader,
+    mavlink_camera_information: &Arc<Mutex<MavlinkCameraInformation>>,
+) {
+    let _command_long_span = span!(
+        Level::INFO,
+        "command_long",
+        "type" = format!("COMMAND_LONG({:#?})", command_long.command)
+    )
+    .entered();
+
+    if let ControlFlow::Break(_) = break_if_wrong_ids(
+        command_long.target_system,
+        command_long.target_component,
+        our_header.system_id,
+        our_header.component_id,
+    ) {
+        send_command_ack(
+            command_long.command,
+            vehicle,
+            our_header,
+            their_header,
+            mavlink::common::MavResult::MAV_RESULT_DENIED,
+        );
+        return;
+    }
+    debug!("Parsing...");
+    match command_long.command {
+        mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_INFORMATION => {
+            command_long_request_camera_information(
+                command_long,
+                vehicle,
+                our_header,
+                their_header,
+                mavlink_camera_information,
+            );
+        }
+        mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_SETTINGS => {
+            command_long_request_camera_settings(command_long, vehicle, our_header, their_header);
+        }
+        mavlink::common::MavCmd::MAV_CMD_REQUEST_STORAGE_INFORMATION => {
+            command_long_request_storage_information(
+                command_long,
+                vehicle,
+                our_header,
+                their_header,
+            );
+        }
+        mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_CAPTURE_STATUS => {
+            command_long_request_camera_capture_status(
+                command_long,
+                vehicle,
+                our_header,
+                their_header,
+            );
+        }
+        mavlink::common::MavCmd::MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION => {
+            command_long_request_video_stream_information(
+                command_long,
+                vehicle,
+                our_header,
+                their_header,
+                mavlink_camera_information,
+            );
+        }
+        mavlink::common::MavCmd::MAV_CMD_RESET_CAMERA_SETTINGS => {
+            command_long_reset_camera_settings(
+                command_long,
+                vehicle,
+                our_header,
+                their_header,
+                mavlink_camera_information,
+            );
+        }
+        mavlink::common::MavCmd::MAV_CMD_REQUEST_VIDEO_STREAM_STATUS => {
+            command_long_request_video_stream_status(
+                command_long,
+                vehicle,
+                our_header,
+                their_header,
+                mavlink_camera_information,
+            );
+        }
+        mavlink::common::MavCmd::MAV_CMD_REQUEST_MESSAGE => {
+            command_long_request_message(command_long, vehicle, our_header, their_header);
+        }
+        message => {
+            command_long_unknown(command_long, vehicle, our_header, their_header, &message);
+        }
+    }
+}
+
+fn command_long_unknown(
+    command_long: &mavlink::common::COMMAND_LONG_DATA,
+    vehicle: &Arc<RwLock<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
+    our_header: &mavlink::MavHeader,
+    their_header: &mavlink::MavHeader,
+    message: &MavCmd,
+) {
+    send_command_ack(
+        command_long.command,
+        vehicle,
+        our_header,
+        their_header,
+        mavlink::common::MavResult::MAV_RESULT_UNSUPPORTED,
+    );
+    warn!(
+        "Message {message:#?} not implemented, ignoring command: {:#?}",
+        command_long.command
+    );
+}
+
+fn command_long_request_message(
+    command_long: &mavlink::common::COMMAND_LONG_DATA,
+    vehicle: &Arc<RwLock<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
+    our_header: &mavlink::MavHeader,
+    their_header: &mavlink::MavHeader,
+) {
+    send_command_ack(
+        command_long.command,
+        vehicle,
+        our_header,
+        their_header,
+        mavlink::common::MavResult::MAV_RESULT_UNSUPPORTED,
+    );
+    error!("MAVLink message \"MAV_CMD_REQUEST_MESSAGE\" is not supported yet, please report this issue so we can prioritize it. Meanwhile, you can use the original definitions for the MAVLink Camera Protocol. Read more in: https://mavlink.io/en/services/camera.html#migration-notes-for-gcs--mavlink-sdks");
+}
+
+fn command_long_request_video_stream_status(
+    command_long: &mavlink::common::COMMAND_LONG_DATA,
+    vehicle: &Arc<RwLock<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
+    our_header: &mavlink::MavHeader,
+    their_header: &mavlink::MavHeader,
+    mavlink_camera_information: &Arc<Mutex<MavlinkCameraInformation>>,
+) {
+    let information = mavlink_camera_information.lock().unwrap();
+    send_command_ack(
+        command_long.command,
+        vehicle,
+        our_header,
+        their_header,
+        mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
+    );
+    if let Err(error) = vehicle.read().unwrap().send(
+        &our_header,
+        &MavMessage::VIDEO_STREAM_STATUS(mavlink::common::VIDEO_STREAM_STATUS_DATA {
+            framerate: information.component.framerate,
+            bitrate: information.component.bitrate,
+            flags: get_stream_status_flag(&information.component),
+            resolution_h: information.component.resolution_h,
+            resolution_v: information.component.resolution_v,
+            rotation: information.component.rotation,
+            hfov: information.component.hfov,
+            stream_id: information.component.stream_id,
+        }),
+    ) {
+        warn!("Failed to send video_stream_information Reason: {error:?}.");
+    }
+    debug!("Sent video stream status.");
+}
+
+fn command_long_reset_camera_settings(
+    command_long: &mavlink::common::COMMAND_LONG_DATA,
+    vehicle: &Arc<RwLock<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
+    our_header: &mavlink::MavHeader,
+    their_header: &mavlink::MavHeader,
+    mavlink_camera_information: &Arc<Mutex<MavlinkCameraInformation>>,
+) {
+    let information = &mavlink_camera_information.lock().unwrap();
+    let source_string = information.video_source_type.inner().source_string();
+    drop(information);
+    send_command_ack(
+        command_long.command,
+        vehicle,
+        our_header,
+        their_header,
+        mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
+    );
+    let mut param_result = mavlink::common::MavResult::MAV_RESULT_ACCEPTED;
+    if let Err(error) = crate::video::video_source::reset_controls(source_string) {
+        error!("Failed to reset {source_string:?} controls with its default values. Reason: {error:?}.");
+        param_result = mavlink::common::MavResult::MAV_RESULT_DENIED;
+    }
+    send_command_ack(
+        command_long.command,
+        vehicle,
+        our_header,
+        their_header,
+        param_result,
+    );
+}
+
+fn command_long_request_video_stream_information(
+    command_long: &mavlink::common::COMMAND_LONG_DATA,
+    vehicle: &Arc<RwLock<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
+    our_header: &mavlink::MavHeader,
+    their_header: &mavlink::MavHeader,
+    mavlink_camera_information: &Arc<Mutex<MavlinkCameraInformation>>,
+) {
+    let information = mavlink_camera_information.lock().unwrap();
+    const ALL_CAMERAS: u8 = 0u8;
+    if command_long.param2 != (information.component.stream_id as f32)
+        && command_long.param2 != (ALL_CAMERAS as f32)
+    {
+        warn!(
+            "Received {:#?} asking for an unknown stream id: {:#?}.",
+            command_long.command, command_long.param2
+        );
+        send_command_ack(
+            command_long.command,
+            vehicle,
+            our_header,
+            their_header,
+            mavlink::common::MavResult::MAV_RESULT_UNSUPPORTED,
+        );
+        return;
+    }
+    send_command_ack(
+        command_long.command,
+        vehicle,
+        our_header,
+        their_header,
+        mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
+    );
+    if let Err(error) = vehicle
+        .read()
+        .unwrap()
+        .send(our_header, &video_stream_information(&information))
+    {
+        warn!("Failed to send video_stream_information Reason: {error:?}.");
+    }
+    debug!("Sent video_stream_information.");
+}
+
+fn command_long_request_camera_capture_status(
+    command_long: &mavlink::common::COMMAND_LONG_DATA,
+    vehicle: &Arc<RwLock<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
+    our_header: &mavlink::MavHeader,
+    their_header: &mavlink::MavHeader,
+) {
+    send_command_ack(
+        command_long.command,
+        vehicle,
+        our_header,
+        their_header,
+        mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
+    );
+    if let Err(error) = vehicle
+        .read()
+        .unwrap()
+        .send(our_header, &camera_capture_status())
+    {
+        warn!("Failed to send camera_capture_status Reason: {error:?}.");
+    }
+    debug!("Sent camera_capture_status.");
+}
+
+fn command_long_request_storage_information(
+    command_long: &mavlink::common::COMMAND_LONG_DATA,
+    vehicle: &Arc<RwLock<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
+    our_header: &mavlink::MavHeader,
+    their_header: &mavlink::MavHeader,
+) {
+    send_command_ack(
+        command_long.command,
+        vehicle,
+        our_header,
+        their_header,
+        mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
+    );
+    if let Err(error) = vehicle
+        .read()
+        .unwrap()
+        .send(our_header, &camera_storage_information())
+    {
+        warn!("Failed to send camera_storage_information Reason: {error:?}.");
+    }
+    debug!("Sent camera_storage_information.");
+}
+
+fn command_long_request_camera_settings(
+    command_long: &mavlink::common::COMMAND_LONG_DATA,
+    vehicle: &Arc<RwLock<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
+    our_header: &mavlink::MavHeader,
+    their_header: &mavlink::MavHeader,
+) {
+    send_command_ack(
+        command_long.command,
+        vehicle,
+        our_header,
+        their_header,
+        mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
+    );
+    if let Err(error) = vehicle.read().unwrap().send(our_header, &camera_settings()) {
+        warn!("Failed to send camera_settings. Reason: {error:?}.");
+    }
+    debug!("Sent camera_settings.");
+}
+
+fn command_long_request_camera_information(
+    command_long: &mavlink::common::COMMAND_LONG_DATA,
+    vehicle: &Arc<RwLock<Box<dyn MavConnection<MavMessage> + Send + Sync>>>,
+    our_header: &mavlink::MavHeader,
+    their_header: &mavlink::MavHeader,
+    mavlink_camera_information: &Arc<Mutex<MavlinkCameraInformation>>,
+) {
+    let information = mavlink_camera_information.lock().unwrap();
+    send_command_ack(
+        command_long.command,
+        vehicle,
+        our_header,
+        their_header,
+        mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
+    );
+    if let Err(error) = vehicle
+        .read()
+        .unwrap()
+        .send(our_header, &camera_information(&information))
+    {
+        warn!("Failed to send camera_information. Reason: {error:?}.");
+    }
+    debug!("Sent camera_information.");
+}
+
 fn break_if_wrong_ids(
     target_system_id: u8,
     target_component_id: u8,
     our_system_id: u8,
     our_component_id: u8,
-    command_name: &str,
 ) -> ControlFlow<()> {
     if our_system_id != target_system_id {
         debug!(
-            "Ignoring {command_name:#?}, wrong system id: expect {our_system_id}, but got {target_system_id}."
+            "Ignoring message, wrong system id: expect {our_system_id}, but got {target_system_id}."
         );
         return ControlFlow::Break(());
     }
     if our_component_id != target_component_id {
         debug!(
-            "Ignoring {command_name:#?}, wrong component id: expect {our_component_id}, but got {target_component_id}."
+            "Ignoring message, wrong component id: expect {our_component_id}, but got {target_component_id}."
         );
         return ControlFlow::Break(());
     }
     ControlFlow::Continue(())
 }
 
+#[instrument(skip_all)]
 fn send_command_ack(
+    command: mavlink::common::MavCmd,
     vehicle: &Arc<
         std::sync::RwLock<
             Box<(dyn MavConnection<MavMessage> + Send + std::marker::Sync + 'static)>,
@@ -882,7 +978,6 @@ fn send_command_ack(
     >,
     our_header: &mavlink::MavHeader,
     their_header: &mavlink::MavHeader,
-    command: mavlink::common::MavCmd,
     result: mavlink::common::MavResult,
 ) {
     if let Err(error) = vehicle.read().unwrap().send(
@@ -895,22 +990,13 @@ fn send_command_ack(
             ..Default::default()
         }),
     ) {
-        warn!(
-            "Failed to send COMMAND_ACK answering {command:#?} from {:#?}:{:#?} as {:#?}:{:#?}. Reason: {error:?}.",
-            their_header.system_id, their_header.component_id,
-            our_header.system_id, our_header.component_id
-        );
+        warn!("Failed to send COMMAND_ACK. Reason: {error:?}.");
     } else {
-        debug!(
-            "Sent COMMAND_ACK answering {command:#?} from {:#?}:{:#?} as {:#?}:{:#?}.",
-            their_header.system_id,
-            their_header.component_id,
-            our_header.system_id,
-            our_header.component_id
-        );
+        debug!("Sent {result:?}.");
     }
 }
 
+#[instrument(skip_all)]
 fn send_param_ext_ack(
     vehicle: &Arc<
         std::sync::RwLock<
@@ -918,7 +1004,6 @@ fn send_param_ext_ack(
         >,
     >,
     our_header: &mavlink::MavHeader,
-    their_header: &mavlink::MavHeader,
     param_ext_set: &mavlink::common::PARAM_EXT_SET_DATA,
     param_result: mavlink::common::ParamAck,
 ) {
@@ -931,24 +1016,13 @@ fn send_param_ext_ack(
             param_result,
         }),
     ) {
-        warn!(
-            "Failed to send COMMAND_ACK answering PARAM_EXT_SET from {:#?}:{:#?} as {:#?}:{:#?}. Reason: {error:?}.",
-            their_header.system_id, their_header.component_id,
-            our_header.system_id, our_header.component_id
-        );
+        warn!("Failed to send COMMAND_ACK. Reason: {error:?}.");
     } else {
-        debug!(
-            "Sent COMMAND_ACK answering PARAM_EXT_SET from {:#?}:{:#?} as {:#?}:{:#?}.",
-            their_header.system_id,
-            their_header.component_id,
-            our_header.system_id,
-            our_header.component_id
-        );
+        debug!("Sent {param_result:?}.");
     }
 }
 
 fn connect(
-    component: &MavlinkCameraComponent,
     mavlink_connection_string: &str,
 ) -> Box<dyn MavConnection<MavMessage> + Send + std::marker::Sync> {
     loop {
@@ -957,16 +1031,13 @@ fn connect(
         match mavlink::connect(mavlink_connection_string) {
             Ok(connection) => {
                 info!(
-                    "Component {:#?}:{:#?} successfully reconnected to MAVLink endpoint {:#?}.",
-                    component.system_id, component.component_id, mavlink_connection_string
+                    "Successfully reconnected to MAVLink endpoint {mavlink_connection_string:#?}."
                 );
                 return connection;
             }
             Err(error) => {
                 error!(
-                    "Component {:#?}:{:#?} failed to reconnect to MAVLink endpoint {:#?}, trying again in one second. Reason: {:#?}.",
-                    component.system_id, component.component_id,
-                    mavlink_connection_string,
+                    "Failed to reconnect to MAVLink endpoint {mavlink_connection_string:#?}, trying again in one second. Reason: {:#?}.",
                     error.kind()
                 );
             }
@@ -983,10 +1054,7 @@ fn reconnect(
         information.component.component_id,
         information.mavlink_connection_string
     );
-    connect(
-        &information.component,
-        &information.mavlink_connection_string,
-    )
+    connect(&information.mavlink_connection_string)
 }
 
 fn param_value_from_control_value(control_value: i64, length: usize) -> Vec<char> {
@@ -1020,7 +1088,7 @@ fn control_value_from_param_value(
         ))),
     };
     if let Err(error) = control_value {
-        error!("Failed to parse parameter value: {error:#?}.");
+        error!("Failed to parse parameter value: {error:?}.");
         return None;
     }
     control_value.ok()
@@ -1073,7 +1141,7 @@ fn control_id_from_param_id(param_id: &[char; 16]) -> Option<u64> {
         .trim_end_matches(char::from(0))
         .parse::<u64>();
     if let Err(error) = control_id {
-        error!("Failed to parse control id: {error:#?}.");
+        error!("Failed to parse control id: {error:?}.");
         return None;
     }
     control_id.ok()
@@ -1099,14 +1167,14 @@ fn sys_info() -> SysInfo {
         }
 
         Err(error) => {
-            warn!("Failed to fetch disk info: {error:#?}.");
+            warn!("Failed to fetch disk info: {error:?}.");
         }
     }
 
     let boottime_ms = match sys_info::boottime() {
         Ok(bootime) => bootime.tv_usec / 1000,
         Err(error) => {
-            warn!("Failed to fetch boottime info: {error:#?}.");
+            warn!("Failed to fetch boottime info: {error:?}.");
             0
         }
     };
