@@ -111,18 +111,6 @@ fn load_settings_from_file(file_name: &str) -> SettingsStruct {
         .unwrap_or_else(|_error| SettingsStruct::default());
 }
 
-//TODO: remove allow dead code
-#[allow(dead_code)]
-fn load() {
-    let mut manager = MANAGER.as_ref().lock().unwrap();
-    //TODO: deal with load problems
-    if let Some(content) = &mut manager.content {
-        content.config = load_settings_from_file(&content.file_name);
-    } else {
-        error!("Failed to load settings!");
-    }
-}
-
 fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> std::io::Result<()> {
     let mut file = std::fs::File::create(file_name)?;
     debug!("content: {:#?}", content);
