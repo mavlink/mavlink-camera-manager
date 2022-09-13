@@ -57,9 +57,7 @@ impl Manager {
                     let folder_path = Path::new(project.config_dir());
                     if let Err(error) = std::fs::create_dir_all(folder_path) {
                         error!(
-                            "Failed to create settings folder: {}, reason: {:#?}",
-                            folder_path.to_str().unwrap(),
-                            error
+                            "Failed to create settings folder: {folder_path:?}. Reason: {error:#?}"
                         );
                     }
                     Path::new(&folder_path)
@@ -84,7 +82,7 @@ impl Manager {
         };
 
         save_settings_to_file(&settings.file_name, &settings.config).unwrap_or_else(|error| {
-            error!("Failed to save file: {:#?}", error);
+            error!("Failed to save file {file_name:?}. Reason: {error:#?}");
         });
 
         return settings;
@@ -113,7 +111,7 @@ fn load_settings_from_file(file_name: &str) -> SettingsStruct {
 
 fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> std::io::Result<()> {
     let mut file = std::fs::File::create(file_name)?;
-    debug!("content: {:#?}", content);
+    debug!("content: {content:#?}");
     let value = serde_json::to_string_pretty(content).unwrap();
     file.write_all(value.to_string().as_bytes())
 }
