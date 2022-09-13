@@ -94,7 +94,7 @@ impl Manager {
 // Init settings manager with the desired settings file,
 // will be created if does not exist
 pub fn init(file_name: Option<&str>) {
-    let mut manager = MANAGER.as_ref().lock().unwrap();
+    let mut manager = MANAGER.lock().unwrap();
     let file_name = file_name.unwrap_or("settings.json");
     manager.content = Some(Manager::new(file_name));
 }
@@ -120,7 +120,7 @@ fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> std::io::
 
 // Save the latest state of the settings
 pub fn save() {
-    let manager = MANAGER.as_ref().lock().unwrap();
+    let manager = MANAGER.lock().unwrap();
     //TODO: deal com save problems here
     if let Some(content) = &manager.content {
         if let Err(error) = save_settings_to_file(&content.file_name, &content.config) {
@@ -136,12 +136,12 @@ pub fn save() {
 
 #[allow(dead_code)]
 pub fn header() -> HeaderSettingsFile {
-    let manager = MANAGER.as_ref().lock().unwrap();
+    let manager = MANAGER.lock().unwrap();
     return manager.content.as_ref().unwrap().config.header.clone();
 }
 
 pub fn mavlink_endpoint() -> Option<String> {
-    let manager = MANAGER.as_ref().lock().unwrap();
+    let manager = MANAGER.lock().unwrap();
     return manager
         .content
         .as_ref()
@@ -162,7 +162,7 @@ pub fn set_mavlink_endpoint(endpoint: &str) {
 }
 
 pub fn streams() -> Vec<VideoAndStreamInformation> {
-    let manager = MANAGER.as_ref().lock().unwrap();
+    let manager = MANAGER.lock().unwrap();
     let content = manager.content.as_ref();
     return content.unwrap().config.streams.clone();
 }
@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn test_no_aboslute_path() {
         init(None);
-        let manager = MANAGER.as_ref().lock().unwrap();
+        let manager = MANAGER.lock().unwrap();
         let file_name = &manager.content.as_ref().unwrap().file_name;
         assert!(
             std::path::Path::new(&file_name).exists(),
