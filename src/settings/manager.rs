@@ -72,13 +72,17 @@ impl Manager {
             file_name.into()
         };
 
-        debug!("Using settings file: {}", &file_name);
-
-        let settings = load_settings_from_file(&file_name);
+        let config = if cli::manager::is_reset() {
+            debug!("Settings reset, an empty settings will be loaded and stored as {file_name:?}.");
+            fallback_settings_with_backup_file(&file_name)
+        } else {
+            debug!("Using settings file: {file_name:?}");
+            load_settings_from_file(&file_name)
+        };
 
         let settings = ManagerStruct {
             file_name: file_name.to_string(),
-            config: settings,
+            config,
         };
 
         save_settings_to_file(&settings.file_name, &settings.config).unwrap_or_else(|error| {
