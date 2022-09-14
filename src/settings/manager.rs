@@ -270,6 +270,7 @@ mod tests {
             video_source: VideoSourceType::Local(VideoSourceLocal {
                 name: "Fake Potato Test Video Source Camera".into(),
                 device_path: "/dev/potatovideo".into(),
+                v4l_by_path: "".into(),
                 typ: VideoSourceLocalType::Usb("usb-0420:08:47.42-77".into()),
             }),
         }];

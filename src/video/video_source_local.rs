@@ -1,4 +1,5 @@
 use std::cmp::max;
+use std::path::PathBuf;
 
 use super::types::*;
 use super::{
@@ -25,6 +26,7 @@ pub enum VideoSourceLocalType {
 pub struct VideoSourceLocal {
     pub name: String,
     pub device_path: String,
+    pub v4l_by_path: String,
     #[serde(rename = "type")]
     pub typ: VideoSourceLocalType,
 }
@@ -43,7 +45,7 @@ impl VideoSourceLocalType {
     //
     // https://www.kernel.org/doc/html/v4.9/media/uapi/v4l/vidioc-querycap.html#:~:text=__u8-,bus_info,-%5B32%5D
 
-    pub fn from_str(description: &str) -> Self {
+    pub fn from_bus_str(description: &str) -> Self {
         if let Some(result) = VideoSourceLocalType::usb_from_str(description) {
             return result;
         }
@@ -444,12 +446,24 @@ impl VideoSource for VideoSourceLocal {
     }
 }
 
+pub fn get_v4l_source_by_path(path: &PathBuf) -> Result<PathBuf, std::io::Error> {
+    for v4l_path in std::fs::read_dir("/dev/v4l/by-path/")? {
+        let v4l_path = v4l_path?.path();
+        let solved_v4l_path = v4l_path.canonicalize()?;
+        let solved_path = path.canonicalize()?;
+        if solved_path == solved_v4l_path {
+            return Ok(v4l_path);
+        }
+    }
+    Err(std::io::Error::new(std::io::ErrorKind::NotFound, "unknown"))
+}
+
 impl VideoSourceAvailable for VideoSourceLocal {
     fn cameras_available() -> Vec<VideoSourceType> {
-        let cameras_path: Vec<String> = std::fs::read_dir("/dev/")
+        let cameras_path: Vec<PathBuf> = std::fs::read_dir("/dev/")
             .unwrap()
-            .map(|f| String::from(f.unwrap().path().to_str().unwrap()))
-            .filter(|f| f.starts_with("/dev/video"))
+            .map(|result| result.unwrap().path())
+            .filter(|path| path.to_str().unwrap().starts_with("/dev/video"))
             .collect();
 
         let mut cameras: Vec<VideoSourceType> = vec![];
@@ -458,28 +472,28 @@ impl VideoSourceAvailable for VideoSourceLocal {
             let caps = camera.query_caps();
 
             if let Err(error) = caps {
-                debug!(
-                    "Failed to capture caps for device: {} {:#?}",
-                    camera_path, error
-                );
+                debug!("Failed to capture caps for device: {camera_path:?} {error:#?}");
                 continue;
             }
             let caps = caps.unwrap();
+            debug!("Device {camera_path:#?}, \nCapabilities: {caps:#?}");
 
             if let Err(error) = camera.format() {
                 if error.kind() != std::io::ErrorKind::InvalidInput {
                     debug!(
-                        "Failed to capture formats for device: {}\nError: {:#?}",
-                        camera_path, error
+                        "Failed to capture formats for device: {camera_path:?}\nError: {error:#?}"
                     );
                 }
                 continue;
             }
 
+            let v4l_by_path = get_v4l_source_by_path(&camera_path).unwrap_or_default();
+
             let source = VideoSourceLocal {
                 name: caps.card,
-                device_path: camera_path.clone(),
-                typ: VideoSourceLocalType::from_str(&caps.bus),
+                device_path: camera_path.to_str().unwrap().to_owned(),
+                v4l_by_path: v4l_by_path.to_str().unwrap().to_owned(),
+                typ: VideoSourceLocalType::from_bus_str(&caps.bus),
             };
             cameras.push(VideoSourceType::Local(source));
         }
@@ -524,7 +538,10 @@ mod tests {
         ];
 
         for description in descriptions {
-            assert_eq!(description.0, VideoSourceLocalType::from_str(description.1));
+            assert_eq!(
+                description.0,
+                VideoSourceLocalType::from_bus_str(description.1)
+            );
         }
     }
 

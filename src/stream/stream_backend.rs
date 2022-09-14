@@ -331,6 +331,7 @@ mod tests {
             video_source: VideoSourceType::Local(VideoSourceLocal {
                 name: "PotatoCam".into(),
                 device_path: "/dev/video42".into(),
+                v4l_by_path: "".into(),
                 typ: VideoSourceLocalType::Usb("TestPotatoCam".into()),
             }),
         });
