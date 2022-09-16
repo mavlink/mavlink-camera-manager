@@ -1,18 +1,29 @@
 <!DOCTYPE html>
 <html>
-  <head>
-  </head>
 
-  <body>
-    <div><h2>Streams Sessions</h2>
-      <div id="sessions">
-      </div>
-    </div>
-    <div><h2>Available Streams</h2>
-      <ul id="camera-list"></ul>
-    </div>
-  </body>
+<head>
+    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+</head>
 
-  <script src="/webrtc/adapter/adapter-latest.js"></script>
-  <script src="/webrtc/webrtc.js"></script>
+<body>
+    <div class="holygrail-body">
+        <div class="content">
+            <h2>Streams Sessions</h2>
+            <div id="sessions">
+            </div>
+            <div id="image-holder">
+                <img id="image"></img>
+            </div>
+        </div>
+        <div>
+            <h2>Available Streams</h2>
+            <ul class="nav" id="camera-list">
+            </ul>
+        </div>
+    </div>
+</body>
+
+<script src="/webrtc/adapter/adapter-latest.js"></script>
+<script src="/webrtc/webrtc.js"></script>
+
 </html>
