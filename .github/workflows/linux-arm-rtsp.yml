@@ -49,6 +49,7 @@ jobs:
 
     - name: Prepare files
       run: |
+        mkdir -p upload
         cp target/release/mavlink-camera-manager upload/mavlink-camera-manager-armv7
 
     - name: Fix cache owner
