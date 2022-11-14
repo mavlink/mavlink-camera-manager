@@ -29,6 +29,7 @@ jobs:
         install: |
           uname -a
           apt update
+          apt install -y libunwind-dev
           apt install -y curl libssl-dev
           apt install -y libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev libclang-dev
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y
