@@ -169,10 +169,6 @@ impl From<&StreamType> for mavlink::common::VideoStreamType {
                     }
                 }
             }
-            // TODO: update WEBRTC arm with the correct type once mavlink starts to support it.
-            // Note: For now this is fine because most of the clients doesn't seems to be using mavtype to determine the stream type,
-            // instead, they're parsing the URI's scheme itself, so as long as we pass a known scheme, it should be enough.
-            StreamType::WEBRTC(_) => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
         }
     }
 }

@@ -48,9 +48,7 @@ jobs:
 
     - name: Prepare files
       run: |
-        mkdir -p upload/www
         cp target/release/mavlink-camera-manager upload/mavlink-camera-manager-armv7
-        cp -r src/html/webrtc upload/www/
 
     - name: Fix cache owner
       run: |

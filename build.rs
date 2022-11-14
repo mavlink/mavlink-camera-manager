@@ -23,13 +23,4 @@ fn main() {
         "https://unpkg.com/vue@3.0.5/dist/vue.global.js",
         "src/html/vue.js",
     );
-    std::fs::create_dir_all("src/html/webrtc/adapter").unwrap();
-    file_download(
-        "https://webrtc.github.io/adapter/adapter-latest.js",
-        "src/html/webrtc/adapter/adapter-latest.js",
-    );
-    file_download(
-        "https://raw.githubusercontent.com/webrtcHacks/adapter/18a8b4127cbc1376320cac5742d817b5b7dd0085/LICENSE.md",
-        "src/html/webrtc/adapter/LICENSE.md",
-    );
 }
