@@ -38,6 +38,7 @@ jobs:
 
     - name: Prepare files
       run: |
+        mkdir -p upload
         cp target/${{ matrix.TARGET }}/release/mavlink-camera-manager upload/mavlink-camera-manager-${{ matrix.SUFFIX }}
 
     - uses: actions/upload-artifact@master
