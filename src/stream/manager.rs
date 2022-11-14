@@ -86,9 +86,6 @@ pub fn start() {
             StreamType::RTSP(stream) => {
                 stream.start();
             }
-            StreamType::WEBRTC(stream) => {
-                stream.start();
-            }
             StreamType::REDIRECT(_) => (),
         }
     }

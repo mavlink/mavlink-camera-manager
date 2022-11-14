@@ -37,9 +37,7 @@ jobs:
 
     - name: Prepare files
       run: |
-        mkdir -p upload/www
         cp target/${{ matrix.TARGET }}/release/mavlink-camera-manager upload/mavlink-camera-manager-${{ matrix.SUFFIX }}
-        cp -r src/html/webrtc upload/www/
 
     - uses: actions/upload-artifact@master
       with:

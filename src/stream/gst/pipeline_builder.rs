@@ -5,13 +5,6 @@ use crate::{
         video_source_gst::VideoSourceGstType,
         video_source_local::VideoSourceLocalType,
     },
-};
-use crate::{
-    stream::webrtc::{
-        signalling_server::DEFAULT_SIGNALLING_ENDPOINT,
-        turn_server::{DEFAULT_STUN_ENDPOINT, DEFAULT_TURN_ENDPOINT},
-        utils::webrtc_usage_hint,
-    },
     video_stream::types::VideoAndStreamInformation,
 };
 use simple_error::{simple_error, SimpleResult};
@@ -110,18 +103,6 @@ impl Pipeline {
     fn build_pipeline_transcode(
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> SimpleResult<String> {
-        if Pipeline::is_webrtcsink(&video_and_stream_information) {
-            return Ok(concat!(
-                // WebRTCSink requires a raw sink, so whatever is the source's
-                // encode, we need to decode it. "decodebin3" does an automatic
-                // discovery that works here, so we are simplifying by using it
-                // instead of using specific decoders.
-                " ! decodebin3",
-                " ! videoconvert",
-            )
-            .to_string());
-        }
-
         let configuration =
             Pipeline::get_video_capture_configuration(video_and_stream_information)?;
 
@@ -156,11 +137,6 @@ impl Pipeline {
     fn build_pipeline_payload(
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> SimpleResult<String> {
-        if Pipeline::is_webrtcsink(&video_and_stream_information) {
-            // WebRTCSink requires no payload.
-            return Ok("".to_string());
-        }
-
         let configuration =
             Pipeline::get_video_capture_configuration(&video_and_stream_information)?;
 
@@ -193,27 +169,6 @@ impl Pipeline {
     fn build_pipeline_sink(
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> SimpleResult<String> {
-        if Pipeline::is_webrtcsink(&video_and_stream_information) {
-            let (stun_endpoint, turn_endpoint, signalling_endpoint) =
-                Pipeline::build_webrtc_endpoints(&video_and_stream_information)?;
-            let capability = "video/x-h264"; // We could also choose for video/x-vp9 here.
-            let webrtc_name = &video_and_stream_information.name;
-            // TODO: Test if we can get any benefit from WebRTCSink's
-            // congestion control, fec and retransmission. A simple test was done
-            // with all these options enabled vs disabled, we got a much higher
-            // stability and quality for the streams when disabled..
-            return Ok(format!(
-                " ! webrtcsink stun-server={stun_endpoint} \
-                    turn-server={turn_endpoint} \
-                    signaller::address={signalling_endpoint} \
-                    video-caps={capability} \
-                    display-name={webrtc_name:?} \
-                    congestion-control=0 \
-                    do-retransmission=false \
-                    do-fec=false \
-                    enable-data_channel_navigation=false"
-            ));
-        }
         let endpoints = &video_and_stream_information.stream_information.endpoints;
         let pipeline_sink = match endpoints[0].scheme() {
             "udp" => {
@@ -229,46 +184,6 @@ impl Pipeline {
             _ => "".to_string(),
         };
         Ok(pipeline_sink)
-    }
-
-    fn build_webrtc_endpoints(
-        video_and_stream_information: &VideoAndStreamInformation,
-    ) -> SimpleResult<(url::Url, url::Url, url::Url)> {
-        let endpoints = &video_and_stream_information.stream_information.endpoints;
-        let mut stun_endpoint = url::Url::parse(DEFAULT_STUN_ENDPOINT).unwrap();
-        let mut turn_endpoint = url::Url::parse(DEFAULT_TURN_ENDPOINT).unwrap();
-        let mut signalling_endpoint = url::Url::parse(DEFAULT_SIGNALLING_ENDPOINT).unwrap();
-        for endpoint in endpoints.iter() {
-            match endpoint.scheme() {
-                "webrtc" => (),
-                "stun" => stun_endpoint = endpoint.to_owned(),
-                "turn" => turn_endpoint = endpoint.to_owned(),
-                "ws" => signalling_endpoint = endpoint.to_owned(),
-                _ => {
-                    return Err(simple_error!(format!(
-                        "Only 'webrtc://', 'stun://', 'turn://' and 'ws://' schemes are accepted. {usage_hint}. The scheme passed was: {scheme:#?}\"",
-                        usage_hint=webrtc_usage_hint(),
-                        scheme=endpoint.scheme()
-                    )))
-                }
-            }
-        }
-        debug!("Using the following endpoint for the STUN Server: \"{stun_endpoint}\"");
-        debug!("Using the following endpoint for the TURN Server: \"{turn_endpoint}\"",);
-        debug!("Using the following endpoint for the Signalling Server: \"{signalling_endpoint}\"",);
-        Ok((stun_endpoint, turn_endpoint, signalling_endpoint))
-    }
-
-    pub fn is_webrtcsink(video_and_stream_information: &VideoAndStreamInformation) -> bool {
-        // TODO: Move "webrtc", "stun", "turn", "ws", "udp", "rtsp", "tcp" and other schemes to an enum
-        let endpoints = &video_and_stream_information.stream_information.endpoints;
-        let mut is_webrtcsink = false;
-        for endpoint in endpoints.iter() {
-            if matches!(endpoint.scheme(), "webrtc" | "stun" | "turn" | "ws") {
-                is_webrtcsink = true;
-            }
-        }
-        is_webrtcsink
     }
 
     fn get_video_capture_configuration(
