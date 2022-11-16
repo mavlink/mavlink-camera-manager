@@ -1,7 +1,6 @@
 use crate::cli;
 use crate::network::utils::get_visible_qgc_address;
 use crate::settings;
-use crate::stream::types::StreamType;
 use crate::video::types::VideoSourceType;
 use crate::video_stream::types::VideoAndStreamInformation;
 
@@ -152,32 +151,8 @@ impl Drop for MavlinkCameraComponent {
     }
 }
 
-impl From<&StreamType> for mavlink::common::VideoStreamType {
-    fn from(stream: &StreamType) -> Self {
-        match stream {
-            StreamType::UDP(_) => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP,
-            StreamType::RTSP(_) => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
-            StreamType::REDIRECT(video_strem_redirect) => {
-                match video_strem_redirect.scheme.as_str() {
-                    "rtsp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
-                    "mpegts" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_MPEG_TS_H264,
-                    "tcp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_TCP_MPEG,
-                    "udp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP,
-                    format @ _ => {
-                        debug!("Unknown format: {format:#?}, using UDP as fallback.");
-                        mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP
-                    }
-                }
-            }
-        }
-    }
-}
-
 impl MavlinkCameraInformation {
-    fn try_new(
-        video_and_stream_information: &VideoAndStreamInformation,
-        stream: &StreamType,
-    ) -> Option<Self> {
+    fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Option<Self> {
         let video_stream_uri = video_and_stream_information
             .stream_information
             .endpoints
@@ -186,7 +161,7 @@ impl MavlinkCameraInformation {
 
         let video_stream_name = video_and_stream_information.name.clone();
 
-        let mavlink_stream_type = mavlink::common::VideoStreamType::from(stream);
+        let mavlink_stream_type = mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP; // TODO: get type from Sink!
         let video_source_type = video_and_stream_information.video_source.clone();
 
         let component = MavlinkCameraComponent::try_new(video_and_stream_information)?;
@@ -230,14 +205,10 @@ impl MavlinkCameraInformation {
 }
 
 impl MavlinkCameraHandle {
-    pub fn try_new(
-        video_and_stream_information: &VideoAndStreamInformation,
-        stream: &StreamType,
-    ) -> Option<Self> {
+    pub fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Option<Self> {
         let mavlink_camera_information: Arc<Mutex<MavlinkCameraInformation>> =
             Arc::new(Mutex::new(MavlinkCameraInformation::try_new(
                 video_and_stream_information,
-                stream,
             )?));
 
         let thread_state = Arc::new(Mutex::new(ThreadState::RUNNING));
