@@ -1,5 +1,4 @@
 use super::pages;
-use crate::cli;
 
 use actix_service::Service;
 use actix_web::{error::JsonPayloadError, App, HttpRequest, HttpServer};

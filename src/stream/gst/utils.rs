@@ -7,6 +7,7 @@ pub struct PluginRankConfig {
     pub rank: gstreamer::Rank,
 }
 
+#[allow(dead_code)] // TODO: Use this to check all used plugins are available
 pub fn is_gstreamer_plugin_available(plugin_name: &str, min_version: &str) -> bool {
     // reference: https://github.com/GStreamer/gstreamer/blob/b4ca58df7624b005a33e182a511904d7cceea890/tools/gst-inspect.c#L2148
 

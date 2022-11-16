@@ -1,7 +1,3 @@
-use super::{
-    stream_backend::StreamBackend, video_stream_redirect::VideoStreamRedirect,
-    video_stream_rtsp::VideoStreamRtsp, video_stream_udp::VideoStreamUdp,
-};
 use crate::{
     video::types::{FrameInterval, VideoEncodeType},
     video_stream::types::VideoAndStreamInformation,
@@ -10,32 +6,6 @@ use crate::{
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 use url::Url;
-
-#[derive(Debug)]
-#[allow(dead_code)]
-pub enum StreamType {
-    UDP(VideoStreamUdp),
-    RTSP(VideoStreamRtsp),
-    REDIRECT(VideoStreamRedirect),
-}
-
-impl StreamType {
-    pub fn inner(&self) -> &(dyn StreamBackend + '_) {
-        match self {
-            StreamType::UDP(backend) => backend,
-            StreamType::RTSP(backend) => backend,
-            StreamType::REDIRECT(backend) => backend,
-        }
-    }
-
-    pub fn mut_inner(&mut self) -> &mut (dyn StreamBackend + '_) {
-        match self {
-            StreamType::UDP(backend) => backend,
-            StreamType::RTSP(backend) => backend,
-            StreamType::REDIRECT(backend) => backend,
-        }
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct VideoCaptureConfiguration {
