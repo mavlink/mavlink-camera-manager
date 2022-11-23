@@ -40,8 +40,6 @@ impl Stream {
                 let endpoint = endpoint.scheme();
                 let result = match endpoint {
                     "udp" => create_udp_sink(video_and_stream_information),
-                    // "rtsp" => create_rtsp_sink(video_and_stream_information),
-                    // "webrtc" => create_webrtc_sink(video_and_stream_information),
                     unsupported @ _ => Err(anyhow!("Unsupported Endpoint scheme: {unsupported}")),
                 };
 
@@ -91,19 +89,6 @@ fn check_scheme(video_and_stream_information: &VideoAndStreamInformation) -> Res
         };
     } else {
         match scheme {
-            // Reserved for when we add RTSP support
-            // "rtsp" => {
-            //     // RTSP endpoints should contain both host, port and path
-            //     if endpoints.iter().any(|endpoint| {
-            //         endpoint.host().is_none()
-            //             || endpoint.port().is_none()
-            //             || endpoint.path().is_empty()
-            //     }) {
-            //         bail!(
-            //             "Endpoint with udp scheme should contain host and port. Endpoints: {endpoints:#?}"
-            //         )
-            //     }
-            // }
             "udp" => {
                 if VideoEncodeType::H265 == encode {
                     bail!("Endpoint with udp scheme only supports H264, encode type is H265, the scheme should be udp265.")
@@ -140,48 +125,6 @@ fn create_udp_sink(video_and_stream_information: &VideoAndStreamInformation) -> 
         .clone();
 
     Ok(Sink::Udp(UdpSink::try_new(id, addresses)?))
-}
-
-#[allow(dead_code)] // Reserved for when we add RTSP support
-#[instrument(level = "debug")]
-fn create_rtsp_sink(video_and_stream_information: &VideoAndStreamInformation) -> Result<Sink> {
-    let endpoints = &video_and_stream_information.stream_information.endpoints;
-    let endpoint = &endpoints[0];
-    if endpoint.scheme() != "rtsp" {
-        bail!(
-            "The URL's scheme for RTSP endpoints should be \"rtsp\", but was: {:?}",
-            endpoint.scheme()
-        )
-    }
-    if endpoint.port() != Some(8554) {
-        bail!(
-            "The URL's port for RTSP endpoints should be \"8554\", but was: {:?}",
-            endpoint.port()
-        )
-    }
-    if endpoint.path_segments().iter().count() != 1 {
-        bail!(
-            "The URL's path for RTSP endpoints must have one segment (e.g.: \"segmentA\" and not \"segmentA/segmentB\"), but was: {:?}",
-            endpoint.path()
-        )
-    }
-
-    let _id = video_and_stream_information.name.clone();
-
-    let _addresses = video_and_stream_information
-        .stream_information
-        .endpoints
-        .clone();
-
-    // Ok(Sink::Rtsp(RtspSink::try_new(id, addresses)?))
-    todo!()
-}
-
-#[allow(dead_code)] // Reserved for when we add WebRTC support
-#[instrument(level = "debug")]
-fn create_webrtc_sink(_video_and_stream_information: &VideoAndStreamInformation) -> Result<Sink> {
-    // Ok(Sink::Webrtc(WebrtcSink::try_new()?))
-    todo!()
 }
 
 #[instrument(level = "debug")]

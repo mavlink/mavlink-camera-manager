@@ -54,6 +54,7 @@ pub struct MavlinkCameraInformation {
 enum ThreadState {
     DEAD,
     RUNNING,
+    #[allow(dead_code)] // ZOMBIE is here for the future
     ZOMBIE,
     RESTART,
 }
