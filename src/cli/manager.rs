@@ -19,8 +19,7 @@ lazy_static! {
             .unwrap()
             .to_str()
             .unwrap()
-    )
-    .to_string();
+    );
 }
 
 impl Manager<'_> {
