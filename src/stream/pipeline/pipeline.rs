@@ -25,6 +25,14 @@ pub enum Pipeline {
 }
 
 impl Pipeline {
+    pub fn inner_state(&mut self) -> &mut PipelineState {
+        match self {
+            Pipeline::V4l(pipeline) => &mut pipeline.state,
+            Pipeline::Fake(pipeline) => &mut pipeline.state,
+            Pipeline::Redirect(pipeline) => &mut pipeline.state,
+        }
+    }
+
     #[instrument(level = "debug")]
     pub fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
         let pipeline_state = PipelineState::try_new(video_and_stream_information)?;
@@ -43,23 +51,13 @@ impl Pipeline {
 
     #[instrument(level = "debug")]
     pub fn add_sink(&mut self, sink: Sink) -> Result<()> {
-        let state = match self {
-            Pipeline::V4l(pipeline) => &mut pipeline.state,
-            Pipeline::Fake(pipeline) => &mut pipeline.state,
-            Pipeline::Redirect(pipeline) => &mut pipeline.state,
-        };
-        state.add_sink(sink)
+        self.inner_state().add_sink(sink)
     }
 
     #[allow(dead_code)] // This functions is reserved here for when we start dynamically add/remove Sinks
     #[instrument(level = "debug")]
     pub fn remove_sink(&mut self, sink_id: String) -> Result<()> {
-        let state = match self {
-            Pipeline::V4l(pipeline) => &mut pipeline.state,
-            Pipeline::Fake(pipeline) => &mut pipeline.state,
-            Pipeline::Redirect(pipeline) => &mut pipeline.state,
-        };
-        state.remove_sink(sink_id)
+        self.inner_state().remove_sink(sink_id)
     }
 }
 
