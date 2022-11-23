@@ -53,6 +53,7 @@ tracing-appender = "0.2.2"
 tracing-actix-web = "0.6.0"
 anyhow = "1"
 tokio = "1.20"
+enum_dispatch = "0.3.8"
 
 ## Mavlink
 mavlink = { version = "0.10.1", features = ["default", "emit-extensions"] }

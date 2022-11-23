@@ -1,17 +1,19 @@
-use super::types::*;
-use crate::mavlink::mavlink_camera::MavlinkCameraHandle;
+use std::sync::{Arc, Mutex};
+
 use crate::settings;
 use crate::video::types::VideoSourceType;
 use crate::video_stream::types::VideoAndStreamInformation;
+
+use anyhow::Result;
 use simple_error::{simple_error, SimpleResult};
-use std::sync::{Arc, Mutex};
+
 use tracing::*;
 
-#[allow(dead_code)]
-struct Stream {
-    video_and_stream_information: VideoAndStreamInformation,
-    mavlink_camera: Option<MavlinkCameraHandle>,
-}
+use super::{
+    pipeline::pipeline::{Pipeline, PipelineGstreamerInterface},
+    stream::Stream,
+    types::StreamStatus,
+};
 
 #[derive(Default)]
 struct Manager {
@@ -22,8 +24,24 @@ lazy_static! {
     static ref MANAGER: Arc<Mutex<Manager>> = Arc::new(Mutex::new(Manager::default()));
 }
 
+impl Manager {
+    fn update_settings(&self) {
+        let video_and_stream_informations = self
+            .streams
+            .iter()
+            .map(|stream| stream.video_and_stream_information.clone())
+            .collect();
+
+        settings::manager::set_streams(&video_and_stream_informations);
+    }
+}
+
 pub fn init() {
     debug!("Starting video stream service.");
+
+    if let Err(error) = gstreamer::init() {
+        error!("Error! {error}");
+    };
 
     config_gstreamer_plugins();
 }
@@ -72,20 +90,36 @@ pub fn start_default() {
     }
 }
 
-// Start all streams that are not running
-#[allow(dead_code)]
-pub fn start() {
-    todo!()
-}
-
 pub fn streams() -> Vec<StreamStatus> {
-    todo!()
+    let manager = MANAGER.as_ref().lock().unwrap();
+
+    manager
+        .streams
+        .iter()
+        .map(|stream| StreamStatus {
+            running: match &stream.pipeline {
+                Pipeline::V4l(pipeline) => pipeline.is_running(),
+                Pipeline::Fake(pipeline) => pipeline.is_running(),
+                Pipeline::Redirect(pipeline) => pipeline.is_running(),
+            },
+            video_and_stream: stream.video_and_stream_information.clone(),
+        })
+        .collect()
 }
 
-pub fn add_stream_and_start(
-    video_and_stream_information: VideoAndStreamInformation,
-) -> SimpleResult<()> {
-    todo!()
+pub fn add_stream_and_start(video_and_stream_information: VideoAndStreamInformation) -> Result<()> {
+    let stream = Stream::try_new(&video_and_stream_information)?;
+
+    let mut manager = MANAGER.as_ref().lock().unwrap();
+    for stream in manager.streams.iter() {
+        stream
+            .video_and_stream_information
+            .conflicts_with(&video_and_stream_information)?
+    }
+    manager.streams.push(stream);
+
+    manager.update_settings();
+    return Ok(());
 }
 
 pub fn remove_stream(stream_name: &str) -> SimpleResult<()> {
@@ -95,12 +129,7 @@ pub fn remove_stream(stream_name: &str) -> SimpleResult<()> {
     match manager.streams.iter().position(find_stream) {
         Some(index) => {
             manager.streams.remove(index);
-            let video_and_stream_informations = manager
-                .streams
-                .iter()
-                .map(|stream| stream.video_and_stream_information.clone())
-                .collect();
-            settings::manager::set_streams(&video_and_stream_informations);
+            manager.update_settings();
             Ok(())
         }
         None => Err(simple_error!("Identification does not match any stream.")),
