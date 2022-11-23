@@ -159,9 +159,17 @@ impl MavlinkCameraInformation {
             .first()?
             .to_owned();
 
+        let mavlink_stream_type = match video_stream_uri.scheme() {
+            "rtsp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
+            "udp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP,
+            unsupported @ _ => {
+                warn!("Scheme {unsupported:#?} is not supported for a Mavlink Camera.");
+                return None;
+            }
+        };
+
         let video_stream_name = video_and_stream_information.name.clone();
 
-        let mavlink_stream_type = mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP; // TODO: get type from Sink!
         let video_source_type = video_and_stream_information.video_source.clone();
 
         let component = MavlinkCameraComponent::try_new(video_and_stream_information)?;
