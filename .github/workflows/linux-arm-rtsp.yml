@@ -44,7 +44,7 @@ jobs:
           export SCCACHE_DIR=/tmp/.cache
           export PATH="$HOME/.cargo/bin:$PATH"
           sccache --show-stats
-          RUSTC_WRAPPER=sccache cargo build --verbose --release --features rtsp
+          RUSTC_WRAPPER=sccache cargo build --verbose --release
           sccache --show-stats
 
     - name: Prepare files
