@@ -40,7 +40,7 @@ impl Stream {
                 let endpoint = endpoint.scheme();
                 let result = match endpoint {
                     "udp" => create_udp_sink(video_and_stream_information),
-                    unsupported @ _ => Err(anyhow!("Unsupported Endpoint scheme: {unsupported}")),
+                    unsupported => Err(anyhow!("Unsupported Endpoint scheme: {unsupported}")),
                 };
 
                 if let Err(reason) = result.and_then(|sink| stream.pipeline.add_sink(sink)) {

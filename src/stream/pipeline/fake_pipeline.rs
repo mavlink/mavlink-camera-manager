@@ -26,19 +26,19 @@ impl PipelineGstreamerInterface for FakePipeline {
             .configuration
         {
             CaptureConfiguration::VIDEO(configuration) => configuration,
-            unsupported @ _ => bail!("{unsupported:?} is not supported as Fake Pipeline"),
+            unsupported => bail!("{unsupported:?} is not supported as Fake Pipeline"),
         };
 
         let video_source = match &video_and_stream_information.video_source {
             VideoSourceType::Gst(source) => source,
-            unsupported @ _ => {
+            unsupported => {
                 bail!("SourceType {unsupported:?} is not supported as Fake Pipeline")
             }
         };
 
         let pattern = match &video_source.source {
             VideoSourceGstType::Fake(pattern) => pattern,
-            unsupported @ _ => {
+            unsupported => {
                 bail!("SourceType {unsupported:?} is not supported as Fake Pipeline")
             }
         };
@@ -69,7 +69,7 @@ impl PipelineGstreamerInterface for FakePipeline {
                     tee_name = PIPELINE_TEE_NAME
                 )
             }
-            unsupported @ _ => bail!("Encode {unsupported:?} is not supported for V4l Pipeline"),
+            unsupported => bail!("Encode {unsupported:?} is not supported for V4l Pipeline"),
         };
 
         let pipeline = gstreamer::parse_launch(&description)?;
