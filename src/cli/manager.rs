@@ -198,7 +198,7 @@ fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
 
 fn gst_feature_rank_validator(val: String) -> Result<(), String> {
     if let Some((_key, value_str)) = val.split_once('=') {
-        if let Err(_) = value_str.parse::<i32>() {
+        if value_str.parse::<i32>().is_err() {
             return Err("GST_RANK_INT_VALUE should be a valid 32 bits signed integer, like \"-1\", \"0\" or \"256\" (without quotes).".to_string());
         }
     } else {
