@@ -11,16 +11,17 @@ use super::pipeline::{PipelineGstreamerInterface, PipelineState, PIPELINE_TEE_NA
 
 use anyhow::{bail, Result};
 
-use gstreamer::prelude::*;
+use gst::prelude::*;
 
 #[derive(Debug)]
 pub struct FakePipeline {
     pub state: PipelineState,
 }
-impl PipelineGstreamerInterface for FakePipeline {
-    fn build_pipeline(
+
+impl FakePipeline {
+    pub fn try_new(
         video_and_stream_information: &VideoAndStreamInformation,
-    ) -> Result<gstreamer::Pipeline> {
+    ) -> Result<gst::Pipeline> {
         let configuration = match &video_and_stream_information
             .stream_information
             .configuration
@@ -72,20 +73,17 @@ impl PipelineGstreamerInterface for FakePipeline {
             unsupported => bail!("Encode {unsupported:?} is not supported for V4l Pipeline"),
         };
 
-        let pipeline = gstreamer::parse_launch(&description)?;
+        let pipeline = gst::parse_launch(&description)?;
 
         let pipeline = pipeline
-            .downcast::<gstreamer::Pipeline>()
+            .downcast::<gst::Pipeline>()
             .expect("Couldn't downcast pipeline");
-
-        pipeline.debug_to_dot_file_with_ts(
-            gstreamer::DebugGraphDetails::all(),
-            "video_pipeline_created",
-        );
 
         return Ok(pipeline);
     }
+}
 
+impl PipelineGstreamerInterface for FakePipeline {
     fn is_running(&self) -> bool {
         self.state.pipeline_runner.is_running()
     }

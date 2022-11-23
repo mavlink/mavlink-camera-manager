@@ -45,6 +45,7 @@ pub struct StreamInformation {
 
 #[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
 pub struct StreamStatus {
+    pub id: uuid::Uuid,
     pub running: bool,
     pub video_and_stream: VideoAndStreamInformation,
 }

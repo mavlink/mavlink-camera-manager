@@ -1,13 +1,17 @@
-use std::{collections::HashMap, sync::Arc, thread};
+use std::{collections::HashMap, thread};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 
-use gstreamer::prelude::*;
+use gst::prelude::*;
 
 use tracing::*;
 
 use crate::{
-    stream::sink::sink::{Sink, SinkInterface},
+    stream::{
+        manager::Manager,
+        sink::sink::{Sink, SinkInterface},
+        webrtc::signalling_server::StreamManagementInterface,
+    },
     video::types::VideoSourceType,
     video_stream::types::VideoAndStreamInformation,
 };
@@ -17,6 +21,12 @@ use super::{
     v4l_pipeline::V4lPipeline,
 };
 
+#[enum_dispatch]
+pub trait PipelineGstreamerInterface {
+    fn is_running(&self) -> bool;
+}
+
+#[enum_dispatch(PipelineGstreamerInterface)]
 #[derive(Debug)]
 pub enum Pipeline {
     V4l(V4lPipeline),
@@ -25,11 +35,19 @@ pub enum Pipeline {
 }
 
 impl Pipeline {
-    pub fn inner_state(&mut self) -> &mut PipelineState {
+    pub fn inner_state_mut(&mut self) -> &mut PipelineState {
         match self {
             Pipeline::V4l(pipeline) => &mut pipeline.state,
             Pipeline::Fake(pipeline) => &mut pipeline.state,
             Pipeline::Redirect(pipeline) => &mut pipeline.state,
+        }
+    }
+
+    pub fn inner_state_as_ref(&self) -> &PipelineState {
+        match self {
+            Pipeline::V4l(pipeline) => &pipeline.state,
+            Pipeline::Fake(pipeline) => &pipeline.state,
+            Pipeline::Redirect(pipeline) => &pipeline.state,
         }
     }
 
@@ -51,32 +69,24 @@ impl Pipeline {
 
     #[instrument(level = "debug")]
     pub fn add_sink(&mut self, sink: Sink) -> Result<()> {
-        self.inner_state().add_sink(sink)
+        self.inner_state_mut().add_sink(sink)
     }
 
     #[allow(dead_code)] // This functions is reserved here for when we start dynamically add/remove Sinks
     #[instrument(level = "debug")]
-    pub fn remove_sink(&mut self, sink_id: String) -> Result<()> {
-        self.inner_state().remove_sink(sink_id)
+    pub fn remove_sink(&mut self, sink_id: &uuid::Uuid) -> Result<()> {
+        self.inner_state_mut().remove_sink(sink_id)
     }
 }
 
 #[derive(Debug)]
 pub struct PipelineState {
-    pub pipeline_id: String,
-    pub pipeline: Arc<gstreamer::Pipeline>,
-    pub tee: Arc<gstreamer::Element>,
-    pub sinks: HashMap<String, Sink>,
+    pub pipeline_id: uuid::Uuid,
+    pub pipeline: gst::Pipeline,
+    pub tee: gst::Element,
+    pub sinks: HashMap<uuid::Uuid, Sink>,
     pub pipeline_runner: PipelineRunner,
     _watcher_thread_handle: std::thread::JoinHandle<()>,
-}
-
-pub trait PipelineGstreamerInterface {
-    fn build_pipeline(
-        video_and_stream_information: &VideoAndStreamInformation,
-    ) -> Result<gstreamer::Pipeline>;
-
-    fn is_running(&self) -> bool;
 }
 
 pub const PIPELINE_TEE_NAME: &str = "Tee";
@@ -85,25 +95,23 @@ impl PipelineState {
     #[instrument(level = "debug")]
     pub fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
         let pipeline = match &video_and_stream_information.video_source {
-            VideoSourceType::Gst(_) => FakePipeline::build_pipeline(video_and_stream_information),
-            VideoSourceType::Local(_) => V4lPipeline::build_pipeline(video_and_stream_information),
-            VideoSourceType::Redirect(_) => {
-                RedirectPipeline::build_pipeline(video_and_stream_information)
-            }
+            VideoSourceType::Gst(_) => FakePipeline::try_new(video_and_stream_information),
+            VideoSourceType::Local(_) => V4lPipeline::try_new(video_and_stream_information),
+            VideoSourceType::Redirect(_) => RedirectPipeline::try_new(video_and_stream_information),
         }?;
-        // let pipeline_id = video_and_stream_information.name.clone();
-        let pipeline_id = "0".to_string();
+        let pipeline_id = Manager::generate_uuid();
 
-        let tee = Arc::new(
-            pipeline
-                .by_name(PIPELINE_TEE_NAME)
-                .context(format!("no element named {PIPELINE_TEE_NAME:#?}"))?,
-        );
+        let tee = pipeline
+            .by_name(PIPELINE_TEE_NAME)
+            .context(format!("no element named {PIPELINE_TEE_NAME:#?}"))?;
 
         let pipeline_runner = PipelineRunner::new(&pipeline, pipeline_id.clone());
         let mut killswitch_receiver = pipeline_runner.get_receiver();
 
-        let pipeline = Arc::new(pipeline);
+        pipeline.debug_to_dot_file_with_ts(
+            gst::DebugGraphDetails::all(),
+            format!("pipeline-{pipeline_id}-created"),
+        );
 
         Ok(Self {
             pipeline_id: pipeline_id.clone(),
@@ -114,13 +122,14 @@ impl PipelineState {
             _watcher_thread_handle: thread::spawn(move || loop {
                 // Here we end the stream if any error is received. This should end all sessions too.
                 if let Ok(reason) = killswitch_receiver.try_recv() {
-                    info!("Removing stream {pipeline_id}. Reason: {reason}");
-                    if let Err(reason) = crate::stream::manager::remove_stream(pipeline_id.as_str())
-                    {
-                        warn!("Failed removing stream {pipeline_id}. Reason: {reason}");
+                    warn!("KILLSWITCH RECEIVED AS {pipeline_id:#?}. Reason: {reason:#?}");
+                    // TODO: We need to decide the behavior and implement it. The older behavior was to remove the entire pipeline whenever any error had occured, thus the "killswitch"
+                    if let Err(reason) = Manager::remove_stream(&pipeline_id) {
+                        warn!("Failed removing Pipeline {pipeline_id}. Reason: {reason}");
                     } else {
-                        break;
+                        info!("Pipeline {pipeline_id} removed. Reason: {reason}");
                     }
+                    break;
                 }
                 thread::sleep(std::time::Duration::from_secs(1));
             }),
@@ -129,48 +138,44 @@ impl PipelineState {
 
     /// Links the sink pad from the given Sink to this Pipeline's Tee element
     #[instrument(level = "debug")]
-    pub fn add_sink(&mut self, sink: Sink) -> Result<()> {
-        let sink_id = &sink.get_id().clone();
+    pub fn add_sink(&mut self, mut sink: Sink) -> Result<()> {
+        let pipeline_id = &self.pipeline_id;
 
         // Request a new src pad for the Tee
-        let tee_src_pad = self
-            .tee
-            .request_pad_simple("src_%u")
-            .context("Failed requesting src pad for Tee")?;
-        let sink = sink.set_tee_src_pad(tee_src_pad);
+        let tee_src_pad = self.tee.request_pad_simple("src_%u").context(format!(
+            "Failed requesting src pad for Tee of the pipeline {pipeline_id}"
+        ))?;
+        debug!("Got tee's src pad {:#?}", tee_src_pad.name());
 
-        // Add the Sink element to the Pipeline
         let pipeline = &self.pipeline;
-        let sink_element = sink.get_element();
-        pipeline.add(sink_element.as_ref() as &gstreamer::Element)?;
 
-        // Link the new Tee's src pad to the Sink's sink pad
-        let sink_pad = sink.get_sink_pad();
-        let tee_src_pad = sink.get_tee_src_pad().context("Tee src pad is None")?;
-        if let Err(error) = tee_src_pad.link(sink_pad) {
-            pipeline.remove(sink_element.as_ref() as &gstreamer::Element)?;
+        // Temporarely set to Ready to avoid losing frames during connection of the new Sink
+        // if let Err(error) = pipeline.set_state(gst::State::Ready) {
+        //     sink.unlink(pipeline, &self.pipeline_id)?;
+        //     bail!(error)
+        // }
+
+        // Link the Sink
+        sink.link(pipeline, &self.pipeline_id, tee_src_pad)?;
+        let sink_id = &sink.get_id();
+
+        pipeline.debug_to_dot_file_with_ts(
+            gst::DebugGraphDetails::all(),
+            format!("pipeline-{pipeline_id}-sink-{sink_id}-before-playing"),
+        );
+
+        // Start it
+        if let Err(error) = pipeline.set_state(gst::State::Playing) {
+            sink.unlink(pipeline, &self.pipeline_id)?;
             bail!(error)
         }
 
-        pipeline.debug_to_dot_file(
-            gstreamer::DebugGraphDetails::all(),
-            format!("sink-{}-before-playing", &sink.get_id()),
+        pipeline.debug_to_dot_file_with_ts(
+            gst::DebugGraphDetails::all(),
+            format!("pipeline-{pipeline_id}-sink-{sink_id}-playing"),
         );
 
-        if let Err(error) = pipeline.set_state(gstreamer::State::Playing) {
-            pipeline.remove(sink_element.as_ref() as &gstreamer::Element)?;
-            tee_src_pad.unlink(sink_pad)?;
-            bail!(error)
-        }
-
-        pipeline.debug_to_dot_file(
-            gstreamer::DebugGraphDetails::all(),
-            format!("sink-{sink_id}-playing"),
-        );
-
-        drop(sink_element);
-
-        self.sinks.insert(sink_id.to_string(), sink);
+        self.sinks.insert(sink_id.clone(), sink);
 
         Ok(())
     }
@@ -179,51 +184,36 @@ impl PipelineState {
     ///
     /// Important notes about pad unlinking: [here](https://gstreamer.freedesktop.org/documentation/application-development/advanced/pipeline-manipulation.html?gi-language=c#dynamically-changing-the-pipeline)
     #[instrument(level = "info")]
-    pub fn remove_sink(&mut self, sink_id: String) -> Result<()> {
+    pub fn remove_sink(&mut self, sink_id: &uuid::Uuid) -> Result<()> {
         let pipeline_id = &self.pipeline_id;
-        let sink = self.sinks.remove(&sink_id).context(format!(
+        let sink = self.sinks.remove(sink_id).context(format!(
             "Failed to remove sink {sink_id} from Sinks of the Pipeline {pipeline_id}"
         ))?;
 
         let pipeline = &self.pipeline;
-        pipeline.debug_to_dot_file(
-            gstreamer::DebugGraphDetails::all(),
-            format!("sink-{sink_id}-before-removing"),
+        pipeline.debug_to_dot_file_with_ts(
+            gst::DebugGraphDetails::all(),
+            format!("pipeline-{pipeline_id}-sink-{sink_id}-before-removing"),
         );
 
-        let sink_pad = sink.get_sink_pad();
-        let tee_src_pad = sink.get_tee_src_pad().context("Tee src pad is None")?;
-        if let Err(error) = tee_src_pad.unlink(sink_pad) {
-            bail!("Failed unlinking element's sink {sink_id} from from Pipeline {pipeline_id} Tee's source. Reason: {error:?}");
-        }
+        // Unlink the Sink
+        sink.unlink(pipeline, pipeline_id)?;
 
+        // Set pipeline state to NULL when there are no consumers to save CPU usage.
         let tee = pipeline
             .by_name(PIPELINE_TEE_NAME)
             .context(format!("no element named {PIPELINE_TEE_NAME:#?}"))?;
-        if let Err(error) = tee.remove_pad(tee_src_pad) {
-            bail!("Failed removing Tee's source pad. Reason: {error:?}");
-        }
-
-        let sink_element = sink.get_element();
-        if let Err(error) = sink_element.set_state(gstreamer::State::Null) {
-            bail!("Failed to set Sink to NULL. Reason: {error:#?}")
-        }
-        if let Err(error) = pipeline.remove(sink_element.as_ref() as &gstreamer::Element) {
-            bail!(
-                "Failed removing Sink element {sink_id} from Pipeline {pipeline_id}. Reason: {error:?}"
-            );
-        }
-
-        // Set pipeline state to NULL when there are no consumers to save CPU usage.
         if tee.src_pads().is_empty() {
-            if let Err(error) = pipeline.set_state(gstreamer::State::Null) {
-                bail!("Failed to change state of Pipeline {pipeline_id} to NULL. Reason: {error}");
+            if let Err(error) = pipeline.set_state(gst::State::Null) {
+                return Err(anyhow!(
+                    "Failed to change state of Pipeline {pipeline_id} to NULL. Reason: {error}"
+                ));
             }
         }
 
-        pipeline.debug_to_dot_file(
-            gstreamer::DebugGraphDetails::all(),
-            format!("{sink_id}-dropping-after"),
+        pipeline.debug_to_dot_file_with_ts(
+            gst::DebugGraphDetails::all(),
+            format!("pipeline-{pipeline_id}-sink-{sink_id}-after-removing"),
         );
 
         Ok(())
@@ -233,16 +223,16 @@ impl PipelineState {
 impl Drop for PipelineState {
     #[instrument(level = "debug")]
     fn drop(&mut self) {
-        if let Err(reason) = self.pipeline.set_state(gstreamer::State::Null) {
-            warn!("Failed setting Pipeline to NULL. Reason: {reason:#?}");
-        }
+        // if let Err(reason) = self.pipeline.set_state(gst::State::Null) {
+        //     warn!("Failed setting Pipeline to NULL. Reason: {reason:#?}");
+        // }
 
-        let sink_ids = self.sinks.keys().cloned().collect::<Vec<String>>();
-        sink_ids.iter().for_each(|sink_id| {
-            if let Err(error) = self.remove_sink(sink_id.to_string()) {
-                warn!("{error:#?}");
-            }
-        });
+        // let sink_ids = self.sinks.keys().cloned().collect::<Vec<uuid::Uuid>>();
+        // sink_ids.iter().for_each(|sink_id| {
+        //     if let Err(error) = self.remove_sink(sink_id) {
+        //         warn!("{error:#?}");
+        //     }
+        // });
         self.sinks.clear();
     }
 }

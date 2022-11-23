@@ -1,4 +1,4 @@
-use gstreamer::prelude::*;
+use gst::prelude::*;
 
 use anyhow::{bail, Context, Result};
 
@@ -16,7 +16,7 @@ pub struct PipelineRunner {
 #[allow(dead_code)]
 impl PipelineRunner {
     #[instrument(level = "debug")]
-    pub fn new(pipeline: &gstreamer::Pipeline, pipeline_id: String) -> Self {
+    pub fn new(pipeline: &gst::Pipeline, pipeline_id: uuid::Uuid) -> Self {
         let pipeline_weak = pipeline.downgrade();
         let (killswitch_sender, _killswitch_receiver) = broadcast::channel(1);
         Self {
@@ -55,8 +55,8 @@ impl PipelineRunner {
 
     #[instrument(level = "debug")]
     fn runner(
-        pipeline_weak: gstreamer::glib::WeakRef<gstreamer::Pipeline>,
-        pipeline_id: String,
+        pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
+        pipeline_id: uuid::Uuid,
     ) -> Result<()> {
         let pipeline = pipeline_weak
             .upgrade()
@@ -70,16 +70,16 @@ impl PipelineRunner {
         // Some cameras have a duplicated timestamp when starting.
         // to avoid restarting the camera once and once again,
         // this checks for a maximum of 10 lost before restarting.
-        let mut previous_position: Option<gstreamer::ClockTime> = None;
+        let mut previous_position: Option<gst::ClockTime> = None;
         let mut lost_timestamps: usize = 0;
-        let max_lost_timestamps: usize = 10;
+        let max_lost_timestamps: usize = 100;
 
         'outer: loop {
             std::thread::sleep(std::time::Duration::from_millis(100));
 
             // Restart pipeline if pipeline position do not change,
-            // occur if usb connection is lost and gstreamer do not detect it
-            match pipeline.query_position::<gstreamer::ClockTime>() {
+            // occur if usb connection is lost and gst do not detect it
+            match pipeline.query_position::<gst::ClockTime>() {
                 Some(position) => {
                     previous_position = match previous_position {
                         Some(current_previous_position) => {
@@ -109,8 +109,8 @@ impl PipelineRunner {
             /* Iterate messages on the bus until an error or EOS occurs,
              * although in this example the only error we'll hopefully
              * get is if the user closes the output window */
-            for msg in bus.timed_pop(gstreamer::ClockTime::from_mseconds(100)) {
-                use gstreamer::MessageView;
+            for msg in bus.timed_pop(gst::ClockTime::from_mseconds(100)) {
+                use gst::MessageView;
 
                 match msg.view() {
                     MessageView::Eos(eos) => {
@@ -125,7 +125,7 @@ impl PipelineRunner {
                             error.debug()
                         );
                         pipeline.debug_to_dot_file_with_ts(
-                            gstreamer::DebugGraphDetails::all(),
+                            gst::DebugGraphDetails::all(),
                             format!("pipeline-error-{pipeline_id}"),
                         );
                         bail!(error.error());
