@@ -80,37 +80,40 @@ fn check_scheme(video_and_stream_information: &VideoAndStreamInformation) -> Res
     };
     let scheme = endpoints.first().unwrap().scheme();
 
-    if let VideoSourceType::Redirect(_) = video_and_stream_information.video_source {
+    if matches!(
+        video_and_stream_information.video_source,
+        VideoSourceType::Redirect(_)
+    ) {
         match scheme {
-            "udp" | "rtsp" => scheme.to_string(),
+            "udp" | "rtsp" => return Ok(()),
             _ => bail!(
                 "The URL's scheme for REDIRECT endpoints should be \"udp\" or \"rtsp\", but was: {scheme:?}",
             )
         };
-    } else {
-        match scheme {
-            "udp" => {
-                if VideoEncodeType::H265 == encode {
-                    bail!("Endpoint with udp scheme only supports H264, encode type is H265, the scheme should be udp265.")
-                }
+    }
 
-                // UDP endpoints should contain both host and port
-                if endpoints
-                    .iter()
-                    .any(|endpoint| endpoint.host().is_none() || endpoint.port().is_none())
-                {
-                    bail!(
-                        "Endpoint with udp scheme should contain host and port. Endpoints: {endpoints:#?}"
-                    )
-                }
+    match scheme {
+        "udp" => {
+            if VideoEncodeType::H265 == encode {
+                bail!("Endpoint with udp scheme only supports H264, encode type is H265, the scheme should be udp265.")
             }
-            "udp265" => {
-                if VideoEncodeType::H265 != encode {
-                    bail!("Endpoint with udp265 scheme only supports H265 encode. Encode: {encode:?}, Endpoints: {endpoints:#?}")
-                }
+
+            // UDP endpoints should contain both host and port
+            if endpoints
+                .iter()
+                .any(|endpoint| endpoint.host().is_none() || endpoint.port().is_none())
+            {
+                bail!(
+                    "Endpoint with udp scheme should contain host and port. Endpoints: {endpoints:#?}"
+                )
             }
-            _ => bail!("Scheme is not accepted as stream endpoint: {scheme}",),
         }
+        "udp265" => {
+            if VideoEncodeType::H265 != encode {
+                bail!("Endpoint with udp265 scheme only supports H265 encode. Encode: {encode:?}, Endpoints: {endpoints:#?}")
+            }
+        }
+        _ => bail!("Scheme is not accepted as stream endpoint: {scheme}",),
     }
 
     return Ok(());
