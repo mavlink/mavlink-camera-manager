@@ -203,7 +203,7 @@ pub fn streams_post(json: web::Json<PostStream>) -> HttpResponse {
 #[api_v2_operation]
 /// Remove a desired stream
 pub fn remove_stream(query: web::Query<RemoveStream>) -> HttpResponse {
-    match stream_manager::remove_stream(&query.name) {
+    match stream_manager::remove_stream_by_name(&query.name) {
         Ok(_) => HttpResponse::Ok()
             .content_type("application/json")
             .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap()),

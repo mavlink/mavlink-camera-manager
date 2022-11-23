@@ -30,6 +30,8 @@ async fn main() -> Result<(), std::io::Error> {
         settings::manager::set_mavlink_endpoint(endpoint);
     }
 
+    stream::webrtc::signalling_server::SignallingServer::default();
+
     stream::manager::start_default();
 
     server::manager::run(cli::manager::server_address()).await

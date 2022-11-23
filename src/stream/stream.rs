@@ -1,7 +1,9 @@
+use super::manager::Manager;
 use super::pipeline::pipeline::Pipeline;
-use super::sink::sink::Sink;
-use super::sink::udp_sink::UdpSink;
+use super::sink::sink::create_udp_sink;
 use super::types::*;
+use super::webrtc::signalling_protocol::PeerId;
+use super::webrtc::signalling_server::StreamManagementInterface;
 use crate::mavlink::mavlink_camera::MavlinkCameraHandle;
 use crate::video::types::{VideoEncodeType, VideoSourceType};
 use crate::video_stream::types::VideoAndStreamInformation;
@@ -10,8 +12,9 @@ use anyhow::{anyhow, bail, Result};
 
 use tracing::*;
 
-#[allow(dead_code)]
+#[derive(Debug)]
 pub struct Stream {
+    pub id: PeerId,
     pub pipeline: Pipeline,
     pub video_and_stream_information: VideoAndStreamInformation,
     pub mavlink_camera: Option<MavlinkCameraHandle>,
@@ -23,7 +26,16 @@ impl Stream {
         check_endpoints(video_and_stream_information)?;
         check_scheme(video_and_stream_information)?;
 
-        let mut stream = create_stream(video_and_stream_information)?;
+        let pipeline = Pipeline::try_new(video_and_stream_information)?;
+        let mavlink_camera = MavlinkCameraHandle::try_new(video_and_stream_information);
+        let id = pipeline.inner_state_as_ref().pipeline_id;
+
+        let mut stream = Stream {
+            id,
+            pipeline,
+            video_and_stream_information: video_and_stream_information.clone(),
+            mavlink_camera,
+        };
 
         if let VideoSourceType::Redirect(_) = &video_and_stream_information.video_source {
             // Do not add any Sink if it's a redirect Pipeline
@@ -39,7 +51,9 @@ impl Stream {
             .for_each(|endpoint| {
                 let endpoint = endpoint.scheme();
                 let result = match endpoint {
-                    "udp" => create_udp_sink(video_and_stream_information),
+                    "udp" => {
+                        create_udp_sink(Manager::generate_uuid(), video_and_stream_information)
+                    }
                     unsupported => Err(anyhow!("Unsupported Endpoint scheme: {unsupported}")),
                 };
 
@@ -103,7 +117,7 @@ fn check_scheme(video_and_stream_information: &VideoAndStreamInformation) -> Res
                 .iter()
                 .any(|endpoint| endpoint.host().is_none() || endpoint.port().is_none())
             {
-                bail!(
+                return Err(anyhow!(
                     "Endpoint with udp scheme should contain host and port. Endpoints: {endpoints:#?}"
                 )
             }
@@ -117,27 +131,4 @@ fn check_scheme(video_and_stream_information: &VideoAndStreamInformation) -> Res
     }
 
     return Ok(());
-}
-
-#[instrument(level = "debug")]
-fn create_udp_sink(video_and_stream_information: &VideoAndStreamInformation) -> Result<Sink> {
-    let id = video_and_stream_information.name.clone();
-    let addresses = video_and_stream_information
-        .stream_information
-        .endpoints
-        .clone();
-
-    Ok(Sink::Udp(UdpSink::try_new(id, addresses)?))
-}
-
-#[instrument(level = "debug")]
-fn create_stream(video_and_stream_information: &VideoAndStreamInformation) -> Result<Stream> {
-    let pipeline = Pipeline::try_new(video_and_stream_information)?;
-    let mavlink_camera = MavlinkCameraHandle::try_new(video_and_stream_information);
-
-    Ok(Stream {
-        pipeline,
-        video_and_stream_information: video_and_stream_information.clone(),
-        mavlink_camera,
-    })
 }

@@ -1,23 +1,36 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    ops::DerefMut,
+    sync::{Arc, Mutex},
+};
 
-use crate::settings;
-use crate::video::types::VideoSourceType;
-use crate::video_stream::types::VideoAndStreamInformation;
+use crate::{settings, stream::webrtc::signalling_protocol::BindAnswer};
+use crate::{stream::sink::sink::SinkInterface, video::types::VideoSourceType};
+use crate::{
+    stream::sink::{sink::Sink, webrtc_sink::WebRTCSink},
+    video_stream::types::VideoAndStreamInformation,
+};
 
-use anyhow::Result;
-use simple_error::{simple_error, SimpleResult};
+use anyhow::{anyhow, Context, Result};
 
+use gst::{event::Eos, prelude::ElementExtManual, traits::ElementExt};
 use tracing::*;
 
 use super::{
     pipeline::pipeline::{Pipeline, PipelineGstreamerInterface},
     stream::Stream,
     types::StreamStatus,
+    webrtc::{
+        self,
+        signalling_protocol::RTCSessionDescription,
+        signalling_server::{StreamManagementInterface, WebRTCSessionManagementInterface},
+        webrtcbin_interface::WebRTCBinInterface,
+    },
 };
 
 #[derive(Default)]
-struct Manager {
-    pub streams: Vec<Stream>,
+pub struct Manager {
+    streams: HashMap<uuid::Uuid, Stream>,
 }
 
 lazy_static! {
@@ -28,7 +41,7 @@ impl Manager {
     fn update_settings(&self) {
         let video_and_stream_informations = self
             .streams
-            .iter()
+            .values()
             .map(|stream| stream.video_and_stream_information.clone())
             .collect();
 
@@ -36,17 +49,19 @@ impl Manager {
     }
 }
 
+#[instrument(level = "debug")]
 pub fn init() {
     debug!("Starting video stream service.");
 
-    if let Err(error) = gstreamer::init() {
+    if let Err(error) = gst::init() {
         error!("Error! {error}");
     };
 
-    config_gstreamer_plugins();
+    config_gst_plugins();
 }
 
-fn config_gstreamer_plugins() {
+#[instrument(level = "debug")]
+fn config_gst_plugins() {
     let plugins_config = crate::cli::manager::gst_feature_rank();
 
     for config in plugins_config {
@@ -61,6 +76,7 @@ fn config_gstreamer_plugins() {
     }
 }
 
+#[instrument(level = "debug")]
 pub fn start_default() {
     MANAGER.as_ref().lock().unwrap().streams.clear();
 
@@ -90,48 +106,243 @@ pub fn start_default() {
     }
 }
 
+#[instrument(level = "debug")]
 pub fn streams() -> Vec<StreamStatus> {
-    let manager = MANAGER.as_ref().lock().unwrap();
-
-    manager
-        .streams
-        .iter()
-        .map(|stream| StreamStatus {
-            running: match &stream.pipeline {
-                Pipeline::V4l(pipeline) => pipeline.is_running(),
-                Pipeline::Fake(pipeline) => pipeline.is_running(),
-                Pipeline::Redirect(pipeline) => pipeline.is_running(),
-            },
-            video_and_stream: stream.video_and_stream_information.clone(),
-        })
-        .collect()
+    Manager::streams_information()
 }
 
+#[instrument(level = "debug")]
 pub fn add_stream_and_start(video_and_stream_information: VideoAndStreamInformation) -> Result<()> {
     let stream = Stream::try_new(&video_and_stream_information)?;
 
-    let mut manager = MANAGER.as_ref().lock().unwrap();
-    for stream in manager.streams.iter() {
+    let manager = MANAGER.as_ref().lock().unwrap();
+    for stream in manager.streams.values() {
         stream
             .video_and_stream_information
             .conflicts_with(&video_and_stream_information)?
     }
-    manager.streams.push(stream);
+    drop(manager);
+    Manager::add_stream(stream)?;
 
-    manager.update_settings();
-    return Ok(());
+    Ok(())
 }
 
-pub fn remove_stream(stream_name: &str) -> SimpleResult<()> {
-    let find_stream = |stream: &Stream| stream.video_and_stream_information.name == *stream_name;
-
-    let mut manager = MANAGER.as_ref().lock().unwrap();
-    match manager.streams.iter().position(find_stream) {
-        Some(index) => {
-            manager.streams.remove(index);
-            manager.update_settings();
-            Ok(())
+#[instrument(level = "debug")]
+pub fn remove_stream_by_name(stream_name: &str) -> Result<()> {
+    let manager = MANAGER.as_ref().lock().unwrap();
+    if let Some(stream_id) = &manager.streams.iter().find_map(|(id, stream)| {
+        if stream.video_and_stream_information.name == *stream_name {
+            return Some(id.clone());
         }
-        None => Err(simple_error!("Identification does not match any stream.")),
+        return None;
+    }) {
+        drop(manager);
+        Manager::remove_stream(stream_id)?;
+        return Ok(());
+    }
+
+    Err(anyhow!("Stream named {stream_name:#?} not found"))
+}
+
+impl WebRTCSessionManagementInterface for Manager {
+    #[instrument(level = "debug")]
+    fn add_session(
+        bind: &webrtc::signalling_protocol::BindOffer,
+        sender: tokio::sync::mpsc::UnboundedSender<Result<webrtc::signalling_protocol::Message>>,
+    ) -> Result<webrtc::signalling_protocol::SessionId> {
+        let mut guard = MANAGER.lock().unwrap();
+        let manager = guard.deref_mut();
+
+        let producer_id = bind.producer_id;
+        let consumer_id = bind.consumer_id;
+        let session_id = Self::generate_uuid();
+
+        let stream = manager.streams.get_mut(&producer_id).context(format!(
+            "Cannot find any stream with producer {producer_id:#?}"
+        ))?;
+
+        let bind = BindAnswer {
+            producer_id,
+            consumer_id,
+            session_id,
+        };
+
+        let sink = Sink::WebRTC(WebRTCSink::try_new(bind.clone(), sender)?);
+        stream.pipeline.inner_state_mut().add_sink(sink)?;
+        debug!("WebRTC session created: {session_id:#?}");
+
+        Ok(session_id)
+    }
+
+    #[instrument(level = "debug")]
+    fn remove_session(
+        bind: &webrtc::signalling_protocol::BindAnswer,
+        _reason: String,
+    ) -> Result<()> {
+        let mut manager = MANAGER.lock().unwrap();
+
+        let stream = manager
+            .streams
+            .get_mut(&bind.producer_id)
+            .context(format!("Producer {} not found", bind.producer_id))?;
+
+        stream
+            .pipeline
+            .inner_state_mut()
+            .remove_sink(&bind.session_id)
+            .context(format!("Cannot remove session {}", bind.session_id))?;
+
+        info!("Session {} successfully removed!", bind.session_id);
+
+        Ok(())
+    }
+
+    #[instrument(level = "debug")]
+    fn handle_sdp(
+        bind: &webrtc::signalling_protocol::BindAnswer,
+        sdp: &webrtc::signalling_protocol::RTCSessionDescription,
+    ) -> Result<()> {
+        let manager = MANAGER.lock().unwrap();
+
+        let sink = manager
+            .streams
+            .get(&bind.producer_id)
+            .context(format!("Producer {} not found", bind.producer_id))?
+            .pipeline
+            .inner_state_as_ref()
+            .sinks
+            .get(&bind.session_id)
+            .context(format!(
+                "Session {} not found in producer {}",
+                bind.producer_id, bind.producer_id
+            ))?;
+
+        let session = match sink {
+            Sink::WebRTC(webrtcsink) => webrtcsink,
+            _ => return Err(anyhow!("Only Sink::WebRTC accept SDP")),
+        };
+
+        let (sdp, sdp_type) = match sdp {
+            RTCSessionDescription::Answer(answer) => {
+                (answer.sdp.clone(), gst_webrtc::WebRTCSDPType::Answer)
+            }
+            RTCSessionDescription::Offer(offer) => {
+                (offer.sdp.clone(), gst_webrtc::WebRTCSDPType::Offer)
+            }
+        };
+
+        let sdp = gst_sdp::SDPMessage::parse_buffer(sdp.as_bytes())?;
+        let sdp = gst_webrtc::WebRTCSessionDescription::new(sdp_type, sdp);
+        session.handle_sdp(&sdp)
+    }
+
+    #[instrument(level = "debug")]
+    fn handle_ice(
+        bind: &webrtc::signalling_protocol::BindAnswer,
+        sdp_m_line_index: u32,
+        candidate: &str,
+    ) -> Result<()> {
+        let manager = MANAGER.lock().unwrap();
+
+        let sink = manager
+            .streams
+            .get(&bind.producer_id)
+            .context(format!("Producer {} not found", bind.producer_id))?
+            .pipeline
+            .inner_state_as_ref()
+            .sinks
+            .get(&bind.session_id)
+            .context(format!(
+                "Session {} not found in producer {}",
+                bind.producer_id, bind.producer_id
+            ))?;
+
+        let session = match sink {
+            Sink::WebRTC(webrtcsink) => webrtcsink,
+            _ => return Err(anyhow!("Only Sink::WebRTC accept SDP")),
+        };
+
+        session.handle_ice(&sdp_m_line_index, candidate)
+    }
+}
+
+impl StreamManagementInterface<StreamStatus> for Manager {
+    #[instrument(level = "debug")]
+    fn add_stream(stream: super::stream::Stream) -> Result<()> {
+        let mut manager = MANAGER.lock().unwrap();
+
+        let stream_id = stream.id.clone();
+        if manager.streams.insert(stream_id, stream).is_some() {
+            return Err(anyhow!("Failed adding stream {stream_id}"));
+        }
+        manager.update_settings();
+
+        Ok(())
+    }
+
+    #[instrument(level = "debug")]
+    fn remove_stream(stream_id: &webrtc::signalling_protocol::PeerId) -> Result<()> {
+        let mut manager = MANAGER.lock().unwrap();
+
+        if !manager.streams.contains_key(stream_id) {
+            return Err(anyhow!("Already removed"));
+        }
+
+        let stream = manager
+            .streams
+            .remove(&stream_id)
+            .context(format!("Stream {stream_id} not found"))?;
+        manager.update_settings();
+
+        let pipeline = &stream.pipeline.inner_state_as_ref().pipeline;
+        let pipeline_id = stream_id;
+        pipeline.send_event(Eos::new());
+
+        // Unlink all Sinks
+        stream
+            .pipeline
+            .inner_state_as_ref()
+            .sinks
+            .values()
+            .for_each(|sink| {
+                if let Err(error) = sink.unlink(pipeline, pipeline_id) {
+                    warn!(
+                        "Failed unlinking Sink {} from Pipeline {pipeline_id}. Reason: {error:#?}",
+                        sink.get_id()
+                    );
+                }
+            });
+        if let Err(error) = stream
+            .pipeline
+            .inner_state_as_ref()
+            .pipeline
+            .set_state(gst::State::Null)
+        {
+            error!("Failed setting Pipeline {pipeline_id} state to NULL. Reason: {error:#?}");
+        }
+
+        info!("Stream {stream_id} successfully removed!");
+
+        Ok(())
+    }
+
+    #[instrument(level = "debug")]
+    fn streams_information() -> Vec<StreamStatus> {
+        MANAGER
+            .lock()
+            .unwrap()
+            .streams
+            .values()
+            .map(|stream| StreamStatus {
+                id: stream.id,
+                running: stream.pipeline.is_running(),
+                video_and_stream: stream.video_and_stream_information.clone(),
+            })
+            .collect()
+    }
+
+    #[instrument(level = "debug")]
+    fn generate_uuid() -> uuid::Uuid {
+        uuid::Uuid::new_v4()
     }
 }
