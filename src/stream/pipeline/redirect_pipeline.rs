@@ -22,12 +22,12 @@ impl PipelineGstreamerInterface for RedirectPipeline {
             .configuration
         {
             CaptureConfiguration::REDIRECT(configuration) => configuration,
-            unsupported @ _ => bail!("{unsupported:?} is not supported as Redirect Pipeline"),
+            unsupported => bail!("{unsupported:?} is not supported as Redirect Pipeline"),
         };
 
         match &video_and_stream_information.video_source {
             VideoSourceType::Redirect(source) => source,
-            unsupported @ _ => bail!("SourceType {unsupported:?} is not supported as V4l Pipeline"),
+            unsupported => bail!("SourceType {unsupported:?} is not supported as V4l Pipeline"),
         };
 
         if video_and_stream_information
@@ -68,7 +68,7 @@ impl PipelineGstreamerInterface for RedirectPipeline {
                     tee_name = PIPELINE_TEE_NAME
                 )
             }
-            unsupported @ _ => {
+            unsupported => {
                 bail!("Scheme {unsupported:#?} is not supported for Redirect Pipelines")
             }
         };

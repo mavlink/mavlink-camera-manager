@@ -163,7 +163,7 @@ impl MavlinkCameraInformation {
         let mavlink_stream_type = match video_stream_uri.scheme() {
             "rtsp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
             "udp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP,
-            unsupported @ _ => {
+            unsupported => {
                 warn!("Scheme {unsupported:#?} is not supported for a Mavlink Camera.");
                 return None;
             }

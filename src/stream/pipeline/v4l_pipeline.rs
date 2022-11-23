@@ -25,12 +25,12 @@ impl PipelineGstreamerInterface for V4lPipeline {
             .configuration
         {
             CaptureConfiguration::VIDEO(configuration) => configuration,
-            unsupported @ _ => bail!("{unsupported:?} is not supported as V4l Pipeline"),
+            unsupported => bail!("{unsupported:?} is not supported as V4l Pipeline"),
         };
 
         let video_source = match &video_and_stream_information.video_source {
             VideoSourceType::Local(source) => source,
-            unsupported @ _ => bail!("SourceType {unsupported:?} is not supported as V4l Pipeline"),
+            unsupported => bail!("SourceType {unsupported:?} is not supported as V4l Pipeline"),
         };
 
         let description = match &configuration.encode {
@@ -50,7 +50,7 @@ impl PipelineGstreamerInterface for V4lPipeline {
                 tee_name = PIPELINE_TEE_NAME
             )
             }
-            unsupported @ _ => bail!("Encode {unsupported:?} is not supported for V4l Pipeline"),
+            unsupported => bail!("Encode {unsupported:?} is not supported for V4l Pipeline"),
         };
 
         debug!("pipeline_description: {description:#?}");
