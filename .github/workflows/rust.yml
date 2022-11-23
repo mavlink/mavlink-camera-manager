@@ -23,7 +23,6 @@ jobs:
     - name: Build
       run: |
         cargo build --verbose
-        cargo build --verbose --features=rtsp
     - name: Run tests
       run: |
         cargo test --verbose
