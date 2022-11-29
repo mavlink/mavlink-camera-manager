@@ -6,35 +6,41 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
-        - os: ubuntu-latest
-          SUFFIX: linux-desktop
+          - os: ubuntu-22.04
+            TARGET: x86_64-unknown-linux-gnu
+            SUFFIX: linux-desktop
+
+          - os: ubuntu-22.04
+            TARGET: armv7-unknown-linux-gnueabihf
+            SUFFIX: armv7
 
     steps:
-    - name: Building ${{ matrix.os }} ${{ matrix.SUFFIX }}
-      run: echo "${{ matrix.os }} ${{ matrix.SUFFIX }}"
+    - name: Checkout
+      uses: actions/checkout@v3
 
-    - uses: actions/checkout@master
-    - uses: actions-rs/toolchain@v1.0.1
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
         target: ${{ matrix.TARGET }}
         override: true
+        profile: minimal
 
-    - name: Install linux libraries
-      if: ${{ matrix.os == 'ubuntu-latest' }}
-      run: |
-        uname -a
-        sudo apt update
-        sudo apt install -y libunwind-dev
-        sudo apt install -y libclang-dev openssl
-        sudo apt install -y libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev
-
-    - uses: actions-rs/cargo@v1
+    - name: Use cached dependencies
+      uses: Swatinem/rust-cache@v2
       with:
+        key: "${{ matrix.os }}-${{ matrix.TARGET }}-${{ hashFiles('**/Cargo.lock') }}"
+        shared-key: "shared"
+
+    - name: Building for ${{ matrix.os }} ${{ matrix.target }} (${{ matrix.SUFFIX }})
+      uses: actions-rs/cargo@v1
+      with:
+        use-cross: true
         command: build
-        args: --verbose --release
+        args: --verbose --release --target ${{matrix.target}}
 
     - name: Prepare files
       run: |
