@@ -1,0 +1,5 @@
+[target.x86_64-unknown-linux-gnu]
+image = "joaoantoniocardoso/cross-rs:x86_64-unknown-linux-gnu-22.04-with-gstreamer"
+
+[target.armv7-unknown-linux-gnueabihf]
+image = "joaoantoniocardoso/cross-rs:armv7-unknown-linux-gnueabihf-22.04-with-gstreamer"
