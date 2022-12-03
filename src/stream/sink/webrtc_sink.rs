@@ -31,6 +31,7 @@ impl std::ops::Deref for WebRTCSink {
 
 #[derive(Debug)]
 pub struct WebRTCSinkInner {
+    pub queue: gst::Element,
     pub webrtcbin: gst::Element,
     pub webrtcbin_sink_pad: gst::Pad,
     pub tee_src_pad: Option<gst::Pad>,
@@ -115,6 +116,12 @@ impl WebRTCSink {
     ) -> Result<Self> {
         sender.send(Ok(Message::from(Answer::StartSession(bind.clone()))))?;
 
+        let queue = gst::ElementFactory::make("queue")
+            .property_from_str("leaky", "downstream") // Throw away any data
+            .property("flush-on-eos", true)
+            .property("max-size-buffers", 0u32) // Disable buffers
+            .build()?;
+
         let webrtcbin = gst::ElementFactory::make("webrtcbin")
             .property_from_str("name", format!("webrtcbin-{}", bind.session_id).as_str())
             .property("async-handling", true)
@@ -129,6 +136,7 @@ impl WebRTCSink {
             .context("Failed requesting sink pad for webrtcsink")?;
 
         let this = WebRTCSink(Arc::new(Mutex::new(WebRTCSinkInner {
+            queue,
             webrtcbin,
             webrtcbin_sink_pad,
             tee_src_pad: None,
@@ -428,27 +436,50 @@ impl SinkInterface for WebRTCSinkInner {
             ));
         }
         self.tee_src_pad.replace(tee_src_pad);
+        let Some(tee_src_pad) = &self.tee_src_pad else {
+            unreachable!()
+        };
 
-        // Add the Sink element to the Pipeline
-        let sink_element = &self.webrtcbin;
-        if let Err(error) = pipeline.add(sink_element) {
-            bail!(
+        // Add the Sink elements to the Pipeline
+        let elements = &[&self.queue, &self.webrtcbin];
+        if let Err(error) = pipeline.add_many(elements) {
+            return Err(anyhow!(
                 "Failed to add WebRTCBin {sink_id} to Pipeline {pipeline_id}. Reason: {error:#?}"
             ));
         }
 
-        // Link the new Tee's src pad to the Sink's sink pad
-        if let Some(tee_src_pad) = &self.tee_src_pad {
-            if let Err(error) = tee_src_pad.link(&self.webrtcbin_sink_pad) {
-                pipeline.remove(sink_element)?;
-                bail!(error)
-            }
+        // Link the queue's src pad to the Sink's sink pad
+        let queue_src_pad = &self
+            .queue
+            .static_pad("src")
+            .expect("No sink pad found on Queue");
+        if let Err(error) = queue_src_pad.link(&self.webrtcbin_sink_pad) {
+            pipeline.remove_many(elements)?;
+            return Err(anyhow!(error));
         }
 
-        // Set state
-        if let Err(error) = sink_element.sync_state_with_parent() {
-            pipeline.remove(sink_element)?;
-            bail!(error)
+        // Link the new Tee's src pad to the queue's sink pad
+        let queue_sink_pad = &self
+            .queue
+            .static_pad("sink")
+            .expect("No src pad found on Queue");
+        if let Err(error) = tee_src_pad.link(queue_sink_pad) {
+            pipeline.remove_many(elements)?;
+            queue_src_pad.unlink(&self.webrtcbin_sink_pad)?;
+            return Err(anyhow!(error));
+        }
+
+        // Syncronize states
+        let errors = elements
+            .iter()
+            .filter_map(|element| element.sync_state_with_parent().err())
+            .collect::<Vec<gst::glib::error::BoolError>>();
+        if !errors.is_empty() {
+            pipeline.remove_many(elements)?;
+            tee_src_pad.unlink(queue_sink_pad)?;
+            queue_src_pad.unlink(&self.webrtcbin_sink_pad)?;
+
+            bail!("Failed syncronizing Sink elements' state to the Pipeline's state. Errors: {errors:#?}");
         }
 
         Ok(())
@@ -463,22 +494,29 @@ impl SinkInterface for WebRTCSinkInner {
             return Ok(());
         };
 
-        if let Err(error) = tee_src_pad.unlink(&self.webrtcbin_sink_pad) {
-            bail!("Failed unlinking webrtcbin's sink from Tee's source. Reason: {error:?}");
+        let queue_sink_pad = self
+            .queue
+            .static_pad("sink")
+            .expect("No sink pad found on Queue");
+        if let Err(error) = tee_src_pad.unlink(&queue_sink_pad) {
+            return Err(anyhow!(
+                "Failed unlinking Sink {sink_id} from Tee's source pad. Reason: {error:?}"
+            ));
         }
+        drop(queue_sink_pad);
 
-        let sink_element = &self.webrtcbin;
-        if let Err(error) = pipeline.remove(sink_element) {
-            bail!(
+        let elements = &[&self.queue, &self.webrtcbin];
+        if let Err(error) = pipeline.remove_many(elements) {
+            return Err(anyhow!(
                 "Failed removing WebRTCBin element {sink_id} from pipeline {pipeline_id}. Reason: {error:?}"
             ));
         }
 
-        // TODO: We should set the state to NULL, but this is causing a panic on this thread
-        // if let Err(error) = sink_element.set_state(gst::State::Null) {
-        //     error!("Failed to set WebRTCBin state to NULL. Reason: {error:#?}");
-        // }
-        sink_element.send_event(gst::event::Eos::new());
+        if let Err(error) = self.queue.set_state(gst::State::Null) {
+            return Err(anyhow!(
+                "Failed to set queue from sink {sink_id} state to NULL. Reason: {error:#?}"
+            ));
+        }
 
         let tee = pipeline
             .by_name(PIPELINE_TEE_NAME)
