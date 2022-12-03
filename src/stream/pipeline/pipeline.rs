@@ -1,5 +1,7 @@
 use std::{collections::HashMap, thread};
 
+use enum_dispatch::enum_dispatch;
+
 use anyhow::{anyhow, Context, Result};
 
 use gst::prelude::*;
@@ -147,15 +149,8 @@ impl PipelineState {
         ))?;
         debug!("Got tee's src pad {:#?}", tee_src_pad.name());
 
-        let pipeline = &self.pipeline;
-
-        // Temporarely set to Ready to avoid losing frames during connection of the new Sink
-        // if let Err(error) = pipeline.set_state(gst::State::Ready) {
-        //     sink.unlink(pipeline, &self.pipeline_id)?;
-        //     bail!(error)
-        // }
-
         // Link the Sink
+        let pipeline = &self.pipeline;
         sink.link(pipeline, &self.pipeline_id, tee_src_pad)?;
         let sink_id = &sink.get_id();
 
@@ -164,10 +159,19 @@ impl PipelineState {
             format!("pipeline-{pipeline_id}-sink-{sink_id}-before-playing"),
         );
 
-        // Start it
-        if let Err(error) = pipeline.set_state(gst::State::Playing) {
-            sink.unlink(pipeline, &self.pipeline_id)?;
-            bail!(error)
+        // Syncronize states
+        if let Err(error) = pipeline.sync_children_states() {
+            return Err(anyhow!("Failed syncronizing Sink elements' state to the Pipeline's state. Reason: {error:#?}"));
+        }
+
+        // Start the pipeline if it is the first Sink being added
+        if self.sinks.is_empty() {
+            if let Err(error) = pipeline.set_state(gst::State::Playing) {
+                sink.unlink(pipeline, &self.pipeline_id)?;
+                return Err(anyhow!(
+                    "Failed starting Pipeline {pipeline_id}. Reason: {error:#?}"
+                ));
+            }
         }
 
         pipeline.debug_to_dot_file_with_ts(
@@ -217,22 +221,5 @@ impl PipelineState {
         );
 
         Ok(())
-    }
-}
-
-impl Drop for PipelineState {
-    #[instrument(level = "debug")]
-    fn drop(&mut self) {
-        // if let Err(reason) = self.pipeline.set_state(gst::State::Null) {
-        //     warn!("Failed setting Pipeline to NULL. Reason: {reason:#?}");
-        // }
-
-        // let sink_ids = self.sinks.keys().cloned().collect::<Vec<uuid::Uuid>>();
-        // sink_ids.iter().for_each(|sink_id| {
-        //     if let Err(error) = self.remove_sink(sink_id) {
-        //         warn!("{error:#?}");
-        //     }
-        // });
-        self.sinks.clear();
     }
 }

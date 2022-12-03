@@ -58,7 +58,7 @@ impl FakePipeline {
                         " ! video/x-raw,format=I420",
                         " ! x264enc tune=zerolatency speed-preset=ultrafast bitrate=5000",
                         " ! h264parse",
-                        " ! video/x-h264,profile=baseline,stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! video/x-h264,profile=main,stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! rtph264pay aggregate-mode=zero-latency config-interval=10 pt=96",
                         " ! tee name={tee_name} allow-not-linked=true"
                     ),
