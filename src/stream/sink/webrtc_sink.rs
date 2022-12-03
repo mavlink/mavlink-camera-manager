@@ -58,7 +58,6 @@ impl SinkInterface for WebRTCSink {
             "direction",
             gst_webrtc::WebRTCRTPTransceiverDirection::Sendonly,
         );
-        // transceiver.set_property("codec-preferences", &tee_src_pad.caps());
 
         // Link
         inner.link(pipeline, pipeline_id, tee_src_pad)?;
@@ -467,19 +466,6 @@ impl SinkInterface for WebRTCSinkInner {
             pipeline.remove_many(elements)?;
             queue_src_pad.unlink(&self.webrtcbin_sink_pad)?;
             return Err(anyhow!(error));
-        }
-
-        // Syncronize states
-        let errors = elements
-            .iter()
-            .filter_map(|element| element.sync_state_with_parent().err())
-            .collect::<Vec<gst::glib::error::BoolError>>();
-        if !errors.is_empty() {
-            pipeline.remove_many(elements)?;
-            tee_src_pad.unlink(queue_sink_pad)?;
-            queue_src_pad.unlink(&self.webrtcbin_sink_pad)?;
-
-            bail!("Failed syncronizing Sink elements' state to the Pipeline's state. Errors: {errors:#?}");
         }
 
         Ok(())
