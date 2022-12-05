@@ -59,7 +59,7 @@ enum_dispatch = "0.3.8"
 mavlink = { version = "0.10.1", features = ["default", "emit-extensions"] }
 
 ## GSTREAMER
-gstreamer = { version = "0.18", features = ["v1_20"] }
+gstreamer = { version = "0.18", features = ["v1_16"] }
 
 [dev-dependencies]
 rand = "0.8.5"
