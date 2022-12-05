@@ -4,7 +4,9 @@ use crate::{
     video_stream::types::VideoAndStreamInformation,
 };
 
-use super::pipeline::{PipelineGstreamerInterface, PipelineState, PIPELINE_TEE_NAME};
+use super::pipeline::{
+    PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_TEE_NAME,
+};
 
 use anyhow::{bail, Result};
 
@@ -40,7 +42,7 @@ impl V4lPipeline {
                 format!(concat!(
                     "v4l2src device={device} do-timestamp=false",
                     " ! h264parse",
-                    " ! video/x-h264,stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                    " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                     " ! rtph264pay aggregate-mode=zero-latency config-interval=10 pt=96",
                     " ! tee name={tee_name} allow-not-linked=true"
                 ),
@@ -49,6 +51,7 @@ impl V4lPipeline {
                 height = configuration.height,
                 interval_denominator = configuration.frame_interval.denominator,
                 interval_numerator = configuration.frame_interval.numerator,
+                filter_name = PIPELINE_FILTER_NAME,
                 tee_name = PIPELINE_TEE_NAME
             )
             }
