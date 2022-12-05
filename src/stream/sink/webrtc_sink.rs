@@ -283,11 +283,18 @@ impl WebRTCBinInterface for WebRTCSink {
             .webrtcbin
             .emit_by_name::<()>("set-local-description", &[&offer, &None::<gst::Promise>]);
 
+        // Here we hack the SDP lying about our the profile-level-id (to constrained-baseline) so any browser can accept it
+        let re = regex::Regex::new("profile-level-id=[[:xdigit:]]{6}").unwrap();
+        let sdp = re
+            .replace(
+                &offer.sdp().as_text().unwrap(),
+                "profile-level-id=42e01f;level-asymmetry-allowed=1",
+            )
+            .to_string();
+
         let message = MediaNegotiation {
             bind: self.lock().unwrap().bind.clone(),
-            sdp: RTCSessionDescription::Offer(Sdp {
-                sdp: offer.sdp().as_text().unwrap(),
-            }),
+            sdp: RTCSessionDescription::Offer(Sdp { sdp }),
         }
         .into();
 
