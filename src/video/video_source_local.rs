@@ -1,4 +1,8 @@
 use std::cmp::max;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+use crate::stream::pipeline::v4l_pipeline::discover_v4l2_h264_profiles;
 
 use super::types::*;
 use super::{
@@ -12,6 +16,12 @@ use v4l::prelude::*;
 use v4l::video::Capture;
 
 use tracing::*;
+
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref H264_PROFILES: Arc<Mutex<HashMap<String, String>>> = Default::default();
+}
 
 //TODO: Move to types
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -466,6 +476,25 @@ impl VideoSourceAvailable for VideoSourceLocal {
             }
             let caps = caps.unwrap();
 
+            let device = Device::with_path(&camera_path).unwrap();
+            let formats = device.enum_formats().unwrap_or_default();
+            let encodes = formats
+                .iter()
+                .filter_map(|description| {
+                    if let Ok(fourcc_str) = &description.fourcc.str() {
+                        let encode = VideoEncodeType::from_str(fourcc_str);
+                        if let VideoEncodeType::UNKNOWN(..) = encode {
+                            return None;
+                        }
+                        return Some(encode);
+                    }
+                    None
+                })
+                .collect::<Vec<VideoEncodeType>>();
+            if encodes.contains(&VideoEncodeType::H264) {
+                find_h264_profile_for_device(camera_path);
+            }
+
             if let Err(error) = camera.format() {
                 if error.kind() != std::io::ErrorKind::InvalidInput {
                     debug!(
@@ -486,6 +515,32 @@ impl VideoSourceAvailable for VideoSourceLocal {
 
         return cameras;
     }
+}
+
+pub fn find_h264_profile_for_device(device: &str) -> Option<String> {
+    if let Some(profile) = H264_PROFILES.lock().unwrap().get(&device.to_string()) {
+        return Some(profile.clone());
+    }
+
+    debug!("Testing device {device:#?} for compatible H264 profiles...");
+    // Here we are pro-actively setting the profile because if we don't set it in the capsfilter
+    // before it is set to playing, when the second Sink connects to it, the pipeline will try to
+    // renegotiate this capability, freezing the already-playing sinks for a while.
+    let profile = ["constrained-baseline", "baseline", "main", "high"]
+        .iter()
+        .find(|profile| discover_v4l2_h264_profiles(device, profile).is_ok())
+        .cloned()
+        .map(String::from);
+    debug!("Found a compatible H264 profiles for device {device:#?}. Profile: {profile:#?}");
+
+    if let Some(profile) = &profile {
+        H264_PROFILES
+            .lock()
+            .unwrap()
+            .insert(device.to_string(), profile.to_string());
+    }
+
+    profile
 }
 
 #[cfg(test)]
