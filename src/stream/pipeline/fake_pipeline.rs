@@ -11,7 +11,7 @@ use super::pipeline::{
     PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_TEE_NAME,
 };
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, Result};
 
 use gst::prelude::*;
 
@@ -29,20 +29,26 @@ impl FakePipeline {
             .configuration
         {
             CaptureConfiguration::VIDEO(configuration) => configuration,
-            unsupported => bail!("{unsupported:?} is not supported as Fake Pipeline"),
+            unsupported => {
+                return Err(anyhow!("{unsupported:?} is not supported as Fake Pipeline"))
+            }
         };
 
         let video_source = match &video_and_stream_information.video_source {
             VideoSourceType::Gst(source) => source,
             unsupported => {
-                bail!("SourceType {unsupported:?} is not supported as Fake Pipeline")
+                return Err(anyhow!(
+                    "SourceType {unsupported:?} is not supported as Fake Pipeline"
+                ))
             }
         };
 
         let pattern = match &video_source.source {
             VideoSourceGstType::Fake(pattern) => pattern,
             unsupported => {
-                bail!("SourceType {unsupported:?} is not supported as Fake Pipeline")
+                return Err(anyhow!(
+                    "SourceType {unsupported:?} is not supported as Fake Pipeline"
+                ))
             }
         };
 
@@ -73,7 +79,11 @@ impl FakePipeline {
                     tee_name = PIPELINE_TEE_NAME
                 )
             }
-            unsupported => bail!("Encode {unsupported:?} is not supported for V4l Pipeline"),
+            unsupported => {
+                return Err(anyhow!(
+                    "Encode {unsupported:?} is not supported for V4l Pipeline"
+                ))
+            }
         };
 
         let pipeline = gst::parse_launch(&description)?;

@@ -8,7 +8,7 @@ use crate::mavlink::mavlink_camera::MavlinkCameraHandle;
 use crate::video::types::{VideoEncodeType, VideoSourceType};
 use crate::video_stream::types::VideoAndStreamInformation;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 
 use tracing::*;
 
@@ -76,7 +76,7 @@ fn check_endpoints(video_and_stream_information: &VideoAndStreamInformation) -> 
     let endpoints = &video_and_stream_information.stream_information.endpoints;
 
     if endpoints.is_empty() {
-        bail!("Endpoints are empty")
+        return Err(anyhow!("Endpoints are empty"));
     }
 
     Ok(())
@@ -100,16 +100,16 @@ fn check_scheme(video_and_stream_information: &VideoAndStreamInformation) -> Res
     ) {
         match scheme {
             "udp" | "rtsp" => return Ok(()),
-            _ => bail!(
+            _ => return Err(anyhow!(
                 "The URL's scheme for REDIRECT endpoints should be \"udp\" or \"rtsp\", but was: {scheme:?}",
-            )
+            ))
         };
     }
 
     match scheme {
         "udp" => {
             if VideoEncodeType::H265 == encode {
-                bail!("Endpoint with udp scheme only supports H264, encode type is H265, the scheme should be udp265.")
+                return Err(anyhow!("Endpoint with udp scheme only supports H264, encode type is H265, the scheme should be udp265."));
             }
 
             // UDP endpoints should contain both host and port
@@ -119,15 +119,19 @@ fn check_scheme(video_and_stream_information: &VideoAndStreamInformation) -> Res
             {
                 return Err(anyhow!(
                     "Endpoint with udp scheme should contain host and port. Endpoints: {endpoints:#?}"
-                )
+                ));
             }
         }
         "udp265" => {
             if VideoEncodeType::H265 != encode {
-                bail!("Endpoint with udp265 scheme only supports H265 encode. Encode: {encode:?}, Endpoints: {endpoints:#?}")
+                return Err(anyhow!("Endpoint with udp265 scheme only supports H265 encode. Encode: {encode:?}, Endpoints: {endpoints:#?}"));
             }
         }
-        _ => bail!("Scheme is not accepted as stream endpoint: {scheme}",),
+        _ => {
+            return Err(anyhow!(
+                "Scheme is not accepted as stream endpoint: {scheme}"
+            ))
+        }
     }
 
     return Ok(());

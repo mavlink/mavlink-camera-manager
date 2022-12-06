@@ -1,6 +1,6 @@
 use gst::prelude::*;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 use tokio::sync::broadcast;
 use tracing::*;
@@ -87,15 +87,15 @@ impl PipelineRunner {
                                 && current_previous_position.nseconds() == position.nseconds()
                             {
                                 lost_timestamps += 1;
-                                error!("Position did not change {lost_timestamps}");
-                                // TODO: Restart Pipeline!
+                                warn!("Position did not change {lost_timestamps}");
                             } else {
                                 // We are back in track, erase lost timestamps
                                 lost_timestamps = 0;
                             }
 
                             if lost_timestamps > max_lost_timestamps {
-                                bail!("Pipeline lost too many timestamps (max. was {max_lost_timestamps}).");
+                                // TODO: Restart Pipeline!
+                                return Err(anyhow!("Pipeline lost too many timestamps (max. was {max_lost_timestamps})."));
                             }
 
                             Some(position)
@@ -128,7 +128,7 @@ impl PipelineRunner {
                             gst::DebugGraphDetails::all(),
                             format!("pipeline-error-{pipeline_id}"),
                         );
-                        bail!(error.error());
+                        return Err(anyhow!(error.error()));
                     }
                     MessageView::StateChanged(state) => {
                         trace!(
