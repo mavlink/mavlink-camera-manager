@@ -72,7 +72,7 @@ impl PipelineRunner {
         // this checks for a maximum of 10 lost before restarting.
         let mut previous_position: Option<gst::ClockTime> = None;
         let mut lost_timestamps: usize = 0;
-        let max_lost_timestamps: usize = 100;
+        let max_lost_timestamps: usize = 15;
 
         'outer: loop {
             std::thread::sleep(std::time::Duration::from_millis(100));
@@ -94,8 +94,13 @@ impl PipelineRunner {
                             }
 
                             if lost_timestamps > max_lost_timestamps {
-                                // TODO: Restart Pipeline!
-                                return Err(anyhow!("Pipeline lost too many timestamps (max. was {max_lost_timestamps})."));
+                                error!("Pipeline lost too many timestamps (max. was {max_lost_timestamps}).");
+                                let _ = pipeline.set_state(gst::State::Null);
+                                while pipeline.current_state() != gst::State::Null {
+                                    std::thread::sleep(std::time::Duration::from_millis(100));
+                                }
+                                let _ = pipeline.set_state(gst::State::Playing);
+                                lost_timestamps = 0;
                             }
 
                             Some(position)
