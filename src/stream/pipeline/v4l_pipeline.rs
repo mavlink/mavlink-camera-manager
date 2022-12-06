@@ -8,7 +8,7 @@ use super::pipeline::{
     PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_TEE_NAME,
 };
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, Result};
 
 use tracing::*;
 
@@ -29,12 +29,16 @@ impl V4lPipeline {
             .configuration
         {
             CaptureConfiguration::VIDEO(configuration) => configuration,
-            unsupported => bail!("{unsupported:?} is not supported as V4l Pipeline"),
+            unsupported => return Err(anyhow!("{unsupported:?} is not supported as V4l Pipeline")),
         };
 
         let video_source = match &video_and_stream_information.video_source {
             VideoSourceType::Local(source) => source,
-            unsupported => bail!("SourceType {unsupported:?} is not supported as V4l Pipeline"),
+            unsupported => {
+                return Err(anyhow!(
+                    "SourceType {unsupported:?} is not supported as V4l Pipeline"
+                ))
+            }
         };
 
         let description = match &configuration.encode {
@@ -55,7 +59,11 @@ impl V4lPipeline {
                 tee_name = PIPELINE_TEE_NAME
             )
             }
-            unsupported => bail!("Encode {unsupported:?} is not supported for V4l Pipeline"),
+            unsupported => {
+                return Err(anyhow!(
+                    "Encode {unsupported:?} is not supported for V4l Pipeline"
+                ))
+            }
         };
 
         debug!("pipeline_description: {description:#?}");

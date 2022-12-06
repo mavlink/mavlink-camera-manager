@@ -5,7 +5,7 @@ use crate::{
 
 use super::pipeline::{PipelineGstreamerInterface, PipelineState, PIPELINE_TEE_NAME};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 use gst::prelude::*;
 
@@ -23,12 +23,20 @@ impl RedirectPipeline {
             .configuration
         {
             CaptureConfiguration::REDIRECT(configuration) => configuration,
-            unsupported => bail!("{unsupported:?} is not supported as Redirect Pipeline"),
+            unsupported => {
+                return Err(anyhow!(
+                    "{unsupported:?} is not supported as Redirect Pipeline"
+                ))
+            }
         };
 
         match &video_and_stream_information.video_source {
             VideoSourceType::Redirect(source) => source,
-            unsupported => bail!("SourceType {unsupported:?} is not supported as V4l Pipeline"),
+            unsupported => {
+                return Err(anyhow!(
+                    "SourceType {unsupported:?} is not supported as V4l Pipeline"
+                ))
+            }
         };
 
         if video_and_stream_information
@@ -37,7 +45,7 @@ impl RedirectPipeline {
             .len()
             > 1
         {
-            bail!("Redirect must only have one endpoint")
+            return Err(anyhow!("Redirect must only have one endpoint"));
         }
         let url = &video_and_stream_information
             .stream_information
@@ -70,7 +78,9 @@ impl RedirectPipeline {
                 )
             }
             unsupported => {
-                bail!("Scheme {unsupported:#?} is not supported for Redirect Pipelines")
+                return Err(anyhow!(
+                    "Scheme {unsupported:#?} is not supported for Redirect Pipelines"
+                ))
             }
         };
 
