@@ -17,7 +17,7 @@ use gst::{event::Eos, prelude::ElementExtManual, traits::ElementExt};
 use tracing::*;
 
 use super::{
-    pipeline::pipeline::{Pipeline, PipelineGstreamerInterface},
+    pipeline::pipeline::PipelineGstreamerInterface,
     stream::Stream,
     types::StreamStatus,
     webrtc::{
@@ -293,10 +293,23 @@ impl StreamManagementInterface<StreamStatus> for Manager {
             .remove(&stream_id)
             .context(format!("Stream {stream_id} not found"))?;
         manager.update_settings();
+        drop(manager);
 
         let pipeline = &stream.pipeline.inner_state_as_ref().pipeline;
         let pipeline_id = stream_id;
         pipeline.send_event(Eos::new());
+
+        if let Err(error) = stream
+            .pipeline
+            .inner_state_as_ref()
+            .pipeline
+            .set_state(gst::State::Null)
+        {
+            error!("Failed setting Pipeline {pipeline_id} state to NULL. Reason: {error:#?}");
+        }
+        while pipeline.current_state() != gst::State::Null {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
 
         // Unlink all Sinks
         stream
@@ -312,14 +325,6 @@ impl StreamManagementInterface<StreamStatus> for Manager {
                     );
                 }
             });
-        if let Err(error) = stream
-            .pipeline
-            .inner_state_as_ref()
-            .pipeline
-            .set_state(gst::State::Null)
-        {
-            error!("Failed setting Pipeline {pipeline_id} state to NULL. Reason: {error:#?}");
-        }
 
         info!("Stream {stream_id} successfully removed!");
 
