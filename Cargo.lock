@@ -1687,6 +1687,7 @@ dependencies = [
  "gstreamer",
  "gstreamer-sdp",
  "gstreamer-webrtc",
+ "include_dir",
  "lazy_static",
  "mavlink",
  "paperclip",
