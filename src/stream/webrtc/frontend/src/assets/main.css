@@ -1,0 +1,24 @@
+@import './base.css';
+
+#app {
+  margin: 0 auto;
+  padding: 2rem;
+
+  font-weight: normal;
+}
+
+main {
+  min-width: 320px;
+  display: flex;
+  column-gap: 1em;
+}
+
+main,
+header {
+  width: 100%;
+}
+
+video,
+.consumer {
+  min-width: 360px;
+}
