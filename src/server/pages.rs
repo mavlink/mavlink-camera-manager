@@ -65,7 +65,15 @@ pub struct XmlFileRequest {
 
 use std::{ffi::OsStr, path::Path};
 
+use include_dir::{include_dir, Dir};
+
+static WEBRTC_DIST: Dir<'_> = include_dir!("src/stream/webrtc/frontend/dist");
+
 pub fn load_file(file_name: &str) -> String {
+    if file_name.starts_with("webrtc/") {
+        return load_webrtc(file_name);
+    }
+
     // Load files at runtime only in debug builds
     if cfg!(debug_assertions) {
         let html_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/html/");
@@ -82,11 +90,21 @@ pub fn load_file(file_name: &str) -> String {
     }
 }
 
+pub fn load_webrtc(filename: &str) -> String {
+    let filename = filename.trim_start_matches("webrtc/");
+    let file = WEBRTC_DIST.get_file(filename).unwrap();
+    let content = file.contents_utf8().unwrap();
+    return content.into();
+}
+
 #[api_v2_operation]
 pub fn root(req: HttpRequest) -> HttpResponse {
     let filename = match req.match_info().query("filename") {
         "" | "index.html" => "index.html",
         "vue.js" => "vue.js",
+
+        webrtc_file if webrtc_file.starts_with("webrtc/") => webrtc_file,
+
         something => {
             //TODO: do that in load_file
             return HttpResponse::NotFound()
