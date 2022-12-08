@@ -179,6 +179,117 @@ fn convert_v4l_intervals(v4l_intervals: &[v4l::FrameInterval]) -> Vec<FrameInter
     intervals
 }
 
+fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Format> {
+    let device = Device::with_path(&device_path).unwrap();
+    let v4l_formats = device.enum_formats().unwrap_or_default();
+    let mut formats = vec![];
+    trace!("Checking resolutions for camera: {}", &device_path);
+    for v4l_format in v4l_formats {
+        let mut sizes = vec![];
+        let mut errors: Vec<String> = vec![];
+
+        for v4l_framesizes in device.enum_framesizes(v4l_format.fourcc).unwrap() {
+            match v4l_framesizes.size {
+                v4l::framesize::FrameSizeEnum::Discrete(v4l_size) => {
+                    match &device.enum_frameintervals(
+                        v4l_framesizes.fourcc,
+                        v4l_size.width,
+                        v4l_size.height,
+                    ) {
+                        Ok(enum_frameintervals) => {
+                            let intervals = convert_v4l_intervals(enum_frameintervals);
+                            sizes.push(Size {
+                                width: v4l_size.width,
+                                height: v4l_size.height,
+                                intervals: intervals.into(),
+                            })
+                        }
+                        Err(error) => {
+                            errors.push(format!(
+                                "encode: {encode:?}, for size: {v4l_size:?}, error: {error:#?}",
+                                encode = v4l_format.fourcc,
+                            ));
+                        }
+                    }
+                }
+                v4l::framesize::FrameSizeEnum::Stepwise(v4l_size) => {
+                    let mut std_sizes: Vec<(u32, u32)> = STANDARD_SIZES.to_vec();
+                    std_sizes.push((v4l_size.max_width, v4l_size.max_height));
+
+                    std_sizes.iter().for_each(|(width, height)| {
+                        match &device.enum_frameintervals(v4l_framesizes.fourcc, *width, *height) {
+                            Ok(enum_frameintervals) => {
+                                let intervals = convert_v4l_intervals(enum_frameintervals);
+                                sizes.push(Size {
+                                    width: *width,
+                                    height: *height,
+                                    intervals: intervals.into(),
+                                });
+                            }
+                            Err(error) => {
+                                errors.push(format!(
+                                    "encode: {encode:?}, for size: {v4l_size:?}, error: {error:#?}",
+                                    encode = v4l_format.fourcc,
+                                    v4l_size = (width, height),
+                                ));
+                            }
+                        };
+                    });
+                }
+            }
+        }
+
+        sizes.sort();
+        sizes.dedup();
+        sizes.reverse();
+
+        if !errors.is_empty() {
+            trace!("Failed to fetch frameintervals for camera {device_path}: {errors:#?}");
+        }
+
+        formats.push(Format {
+            encode: VideoEncodeType::from_str(v4l_format.fourcc.str().unwrap()),
+            sizes,
+        });
+    }
+    // V4l2 reports unsupported sizes for Raspberry Pi
+    // Cameras in Legacy Mode, showing the following:
+    // > mmal: mmal_vc_port_enable: failed to enable port vc.ril.video_encode:in:0(OPQV): EINVAL
+    // > mmal: mmal_port_enable: failed to enable connected port (vc.ril.video_encode:in:0(OPQV))0x75903be0 (EINVAL)
+    // > mmal: mmal_connection_enable: output port couldn't be enabled
+    // To prevent it, we are currently constraining it
+    // to a max. of 1920 x 1080 px, and a max. 30 FPS.
+    if matches!(typ, &VideoSourceLocalType::LegacyRpiCam(_)) {
+        warn!("To support Raspiberry Pi Cameras in Legacy Camera Mode without bugs, resolution is constrained to 1920 x 1080 @ 30 FPS.");
+        let max_width = 1920;
+        let max_height = 1080;
+        let max_fps = 30;
+        formats.iter_mut().for_each(|format| {
+            format.sizes.iter_mut().for_each(|size| {
+                if size.width > max_width {
+                    size.width = max_width;
+                }
+
+                if size.height > max_height {
+                    size.height = max_height;
+                }
+
+                size.intervals = size
+                    .intervals
+                    .clone()
+                    .into_iter()
+                    .filter(|interval| interval.numerator * interval.denominator <= max_fps)
+                    .collect();
+            });
+
+            format.sizes.dedup();
+        });
+    }
+    formats.sort();
+    formats.dedup();
+    formats
+}
+
 impl VideoSource for VideoSourceLocal {
     fn name(&self) -> &String {
         return &self.name;
@@ -189,125 +300,7 @@ impl VideoSource for VideoSourceLocal {
     }
 
     fn formats(&self) -> Vec<Format> {
-        let device = Device::with_path(&self.device_path).unwrap();
-        let v4l_formats = device.enum_formats().unwrap_or_default();
-        let mut formats = vec![];
-
-        trace!("Checking resolutions for camera: {}", &self.device_path);
-        for v4l_format in v4l_formats {
-            let mut sizes = vec![];
-            let mut errors: Vec<String> = vec![];
-
-            for v4l_framesizes in device.enum_framesizes(v4l_format.fourcc).unwrap() {
-                match v4l_framesizes.size {
-                    v4l::framesize::FrameSizeEnum::Discrete(v4l_size) => {
-                        match &device.enum_frameintervals(
-                            v4l_framesizes.fourcc,
-                            v4l_size.width,
-                            v4l_size.height,
-                        ) {
-                            Ok(enum_frameintervals) => {
-                                let intervals = convert_v4l_intervals(enum_frameintervals);
-                                sizes.push(Size {
-                                    width: v4l_size.width,
-                                    height: v4l_size.height,
-                                    intervals: intervals.into(),
-                                })
-                            }
-                            Err(error) => {
-                                errors.push(format!(
-                                    "encode: {encode:?}, for size: {v4l_size:?}, error: {error:#?}",
-                                    encode = v4l_format.fourcc,
-                                ));
-                            }
-                        }
-                    }
-                    v4l::framesize::FrameSizeEnum::Stepwise(v4l_size) => {
-                        let mut std_sizes: Vec<(u32, u32)> = STANDARD_SIZES.to_vec();
-                        std_sizes.push((v4l_size.max_width, v4l_size.max_height));
-
-                        std_sizes.iter().for_each(|(width, height)| {
-                            match &device.enum_frameintervals(
-                                v4l_framesizes.fourcc,
-                                *width,
-                                *height,
-                            ) {
-                                Ok(enum_frameintervals) => {
-                                    let intervals = convert_v4l_intervals(enum_frameintervals);
-                                    sizes.push(Size {
-                                        width: *width,
-                                        height: *height,
-                                        intervals: intervals.into(),
-                                    });
-                                }
-                                Err(error) => {
-                                    errors.push(format!(
-                                        "encode: {encode:?}, for size: {v4l_size:?}, error: {error:#?}",
-                                        encode = v4l_format.fourcc,
-                                        v4l_size = (width, height),
-                                    ));
-                                }
-                            };
-                        });
-                    }
-                }
-            }
-
-            sizes.sort();
-            sizes.dedup();
-            sizes.reverse();
-
-            if !errors.is_empty() {
-                trace!(
-                    "Failed to fetch frameintervals for camera {}: {errors:#?}",
-                    &self.device_path
-                );
-            }
-
-            formats.push(Format {
-                encode: VideoEncodeType::from_str(v4l_format.fourcc.str().unwrap()),
-                sizes,
-            });
-        }
-
-        // V4l2 reports unsupported sizes for Raspberry Pi
-        // Cameras in Legacy Mode, showing the following:
-        // > mmal: mmal_vc_port_enable: failed to enable port vc.ril.video_encode:in:0(OPQV): EINVAL
-        // > mmal: mmal_port_enable: failed to enable connected port (vc.ril.video_encode:in:0(OPQV))0x75903be0 (EINVAL)
-        // > mmal: mmal_connection_enable: output port couldn't be enabled
-        // To prevent it, we are currently constraining it
-        // to a max. of 1920 x 1080 px, and a max. 30 FPS.
-        if matches!(&self.typ, VideoSourceLocalType::LegacyRpiCam(_)) {
-            warn!("To support Raspiberry Pi Cameras in Legacy Camera Mode without bugs, resolution is constrained to 1920 x 1080 @ 30FPS.");
-            let max_width = 1920;
-            let max_height = 1080;
-            let max_fps = 30;
-            formats.iter_mut().for_each(|format| {
-                format.sizes.iter_mut().for_each(|size| {
-                    if size.width > max_width {
-                        size.width = max_width;
-                    }
-
-                    if size.height > max_height {
-                        size.height = max_height;
-                    }
-
-                    size.intervals = size
-                        .intervals
-                        .clone()
-                        .into_iter()
-                        .filter(|interval| interval.numerator * interval.denominator <= max_fps)
-                        .collect();
-                });
-
-                format.sizes.dedup();
-            });
-        }
-
-        formats.sort();
-        formats.dedup();
-
-        formats
+        get_device_formats(&self.device_path, &self.typ)
     }
 
     fn set_control_by_name(&self, _control_name: &str, _value: i64) -> std::io::Result<()> {
