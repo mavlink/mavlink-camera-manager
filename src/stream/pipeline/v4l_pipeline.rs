@@ -11,7 +11,7 @@ use super::pipeline::{
     PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_TEE_NAME,
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 
 use tracing::*;
 
@@ -47,9 +47,9 @@ impl V4lPipeline {
         let device = video_source.device_path.as_str();
         let width = configuration.width;
         let height = configuration.height;
-        let interval_denominator = configuration.frame_interval.denominator;
         let interval_numerator = configuration.frame_interval.numerator;
-        let Some(profile) = find_h264_profile_for_device(device) else {
+        let interval_denominator = configuration.frame_interval.denominator;
+        let Some(profile) = find_h264_profile_for_device(device, &width, &height, &interval_numerator, &interval_denominator) else {
             return Err(anyhow!(
                 "The device {device:#?} doesn't support any of our known H264 profiles"
             ));
@@ -100,58 +100,76 @@ impl PipelineGstreamerInterface for V4lPipeline {
 }
 
 #[instrument(level = "debug")]
-pub fn discover_v4l2_h264_profiles(device: &str, profile: &str) -> Result<String> {
+pub fn get_default_v4l2_h264_profile(
+    device: &str,
+    width: &u32,
+    height: &u32,
+    interval_numerator: &u32,
+    interval_denominator: &u32,
+) -> Result<String> {
+    // Here we are getting the profile chosen by gstreamer because if we don't set it in the capsfilter
+    // before it is set to playing, when the second Sink connects to it, the pipeline will try to
+    // renegotiate this capability, freezing the already-playing sinks for a while.
+
+    if let Err(error) = gst::init() {
+        error!("Error! {error}");
+    };
+
     let description = format!(
         concat!(
             "v4l2src device={device} do-timestamp=false num-buffers=1",
-            " ! h264parse",
-            " ! video/x-h264,stream-format=avc,alignment=au,profile={profile}",
+            " ! h264parse ",
+            " ! capsfilter name=Filter caps=video/x-h264,stream-format=avc,alignment=au,width={width},height={height},framerate={interval_numerator}/{interval_denominator}",
             " ! fakesink",
         ),
         device = device,
-        profile = profile,
+        width = width,
+        height = height,
+        interval_denominator = interval_denominator,
+        interval_numerator = interval_numerator,
     );
 
-    let pipeline = gst::parse_launch(&description)?;
-    let pipeline = pipeline
+    let pipeline = gst::parse_launch(&description)?
         .downcast::<gst::Pipeline>()
         .expect("Couldn't downcast pipeline");
 
-    let bus = pipeline.bus().unwrap();
-    let pipeline_weak = pipeline.downgrade();
-    let runner = move || {
-        let Some(pipeline) = pipeline_weak.upgrade() else {
-                return Err(anyhow!("Couldn't upgrade pipeline from WeakRef<Pipeline>"))
-            };
-
-        pipeline
-            .set_state(gst::State::Playing)
-            .expect("Unable to set the pipeline to the `Playing` state");
-        pipeline.debug_to_dot_file_with_ts(gst::DebugGraphDetails::all(), format!("playing"));
-        drop(pipeline);
-
-        loop {
-            while let Some(msg) = bus.timed_pop_filtered(
-                gst::ClockTime::from_mseconds(100),
-                &[gst::MessageType::Eos, gst::MessageType::Error],
-            ) {
-                match msg.view() {
-                    gst::MessageView::Eos(..) => return Ok(profile.to_string()),
-                    gst::MessageView::Error(error) => return Err(anyhow!("{error:?}")),
-                    _ => (),
-                };
-            }
-        }
-    };
-    let result = runner();
-
-    if let Err(error) = &result {
-        println!("Failed with profile {profile:?}. Reason: {error:?}");
+    debug!("Starting...");
+    pipeline
+        .set_state(gst::State::Playing)
+        .expect("Unable to set the pipeline to the `Playing` state");
+    while pipeline.current_state() != gst::State::Playing {
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
+    debug!("Getting current profile...");
+    let profile = pipeline
+        .by_name("Filter")
+        .context("Failed to access/find capsfilter element named \"Filter\"")?
+        .static_pad("src")
+        .context("Failed to access static src pad from capsfilter")?
+        .current_caps()
+        .context("capsfilter with a srcpad without any caps")?
+        .iter()
+        .find_map(|structure| {
+            structure.iter().find_map(|(key, sendvalue)| {
+                if key == "profile" {
+                    Some(sendvalue.to_value().get::<String>().unwrap())
+                } else {
+                    None
+                }
+            })
+        })
+        .context(
+            "Coudn't find any field called \"profile\" in srcpad caps of the capsfilter element",
+        )?;
+
+    debug!("Finishing...");
     pipeline
         .set_state(gst::State::Null)
-        .expect("Unable to set the pipeline to the `Playing` state");
+        .expect("Unable to set the pipeline to the `Null` state");
+    while pipeline.current_state() != gst::State::Null {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 
-    result
+    Ok(profile)
 }

@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::stream::pipeline::v4l_pipeline::discover_v4l2_h264_profiles;
+use crate::stream::pipeline::v4l_pipeline::get_default_v4l2_h264_profile;
 
 use super::types::*;
 use super::{
@@ -469,23 +469,27 @@ impl VideoSourceAvailable for VideoSourceLocal {
             }
             let caps = caps.unwrap();
 
-            let device = Device::with_path(&camera_path).unwrap();
-            let formats = device.enum_formats().unwrap_or_default();
-            let encodes = formats
+            let typ = VideoSourceLocalType::from_str(&caps.bus);
+            if let Some((interval, width, height)) = get_device_formats(&camera_path, &typ)
                 .iter()
-                .filter_map(|description| {
-                    if let Ok(fourcc_str) = &description.fourcc.str() {
-                        let encode = VideoEncodeType::from_str(fourcc_str);
-                        if let VideoEncodeType::UNKNOWN(..) = encode {
-                            return None;
-                        }
-                        return Some(encode);
+                .find_map(|format| {
+                    if format.encode == VideoEncodeType::H264 {
+                        format.sizes.iter().find_map(|size| {
+                            let Some(interval) = size.intervals.first() else { return None; };
+                            Some((interval, size.width, size.height))
+                        })
+                    } else {
+                        None
                     }
-                    None
                 })
-                .collect::<Vec<VideoEncodeType>>();
-            if encodes.contains(&VideoEncodeType::H264) {
-                find_h264_profile_for_device(camera_path);
+            {
+                find_h264_profile_for_device(
+                    camera_path,
+                    &width,
+                    &height,
+                    &interval.numerator,
+                    &interval.denominator,
+                );
             }
 
             if let Err(error) = camera.format() {
@@ -501,7 +505,7 @@ impl VideoSourceAvailable for VideoSourceLocal {
             let source = VideoSourceLocal {
                 name: caps.card,
                 device_path: camera_path.clone(),
-                typ: VideoSourceLocalType::from_str(&caps.bus),
+                typ,
             };
             cameras.push(VideoSourceType::Local(source));
         }
@@ -510,30 +514,31 @@ impl VideoSourceAvailable for VideoSourceLocal {
     }
 }
 
-pub fn find_h264_profile_for_device(device: &str) -> Option<String> {
+pub fn find_h264_profile_for_device(
+    device: &str,
+    width: &u32,
+    height: &u32,
+    interval_denominator: &u32,
+    interval_numerator: &u32,
+) -> Option<String> {
     if let Some(profile) = H264_PROFILES.lock().unwrap().get(&device.to_string()) {
         return Some(profile.clone());
     }
 
-    debug!("Testing device {device:#?} for compatible H264 profiles...");
-    // Here we are pro-actively setting the profile because if we don't set it in the capsfilter
-    // before it is set to playing, when the second Sink connects to it, the pipeline will try to
-    // renegotiate this capability, freezing the already-playing sinks for a while.
-    let profile = ["constrained-baseline", "baseline", "main", "high"]
-        .iter()
-        .find(|profile| discover_v4l2_h264_profiles(device, profile).is_ok())
-        .cloned()
-        .map(String::from);
+    debug!("Getting default H264 profile from device {device:#?}. Testing at {width:#?}x{height:#?} @ {fps:#?} FPS", fps = (*interval_denominator as f32 / *interval_numerator as f32));
+
+    let Ok(profile) = get_default_v4l2_h264_profile(device, width, height, interval_numerator, interval_denominator) else {
+        warn!("Failed to find a compatible profile for device {device:#?}");
+        return None;
+    };
+
     debug!("Found a compatible H264 profiles for device {device:#?}. Profile: {profile:#?}");
+    H264_PROFILES
+        .lock()
+        .unwrap()
+        .insert(device.to_string(), profile.to_string());
 
-    if let Some(profile) = &profile {
-        H264_PROFILES
-            .lock()
-            .unwrap()
-            .insert(device.to_string(), profile.to_string());
-    }
-
-    profile
+    Some(profile)
 }
 
 #[cfg(test)]
