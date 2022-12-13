@@ -79,6 +79,13 @@ impl Pipeline {
     pub fn remove_sink(&mut self, sink_id: &uuid::Uuid) -> Result<()> {
         self.inner_state_mut().remove_sink(sink_id)
     }
+
+    pub fn wait_for_state(&self, state: gst::State) {
+        let pipeline = &self.inner_state_as_ref().pipeline;
+        while pipeline.current_state() != state {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
 }
 
 #[derive(Debug)]

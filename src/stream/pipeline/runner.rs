@@ -96,9 +96,7 @@ impl PipelineRunner {
                             if lost_timestamps > max_lost_timestamps {
                                 error!("Pipeline lost too many timestamps (max. was {max_lost_timestamps}).");
                                 let _ = pipeline.set_state(gst::State::Null);
-                                while pipeline.current_state() != gst::State::Null {
-                                    std::thread::sleep(std::time::Duration::from_millis(100));
-                                }
+                                pipeline.wait_for_state(gst::State::Null);
                                 let _ = pipeline.set_state(gst::State::Playing);
                                 lost_timestamps = 0;
                             }

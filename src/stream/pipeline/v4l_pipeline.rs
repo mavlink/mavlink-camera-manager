@@ -137,9 +137,7 @@ pub fn get_default_v4l2_h264_profile(
     pipeline
         .set_state(gst::State::Playing)
         .expect("Unable to set the pipeline to the `Playing` state");
-    while pipeline.current_state() != gst::State::Playing {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
+    pipeline.wait_for_state(gst::State::Playing);
 
     debug!("Getting current profile...");
     let profile = pipeline
@@ -167,9 +165,7 @@ pub fn get_default_v4l2_h264_profile(
     pipeline
         .set_state(gst::State::Null)
         .expect("Unable to set the pipeline to the `Null` state");
-    while pipeline.current_state() != gst::State::Null {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
+    pipeline.wait_for_state(gst::State::Null);
 
     Ok(profile)
 }

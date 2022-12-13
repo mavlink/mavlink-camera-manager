@@ -307,9 +307,8 @@ impl StreamManagementInterface<StreamStatus> for Manager {
         {
             error!("Failed setting Pipeline {pipeline_id} state to NULL. Reason: {error:#?}");
         }
-        while pipeline.current_state() != gst::State::Null {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
+
+        stream.pipeline.wait_for_state(gst::State::Null);
 
         // Unlink all Sinks
         stream
