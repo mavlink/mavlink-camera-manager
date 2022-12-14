@@ -11,8 +11,8 @@ use crate::stream::pipeline::pipeline::PIPELINE_TEE_NAME;
 pub struct UdpSink {
     sink_id: uuid::Uuid,
     queue: gst::Element,
-    udpsrc: gst::Element,
-    udpsrc_sink_pad: gst::Pad,
+    udpsink: gst::Element,
+    udpsink_sink_pad: gst::Pad,
     tee_src_pad: Option<gst::Pad>,
 }
 impl SinkInterface for UdpSink {
@@ -37,7 +37,7 @@ impl SinkInterface for UdpSink {
         };
 
         // Add the Sink elements to the Pipeline
-        let elements = &[&self.queue, &self.udpsrc];
+        let elements = &[&self.queue, &self.udpsink];
         if let Err(error) = pipeline.add_many(elements) {
             return Err(anyhow!(
                 "Failed to add WebRTCBin {sink_id} to Pipeline {pipeline_id}. Reason: {error:#?}"
@@ -49,7 +49,7 @@ impl SinkInterface for UdpSink {
             .queue
             .static_pad("src")
             .expect("No sink pad found on Queue");
-        if let Err(error) = queue_src_pad.link(&self.udpsrc_sink_pad) {
+        if let Err(error) = queue_src_pad.link(&self.udpsink_sink_pad) {
             pipeline.remove_many(elements)?;
             return Err(anyhow!(error));
         }
@@ -61,7 +61,7 @@ impl SinkInterface for UdpSink {
             .expect("No src pad found on Queue");
         if let Err(error) = tee_src_pad.link(queue_sink_pad) {
             pipeline.remove_many(elements)?;
-            queue_src_pad.unlink(&self.udpsrc_sink_pad)?;
+            queue_src_pad.unlink(&self.udpsink_sink_pad)?;
             return Err(anyhow!(error));
         }
 
@@ -88,7 +88,7 @@ impl SinkInterface for UdpSink {
         }
         drop(queue_sink_pad);
 
-        let elements = &[&self.queue, &self.udpsrc];
+        let elements = &[&self.queue, &self.udpsink];
         if let Err(error) = pipeline.remove_many(elements) {
             return Err(anyhow!(
                 "Failed removing UdpSrc element {sink_id} from Pipeline {pipeline_id}. Reason: {error:?}"
@@ -115,7 +115,7 @@ impl SinkInterface for UdpSink {
 
     #[instrument(level = "debug")]
     fn get_id(&self) -> uuid::Uuid {
-        self.sink_id.clone()
+        self.sink_id
     }
 }
 
@@ -143,20 +143,18 @@ impl UdpSink {
             .collect::<Vec<String>>()
             .join(",");
         let description = format!("multiudpsink clients={addresses}");
-        let udpsrc =
+        let udpsink =
             gst::parse_launch(&description).context("Failed parsing pipeline description")?;
 
-        let udpsrc_sink_pad = udpsrc
-            .sink_pads()
-            .first()
-            .context("Failed to get Sink Pad")?
-            .clone(); // Is it safe to clone it?
+        let udpsink_sink_pad = udpsink
+            .static_pad("sink")
+            .context("Failed to get Sink Pad")?;
 
         Ok(Self {
             sink_id: id,
             queue,
-            udpsrc,
-            udpsrc_sink_pad,
+            udpsink,
+            udpsink_sink_pad,
             tee_src_pad: Default::default(),
         })
     }
