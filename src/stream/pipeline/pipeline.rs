@@ -11,6 +11,7 @@ use tracing::*;
 use crate::{
     stream::{
         manager::Manager,
+        rtsp::rtsp_server::RTSPServer,
         sink::sink::{Sink, SinkInterface},
         webrtc::signalling_server::StreamManagementInterface,
     },
@@ -175,10 +176,29 @@ impl PipelineState {
             }
         }
 
+        while pipeline.current_state() != gst::State::Playing {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+
         pipeline.debug_to_dot_file_with_ts(
             gst::DebugGraphDetails::all(),
             format!("pipeline-{pipeline_id}-sink-{sink_id}-playing"),
         );
+
+        if let Sink::Rtsp(sink) = &sink {
+            let caps = &self
+                .tee
+                .static_pad("sink")
+                .expect("No static sink pad found on capsfilter")
+                .current_caps()
+                .context("Failed to get caps from capsfilter sink pad")?;
+
+            debug!("caps: {:#?}", caps.to_string());
+
+            RTSPServer::add_pipeline(&sink.path(), &sink.socket_path(), &caps)?;
+
+            RTSPServer::start_pipeline(&sink.path())?;
+        }
 
         self.sinks.insert(sink_id.clone(), sink);
 
@@ -214,6 +234,10 @@ impl PipelineState {
                     "Failed to change state of Pipeline {pipeline_id} to NULL. Reason: {error}"
                 ));
             }
+        }
+
+        if let Sink::Rtsp(sink) = &sink {
+            RTSPServer::stop_pipeline(&sink.path())?;
         }
 
         pipeline.debug_to_dot_file_with_ts(
