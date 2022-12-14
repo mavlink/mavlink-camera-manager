@@ -5,7 +5,7 @@ use tracing::*;
 use gst::prelude::*;
 
 use super::sink::SinkInterface;
-use crate::stream::{pipeline::pipeline::PIPELINE_TEE_NAME, rtsp::rtsp_server::RTSPServer};
+use crate::stream::pipeline::pipeline::PIPELINE_TEE_NAME;
 
 #[derive(Debug)]
 pub struct RtspSink {
@@ -69,10 +69,6 @@ impl SinkInterface for RtspSink {
             return Err(anyhow!(error));
         }
 
-        RTSPServer::add_pipeline(&self.path, &self.socket_path)?;
-
-        RTSPServer::start_pipeline(&self.path)?;
-
         Ok(())
     }
 
@@ -122,8 +118,6 @@ impl SinkInterface for RtspSink {
             ));
         }
 
-        RTSPServer::stop_pipeline(&self.path)?;
-
         Ok(())
     }
 
@@ -168,5 +162,13 @@ impl RtspSink {
             socket_path,
             tee_src_pad: Default::default(),
         })
+    }
+
+    pub fn path(&self) -> String {
+        self.path.clone()
+    }
+
+    pub fn socket_path(&self) -> String {
+        self.socket_path.clone()
     }
 }
