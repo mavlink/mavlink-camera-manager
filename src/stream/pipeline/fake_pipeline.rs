@@ -62,6 +62,7 @@ impl FakePipeline {
             VideoEncodeType::H264 => {
                 format!(concat!(
                         "videotestsrc pattern={pattern} is-live=true do-timestamp=true",
+                        " ! timeoverlay",
                         " ! videoconvert",
                         " ! video/x-raw,format=I420",
                         " ! x264enc tune=zerolatency speed-preset=ultrafast bitrate=5000",
