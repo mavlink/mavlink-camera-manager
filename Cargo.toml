@@ -72,6 +72,8 @@ turn = "0.6"
 gst = { package = "gstreamer", version = "0.19", features = ["v1_16"] }
 gst-sdp = { package = "gstreamer-sdp", version = "0.19", features=["v1_16"] }
 gst-webrtc = { package = "gstreamer-webrtc", version = "0.19", features = ["v1_16"] }
+gst-rtsp = { version = "0.19", package = "gstreamer-rtsp", features = ["v1_16"] }
+gst-rtsp-server = { package = "gstreamer-rtsp-server", version = "0.19", features = ["v1_16"] }
 
 [dev-dependencies]
 rand = "0.8.5"
