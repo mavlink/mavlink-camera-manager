@@ -85,7 +85,7 @@ impl RTSPServer {
         }
     }
 
-    pub fn add_pipeline(path: &str, socket_path: &str) -> Result<()> {
+    pub fn add_pipeline(path: &str, socket_path: &str, rtp_caps: &gst::Caps) -> Result<()> {
         // Initialize the singleton before calling gst factory
         let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
 
@@ -96,16 +96,70 @@ impl RTSPServer {
         factory.set_transport_mode(RTSPTransportMode::PLAY);
         factory.set_protocols(RTSPLowerTrans::UDP | RTSPLowerTrans::UDP_MCAST);
 
-        let description = format!(
-            concat!(
-                "shmsrc socket-path={socket_path} do-timestamp=true",
-                " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
-                " ! application/x-rtp,media=video,clock-rate=90000,payload=96,encoding-name=H264",
-                " ! rtph264depay",
-                " ! rtph264pay name=pay0 aggregate-mode=zero-latency config-interval=10 pt=96",
-            ),
-            socket_path = socket_path,
-        );
+        let Some(encode) = rtp_caps
+            .iter()
+            .find_map(|structure| {
+                structure.iter().find_map(|(key, sendvalue)| {
+                    if key == "encoding-name" {
+                        Some(sendvalue.to_value().get::<String>().unwrap())
+                    } else {
+                        None
+                    }
+                })
+            }) else {
+                return Err(anyhow!("Cannot find 'media' in caps"));
+            };
+
+        let rtp_caps = rtp_caps.to_string();
+        let description = match encode.as_str() {
+            "H264" => {
+                format!(
+                    concat!(
+                        "shmsrc socket-path={socket_path} do-timestamp=true",
+                        " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
+                        " ! capsfilter caps={rtp_caps:?}",
+                        " ! rtph264depay",
+                        " ! rtph264pay name=pay0 aggregate-mode=zero-latency config-interval=10 pt=96",
+                    ),
+                    socket_path = socket_path,
+                    rtp_caps = rtp_caps,
+                )
+            }
+            "RAW" => {
+                format!(
+                    concat!(
+                        "shmsrc socket-path={socket_path} do-timestamp=true",
+                        " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
+                        " ! capsfilter caps={rtp_caps:?}",
+                        " ! rtpvrawdepay",
+                        " ! rtpvrawpay name=pay0 pt=96",
+                    ),
+                    socket_path = socket_path,
+                    rtp_caps = rtp_caps,
+                )
+            }
+            "JPEG" => {
+                format!(
+                    concat!(
+                        "shmsrc socket-path={socket_path} do-timestamp=true",
+                        " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
+                        " ! capsfilter caps={rtp_caps:?}",
+                        " ! rtpjpegdepay",
+                        " ! rtpjpegpay name=pay0 pt=96",
+                    ),
+                    socket_path = socket_path,
+                    rtp_caps = rtp_caps,
+                )
+            }
+            unsupported => {
+                return Err(anyhow!(
+                    "Encode {unsupported:?} is not supported for RTSP Sink"
+                ))
+            }
+        };
+
+        debug!("RTSP Server description: {description:#?}");
+
         factory.set_launch(&description);
 
         if let Some(server) = rtsp_server
