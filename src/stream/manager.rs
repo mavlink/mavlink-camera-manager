@@ -168,7 +168,7 @@ impl WebRTCSessionManagementInterface for Manager {
         };
 
         let sink = Sink::WebRTC(WebRTCSink::try_new(bind.clone(), sender)?);
-        stream.pipeline.inner_state_mut().add_sink(sink)?;
+        stream.pipeline.add_sink(sink)?;
         debug!("WebRTC session created: {session_id:#?}");
 
         Ok(session_id)
