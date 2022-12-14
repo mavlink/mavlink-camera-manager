@@ -49,34 +49,71 @@ impl V4lPipeline {
         let height = configuration.height;
         let interval_numerator = configuration.frame_interval.numerator;
         let interval_denominator = configuration.frame_interval.denominator;
-        let Some(profile) = find_h264_profile_for_device(device, &width, &height, &interval_numerator, &interval_denominator) else {
-            return Err(anyhow!(
-                "The device {device:#?} doesn't support any of our known H264 profiles"
-            ));
-        };
 
         let description = match &configuration.encode {
             VideoEncodeType::H264 => {
-                format!(concat!(
-                    "v4l2src device={device} do-timestamp=false",
-                    " ! h264parse",
-                    " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au,profile={profile},width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
-                    " ! rtph264pay aggregate-mode=zero-latency config-interval=10 pt=96",
-                    " ! tee name={tee_name} allow-not-linked=true"
-                ),
-                device = device,
-                profile = profile,
-                width = width,
-                height = height,
-                interval_denominator = interval_denominator,
-                interval_numerator = interval_numerator,
-                filter_name = PIPELINE_FILTER_NAME,
-                tee_name = PIPELINE_TEE_NAME
-            )
+                let Some(profile) = find_h264_profile_for_device(device, &width, &height, &interval_numerator, &interval_denominator) else {
+                    return Err(anyhow!(
+                        "The device {device:#?} doesn't support any of our known H264 profiles"
+                    ));
+                };
+                format!(
+                    concat!(
+                        "v4l2src device={device} do-timestamp=false",
+                        " ! h264parse",
+                        " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au,profile={profile},width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! rtph264pay aggregate-mode=zero-latency config-interval=10 pt=96",
+                        " ! tee name={tee_name} allow-not-linked=true"
+                    ),
+                    device = device,
+                    profile = profile,
+                    width = width,
+                    height = height,
+                    interval_denominator = interval_denominator,
+                    interval_numerator = interval_numerator,
+                    filter_name = PIPELINE_FILTER_NAME,
+                    tee_name = PIPELINE_TEE_NAME
+                )
+            }
+            VideoEncodeType::YUYV => {
+                format!(
+                    concat!(
+                        "v4l2src device={device} do-timestamp=false",
+                        " ! videoconvert",
+                        " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! rtpvrawpay pt=96",
+                        " ! tee name={tee_name} allow-not-linked=true"
+                    ),
+                    device = device,
+                    width = width,
+                    height = height,
+                    interval_denominator = interval_denominator,
+                    interval_numerator = interval_numerator,
+                    filter_name = PIPELINE_FILTER_NAME,
+                    tee_name = PIPELINE_TEE_NAME
+                )
+            }
+            VideoEncodeType::MJPG => {
+                format!(
+                    concat!(
+                        "v4l2src device={device} do-timestamp=false",
+                        " ! jpegparse",
+                        " ! capsfilter name={filter_name} caps=image/jpeg,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! rtpjpegpay pt=96",
+                        " ! tee name={tee_name} allow-not-linked=true"
+                    ),
+                    device = device,
+                    width = width,
+                    height = height,
+                    interval_denominator = interval_denominator,
+                    interval_numerator = interval_numerator,
+                    filter_name = PIPELINE_FILTER_NAME,
+                    tee_name = PIPELINE_TEE_NAME
+                )
             }
             unsupported => {
                 return Err(anyhow!(
-                    "Encode {unsupported:?} is not supported for V4l Pipeline"
+                    "Encode {unsupported:?} is not supported for V4L2 Pipeline"
                 ))
             }
         };
