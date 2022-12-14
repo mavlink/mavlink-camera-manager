@@ -2,6 +2,7 @@ use enum_dispatch::enum_dispatch;
 
 use crate::video_stream::types::VideoAndStreamInformation;
 
+use super::rtsp_sink::RtspSink;
 use super::{udp_sink::UdpSink, webrtc_sink::WebRTCSink};
 
 use anyhow::Result;
@@ -11,7 +12,7 @@ use tracing::*;
 #[enum_dispatch]
 pub trait SinkInterface {
     /// Link this Sink's sink pad to the given Pipelines's Tee element's src pad.
-    /// /// Read important notes about dynamically pipeline manipulation [here](https://gstreamer.freedesktop.org/documentation/application-development/advanced/pipeline-manipulation.html?gi-language=c#dynamically-changing-the-pipeline)
+    /// Read important notes about dynamically pipeline manipulation [here](https://gstreamer.freedesktop.org/documentation/application-development/advanced/pipeline-manipulation.html?gi-language=c#dynamically-changing-the-pipeline)
     fn link(
         &mut self,
         pipeline: &gst::Pipeline,
@@ -31,6 +32,7 @@ pub trait SinkInterface {
 #[derive(Debug)]
 pub enum Sink {
     Udp(UdpSink),
+    Rtsp(RtspSink),
     WebRTC(WebRTCSink),
 }
 
@@ -45,4 +47,17 @@ pub fn create_udp_sink(
         .clone();
 
     Ok(Sink::Udp(UdpSink::try_new(id, addresses)?))
+}
+
+#[instrument(level = "debug")]
+pub fn create_rtsp_sink(
+    id: uuid::Uuid,
+    video_and_stream_information: &VideoAndStreamInformation,
+) -> Result<Sink> {
+    let addresses = video_and_stream_information
+        .stream_information
+        .endpoints
+        .clone();
+
+    Ok(Sink::Rtsp(RtspSink::try_new(id, addresses)?))
 }
