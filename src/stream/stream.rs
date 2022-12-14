@@ -1,6 +1,6 @@
 use super::manager::Manager;
 use super::pipeline::pipeline::Pipeline;
-use super::sink::sink::create_udp_sink;
+use super::sink::sink::{create_rtsp_sink, create_udp_sink};
 use super::types::*;
 use super::webrtc::signalling_protocol::PeerId;
 use super::webrtc::signalling_server::StreamManagementInterface;
@@ -23,8 +23,9 @@ pub struct Stream {
 impl Stream {
     #[instrument(level = "debug")]
     pub fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
-        check_endpoints(video_and_stream_information)?;
-        check_scheme(video_and_stream_information)?;
+        if let Err(error) = validate_endpoints(video_and_stream_information) {
+            return Err(anyhow!("Failed validating endpoints. Reason: {error:?}"));
+        }
 
         let pipeline = Pipeline::try_new(video_and_stream_information)?;
         let mavlink_camera = MavlinkCameraHandle::try_new(video_and_stream_information);
@@ -37,54 +38,51 @@ impl Stream {
             mavlink_camera,
         };
 
-        if let VideoSourceType::Redirect(_) = &video_and_stream_information.video_source {
-            // Do not add any Sink if it's a redirect Pipeline
-            return Ok(stream);
+        match &video_and_stream_information.video_source {
+            VideoSourceType::Redirect(_) => return Ok(stream), // Do not add any Sink if it's a redirect Pipeline
+            VideoSourceType::Gst(_) | VideoSourceType::Local(_) => (),
         }
 
-        // Add the desired Sinks to the Stream
-        let mut any_error: Result<()> = Ok(());
-        video_and_stream_information
-            .stream_information
-            .endpoints
-            .iter()
-            .for_each(|endpoint| {
-                let endpoint = endpoint.scheme();
-                let result = match endpoint {
-                    "udp" => {
-                        create_udp_sink(Manager::generate_uuid(), video_and_stream_information)
-                    }
-                    unsupported => Err(anyhow!("Unsupported Endpoint scheme: {unsupported}")),
-                };
+        let endpoints = &video_and_stream_information.stream_information.endpoints;
 
-                if let Err(reason) = result.and_then(|sink| stream.pipeline.add_sink(sink)) {
-                    let error = anyhow!(
-                        "Failed to add Sink of type {endpoint} to the Pipeline. Reason: {reason}"
-                    );
-                    error!("{error:#?}");
-                    any_error = Err(error);
-                }
-            });
-        any_error?;
+        if endpoints.iter().any(|endpoint| endpoint.scheme() == "udp") {
+            if let Err(reason) =
+                create_udp_sink(Manager::generate_uuid(), video_and_stream_information)
+                    .and_then(|sink| stream.pipeline.add_sink(sink))
+            {
+                return Err(anyhow!(
+                    "Failed to add Sink of type UDP to the Pipeline. Reason: {reason}"
+                ));
+            }
+        }
+
+        if endpoints.iter().any(|endpoint| endpoint.scheme() == "rtsp") {
+            if let Err(reason) =
+                create_rtsp_sink(Manager::generate_uuid(), video_and_stream_information)
+                    .and_then(|sink| stream.pipeline.add_sink(sink))
+            {
+                return Err(anyhow!(
+                    "Failed to add Sink of type RTSP to the Pipeline. Reason: {reason}"
+                ));
+            }
+        }
 
         Ok(stream)
     }
 }
 
 #[instrument(level = "debug")]
-fn check_endpoints(video_and_stream_information: &VideoAndStreamInformation) -> Result<()> {
+fn validate_endpoints(video_and_stream_information: &VideoAndStreamInformation) -> Result<()> {
     let endpoints = &video_and_stream_information.stream_information.endpoints;
 
     if endpoints.is_empty() {
         return Err(anyhow!("Endpoints are empty"));
     }
 
-    Ok(())
-}
+    if endpoints.iter().filter(|&e| e.scheme() == "rtsp").count() > 1 {
+        return Err(anyhow!("Only one RTSP endpoint is supported at time"));
+    }
 
-#[instrument(level = "debug")]
-fn check_scheme(video_and_stream_information: &VideoAndStreamInformation) -> Result<()> {
-    let endpoints = &video_and_stream_information.stream_information.endpoints;
     let encode = match &video_and_stream_information
         .stream_information
         .configuration
@@ -92,47 +90,65 @@ fn check_scheme(video_and_stream_information: &VideoAndStreamInformation) -> Res
         CaptureConfiguration::VIDEO(configuration) => configuration.encode.clone(),
         CaptureConfiguration::REDIRECT(_) => VideoEncodeType::UNKNOWN("".into()),
     };
-    let scheme = endpoints.first().unwrap().scheme();
 
-    if matches!(
-        video_and_stream_information.video_source,
-        VideoSourceType::Redirect(_)
-    ) {
+    let errors: Vec<anyhow::Error> = endpoints.iter().filter_map(|endpoint| {
+
+        let scheme = endpoint.scheme();
+
+        if matches!(
+            video_and_stream_information.video_source,
+            VideoSourceType::Redirect(_)
+        ) {
+            match scheme {
+                "udp" | "rtsp" => return None,
+                _ => return Some(anyhow!(
+                    "The URL's scheme for REDIRECT endpoints should be \"udp\" or \"rtsp\", but was: {scheme:?}",
+                ))
+            };
+        }
+
         match scheme {
-            "udp" | "rtsp" => return Ok(()),
-            _ => return Err(anyhow!(
-                "The URL's scheme for REDIRECT endpoints should be \"udp\" or \"rtsp\", but was: {scheme:?}",
-            ))
-        };
-    }
+            "udp" => {
+                if VideoEncodeType::H265 == encode {
+                    return Some(anyhow!("Endpoint with udp scheme only supports H264, encode type is H265, the scheme should be udp265."));
+                }
 
-    match scheme {
-        "udp" => {
-            if VideoEncodeType::H265 == encode {
-                return Err(anyhow!("Endpoint with udp scheme only supports H264, encode type is H265, the scheme should be udp265."));
+                // UDP endpoints should contain both host and port
+                if endpoint.host().is_none() || endpoint.port().is_none()
+                {
+                    return Some(anyhow!(
+                        "Endpoint with udp scheme should contain host and port. Endpoint: {endpoint:?}"
+                    ));
+                }
             }
-
-            // UDP endpoints should contain both host and port
-            if endpoints
-                .iter()
-                .any(|endpoint| endpoint.host().is_none() || endpoint.port().is_none())
-            {
-                return Err(anyhow!(
-                    "Endpoint with udp scheme should contain host and port. Endpoints: {endpoints:#?}"
+            "udp265" => {
+                if VideoEncodeType::H265 != encode {
+                    return Some(anyhow!("Endpoint with udp265 scheme only supports H265 encode. Encode: {encode:?}, Endpoint: {endpoints:?}"));
+                }
+            }
+            "rtsp" => {
+                // RTSP endpoints should contain host, port, and path
+                if endpoint.host().is_none() || endpoint.port().is_none() || endpoint.path().is_empty() {
+                    return Some(anyhow!(
+                        "Endpoint with rtsp scheme should contain host, port, and path. Endpoint: {endpoint:?}"
+                    ));
+                }
+            }
+            _ => {
+                return Some(anyhow!(
+                    "Scheme is not accepted as stream endpoint: {scheme}"
                 ));
             }
         }
-        "udp265" => {
-            if VideoEncodeType::H265 != encode {
-                return Err(anyhow!("Endpoint with udp265 scheme only supports H265 encode. Encode: {encode:?}, Endpoints: {endpoints:#?}"));
-            }
-        }
-        _ => {
-            return Err(anyhow!(
-                "Scheme is not accepted as stream endpoint: {scheme}"
-            ))
-        }
+
+        None
+    }).collect();
+
+    if !errors.is_empty() {
+        return Err(anyhow!(
+            "One or more endpoints are invalid. List of Errors:\n{errors:?}",
+        ));
     }
 
-    return Ok(());
+    Ok(())
 }
