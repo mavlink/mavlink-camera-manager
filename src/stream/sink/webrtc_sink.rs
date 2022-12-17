@@ -105,6 +105,10 @@ impl SinkInterface for WebRTCSink {
     fn get_id(&self) -> uuid::Uuid {
         self.0.lock().unwrap().get_id()
     }
+
+    fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
+        self.0.lock().unwrap().get_sdp()
+    }
 }
 
 impl WebRTCSink {
@@ -527,6 +531,12 @@ impl SinkInterface for WebRTCSinkInner {
 
     fn get_id(&self) -> uuid::Uuid {
         self.bind.session_id
+    }
+
+    fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
+        Err(anyhow!(
+            "Not available. Reason: WebRTC Sink should only be connected by means of its Signalling protocol."
+        ))
     }
 }
 
