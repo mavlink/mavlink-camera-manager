@@ -125,6 +125,12 @@ impl SinkInterface for RtspSink {
     fn get_id(&self) -> uuid::Uuid {
         self.sink_id
     }
+
+    fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
+        Err(anyhow!(
+            "Not available. Reason: RTSP Sink should only be connected from its RTSP endpoint."
+        ))
+    }
 }
 
 impl RtspSink {

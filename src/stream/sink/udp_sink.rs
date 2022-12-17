@@ -14,6 +14,7 @@ pub struct UdpSink {
     udpsink: gst::Element,
     udpsink_sink_pad: gst::Pad,
     tee_src_pad: Option<gst::Pad>,
+    addresses: Vec<url::Url>,
 }
 impl SinkInterface for UdpSink {
     #[instrument(level = "debug")]
@@ -117,6 +118,45 @@ impl SinkInterface for UdpSink {
     fn get_id(&self) -> uuid::Uuid {
         self.sink_id
     }
+
+    fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
+        let caps = self
+            .udpsink_sink_pad
+            .current_caps()
+            .context("Failed to get caps from UDP Sink 'sink' pad")?;
+        debug!("Got caps: {caps:#?}");
+
+        let mut sdp_media = gst_sdp::SDPMedia::new();
+        gst_sdp::SDPMediaRef::set_media_from_caps(&caps, &mut sdp_media)?;
+
+        let url = self.addresses.first().unwrap().clone();
+        sdp_media.add_connection("IN", "IP4", url.host_str().expect("Missing host"), 127, 1);
+        sdp_media.set_port_info(url.port().expect("Missing port") as u32, 1);
+        sdp_media.set_proto("RTP/AVP");
+
+        let mut sdp = gst_sdp::SDPMessage::new();
+        sdp.add_media(sdp_media);
+        sdp.set_version("0");
+        sdp.set_session_name(&self.sink_id.to_string());
+        sdp.set_information("This is a UDP stream");
+        sdp.add_attribute(
+            "tool",
+            Some(&format!(
+                "{} - {}",
+                env!("CARGO_PKG_NAME"),
+                env!("VERGEN_GIT_SHA_SHORT")
+            )),
+        );
+        sdp.add_attribute("type", Some("broadcast"));
+        sdp.add_attribute("recvonly", None);
+
+        debug!(
+            "Got the SDPMessage: {sdp:#?}\n\n..Which as text is: {:?}\n\n",
+            &sdp.as_text().unwrap()
+        );
+
+        Ok(sdp)
+    }
 }
 
 impl UdpSink {
@@ -128,7 +168,7 @@ impl UdpSink {
             .property("max-size-buffers", 0u32) // Disable buffers
             .build()?;
 
-        let addresses = addresses
+        let clients = addresses
             .iter()
             .filter_map(|address| {
                 if address.scheme() != "udp" {
@@ -142,7 +182,7 @@ impl UdpSink {
             })
             .collect::<Vec<String>>()
             .join(",");
-        let description = format!("multiudpsink clients={addresses}");
+        let description = format!("multiudpsink clients={clients}");
         let udpsink =
             gst::parse_launch(&description).context("Failed parsing pipeline description")?;
 
@@ -155,6 +195,7 @@ impl UdpSink {
             queue,
             udpsink,
             udpsink_sink_pad,
+            addresses,
             tee_src_pad: Default::default(),
         })
     }

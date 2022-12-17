@@ -26,6 +26,11 @@ pub trait SinkInterface {
 
     /// Get the id associated with this Sink
     fn get_id(&self) -> uuid::Uuid;
+
+    /// Get the sdp file describing this Sink, following the [RFC 8866](https://www.rfc-editor.org/rfc/rfc8866.html)
+    ///
+    /// For a better grasp of SDP parameters, read [here](https://www.iana.org/assignments/sdp-parameters/sdp-parameters.xhtml)
+    fn get_sdp(&self) -> Result<gst_sdp::SDPMessage>;
 }
 
 #[enum_dispatch(SinkInterface)]
