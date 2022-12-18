@@ -65,7 +65,7 @@ impl VideoSourceLocalType {
             return result;
         }
 
-        let msg = format!("Unable to identify the local camera connection type, please report the problem: {description}");
+        let msg = format!("Unable to identify the local camera connection type, please report the problem: {description:?}");
         if description == "platform:bcm2835-isp" {
             // Filter out the log for this particular device, because regarding to Raspberry Pis, it will always be there and we will never use it.
             trace!(msg);
@@ -190,7 +190,7 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
     let device = Device::with_path(&device_path).unwrap();
     let v4l_formats = device.enum_formats().unwrap_or_default();
     let mut formats = vec![];
-    trace!("Checking resolutions for camera: {}", &device_path);
+    trace!("Checking resolutions for camera {device_path:?}");
     for v4l_format in v4l_formats {
         let mut sizes = vec![];
         let mut errors: Vec<String> = vec![];
@@ -304,11 +304,11 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
 
 impl VideoSource for VideoSourceLocal {
     fn name(&self) -> &String {
-        return &self.name;
+        &self.name
     }
 
     fn source_string(&self) -> &str {
-        return &self.device_path;
+        &self.device_path
     }
 
     fn formats(&self) -> Vec<Format> {
@@ -328,22 +328,16 @@ impl VideoSource for VideoSourceLocal {
     }
 
     fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()> {
-        let control = self
+        let Some(control) = self
             .controls()
             .into_iter()
-            .find(|control| control.id == control_id);
-
-        if control.is_none() {
-            let ids: Vec<u64> = self.controls().iter().map(|control| control.id).collect();
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!(
-                    "Control ID '{}' is not valid, options are: {:?}",
-                    control_id, ids
-                ),
-            ));
-        }
-        let control = control.unwrap();
+            .find(|control| control.id == control_id) else {
+                let ids: Vec<u64> = self.controls().iter().map(|control| control.id).collect();
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Control ID {control_id:?} was not found, options are: {ids:?}"),
+                ));
+            };
 
         //TODO: Add control validation
         let device = Device::with_path(&self.device_path)?;
@@ -354,7 +348,7 @@ impl VideoSource for VideoSourceLocal {
         ) {
             ok @ Ok(_) => ok,
             Err(error) => {
-                warn!("Failed to set control {:#?}, error: {:#?}", control, error);
+                warn!("Failed to set control {control:#?}, error: {error:#?}");
                 Err(error)
             }
         }
@@ -414,8 +408,8 @@ impl VideoSource for VideoSourceLocal {
             let value = self.control_value_by_id(v4l_control.id as u64);
             if let Err(error) = value {
                 error!(
-                    "Failed to get control '{} ({})' from device {}: {error}",
-                    control.name, control.id, self.device_path
+                    "Failed to get control {:?} ({:?}) from device {:?}: {error:?}",
+                    control.name, control.id, &self.device_path
                 );
                 continue;
             }
@@ -463,15 +457,15 @@ impl VideoSource for VideoSourceLocal {
                 _ => continue,
             };
         }
-        return controls;
+        controls
     }
 
     fn is_valid(&self) -> bool {
-        return !self.device_path.is_empty();
+        !self.device_path.is_empty()
     }
 
     fn is_shareable(&self) -> bool {
-        return false;
+        false
     }
 }
 
@@ -489,10 +483,7 @@ impl VideoSourceAvailable for VideoSourceLocal {
             let caps = camera.query_caps();
 
             if let Err(error) = caps {
-                debug!(
-                    "Failed to capture caps for device: {} {:#?}",
-                    camera_path, error
-                );
+                debug!("Failed to capture caps for device: {camera_path} {error:#?}");
                 continue;
             }
             let caps = caps.unwrap();
@@ -522,10 +513,7 @@ impl VideoSourceAvailable for VideoSourceLocal {
 
             if let Err(error) = camera.format() {
                 if error.kind() != std::io::ErrorKind::InvalidInput {
-                    debug!(
-                        "Failed to capture formats for device: {}\nError: {:#?}",
-                        camera_path, error
-                    );
+                    debug!("Failed to capture formats for device: {camera_path}\nError: {error:?}");
                 }
                 continue;
             }
@@ -574,7 +562,6 @@ mod tests {
     use super::*;
 
     #[test]
-
     fn bus_decode() {
         let descriptions = vec![
             (
