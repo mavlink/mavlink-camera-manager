@@ -4,7 +4,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::{settings, stream::webrtc::signalling_protocol::BindAnswer};
+use crate::{
+    settings,
+    stream::{types::CaptureConfiguration, webrtc::signalling_protocol::BindAnswer},
+    video::video_source,
+};
 use crate::{stream::sink::sink::SinkInterface, video::types::VideoSourceType};
 use crate::{
     stream::sink::{sink::Sink, webrtc_sink::WebRTCSink},
@@ -82,14 +86,9 @@ pub fn start_default() {
 
     let mut streams = settings::manager::streams();
 
-    // Update all local video sources to make sure that is available
-    streams.iter_mut().for_each(|stream| {
-        if let VideoSourceType::Local(source) = &mut stream.video_source {
-            if !source.update_device() {
-                error!("Source appears to be invalid or not found: {source:#?}");
-            }
-        }
-    });
+    // Update all local video sources to make sure that they are available
+    let mut candidates = video_source::cameras_available().to_owned();
+    update_devices(&mut streams, &mut candidates);
 
     // Remove all invalid video_sources
     let streams: Vec<VideoAndStreamInformation> = streams
@@ -103,6 +102,47 @@ pub fn start_default() {
         add_stream_and_start(stream).unwrap_or_else(|error| {
             error!("Not possible to start stream: {error:?}");
         });
+    }
+}
+
+#[instrument(level = "debug")]
+fn update_devices(
+    streams: &mut Vec<VideoAndStreamInformation>,
+    candidates: &mut Vec<VideoSourceType>,
+) {
+    for stream in streams {
+        let VideoSourceType::Local(source) = &mut stream.video_source else {
+            continue
+        };
+        let CaptureConfiguration::VIDEO(capture_configuration) = &stream.stream_information.configuration else {
+            continue
+        };
+
+        match source.try_identify_device(capture_configuration, &candidates) {
+            Ok(Some(candidate_source_string)) => {
+                let Some((idx, candidate)) = candidates.iter().enumerate().find_map(|(idx, candidate)| {
+                        (candidate.inner().source_string() == candidate_source_string)
+                            .then_some((idx, candidate))
+                    }) else {
+                        error!("CRITICAL: The device was identified as {candidate_source_string:?}, but it is not the candidates list"); // This shouldn't ever be reachable, otherwise the above logic is flawed
+                        continue
+                    };
+
+                let VideoSourceType::Local(camera) = candidate else {
+                        error!("CRITICAL: The device was identified as {candidate_source_string:?}, but it is not a Local device"); // This shouldn't ever be reachable, otherwise the above logic is flawed
+                        continue
+                    };
+                *source = camera.clone();
+                // Only remove the candidate from the list after using it, avoiding the wrong but possible logic from the CRITICAL erros branches above, the additional cost is this clone
+                candidates.remove(idx);
+            }
+            Err(reason) => {
+                // Invalidate the device
+                source.device_path = "".into();
+                warn!("Device {source:?} was invalidated. Reason: {reason:?}");
+            }
+            _ => (),
+        }
     }
 }
 
