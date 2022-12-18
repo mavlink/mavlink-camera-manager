@@ -315,8 +315,16 @@ impl VideoSource for VideoSourceLocal {
         get_device_formats(&self.device_path, &self.typ)
     }
 
-    fn set_control_by_name(&self, _control_name: &str, _value: i64) -> std::io::Result<()> {
-        unimplemented!();
+    fn set_control_by_name(&self, control_name: &str, value: i64) -> std::io::Result<()> {
+        let Some(control_id) = self.controls().iter().find_map(|control|(control.name == control_name).then_some(control.id)) else {
+            let names: Vec<String> = self.controls().into_iter().map(|control| control.name).collect();
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Control named {control_name:?} was not found, options are: {names:?}"),
+            ));
+        };
+
+        self.set_control_by_id(control_id, value)
     }
 
     fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()> {
@@ -352,8 +360,16 @@ impl VideoSource for VideoSourceLocal {
         }
     }
 
-    fn control_value_by_name(&self, _control_name: &str) -> std::io::Result<i64> {
-        unimplemented!();
+    fn control_value_by_name(&self, control_name: &str) -> std::io::Result<i64> {
+        let Some(control_id) = self.controls().iter().find_map(|control|(control.name == control_name).then_some(control.id)) else {
+            let names: Vec<String> = self.controls().into_iter().map(|control| control.name).collect();
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Control named {control_name:?} was not found, options are: {names:?}"),
+            ));
+        };
+
+        self.control_value_by_id(control_id)
     }
 
     fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64> {
