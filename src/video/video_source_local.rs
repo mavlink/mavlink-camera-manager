@@ -22,6 +22,9 @@ use lazy_static::lazy_static;
 lazy_static! {
     static ref H264_PROFILES: Arc<Mutex<HashMap<String, String>>> = Default::default();
 }
+lazy_static! {
+    static ref VIDEO_FORMATS: Arc<Mutex<HashMap<String, Vec<Format>>>> = Default::default();
+}
 
 //TODO: Move to types
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -180,6 +183,10 @@ fn convert_v4l_intervals(v4l_intervals: &[v4l::FrameInterval]) -> Vec<FrameInter
 }
 
 fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Format> {
+    if let Some(formats) = VIDEO_FORMATS.lock().unwrap().get(&device_path.to_string()) {
+        return formats.clone();
+    }
+
     let device = Device::with_path(&device_path).unwrap();
     let v4l_formats = device.enum_formats().unwrap_or_default();
     let mut formats = vec![];
@@ -287,6 +294,11 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
     }
     formats.sort();
     formats.dedup();
+
+    VIDEO_FORMATS
+        .lock()
+        .unwrap()
+        .insert(device_path.to_string(), formats.clone());
     formats
 }
 
@@ -504,7 +516,7 @@ impl VideoSourceAvailable for VideoSourceLocal {
 
             let source = VideoSourceLocal {
                 name: caps.card,
-                device_path: camera_path.clone(),
+                device_path: camera_path.to_string(),
                 typ,
             };
             cameras.push(VideoSourceType::Local(source));
