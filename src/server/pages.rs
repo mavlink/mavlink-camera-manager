@@ -63,6 +63,11 @@ pub struct XmlFileRequest {
     file: String,
 }
 
+#[derive(Apiv2Schema, Debug, Deserialize)]
+pub struct SdpFileRequest {
+    source: String,
+}
+
 use std::{ffi::OsStr, path::Path};
 
 use include_dir::{include_dir, Dir};
@@ -277,4 +282,28 @@ pub fn xml(xml_file_request: web::Query<XmlFileRequest>) -> HttpResponse {
             "File for {} does not exist.",
             xml_file_request.file
         ));
+}
+
+#[api_v2_operation]
+/// Provides a sdp description file that contains information for a specific stream, based on: [RFC 8866](https://www.rfc-editor.org/rfc/rfc8866.html)
+pub fn sdp(sdp_file_request: web::Query<SdpFileRequest>) -> HttpResponse {
+    debug!("{sdp_file_request:#?}");
+
+    match stream_manager::get_first_sdp_from_source(sdp_file_request.source.clone()) {
+        Ok(sdp) => {
+            if let Ok(sdp) = sdp.as_text() {
+                HttpResponse::Ok().content_type("text/plain").body(sdp)
+            } else {
+                HttpResponse::InternalServerError()
+                    .content_type("text/plain")
+                    .body(format!("Failed to convert SDP to text"))
+            }
+        }
+        Err(error) => HttpResponse::NotFound()
+            .content_type("text/plain")
+            .body(format!(
+                "Failed to get SDP file for {:?}. Reason: {error:?}",
+                sdp_file_request.source
+            )),
+    }
 }
