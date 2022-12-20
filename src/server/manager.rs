@@ -62,6 +62,7 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
                 web::post().to(pages::camera_reset_controls),
             )
             .route("/xml", web::get().to(pages::xml))
+            .route("/sdp", web::get().to(pages::sdp))
             .build()
     })
     .bind(server_address)
