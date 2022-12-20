@@ -152,6 +152,32 @@ pub fn streams() -> Vec<StreamStatus> {
 }
 
 #[instrument(level = "debug")]
+pub fn get_first_sdp_from_source(source: String) -> Result<gst_sdp::SDPMessage> {
+    let Some(result) = MANAGER
+        .lock()
+        .unwrap()
+        .streams
+        .values()
+        .find_map(|stream| {
+            if stream.video_and_stream_information.video_source.inner().source_string() == source {
+                stream
+                    .pipeline
+                    .inner_state_as_ref()
+                    .sinks
+                    .values()
+                    .find_map(|sink| {
+                        sink.get_sdp().ok()
+                    })
+            } else {
+                None
+            }
+        }) else {
+            return Err(anyhow!("Failed to find any valid sdp for souce {source:?}"));
+        };
+    Ok(result)
+}
+
+#[instrument(level = "debug")]
 pub fn add_stream_and_start(video_and_stream_information: VideoAndStreamInformation) -> Result<()> {
     let stream = Stream::try_new(&video_and_stream_information)?;
 
