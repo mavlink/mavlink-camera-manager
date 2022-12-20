@@ -74,7 +74,7 @@ use include_dir::{include_dir, Dir};
 
 static WEBRTC_DIST: Dir<'_> = include_dir!("src/stream/webrtc/frontend/dist");
 
-pub fn load_file(file_name: &str) -> String {
+fn load_file(file_name: &str) -> String {
     if file_name.starts_with("webrtc/") {
         return load_webrtc(file_name);
     }
@@ -91,15 +91,15 @@ pub fn load_file(file_name: &str) -> String {
     match file_name {
         "" | "index.html" => std::include_str!("../html/index.html").into(),
         "vue.js" => std::include_str!("../html/vue.js").into(),
-        _ => format!("File not found: {}", file_name),
+        _ => format!("File not found: {file_name:?}"),
     }
 }
 
-pub fn load_webrtc(filename: &str) -> String {
+fn load_webrtc(filename: &str) -> String {
     let filename = filename.trim_start_matches("webrtc/");
     let file = WEBRTC_DIST.get_file(filename).unwrap();
     let content = file.contents_utf8().unwrap();
-    return content.into();
+    content.into()
 }
 
 #[api_v2_operation]
@@ -114,7 +114,7 @@ pub fn root(req: HttpRequest) -> HttpResponse {
             //TODO: do that in load_file
             return HttpResponse::NotFound()
                 .content_type("text/plain")
-                .body(format!("Page does not exist: {}", something));
+                .body(format!("Page does not exist: {something:?}"));
         }
     };
     let content = load_file(filename);
@@ -123,7 +123,8 @@ pub fn root(req: HttpRequest) -> HttpResponse {
         .and_then(OsStr::to_str)
         .unwrap_or("");
     let mime = actix_files::file_extension_to_mime(extension).to_string();
-    return HttpResponse::Ok().content_type(mime).body(content);
+
+    HttpResponse::Ok().content_type(mime).body(content)
 }
 
 //TODO: change endpoint name to sources
@@ -163,13 +164,14 @@ pub async fn v4l() -> Json<Vec<ApiVideoSource>> {
 pub fn v4l_post(json: web::Json<V4lControl>) -> HttpResponse {
     let control = json.into_inner();
     let answer = video_source::set_control(&control.device, control.v4l_id, control.value);
-    if answer.is_ok() {
-        return HttpResponse::Ok().finish();
-    };
 
-    return HttpResponse::NotAcceptable()
-        .content_type("text/plain")
-        .body(format!("{:#?}", answer.err().unwrap()));
+    if let Err(error) = answer {
+        return HttpResponse::NotAcceptable()
+            .content_type("text/plain")
+            .body(format!("{error:#?}"));
+    }
+
+    HttpResponse::Ok().finish()
 }
 
 #[api_v2_operation]
@@ -181,9 +183,9 @@ pub async fn reset_settings(query: web::Query<ResetSettings>) -> HttpResponse {
         return HttpResponse::Ok().finish();
     }
 
-    return HttpResponse::NotAcceptable()
+    HttpResponse::NotAcceptable()
         .content_type("text/plain")
-        .body("Missing argument for reset_settings.");
+        .body("Missing argument for reset_settings.")
 }
 
 #[api_v2_operation]
@@ -203,85 +205,80 @@ pub fn streams_post(json: web::Json<PostStream>) -> HttpResponse {
         Err(error) => {
             return HttpResponse::NotAcceptable()
                 .content_type("text/plain")
-                .body(format!("{:#?}", SimpleError::from(error).to_string()));
+                .body(format!("{error:#?}"));
         }
     };
 
-    match stream_manager::add_stream_and_start(VideoAndStreamInformation {
+    if let Err(error) = stream_manager::add_stream_and_start(VideoAndStreamInformation {
         name: json.name,
         stream_information: json.stream_information,
         video_source,
     }) {
-        Ok(_) => HttpResponse::Ok()
-            .content_type("application/json")
-            .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap()),
-        Err(error) => {
-            return HttpResponse::NotAcceptable()
-                .content_type("text/plain")
-                .body(format!("{:#?}", error.to_string()));
-        }
+        return HttpResponse::NotAcceptable()
+            .content_type("text/plain")
+            .body(format!("{error:#?}"));
     }
+
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap())
 }
 
 #[api_v2_operation]
 /// Remove a desired stream
 pub fn remove_stream(query: web::Query<RemoveStream>) -> HttpResponse {
-    match stream_manager::remove_stream_by_name(&query.name) {
-        Ok(_) => HttpResponse::Ok()
-            .content_type("application/json")
-            .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap()),
-        Err(error) => {
-            return HttpResponse::NotAcceptable()
-                .content_type("text/plain")
-                .body(format!("{:#?}", error.to_string()));
-        }
+    if let Err(error) = stream_manager::remove_stream_by_name(&query.name) {
+        return HttpResponse::NotAcceptable()
+            .content_type("text/plain")
+            .body(format!("{error:#?}"));
     }
+
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap())
 }
 
 #[api_v2_operation]
 /// Reset controls from a given camera source
 pub fn camera_reset_controls(json: web::Json<ResetCameraControls>) -> HttpResponse {
-    match video_source::reset_controls(&json.device) {
-        Ok(_) => HttpResponse::Ok()
-            .content_type("application/json")
-            .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap()),
-        Err(errors) => {
-            let mut error: String = Default::default();
-            errors.iter().enumerate().for_each(|(i, e)| {
-                error
-                    .push_str(format!("{}: {}\n", i + 1, SimpleError::from(e).to_string()).as_str())
-            });
-            let error = SimpleError::new(error);
-            return HttpResponse::NotAcceptable()
-                .content_type("text/plain")
-                .body(format!(
-                    "One or more controls were not reseted due to the following errors: \n{}",
-                    error.to_string()
-                ));
-        }
+    if let Err(errors) = video_source::reset_controls(&json.device) {
+        let mut error: String = Default::default();
+        errors.iter().enumerate().for_each(|(i, e)| {
+            error.push_str(format!("{}: {}\n", i + 1, SimpleError::from(e).to_string()).as_str())
+        });
+        return HttpResponse::NotAcceptable()
+            .content_type("text/plain")
+            .body(format!(
+                "One or more controls were not reseted due to the following errors: \n{error:#?}",
+            ));
     }
+
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap())
 }
 
 #[api_v2_operation]
 /// Provides a xml description file that contains information for a specific device, based on: https://mavlink.io/en/services/camera_def.html
 pub fn xml(xml_file_request: web::Query<XmlFileRequest>) -> HttpResponse {
-    debug!("{:#?}", xml_file_request);
+    debug!("{xml_file_request:#?}");
     let cameras = video_source::cameras_available();
     let camera = cameras
         .iter()
         .find(|source| source.inner().source_string() == xml_file_request.file);
 
-    if let Some(camera) = camera {
-        return HttpResponse::Ok()
-            .content_type("text/xml")
-            .body(xml::from_video_source(camera.inner()));
-    }
-    return HttpResponse::NotFound()
-        .content_type("text/plain")
-        .body(format!(
-            "File for {} does not exist.",
-            xml_file_request.file
-        ));
+    let Some(camera) = camera else {
+        return HttpResponse::NotFound()
+            .content_type("text/plain")
+            .body(format!(
+                "File for {} does not exist.",
+                xml_file_request.file
+            ))
+    };
+
+    HttpResponse::Ok()
+        .content_type("text/xml")
+        .body(xml::from_video_source(camera.inner()))
 }
 
 #[api_v2_operation]
