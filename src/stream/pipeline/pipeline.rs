@@ -109,7 +109,7 @@ impl PipelineState {
             .by_name(PIPELINE_TEE_NAME)
             .context(format!("no element named {PIPELINE_TEE_NAME:#?}"))?;
 
-        let pipeline_runner = PipelineRunner::new(&pipeline, pipeline_id.clone());
+        let pipeline_runner = PipelineRunner::new(&pipeline, pipeline_id);
         let mut killswitch_receiver = pipeline_runner.get_receiver();
 
         pipeline.debug_to_dot_file_with_ts(
@@ -118,7 +118,7 @@ impl PipelineState {
         );
 
         Ok(Self {
-            pipeline_id: pipeline_id.clone(),
+            pipeline_id: pipeline_id,
             pipeline,
             tee,
             sinks: Default::default(),
@@ -200,7 +200,7 @@ impl PipelineState {
             RTSPServer::start_pipeline(&sink.path())?;
         }
 
-        self.sinks.insert(sink_id.clone(), sink);
+        self.sinks.insert(*sink_id, sink);
 
         Ok(())
     }
