@@ -22,7 +22,6 @@ use tracing::*;
 
 use super::{
     pipeline::PipelineGstreamerInterface,
-    stream::Stream,
     types::StreamStatus,
     webrtc::{
         self,
@@ -30,6 +29,7 @@ use super::{
         signalling_server::{StreamManagementInterface, WebRTCSessionManagementInterface},
         webrtcbin_interface::WebRTCBinInterface,
     },
+    Stream,
 };
 
 #[derive(Default)]
@@ -334,7 +334,7 @@ impl WebRTCSessionManagementInterface for Manager {
 
 impl StreamManagementInterface<StreamStatus> for Manager {
     #[instrument(level = "debug")]
-    fn add_stream(stream: super::stream::Stream) -> Result<()> {
+    fn add_stream(stream: Stream) -> Result<()> {
         let mut manager = MANAGER.lock().unwrap();
 
         let stream_id = stream.id;
