@@ -98,7 +98,7 @@ impl VideoSourceLocal {
     pub fn try_identify_device(
         &mut self,
         capture_configuration: &VideoCaptureConfiguration,
-        candidates: &Vec<VideoSourceType>,
+        candidates: &[VideoSourceType],
     ) -> Result<Option<String>> {
         // Rule n.1 - All candidates must share the same camera name
         let candidates = Self::get_cameras_with_same_name(candidates, &self.name);
@@ -160,7 +160,7 @@ impl VideoSourceLocal {
     }
 
     fn get_cameras_with_same_name(
-        candidates: &Vec<VideoSourceType>,
+        candidates: &[VideoSourceType],
         name: &str,
     ) -> Vec<VideoSourceType> {
         candidates
@@ -177,7 +177,7 @@ impl VideoSourceLocal {
     }
 
     fn get_cameras_with_same_encode(
-        candidates: &Vec<VideoSourceType>,
+        candidates: &[VideoSourceType],
         encode: &VideoEncodeType,
     ) -> Vec<VideoSourceType> {
         candidates
@@ -194,7 +194,7 @@ impl VideoSourceLocal {
     }
 
     fn get_cameras_with_same_bus(
-        candidates: &Vec<VideoSourceType>,
+        candidates: &[VideoSourceType],
         typ: &VideoSourceLocalType,
     ) -> Vec<VideoSourceType> {
         candidates

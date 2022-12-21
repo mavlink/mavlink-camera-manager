@@ -47,9 +47,9 @@ impl Manager {
             .streams
             .values()
             .map(|stream| stream.video_and_stream_information.clone())
-            .collect();
+            .collect::<Vec<VideoAndStreamInformation>>();
 
-        settings::manager::set_streams(&video_and_stream_informations);
+        settings::manager::set_streams(video_and_stream_informations.as_slice());
     }
 }
 
