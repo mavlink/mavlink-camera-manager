@@ -22,7 +22,7 @@ impl VideoSource for VideoSourceRedirect {
 
     fn source_string(&self) -> &str {
         match &self.source {
-            VideoSourceRedirectType::Redirect(string) => &string,
+            VideoSourceRedirectType::Redirect(string) => string,
         }
     }
 

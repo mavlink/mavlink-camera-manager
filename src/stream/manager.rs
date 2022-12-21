@@ -118,7 +118,7 @@ fn update_devices(
             continue
         };
 
-        match source.try_identify_device(capture_configuration, &candidates) {
+        match source.try_identify_device(capture_configuration, candidates) {
             Ok(Some(candidate_source_string)) => {
                 let Some((idx, candidate)) = candidates.iter().enumerate().find_map(|(idx, candidate)| {
                         (candidate.inner().source_string() == candidate_source_string)
@@ -356,7 +356,7 @@ impl StreamManagementInterface<StreamStatus> for Manager {
 
         let stream = manager
             .streams
-            .remove(&stream_id)
+            .remove(stream_id)
             .context(format!("Stream {stream_id:?} not found"))?;
         manager.update_settings();
         drop(manager);
