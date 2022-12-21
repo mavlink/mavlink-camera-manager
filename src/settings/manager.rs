@@ -50,7 +50,7 @@ impl Default for SettingsStruct {
 }
 
 impl Manager {
-    fn new(file_name: &str) -> ManagerStruct {
+    fn with(file_name: &str) -> ManagerStruct {
         let file_name = if !Path::new(file_name).is_absolute() {
             match ProjectDirs::from("com", "Blue Robotics", env!("CARGO_PKG_NAME")) {
                 Some(project) => {
@@ -98,7 +98,7 @@ impl Manager {
 pub fn init(file_name: Option<&str>) {
     let mut manager = MANAGER.lock().unwrap();
     let file_name = file_name.unwrap_or("settings.json");
-    manager.content = Some(Manager::new(file_name));
+    manager.content = Some(Manager::with(file_name));
 }
 
 fn fallback_settings_with_backup_file(file_name: &str) -> SettingsStruct {
