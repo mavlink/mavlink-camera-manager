@@ -195,7 +195,7 @@ impl PipelineState {
 
             debug!("caps: {:#?}", caps.to_string());
 
-            RTSPServer::add_pipeline(&sink.path(), &sink.socket_path(), &caps)?;
+            RTSPServer::add_pipeline(&sink.path(), &sink.socket_path(), caps)?;
 
             RTSPServer::start_pipeline(&sink.path())?;
         }

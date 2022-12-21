@@ -101,7 +101,7 @@ impl VideoSourceLocal {
         candidates: &Vec<VideoSourceType>,
     ) -> Result<Option<String>> {
         // Rule n.1 - All candidates must share the same camera name
-        let candidates = Self::get_cameras_with_same_name(&candidates, &self.name);
+        let candidates = Self::get_cameras_with_same_name(candidates, &self.name);
 
         let len = candidates.len();
         if len == 0 {
@@ -262,7 +262,7 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
         return formats.clone();
     }
 
-    let device = Device::with_path(&device_path).unwrap();
+    let device = Device::with_path(device_path).unwrap();
     let v4l_formats = device.enum_formats().unwrap_or_default();
     let mut formats = vec![];
     trace!("Checking resolutions for camera {device_path:?}");
@@ -564,7 +564,7 @@ impl VideoSourceAvailable for VideoSourceLocal {
             let caps = caps.unwrap();
 
             let typ = VideoSourceLocalType::from_str(&caps.bus);
-            if let Some((interval, width, height)) = get_device_formats(&camera_path, &typ)
+            if let Some((interval, width, height)) = get_device_formats(camera_path, &typ)
                 .iter()
                 .find_map(|format| {
                     if format.encode == VideoEncodeType::H264 {
@@ -826,7 +826,7 @@ mod device_identification_tests {
             unreachable!("Wrong setup")
         };
 
-        let Ok(Some(candidate_source_string)) = source.to_owned().try_identify_device(&capture_configuration, &candidates) else {
+        let Ok(Some(candidate_source_string)) = source.to_owned().try_identify_device(capture_configuration, &candidates) else {
             panic!("Failed to identify the only device with the same name and encode")
         };
 
@@ -838,7 +838,7 @@ mod device_identification_tests {
         // IF we remove the only device with the same name and encode, we should get an error
         source
             .to_owned()
-            .try_identify_device(&capture_configuration, &candidates[1..].to_vec())
+            .try_identify_device(capture_configuration, &candidates[1..].to_vec())
             .expect_err("Failed to identify the only device with the same name and encode");
 
         VIDEO_FORMATS.lock().unwrap().clear();
@@ -867,7 +867,7 @@ mod device_identification_tests {
                 unreachable!("Wrong setup")
             };
 
-            let Ok(Some(candidate_source_string)) = source.to_owned().try_identify_device(&capture_configuration, &candidates) else {
+            let Ok(Some(candidate_source_string)) = source.to_owned().try_identify_device(capture_configuration, &candidates) else {
                 panic!("Failed to identify the only device with the same name and encode")
             };
             assert_eq!(
@@ -880,7 +880,7 @@ mod device_identification_tests {
             other_candidates.remove(0);
             source
                 .to_owned()
-                .try_identify_device(&capture_configuration, &other_candidates)
+                .try_identify_device(capture_configuration, &other_candidates)
                 .expect_err("Failed to identify the only device with the same name and encode");
         }
 
@@ -911,7 +911,7 @@ mod device_identification_tests {
                 unreachable!("Wrong setup")
             };
 
-            let Ok(Some(candidate_source_string)) = source.to_owned().try_identify_device(&capture_configuration, &candidates) else {
+            let Ok(Some(candidate_source_string)) = source.to_owned().try_identify_device(capture_configuration, &candidates) else {
                 panic!("Failed to identify the only device with the same name and encode")
             };
             assert_eq!(
@@ -948,7 +948,7 @@ mod device_identification_tests {
 
             assert!(source
                 .to_owned()
-                .try_identify_device(&capture_configuration, &candidates)
+                .try_identify_device(capture_configuration, &candidates)
                 .expect("Failed to identify the only device with the same name and encode")
                 .is_none())
         }

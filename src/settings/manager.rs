@@ -105,7 +105,7 @@ fn fallback_settings_with_backup_file(file_name: &str) -> SettingsStruct {
     let backup_file_name = format!("{file_name}.bak");
     info!("The settings file {file_name:?} will be backed-up as {backup_file_name:?}, and a new (empty) settings file will be created in its place.");
 
-    if let Err(error) = std::fs::copy(file_name, &backup_file_name.as_str()) {
+    if let Err(error) = std::fs::copy(file_name, backup_file_name.as_str()) {
         error!("Failed to create backup file {backup_file_name:?}. Reason: {error:#?}");
     }
 
@@ -119,7 +119,7 @@ fn load_settings_from_file(file_name: &str) -> SettingsStruct {
         return fallback_settings_with_backup_file(file_name);
     };
 
-    serde_json::from_str(&result.unwrap().as_str()).unwrap_or_else(|error| {
+    serde_json::from_str(result.unwrap().as_str()).unwrap_or_else(|error| {
         error!("Failed to load settings file {file_name:?}. Reason: {error}");
         fallback_settings_with_backup_file(file_name)
     })

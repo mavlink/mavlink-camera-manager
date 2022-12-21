@@ -616,7 +616,7 @@ fn receive_message_loop(
                                 &vehicle,
                                 &our_header,
                                 &their_header,
-                                &param_ext_set,
+                                param_ext_set,
                                 mavlink::common::ParamAck::PARAM_ACK_VALUE_UNSUPPORTED,
                             );
                             continue;
@@ -629,7 +629,7 @@ fn receive_message_loop(
                                     &vehicle,
                                     &our_header,
                                     &their_header,
-                                    &param_ext_set,
+                                    param_ext_set,
                                     mavlink::common::ParamAck::PARAM_ACK_VALUE_UNSUPPORTED,
                                 );
                                 continue;
@@ -646,7 +646,7 @@ fn receive_message_loop(
                                     &vehicle,
                                     &our_header,
                                     &their_header,
-                                    &param_ext_set,
+                                    param_ext_set,
                                     mavlink::common::ParamAck::PARAM_ACK_VALUE_UNSUPPORTED,
                                 );
                                 continue;
@@ -656,7 +656,7 @@ fn receive_message_loop(
                             &vehicle,
                             &our_header,
                             &their_header,
-                            &param_ext_set,
+                            param_ext_set,
                             mavlink::common::ParamAck::PARAM_ACK_IN_PROGRESS,
                         );
 
@@ -677,7 +677,7 @@ fn receive_message_loop(
                             &vehicle,
                             &our_header,
                             &their_header,
-                            &param_ext_set,
+                            param_ext_set,
                             param_result,
                         );
                     }

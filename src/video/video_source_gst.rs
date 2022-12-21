@@ -25,8 +25,8 @@ impl VideoSource for VideoSourceGst {
 
     fn source_string(&self) -> &str {
         match &self.source {
-            VideoSourceGstType::Local(local) => &local.source_string(),
-            VideoSourceGstType::Fake(string) => &string,
+            VideoSourceGstType::Local(local) => local.source_string(),
+            VideoSourceGstType::Fake(string) => string,
         }
     }
 
