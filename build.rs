@@ -4,9 +4,8 @@ use std::path::Path;
 use std::process::Command;
 
 use regex::Regex;
-use reqwest;
+
 use ts_rs::TS;
-use vergen;
 
 #[path = "src/stream/webrtc/signalling_protocol.rs"]
 mod signalling_protocol;
