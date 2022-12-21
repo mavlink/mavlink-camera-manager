@@ -103,12 +103,12 @@ impl VideoSourceType {
 impl VideoEncodeType {
     //TODO: use trait fromstr, check others places
     pub fn from_str(fourcc: &str) -> VideoEncodeType {
-        return match fourcc {
+        match fourcc {
             "H264" => VideoEncodeType::H264,
             "MJPG" => VideoEncodeType::MJPG,
             "YUYV" => VideoEncodeType::YUYV,
             _ => VideoEncodeType::UNKNOWN(fourcc.to_string()),
-        };
+        }
     }
 }
 

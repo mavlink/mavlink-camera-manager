@@ -200,7 +200,7 @@ pub fn remove_stream_by_name(stream_name: &str) -> Result<()> {
         if stream.video_and_stream_information.name == *stream_name {
             return Some(id.clone());
         }
-        return None;
+        None
     }) {
         drop(manager);
         Manager::remove_stream(stream_id)?;

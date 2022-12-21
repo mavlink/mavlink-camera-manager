@@ -20,7 +20,7 @@ pub struct VideoSourceGst {
 
 impl VideoSource for VideoSourceGst {
     fn name(&self) -> &String {
-        return &self.name;
+        &self.name
     }
 
     fn source_string(&self) -> &str {
@@ -124,7 +124,7 @@ impl VideoSource for VideoSourceGst {
     }
 
     fn is_shareable(&self) -> bool {
-        return true;
+        true
     }
 }
 

@@ -37,5 +37,5 @@ pub fn get_ipv4_addresses() -> Vec<std::net::Ipv4Addr> {
     });
     debug!("Valid IPs: {ips:#?}");
 
-    return ips;
+    ips
 }

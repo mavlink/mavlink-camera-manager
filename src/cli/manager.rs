@@ -78,7 +78,7 @@ pub fn default_settings() -> Option<&'static str> {
 
 // Return the command line used to start this application
 pub fn command_line_string() -> String {
-    return std::env::args().collect::<Vec<String>>().join(" ");
+    std::env::args().collect::<Vec<String>>().join(" ")
 }
 
 // Return clap::ArgMatches struct
@@ -115,7 +115,7 @@ pub fn gst_feature_rank() -> Vec<PluginRankConfig> {
             error!(
                 "Failed parsing {val:?} to <str>=<i32>, ignoring this feature rank."
             );
-            return None;
+            None
         })
         .collect()
 }
