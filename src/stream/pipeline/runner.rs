@@ -111,7 +111,7 @@ impl PipelineRunner {
             /* Iterate messages on the bus until an error or EOS occurs,
              * although in this example the only error we'll hopefully
              * get is if the user closes the output window */
-            for msg in bus.timed_pop(gst::ClockTime::from_mseconds(100)) {
+            while let Some(msg) = bus.timed_pop(gst::ClockTime::from_mseconds(100)) {
                 use gst::MessageView;
 
                 match msg.view() {
