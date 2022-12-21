@@ -244,7 +244,7 @@ pub fn camera_reset_controls(json: web::Json<ResetCameraControls>) -> HttpRespon
     if let Err(errors) = video_source::reset_controls(&json.device) {
         let mut error: String = Default::default();
         errors.iter().enumerate().for_each(|(i, e)| {
-            error.push_str(format!("{}: {}\n", i + 1, SimpleError::from(e).to_string()).as_str())
+            error.push_str(format!("{}: {}\n", i + 1, SimpleError::from(e)).as_str())
         });
         return HttpResponse::NotAcceptable()
             .content_type("text/plain")

@@ -85,10 +85,8 @@ pub fn reset_controls(source_string: &str) -> Result<(), Vec<std::io::Error>> {
             .set_control_by_id(control.id, default_value as i64)
         {
             let error_message = format!(
-                "Error when trying to reset control '{}' (id {}). Error: {}.",
-                control.name,
-                control.id,
-                error.to_string()
+                "Error when trying to reset control '{}' (id {}). Error: {error}.",
+                control.name, control.id,
             );
             errors.push(std::io::Error::new(error.kind(), error_message));
         }
