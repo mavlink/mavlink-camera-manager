@@ -198,7 +198,7 @@ pub fn remove_stream_by_name(stream_name: &str) -> Result<()> {
     let manager = MANAGER.as_ref().lock().unwrap();
     if let Some(stream_id) = &manager.streams.iter().find_map(|(id, stream)| {
         if stream.video_and_stream_information.name == *stream_name {
-            return Some(id.clone());
+            return Some(*id);
         }
         None
     }) {
@@ -337,7 +337,7 @@ impl StreamManagementInterface<StreamStatus> for Manager {
     fn add_stream(stream: super::stream::Stream) -> Result<()> {
         let mut manager = MANAGER.lock().unwrap();
 
-        let stream_id = stream.id.clone();
+        let stream_id = stream.id;
         if manager.streams.insert(stream_id, stream).is_some() {
             return Err(anyhow!("Failed adding stream {stream_id:?}"));
         }
