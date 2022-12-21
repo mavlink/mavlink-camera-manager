@@ -21,7 +21,7 @@ use gst::{event::Eos, prelude::ElementExtManual, traits::ElementExt};
 use tracing::*;
 
 use super::{
-    pipeline::pipeline::PipelineGstreamerInterface,
+    pipeline::PipelineGstreamerInterface,
     stream::Stream,
     types::StreamStatus,
     webrtc::{

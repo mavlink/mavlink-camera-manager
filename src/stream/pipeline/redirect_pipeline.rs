@@ -3,7 +3,7 @@ use crate::{
     video_stream::types::VideoAndStreamInformation,
 };
 
-use super::pipeline::{PipelineGstreamerInterface, PipelineState, PIPELINE_TEE_NAME};
+use super::{PipelineGstreamerInterface, PipelineState, PIPELINE_TEE_NAME};
 
 use anyhow::{anyhow, Context, Result};
 

@@ -5,7 +5,7 @@ use tracing::*;
 use gst::prelude::*;
 
 use super::sink::SinkInterface;
-use crate::stream::pipeline::pipeline::PIPELINE_TEE_NAME;
+use crate::stream::pipeline::PIPELINE_TEE_NAME;
 
 #[derive(Debug)]
 pub struct RtspSink {

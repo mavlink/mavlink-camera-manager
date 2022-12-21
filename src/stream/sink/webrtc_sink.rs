@@ -8,7 +8,7 @@ use gst::prelude::*;
 
 use super::sink::SinkInterface;
 use crate::stream::manager::Manager;
-use crate::stream::pipeline::pipeline::PIPELINE_TEE_NAME;
+use crate::stream::pipeline::PIPELINE_TEE_NAME;
 use crate::stream::webrtc::signalling_protocol::{
     Answer, BindAnswer, EndSessionQuestion, IceNegotiation, MediaNegotiation, Message, Question,
     RTCIceCandidateInit, RTCSessionDescription, Sdp,
