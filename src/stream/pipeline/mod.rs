@@ -17,7 +17,7 @@ use crate::{
     stream::{
         manager::Manager,
         rtsp::rtsp_server::RTSPServer,
-        sink::sink::{Sink, SinkInterface},
+        sink::{Sink, SinkInterface},
         webrtc::signalling_server::StreamManagementInterface,
     },
     video::types::VideoSourceType,

@@ -1,6 +1,6 @@
 use super::manager::Manager;
 use super::pipeline::Pipeline;
-use super::sink::sink::{create_rtsp_sink, create_udp_sink};
+use super::sink::{create_rtsp_sink, create_udp_sink};
 use super::types::*;
 use super::webrtc::signalling_protocol::PeerId;
 use super::webrtc::signalling_server::StreamManagementInterface;

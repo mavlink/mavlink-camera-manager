@@ -9,9 +9,9 @@ use crate::{
     stream::{types::CaptureConfiguration, webrtc::signalling_protocol::BindAnswer},
     video::video_source,
 };
-use crate::{stream::sink::sink::SinkInterface, video::types::VideoSourceType};
+use crate::{stream::sink::SinkInterface, video::types::VideoSourceType};
 use crate::{
-    stream::sink::{sink::Sink, webrtc_sink::WebRTCSink},
+    stream::sink::{webrtc_sink::WebRTCSink, Sink},
     video_stream::types::VideoAndStreamInformation,
 };
 
