@@ -977,7 +977,7 @@ fn param_value_from_control_value(control_value: i64, length: usize) -> Vec<char
 }
 
 fn control_value_from_param_value(
-    param_value: &Vec<char>,
+    param_value: &[char],
     param_type: &mavlink::common::MavParamExtType,
 ) -> Option<i64> {
     let bytes: Vec<u8> = param_value.iter().map(|c| *c as u8).collect();
@@ -1004,7 +1004,7 @@ fn control_value_from_param_value(
 
 fn get_param_index_and_control_id(
     param_ext_req: &mavlink::common::PARAM_EXT_REQUEST_READ_DATA,
-    controls: &Vec<crate::video::types::Control>,
+    controls: &[crate::video::types::Control],
 ) -> Option<(u16, u64)> {
     let param_index = param_ext_req.param_index;
     // Use param_index if it is !=1, otherwise, use param_id. For more information: https://mavlink.io/en/messages/common.html#PARAM_EXT_REQUEST_READ
@@ -1112,7 +1112,7 @@ fn camera_information(information: &MavlinkCameraInformation) -> MavMessage {
     let vendor_name = from_string_to_u8_array_with_size_32(&information.component.vendor_name);
     let model_name = from_string_to_u8_array_with_size_32(&information.component.vendor_name);
     let cam_definition_uri = from_string_to_vec_char_with_defined_size_and_null_terminator(
-        &information.cam_definition_uri().unwrap().to_string(),
+        information.cam_definition_uri().unwrap().as_str(),
         140,
     );
 
@@ -1179,7 +1179,7 @@ fn camera_capture_status() -> MavMessage {
 fn video_stream_information(information: &MavlinkCameraInformation) -> MavMessage {
     let name = from_string_to_char_array_with_size_32(&information.video_stream_name);
     let uri = from_string_to_vec_char_with_defined_size_and_null_terminator(
-        &information.video_stream_uri.to_string(),
+        information.video_stream_uri.as_ref(),
         140,
     );
 
@@ -1200,7 +1200,7 @@ fn video_stream_information(information: &MavlinkCameraInformation) -> MavMessag
     })
 }
 
-fn from_string_to_u8_array_with_size_32(src: &String) -> [u8; 32] {
+fn from_string_to_u8_array_with_size_32(src: &str) -> [u8; 32] {
     let bytes = src.as_bytes();
     let mut dst = [0u8; 32];
     let len = std::cmp::min(bytes.len(), 32);
@@ -1208,7 +1208,7 @@ fn from_string_to_u8_array_with_size_32(src: &String) -> [u8; 32] {
     dst
 }
 
-fn from_string_to_char_array_with_size_32(src: &String) -> [char; 32] {
+fn from_string_to_char_array_with_size_32(src: &str) -> [char; 32] {
     let chars: Vec<char> = src.chars().collect();
     let mut dst = ['\0'; 32];
     let len = std::cmp::min(chars.len(), 32);
@@ -1217,7 +1217,7 @@ fn from_string_to_char_array_with_size_32(src: &String) -> [char; 32] {
 }
 
 fn from_string_to_vec_char_with_defined_size_and_null_terminator(
-    src: &String,
+    src: &str,
     size: usize,
 ) -> Vec<char> {
     let mut uri = src.chars().collect::<Vec<char>>();

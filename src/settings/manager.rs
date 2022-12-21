@@ -181,7 +181,7 @@ pub fn streams() -> Vec<VideoAndStreamInformation> {
     content.unwrap().config.streams.clone()
 }
 
-pub fn set_streams(streams: &Vec<VideoAndStreamInformation>) {
+pub fn set_streams(streams: &[VideoAndStreamInformation]) {
     // Take care of scope mutex
     {
         let mut manager = MANAGER.lock().unwrap();
@@ -192,7 +192,7 @@ pub fn set_streams(streams: &Vec<VideoAndStreamInformation>) {
             .unwrap()
             .config
             .streams
-            .append(&mut streams.clone());
+            .append(&mut streams.to_owned());
     }
     save();
 }
