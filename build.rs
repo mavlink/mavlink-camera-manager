@@ -14,10 +14,11 @@ mod signalling_protocol;
 use crate::signalling_protocol::*;
 
 fn file_download(url: &str, output: &str) {
-    let mut resp = reqwest::blocking::get(url).expect(&format!("Failed to download file: {url}"));
+    let mut resp =
+        reqwest::blocking::get(url).unwrap_or_else(|_| panic!("Failed to download file: {url}"));
     let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(output);
-    let mut output_file =
-        std::fs::File::create(&file_path).expect(&format!("Failed to create file: {file_path:?}"));
+    let mut output_file = std::fs::File::create(&file_path)
+        .unwrap_or_else(|_| panic!("Failed to create file: {file_path:?}"));
     std::io::copy(&mut resp, &mut output_file).expect("Failed to copy content.");
 }
 
