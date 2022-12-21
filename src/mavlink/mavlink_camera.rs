@@ -515,9 +515,12 @@ fn receive_message_loop(
                                 );
                             }
                             mavlink::common::MavCmd::MAV_CMD_RESET_CAMERA_SETTINGS => {
-                                let information = &mavlink_camera_information.lock().unwrap();
-                                let source_string =
-                                    information.video_source_type.inner().source_string();
+                                let information = mavlink_camera_information.lock().unwrap();
+                                let source_string = &information
+                                    .video_source_type
+                                    .inner()
+                                    .source_string()
+                                    .to_string();
                                 drop(information);
 
                                 send_command_ack(
