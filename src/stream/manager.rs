@@ -114,7 +114,7 @@ fn update_devices(
         let VideoSourceType::Local(source) = &mut stream.video_source else {
             continue
         };
-        let CaptureConfiguration::VIDEO(capture_configuration) = &stream.stream_information.configuration else {
+        let CaptureConfiguration::Video(capture_configuration) = &stream.stream_information.configuration else {
             continue
         };
 

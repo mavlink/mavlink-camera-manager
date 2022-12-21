@@ -31,7 +31,7 @@ impl V4lPipeline {
             .stream_information
             .configuration
         {
-            CaptureConfiguration::VIDEO(configuration) => configuration,
+            CaptureConfiguration::Video(configuration) => configuration,
             unsupported => return Err(anyhow!("{unsupported:?} is not supported as V4l Pipeline")),
         };
 
@@ -75,7 +75,7 @@ impl V4lPipeline {
                     tee_name = PIPELINE_TEE_NAME
                 )
             }
-            VideoEncodeType::YUYV => {
+            VideoEncodeType::Yuyv => {
                 format!(
                     concat!(
                         "v4l2src device={device} do-timestamp=false",
@@ -93,7 +93,7 @@ impl V4lPipeline {
                     tee_name = PIPELINE_TEE_NAME
                 )
             }
-            VideoEncodeType::MJPG => {
+            VideoEncodeType::Mjpg => {
                 format!(
                     concat!(
                         "v4l2src device={device} do-timestamp=false",

@@ -87,8 +87,8 @@ fn validate_endpoints(video_and_stream_information: &VideoAndStreamInformation) 
         .stream_information
         .configuration
     {
-        CaptureConfiguration::VIDEO(configuration) => configuration.encode.clone(),
-        CaptureConfiguration::REDIRECT(_) => VideoEncodeType::UNKNOWN("".into()),
+        CaptureConfiguration::Video(configuration) => configuration.encode.clone(),
+        CaptureConfiguration::Redirect(_) => VideoEncodeType::Unknown("".into()),
     };
 
     let errors: Vec<anyhow::Error> = endpoints.iter().filter_map(|endpoint| {

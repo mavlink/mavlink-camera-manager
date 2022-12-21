@@ -444,12 +444,10 @@ impl VideoSource for VideoSourceLocal {
         let device = Device::with_path(&self.device_path)?;
         let value = device.control(control_id as u32)?;
         match value {
-            v4l::control::Control::String(_) => {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "String control type is not supported.",
-                ))
-            }
+            v4l::control::Control::String(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "String control type is not supported.",
+            )),
             v4l::control::Control::Value(value) => Ok(value as i64),
             v4l::control::Control::Value64(value) => Ok(value),
         }
@@ -727,7 +725,7 @@ mod device_identification_tests {
         VideoAndStreamInformation {
             name: "dummy stream".into(),
             stream_information: StreamInformation {
-                configuration: CaptureConfiguration::VIDEO(VideoCaptureConfiguration {
+                configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
                     encode,
                     height: 1080,
                     width: 1920,
@@ -754,11 +752,11 @@ mod device_identification_tests {
 
         let candidates = vec![
             add_available_camera("A", "/dev/video0", "usb_port_0", vec![H264]),
-            add_available_camera("A", "/dev/video1", "usb_port_0", vec![YUYV, MJPG]),
+            add_available_camera("A", "/dev/video1", "usb_port_0", vec![Yuyv, Mjpg]),
             add_available_camera("A", "/dev/video2", "usb_port_1", vec![H264]),
-            add_available_camera("A", "/dev/video3", "usb_port_1", vec![YUYV, MJPG]),
+            add_available_camera("A", "/dev/video3", "usb_port_1", vec![Yuyv, Mjpg]),
             add_available_camera("B", "/dev/video4", "usb_port_2", vec![H264]),
-            add_available_camera("B", "/dev/video5", "usb_port_2", vec![YUYV, MJPG]),
+            add_available_camera("B", "/dev/video5", "usb_port_2", vec![Yuyv, Mjpg]),
         ];
 
         let same_name_candidates = VideoSourceLocal::get_cameras_with_same_name(&candidates, "A");
@@ -775,8 +773,8 @@ mod device_identification_tests {
         let candidates = vec![
             add_available_camera("A", "/dev/video0", "usb_port_0", vec![H264]),
             add_available_camera("B", "/dev/video1", "usb_port_1", vec![H264]),
-            add_available_camera("C", "/dev/video2", "usb_port_0", vec![YUYV, MJPG]),
-            add_available_camera("D", "/dev/video3", "usb_port_1", vec![YUYV, MJPG]),
+            add_available_camera("C", "/dev/video2", "usb_port_0", vec![Yuyv, Mjpg]),
+            add_available_camera("D", "/dev/video3", "usb_port_1", vec![Yuyv, Mjpg]),
         ];
 
         let same_encode_candidates =
@@ -793,9 +791,9 @@ mod device_identification_tests {
 
         let candidates = vec![
             add_available_camera("A", "/dev/video0", "usb_port_0", vec![H264]),
-            add_available_camera("B", "/dev/video1", "usb_port_0", vec![YUYV, MJPG]),
+            add_available_camera("B", "/dev/video1", "usb_port_0", vec![Yuyv, Mjpg]),
             add_available_camera("C", "/dev/video2", "usb_port_1", vec![H264]),
-            add_available_camera("D", "/dev/video3", "usb_port_1", vec![YUYV, MJPG]),
+            add_available_camera("D", "/dev/video3", "usb_port_1", vec![Yuyv, Mjpg]),
         ];
 
         let same_encode_candidates = VideoSourceLocal::get_cameras_with_same_bus(
@@ -815,13 +813,13 @@ mod device_identification_tests {
 
         let candidates = vec![
             add_available_camera("A", "/dev/video0", "usb_port_0", vec![H264]),
-            add_available_camera("A", "/dev/video1", "usb_port_0", vec![YUYV, MJPG]),
+            add_available_camera("A", "/dev/video1", "usb_port_0", vec![Yuyv, Mjpg]),
             add_available_camera("B", "/dev/video2", "usb_port_1", vec![H264]),
-            add_available_camera("B", "/dev/video3", "usb_port_1", vec![YUYV, MJPG]),
-            add_available_camera("C", "/dev/video3", "usb_port_1", vec![H264, YUYV, MJPG]),
+            add_available_camera("B", "/dev/video3", "usb_port_1", vec![Yuyv, Mjpg]),
+            add_available_camera("C", "/dev/video3", "usb_port_1", vec![H264, Yuyv, Mjpg]),
         ];
         let stream = create_stream("A", "/dev/video0", "usb_port_0", H264);
-        let (VideoSourceType::Local(source), CaptureConfiguration::VIDEO(capture_configuration)) = (&stream.video_source, &stream.stream_information.configuration) else {
+        let (VideoSourceType::Local(source), CaptureConfiguration::Video(capture_configuration)) = (&stream.video_source, &stream.stream_information.configuration) else {
             unreachable!("Wrong setup")
         };
 
@@ -855,14 +853,14 @@ mod device_identification_tests {
 
         let candidates = vec![
             add_available_camera("A", "/dev/video0", current_usb_bus, vec![H264]),
-            add_available_camera("A", "/dev/video1", current_usb_bus, vec![YUYV, MJPG]),
+            add_available_camera("A", "/dev/video1", current_usb_bus, vec![Yuyv, Mjpg]),
             add_available_camera("B", "/dev/video2", "usb_port_3", vec![H264]),
-            add_available_camera("B", "/dev/video3", "usb_port_3", vec![YUYV, MJPG]),
+            add_available_camera("B", "/dev/video3", "usb_port_3", vec![Yuyv, Mjpg]),
         ];
 
         for n in (0..3).collect::<Vec<_>>() {
             let stream = create_stream("A", &format!("/dev/video{n}"), last_usb_bus, H264);
-            let (VideoSourceType::Local(source), CaptureConfiguration::VIDEO(capture_configuration)) = (&stream.video_source, &stream.stream_information.configuration) else {
+            let (VideoSourceType::Local(source), CaptureConfiguration::Video(capture_configuration)) = (&stream.video_source, &stream.stream_information.configuration) else {
                 unreachable!("Wrong setup")
             };
 
@@ -899,14 +897,14 @@ mod device_identification_tests {
         let candidates = vec![
             add_available_camera("A", current_path, "usb_port_0", vec![H264]),
             add_available_camera("A", last_path, "usb_port_1", vec![H264]),
-            add_available_camera("A", "/dev/video3", "usb_port_0", vec![YUYV, MJPG]),
-            add_available_camera("A", "/dev/video5", "usb_port_1", vec![YUYV, MJPG]),
+            add_available_camera("A", "/dev/video3", "usb_port_0", vec![Yuyv, Mjpg]),
+            add_available_camera("A", "/dev/video5", "usb_port_1", vec![Yuyv, Mjpg]),
         ];
 
         for n in (0..=1).collect::<Vec<_>>() {
             let stream = create_stream("A", last_path, &format!("usb_port_{n}"), H264);
 
-            let (VideoSourceType::Local(source), CaptureConfiguration::VIDEO(capture_configuration)) = (&stream.video_source, &stream.stream_information.configuration) else {
+            let (VideoSourceType::Local(source), CaptureConfiguration::Video(capture_configuration)) = (&stream.video_source, &stream.stream_information.configuration) else {
                 unreachable!("Wrong setup")
             };
 
@@ -934,14 +932,14 @@ mod device_identification_tests {
 
         let candidates = vec![
             add_available_camera("A", "/dev/video0", current_usb_bus, vec![H264]),
-            add_available_camera("A", "/dev/video1", current_usb_bus, vec![YUYV, MJPG]),
+            add_available_camera("A", "/dev/video1", current_usb_bus, vec![Yuyv, Mjpg]),
             add_available_camera("A", "/dev/video4", "usb_port_2", vec![H264]),
-            add_available_camera("A", "/dev/video5", "usb_port_2", vec![YUYV, MJPG]),
+            add_available_camera("A", "/dev/video5", "usb_port_2", vec![Yuyv, Mjpg]),
         ];
 
         for n in (0..5).collect::<Vec<_>>() {
             let stream = create_stream("A", &format!("/dev/video{n}"), last_usb_bus, H264);
-            let (VideoSourceType::Local(source), CaptureConfiguration::VIDEO(capture_configuration)) = (&stream.video_source, &stream.stream_information.configuration) else {
+            let (VideoSourceType::Local(source), CaptureConfiguration::Video(capture_configuration)) = (&stream.video_source, &stream.stream_information.configuration) else {
                 unreachable!("Wrong setup")
             };
 

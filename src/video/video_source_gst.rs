@@ -66,11 +66,11 @@ impl VideoSource for VideoSourceGst {
                         sizes: sizes.clone(),
                     },
                     Format {
-                        encode: VideoEncodeType::YUYV,
+                        encode: VideoEncodeType::Yuyv,
                         sizes: sizes.clone(),
                     },
                     Format {
-                        encode: VideoEncodeType::MJPG,
+                        encode: VideoEncodeType::Mjpg,
                         sizes,
                     },
                 ]
