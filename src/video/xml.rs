@@ -260,6 +260,6 @@ mod tests {
         })
         .unwrap();
 
-        assert_eq!(test_string.to_string(), struct_string.to_string());
+        assert_eq!(test_string.to_string(), struct_string);
     }
 }

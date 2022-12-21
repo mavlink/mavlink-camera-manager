@@ -87,7 +87,7 @@ pub fn start_default() {
     let mut streams = settings::manager::streams();
 
     // Update all local video sources to make sure that they are available
-    let mut candidates = video_source::cameras_available().to_owned();
+    let mut candidates = video_source::cameras_available();
     update_devices(&mut streams, &mut candidates);
 
     // Remove all invalid video_sources
@@ -233,7 +233,7 @@ impl WebRTCSessionManagementInterface for Manager {
             session_id,
         };
 
-        let sink = Sink::WebRTC(WebRTCSink::try_new(bind.clone(), sender)?);
+        let sink = Sink::WebRTC(WebRTCSink::try_new(bind, sender)?);
         stream.pipeline.add_sink(sink)?;
         debug!("WebRTC session created: {session_id:?}");
 
