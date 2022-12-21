@@ -79,36 +79,33 @@ impl PipelineRunner {
 
             // Restart pipeline if pipeline position do not change,
             // occur if usb connection is lost and gst do not detect it
-            match pipeline.query_position::<gst::ClockTime>() {
-                Some(position) => {
-                    previous_position = match previous_position {
-                        Some(current_previous_position) => {
-                            if current_previous_position.nseconds() != 0
-                                && current_previous_position.nseconds() == position.nseconds()
-                            {
-                                lost_timestamps += 1;
-                                warn!("Position did not change {lost_timestamps}");
-                            } else {
-                                // We are back in track, erase lost timestamps
-                                lost_timestamps = 0;
-                            }
-
-                            if lost_timestamps > max_lost_timestamps {
-                                error!("Pipeline lost too many timestamps (max. was {max_lost_timestamps}).");
-                                let _ = pipeline.set_state(gst::State::Null);
-                                while pipeline.current_state() != gst::State::Null {
-                                    std::thread::sleep(std::time::Duration::from_millis(100));
-                                }
-                                let _ = pipeline.set_state(gst::State::Playing);
-                                lost_timestamps = 0;
-                            }
-
-                            Some(position)
+            if let Some(position) = pipeline.query_position::<gst::ClockTime>() {
+                previous_position = match previous_position {
+                    Some(current_previous_position) => {
+                        if current_previous_position.nseconds() != 0
+                            && current_previous_position.nseconds() == position.nseconds()
+                        {
+                            lost_timestamps += 1;
+                            warn!("Position did not change {lost_timestamps}");
+                        } else {
+                            // We are back in track, erase lost timestamps
+                            lost_timestamps = 0;
                         }
-                        None => Some(position),
+
+                        if lost_timestamps > max_lost_timestamps {
+                            error!("Pipeline lost too many timestamps (max. was {max_lost_timestamps}).");
+                            let _ = pipeline.set_state(gst::State::Null);
+                            while pipeline.current_state() != gst::State::Null {
+                                std::thread::sleep(std::time::Duration::from_millis(100));
+                            }
+                            let _ = pipeline.set_state(gst::State::Playing);
+                            lost_timestamps = 0;
+                        }
+
+                        Some(position)
                     }
+                    None => Some(position),
                 }
-                None => {}
             }
 
             /* Iterate messages on the bus until an error or EOS occurs,
