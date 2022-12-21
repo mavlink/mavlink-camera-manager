@@ -172,8 +172,7 @@ pub fn from_video_source(video_source: &dyn VideoSource) -> String {
         },
     };
 
-    use quick_xml::se::to_string;
-    return to_string(&mavlink_camera).unwrap();
+    quick_xml::se::to_string(&mavlink_camera).unwrap()
 }
 
 #[cfg(test)]

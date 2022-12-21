@@ -72,7 +72,7 @@ impl VideoSourceLocalType {
         } else {
             warn!(msg);
         }
-        return VideoSourceLocalType::Unknown(description.into());
+        VideoSourceLocalType::Unknown(description.into())
     }
 
     fn usb_from_str(description: &str) -> Option<Self> {
@@ -82,7 +82,7 @@ impl VideoSourceLocalType {
         if regex.is_match(description) {
             return Some(VideoSourceLocalType::Usb(description.into()));
         }
-        return None;
+        None
     }
 
     fn v4l2_from_str(description: &str) -> Option<Self> {
@@ -90,7 +90,7 @@ impl VideoSourceLocalType {
         if regex.is_match(description) {
             return Some(VideoSourceLocalType::LegacyRpiCam(description.into()));
         }
-        return None;
+        None
     }
 }
 
@@ -446,13 +446,13 @@ impl VideoSource for VideoSourceLocal {
         let value = device.control(control_id as u32)?;
         match value {
             v4l::control::Control::String(_) => {
-                return Err(std::io::Error::new(
+                Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     "String control type is not supported.",
-                ));
+                ))
             }
-            v4l::control::Control::Value(value) => return Ok(value as i64),
-            v4l::control::Control::Value64(value) => return Ok(value),
+            v4l::control::Control::Value(value) => Ok(value as i64),
+            v4l::control::Control::Value64(value) => Ok(value),
         }
     }
 
@@ -601,7 +601,7 @@ impl VideoSourceAvailable for VideoSourceLocal {
             cameras.push(VideoSourceType::Local(source));
         }
 
-        return cameras;
+        cameras
     }
 }
 

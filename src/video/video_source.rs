@@ -22,12 +22,12 @@ pub trait VideoSourceAvailable {
 }
 
 pub fn cameras_available() -> Vec<VideoSourceType> {
-    return [
+    [
         &VideoSourceLocal::cameras_available()[..],
         &VideoSourceGst::cameras_available()[..],
         &VideoSourceRedirect::cameras_available()[..],
     ]
-    .concat();
+    .concat()
 }
 
 pub fn get_video_source(source_string: &str) -> Result<VideoSourceType, std::io::Error> {
@@ -98,7 +98,7 @@ pub fn reset_controls(source_string: &str) -> Result<(), Vec<std::io::Error>> {
     }
 
     error!("{errors:#?}");
-    return Err(errors);
+    Err(errors)
 }
 
 #[cfg(test)]

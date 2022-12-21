@@ -89,7 +89,7 @@ impl Manager {
             error!("Failed to save file {file_name:?}. Reason: {error:#?}");
         });
 
-        return settings;
+        settings
     }
 }
 
@@ -178,7 +178,7 @@ pub fn set_mavlink_endpoint(endpoint: &str) {
 pub fn streams() -> Vec<VideoAndStreamInformation> {
     let manager = MANAGER.lock().unwrap();
     let content = manager.content.as_ref();
-    return content.unwrap().config.streams.clone();
+    content.unwrap().config.streams.clone()
 }
 
 pub fn set_streams(streams: &Vec<VideoAndStreamInformation>) {
@@ -227,7 +227,7 @@ mod tests {
             .map(char::from)
             .collect();
 
-        return format!("/tmp/{}.json", rand_string);
+        format!("/tmp/{}.json", rand_string)
     }
 
     #[test]

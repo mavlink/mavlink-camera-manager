@@ -126,7 +126,7 @@ impl V4lPipeline {
             .downcast::<gst::Pipeline>()
             .expect("Couldn't downcast pipeline");
 
-        return Ok(pipeline);
+        Ok(pipeline)
     }
 }
 

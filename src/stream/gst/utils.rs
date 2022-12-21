@@ -16,12 +16,12 @@ pub fn is_gst_plugin_available(plugin_name: &str, min_version: &str) -> bool {
     }
 
     let version = semver::Version::parse(min_version).unwrap();
-    return gst::Registry::get().check_feature_version(
+    gst::Registry::get().check_feature_version(
         plugin_name,
         version.major.try_into().unwrap(),
         version.minor.try_into().unwrap(),
         version.patch.try_into().unwrap(),
-    );
+    )
 }
 
 pub fn set_plugin_rank(plugin_name: &str, rank: gst::Rank) -> SimpleResult<()> {

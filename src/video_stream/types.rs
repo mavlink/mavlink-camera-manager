@@ -51,7 +51,7 @@ impl VideoAndStreamInformation {
             )));
         }
 
-        return Ok(());
+        Ok(())
     }
 }
 

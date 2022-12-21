@@ -17,7 +17,7 @@ pub struct VideoSourceRedirect {
 
 impl VideoSource for VideoSourceRedirect {
     fn name(&self) -> &String {
-        return &self.name;
+        &self.name
     }
 
     fn source_string(&self) -> &str {
@@ -73,7 +73,7 @@ impl VideoSource for VideoSourceRedirect {
     }
 
     fn is_shareable(&self) -> bool {
-        return true;
+        true
     }
 }
 
