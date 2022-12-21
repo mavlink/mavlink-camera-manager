@@ -201,7 +201,7 @@ impl MavlinkCameraInformation {
         // change between the time of the MavlinkCameraInformation creation
         // and the time MAVLink connection is negotiated with the other MAVLink
         // systems.
-        let visible_qgc_ip_address = get_visible_qgc_address().to_string();
+        let visible_qgc_ip_address = get_visible_qgc_address();
         let server_port = cli::manager::server_address()
             .split(':')
             .collect::<Vec<&str>>()[1];

@@ -129,7 +129,7 @@ fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> std::io::
     let mut file = std::fs::File::create(file_name)?;
     debug!("Settings saved: {content:#?}");
     let value = serde_json::to_string_pretty(content).unwrap();
-    file.write_all(value.to_string().as_bytes())
+    file.write_all(value.as_bytes())
 }
 
 // Save the latest state of the settings
