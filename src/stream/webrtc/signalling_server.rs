@@ -31,7 +31,7 @@ pub trait WebRTCSessionManagementInterface {
 
 /// Interface between the stream manager and the WebRTC Signalling Server, which should be implemented by both sides to retain all coupling.
 pub trait StreamManagementInterface<T> {
-    fn add_stream(stream: crate::stream::stream::Stream) -> Result<()>;
+    fn add_stream(stream: crate::stream::Stream) -> Result<()>;
     fn remove_stream(stream_id: &PeerId) -> Result<()>;
     fn streams_information() -> Vec<T>;
     fn generate_uuid() -> uuid::Uuid;
@@ -284,7 +284,7 @@ impl WebRTCSessionManagementInterface for SignallingServer {
 }
 
 impl StreamManagementInterface<Stream> for SignallingServer {
-    fn add_stream(stream: crate::stream::stream::Stream) -> Result<()> {
+    fn add_stream(stream: crate::stream::Stream) -> Result<()> {
         Manager::add_stream(stream)
     }
 
