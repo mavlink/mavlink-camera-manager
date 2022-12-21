@@ -293,7 +293,7 @@ pub fn sdp(sdp_file_request: web::Query<SdpFileRequest>) -> HttpResponse {
             } else {
                 HttpResponse::InternalServerError()
                     .content_type("text/plain")
-                    .body(format!("Failed to convert SDP to text"))
+                    .body("Failed to convert SDP to text".to_string())
             }
         }
         Err(error) => HttpResponse::NotFound()
