@@ -25,7 +25,7 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
             .wrap_fn(|req, srv| {
                 trace!("{:#?}", &req);
                 let fut = srv.call(req);
-                async { Ok(fut.await?) }
+                async { fut.await }
             })
             .wrap(TracingLogger::default())
             .wrap(actix_web::middleware::Logger::default())
