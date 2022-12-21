@@ -26,15 +26,12 @@ pub enum CaptureConfiguration {
 }
 
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Default)]
 pub struct ExtendedConfiguration {
     pub thermal: bool,
 }
 
-impl Default for ExtendedConfiguration {
-    fn default() -> Self {
-        Self { thermal: false }
-    }
-}
+
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Apiv2Schema)]
 pub struct StreamInformation {
