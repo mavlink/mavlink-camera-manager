@@ -6,7 +6,7 @@ use tracing::*;
 
 use gst::prelude::*;
 
-use super::sink::SinkInterface;
+use super::SinkInterface;
 use crate::stream::manager::Manager;
 use crate::stream::pipeline::PIPELINE_TEE_NAME;
 use crate::stream::webrtc::signalling_protocol::{
