@@ -118,7 +118,7 @@ impl PipelineState {
         );
 
         Ok(Self {
-            pipeline_id: pipeline_id,
+            pipeline_id,
             pipeline,
             tee,
             sinks: Default::default(),

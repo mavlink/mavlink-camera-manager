@@ -71,7 +71,7 @@ impl VideoSource for VideoSourceGst {
                     },
                     Format {
                         encode: VideoEncodeType::MJPG,
-                        sizes: sizes,
+                        sizes,
                     },
                 ]
             }
