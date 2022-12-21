@@ -283,7 +283,7 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
                             sizes.push(Size {
                                 width: v4l_size.width,
                                 height: v4l_size.height,
-                                intervals: intervals.into(),
+                                intervals: intervals,
                             })
                         }
                         Err(error) => {
@@ -305,7 +305,7 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
                                 sizes.push(Size {
                                     width: *width,
                                     height: *height,
-                                    intervals: intervals.into(),
+                                    intervals: intervals,
                                 });
                             }
                             Err(error) => {
