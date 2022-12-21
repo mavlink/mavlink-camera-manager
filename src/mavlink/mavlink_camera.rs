@@ -52,11 +52,11 @@ pub struct MavlinkCameraInformation {
 
 #[derive(Clone, Debug, PartialEq)]
 enum ThreadState {
-    DEAD,
-    RUNNING,
+    Dead,
+    Running,
     #[allow(dead_code)] // ZOMBIE is here for the future
-    ZOMBIE,
-    RESTART,
+    Zombie,
+    Restart,
 }
 
 #[derive(Debug)]
@@ -101,12 +101,12 @@ impl MavlinkCameraComponent {
             .stream_information
             .configuration
         {
-            crate::stream::types::CaptureConfiguration::VIDEO(cfg) => {
+            crate::stream::types::CaptureConfiguration::Video(cfg) => {
                 let framerate =
                     cfg.frame_interval.denominator as f32 / cfg.frame_interval.numerator as f32;
                 (cfg.height as u16, cfg.width as u16, framerate)
             }
-            crate::stream::types::CaptureConfiguration::REDIRECT(_) => (0, 0, 0.0),
+            crate::stream::types::CaptureConfiguration::Redirect(_) => (0, 0, 0.0),
         };
 
         let thermal = video_and_stream_information
@@ -220,7 +220,7 @@ impl MavlinkCameraHandle {
                 video_and_stream_information,
             )?));
 
-        let thread_state = Arc::new(Mutex::new(ThreadState::RUNNING));
+        let thread_state = Arc::new(Mutex::new(ThreadState::Running));
 
         let heartbeat_mavlink_information = mavlink_camera_information.clone();
         let receive_message_mavlink_information = mavlink_camera_information.clone();
@@ -260,7 +260,7 @@ impl Drop for MavlinkCameraHandle {
     fn drop(&mut self) {
         debug!("Dropping {self:#?}");
         let mut state = self.thread_state.lock().unwrap();
-        *state = ThreadState::DEAD;
+        *state = ThreadState::Dead;
     }
 }
 
@@ -280,14 +280,14 @@ fn heartbeat_loop(
 
         if let Ok(state) = atomic_thread_state.lock().as_deref_mut() {
             match state {
-                ThreadState::DEAD => break,
-                ThreadState::RUNNING => (),
-                ThreadState::RESTART => {
+                ThreadState::Dead => break,
+                ThreadState::Running => (),
+                ThreadState::Restart => {
                     *vehicle.write().as_deref_mut().unwrap() =
                         reconnect(&mavlink_camera_information.lock().unwrap().clone());
-                    *state = ThreadState::RUNNING;
+                    *state = ThreadState::Running;
                 }
-                ThreadState::ZOMBIE => continue,
+                ThreadState::Zombie => continue,
             }
         } else {
             continue;
@@ -304,7 +304,7 @@ fn heartbeat_loop(
                     continue;
                 }
             }
-            *atomic_thread_state.lock().unwrap() = ThreadState::RESTART;
+            *atomic_thread_state.lock().unwrap() = ThreadState::Restart;
         } else {
             debug!(
                 "Sent heartbeat as {:#?}:{:#?}.",
@@ -328,14 +328,14 @@ fn receive_message_loop(
     loop {
         if let Ok(state) = atomic_thread_state.lock().as_deref_mut() {
             match state {
-                ThreadState::DEAD => break,
-                ThreadState::RUNNING => (),
-                ThreadState::RESTART => {
+                ThreadState::Dead => break,
+                ThreadState::Running => (),
+                ThreadState::Restart => {
                     *vehicle.write().as_deref_mut().unwrap() =
                         reconnect(&mavlink_camera_information.lock().unwrap().clone());
-                    *state = ThreadState::RUNNING;
+                    *state = ThreadState::Running;
                 }
-                ThreadState::ZOMBIE => {
+                ThreadState::Zombie => {
                     std::thread::sleep(std::time::Duration::from_secs(1));
                     continue;
                 }
@@ -822,7 +822,7 @@ fn receive_message_loop(
                         continue;
                     }
                 }
-                *atomic_thread_state.lock().unwrap() = ThreadState::RESTART;
+                *atomic_thread_state.lock().unwrap() = ThreadState::Restart;
             }
         }
     }

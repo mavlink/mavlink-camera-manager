@@ -22,7 +22,7 @@ impl RedirectPipeline {
             .stream_information
             .configuration
         {
-            CaptureConfiguration::REDIRECT(configuration) => configuration,
+            CaptureConfiguration::Redirect(configuration) => configuration,
             unsupported => {
                 return Err(anyhow!(
                     "{unsupported:?} is not supported as Redirect Pipeline"

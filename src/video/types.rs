@@ -13,12 +13,13 @@ pub enum VideoSourceType {
 }
 
 #[derive(Apiv2Schema, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum VideoEncodeType {
-    UNKNOWN(String),
+    Unknown(String),
     H265,
     H264,
-    MJPG,
-    YUYV,
+    Mjpg,
+    Yuyv,
 }
 
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
@@ -103,11 +104,12 @@ impl VideoSourceType {
 impl VideoEncodeType {
     //TODO: use trait fromstr, check others places
     pub fn from_str(fourcc: &str) -> VideoEncodeType {
-        match fourcc {
+        let fourcc = fourcc.to_uppercase();
+        match fourcc.as_str() {
             "H264" => VideoEncodeType::H264,
-            "MJPG" => VideoEncodeType::MJPG,
-            "YUYV" => VideoEncodeType::YUYV,
-            _ => VideoEncodeType::UNKNOWN(fourcc.to_string()),
+            "MJPG" => VideoEncodeType::Mjpg,
+            "YUYV" => VideoEncodeType::Yuyv,
+            _ => VideoEncodeType::Unknown(fourcc),
         }
     }
 }

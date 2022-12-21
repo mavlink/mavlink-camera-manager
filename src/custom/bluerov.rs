@@ -36,7 +36,7 @@ pub fn udp() -> Vec<VideoAndStreamInformation> {
                     endpoints: vec![
                         Url::parse(&format!("udp://192.168.2.1:{}", 5600 + index)).unwrap()
                     ],
-                    configuration: CaptureConfiguration::VIDEO(VideoCaptureConfiguration {
+                    configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
                         encode: format.encode.clone(),
                         height: size.height,
                         width: size.width,
@@ -84,7 +84,7 @@ pub fn rtsp() -> Vec<VideoAndStreamInformation> {
                         "rtsp://{visible_qgc_ip_address}:8554/video_{index}"
                     ))
                     .unwrap()],
-                    configuration: CaptureConfiguration::VIDEO(VideoCaptureConfiguration {
+                    configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
                         encode: format.encode.clone(),
                         height: size.height,
                         width: size.width,

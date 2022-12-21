@@ -28,7 +28,7 @@ impl FakePipeline {
             .stream_information
             .configuration
         {
-            CaptureConfiguration::VIDEO(configuration) => configuration,
+            CaptureConfiguration::Video(configuration) => configuration,
             unsupported => {
                 return Err(anyhow!("{unsupported:?} is not supported as Fake Pipeline"))
             }
@@ -80,7 +80,7 @@ impl FakePipeline {
                     tee_name = PIPELINE_TEE_NAME
                 )
             }
-            VideoEncodeType::YUYV => {
+            VideoEncodeType::Yuyv => {
                 format!(
                     concat!(
                         // Because application-rtp templates doesn't accept "YUY2", we
@@ -102,7 +102,7 @@ impl FakePipeline {
                     tee_name = PIPELINE_TEE_NAME
                 )
             }
-            VideoEncodeType::MJPG => {
+            VideoEncodeType::Mjpg => {
                 format!(
                     concat!(
                         "videotestsrc pattern={pattern} is-live=true do-timestamp=true",

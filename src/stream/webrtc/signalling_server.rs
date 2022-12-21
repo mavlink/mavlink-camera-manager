@@ -300,7 +300,7 @@ impl StreamManagementInterface<Stream> for SignallingServer {
             .map(|stream| {
                 let (height, width, encode, interval) =
                     match &stream.video_and_stream.stream_information.configuration {
-                        crate::stream::types::CaptureConfiguration::VIDEO(configuration) => (
+                        crate::stream::types::CaptureConfiguration::Video(configuration) => (
                             Some(configuration.height),
                             Some(configuration.width),
                             Some(format!("{:#?}", configuration.encode)),
@@ -310,7 +310,7 @@ impl StreamManagementInterface<Stream> for SignallingServer {
                                     .to_string(),
                             ),
                         ),
-                        crate::stream::types::CaptureConfiguration::REDIRECT(_) => {
+                        crate::stream::types::CaptureConfiguration::Redirect(_) => {
                             (None, None, None, None)
                         }
                     };

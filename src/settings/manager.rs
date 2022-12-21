@@ -256,7 +256,7 @@ mod tests {
             name: "PotatoTestStream".into(),
             stream_information: StreamInformation {
                 endpoints: vec![Url::parse("udp://potatohost:4242").unwrap()],
-                configuration: CaptureConfiguration::VIDEO(VideoCaptureConfiguration {
+                configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
                     encode: VideoEncodeType::H264,
                     height: 666,
                     width: 444,
