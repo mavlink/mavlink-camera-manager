@@ -23,7 +23,7 @@ impl PipelineRunner {
             killswitch_sender: killswitch_sender.clone(),
             _killswitch_receiver,
             _watcher_thread_handle: std::thread::Builder::new()
-                .name(format!("pipeline_runner_{pipeline_id}"))
+                .name(format!("PipelineRunner-{pipeline_id}"))
                 .spawn(move || {
                     if let Err(error) = PipelineRunner::runner(pipeline_weak, pipeline_id) {
                         // Any error here should interrupt the respective session!

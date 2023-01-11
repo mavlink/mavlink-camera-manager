@@ -54,7 +54,10 @@ impl Default for TurnServer {
     #[instrument(level = "trace")]
     fn default() -> Self {
         Self {
-            _handle: thread::spawn(TurnServer::run_main_loop),
+            _handle: thread::Builder::new()
+                .name("TurnServer".to_string())
+                .spawn(TurnServer::run_main_loop)
+                .expect("Failed spawning TurnServer thread"),
         }
     }
 }

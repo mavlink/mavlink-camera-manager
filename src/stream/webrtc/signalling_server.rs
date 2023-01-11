@@ -46,7 +46,10 @@ impl Default for SignallingServer {
     #[instrument(level = "trace")]
     fn default() -> Self {
         Self {
-            _server_thread_handle: thread::spawn(SignallingServer::run_main_loop),
+            _server_thread_handle: thread::Builder::new()
+                .name("SignallingServer".to_string())
+                .spawn(SignallingServer::run_main_loop)
+                .expect("Failed spawing SignallingServer thread"),
         }
     }
 }
