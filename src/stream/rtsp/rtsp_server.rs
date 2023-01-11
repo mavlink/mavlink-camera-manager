@@ -38,7 +38,12 @@ impl RTSPServer {
             port: 8554,
             run: is_running,
             path_to_factory: HashMap::new(),
-            main_loop_thread: Some(thread::spawn(move || RTSPServer::run_main_loop(sender))),
+            main_loop_thread: Some(
+                thread::Builder::new()
+                    .name("RTSPServer".to_string())
+                    .spawn(move || RTSPServer::run_main_loop(sender))
+                    .expect("Failed when spawing RTSPServer thread"),
+            ),
             main_loop_thread_rx_channel: receiver,
         }
     }
