@@ -13,34 +13,41 @@ pub struct PipelineRunner {
     _watcher_thread_handle: std::thread::JoinHandle<()>,
 }
 
-#[allow(dead_code)]
 impl PipelineRunner {
     #[instrument(level = "debug")]
-    pub fn new(pipeline: &gst::Pipeline, pipeline_id: uuid::Uuid) -> Self {
+    pub fn try_new(pipeline: &gst::Pipeline, pipeline_id: uuid::Uuid) -> Result<Self> {
         let pipeline_weak = pipeline.downgrade();
         let (killswitch_sender, _killswitch_receiver) = broadcast::channel(1);
-        Self {
+        let watcher_killswitch_receiver = killswitch_sender.subscribe();
+        Ok(Self {
             killswitch_sender: killswitch_sender.clone(),
             _killswitch_receiver,
             _watcher_thread_handle: std::thread::Builder::new()
                 .name(format!("PipelineRunner-{pipeline_id}"))
                 .spawn(move || {
-                    if let Err(error) = PipelineRunner::runner(pipeline_weak, pipeline_id) {
-                        // Any error here should interrupt the respective session!
+                    let mut reason = "Normal ending".to_string();
+                    if let Err(error) = PipelineRunner::runner(
+                        pipeline_weak,
+                        pipeline_id,
+                        watcher_killswitch_receiver,
+                    ) {
                         error!("PipelineWatcher ended with error: {error}");
-                        if let Err(reason) = killswitch_sender.send(error.to_string()) {
-                            error!(
-                                "Failed to broadcast error from PipelineWatcher. Reason: {reason}"
-                            );
-                        } else {
-                            info!("Error sent to killswitch channel!");
-                        }
+                        reason = error.to_string();
                     } else {
                         info!("PipelineWatcher ended with no error.");
                     }
+
+                    // Any ending reason should interrupt the respective pipeline
+                    if let Err(reason) = killswitch_sender.send(reason) {
+                        error!("Failed to broadcast error from PipelineWatcher. Reason: {reason}");
+                    } else {
+                        info!("Error sent to killswitch channel!");
+                    }
                 })
-                .unwrap(),
-        }
+                .context(format!(
+                    "Failed when spawing PipelineRunner thread for Pipeline {pipeline_id:#?}"
+                ))?,
+        })
     }
 
     #[instrument(level = "debug")]
@@ -57,6 +64,7 @@ impl PipelineRunner {
     fn runner(
         pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
         pipeline_id: uuid::Uuid,
+        mut killswitch_receiver: broadcast::Receiver<String>,
     ) -> Result<()> {
         let pipeline = pipeline_weak
             .upgrade()
@@ -144,6 +152,11 @@ impl PipelineRunner {
                     other_message => trace!("{other_message:#?}"),
                 };
             }
+
+            if let Ok(reason) = killswitch_receiver.try_recv() {
+                debug!("Killswitch received as {pipeline_id:#?} from PipelineRunner's watcher. Reason: {reason:#?}");
+                break;
+            }
         }
 
         Ok(())
@@ -153,7 +166,10 @@ impl PipelineRunner {
 impl Drop for PipelineRunner {
     #[instrument(level = "debug")]
     fn drop(&mut self) {
-        if let Err(reason) = self.killswitch_sender.send("Dropped.".to_string()) {
+        if let Err(reason) = self
+            .killswitch_sender
+            .send("PipelineRunner Dropped.".to_string())
+        {
             error!(
                 "Failed to send killswitch message while Dropping PipelineRunner. Reason: {reason:#?}"
             );
