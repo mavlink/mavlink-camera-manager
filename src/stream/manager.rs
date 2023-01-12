@@ -377,20 +377,21 @@ impl StreamManagementInterface<StreamStatus> for Manager {
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
 
-        // Unlink all Sinks
-        stream
+        // Remove all Sinks
+        let sink_ids = &stream
             .pipeline
             .inner_state_as_ref()
             .sinks
-            .values()
-            .for_each(|sink| {
-                if let Err(error) = sink.unlink(pipeline, pipeline_id) {
-                    warn!(
-                        "Failed unlinking Sink {:?} from Pipeline {pipeline_id:?}. Reason: {error:?}",
-                        sink.get_id()
-                    );
-                }
-            });
+            .keys()
+            .cloned()
+            .collect::<Vec<uuid::Uuid>>();
+        for sink_id in sink_ids {
+            if let Err(error) = stream.pipeline.remove_sink(sink_id) {
+                warn!(
+                    "Failed unlinking Sink {sink_id:?} from Pipeline {pipeline_id:?}. Reason: {error:?}"
+                );
+            }
+        }
 
         info!("Stream {stream_id} successfully removed!");
 
