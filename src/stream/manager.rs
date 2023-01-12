@@ -17,7 +17,7 @@ use crate::{
 
 use anyhow::{anyhow, Context, Result};
 
-use gst::{event::Eos, prelude::ElementExtManual, traits::ElementExt};
+use gst::{prelude::ElementExtManual, traits::ElementExt};
 use tracing::*;
 
 use super::{
@@ -354,7 +354,7 @@ impl StreamManagementInterface<StreamStatus> for Manager {
             return Err(anyhow!("Already removed"));
         }
 
-        let stream = manager
+        let mut stream = manager
             .streams
             .remove(stream_id)
             .context(format!("Stream {stream_id:?} not found"))?;
@@ -363,7 +363,9 @@ impl StreamManagementInterface<StreamStatus> for Manager {
 
         let pipeline = &stream.pipeline.inner_state_as_ref().pipeline;
         let pipeline_id = stream_id;
-        pipeline.send_event(Eos::new());
+        if let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
+            error!("Failed posting Eos message into Pipeline' bus. Reason: {error:?}");
+        }
 
         if let Err(error) = stream
             .pipeline
