@@ -24,6 +24,7 @@ lazy_static! {
 }
 
 impl RTSPServer {
+    #[instrument(level = "debug")]
     fn default() -> Self {
         if let Err(error) = gst::init() {
             error!("Failed to init GStreamer: {error:?}");
@@ -48,10 +49,12 @@ impl RTSPServer {
         }
     }
 
+    #[instrument(level = "debug")]
     pub fn is_running() -> bool {
         RTSP_SERVER.as_ref().lock().unwrap().run
     }
 
+    #[instrument(level = "debug")]
     fn run_main_loop(channel: std::sync::mpsc::Sender<String>) {
         if let Err(error) = gst::init() {
             let _ = channel.send(format!("Failed to init GStreamer: {error:?}"));
@@ -93,6 +96,7 @@ impl RTSPServer {
         }
     }
 
+    #[instrument(level = "debug")]
     pub fn add_pipeline(path: &str, socket_path: &str, rtp_caps: &gst::Caps) -> Result<()> {
         // Initialize the singleton before calling gst factory
         let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
@@ -180,6 +184,7 @@ impl RTSPServer {
         Ok(())
     }
 
+    #[instrument(level = "debug")]
     pub fn start_pipeline(path: &str) -> Result<()> {
         RTSPServer::configure("0.0.0.0", 8554);
 
@@ -208,6 +213,7 @@ impl RTSPServer {
         Ok(())
     }
 
+    #[instrument(level = "debug")]
     pub fn stop_pipeline(path: &str) -> Result<()> {
         let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
 
@@ -227,6 +233,7 @@ impl RTSPServer {
         Ok(())
     }
 
+    #[instrument(level = "debug")]
     fn configure(host: &str, port: u16) {
         let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
         if rtsp_server.run {
