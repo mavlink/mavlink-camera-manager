@@ -185,7 +185,7 @@ pub fn add_stream_and_start(video_and_stream_information: VideoAndStreamInformat
     for stream in manager.streams.values() {
         stream
             .video_and_stream_information
-            .conflicts_with(&video_and_stream_information)?
+            .conflicts_with(&video_and_stream_information)?;
     }
     drop(manager);
     Manager::add_stream(stream)?;
