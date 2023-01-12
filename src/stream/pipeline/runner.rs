@@ -170,7 +170,7 @@ impl Drop for PipelineRunner {
             .killswitch_sender
             .send("PipelineRunner Dropped.".to_string())
         {
-            error!(
+            warn!(
                 "Failed to send killswitch message while Dropping PipelineRunner. Reason: {reason:#?}"
             );
         }
