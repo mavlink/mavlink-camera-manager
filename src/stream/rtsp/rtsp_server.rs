@@ -73,7 +73,10 @@ impl RTSPServer {
             // interested in them. In this example, we only do have one, so we can
             // leave the context parameter empty, it will automatically select
             // the default one.
-            let id = rtsp_server.server.attach(None).unwrap();
+            let id = rtsp_server
+                .server
+                .attach(None)
+                .expect("Failed attaching to default context");
 
             // Start the mainloop. From this point on, the server will start to serve
             // our quality content to connecting clients.
@@ -106,7 +109,7 @@ impl RTSPServer {
             .find_map(|structure| {
                 structure.iter().find_map(|(key, sendvalue)| {
                     if key == "encoding-name" {
-                        Some(sendvalue.to_value().get::<String>().unwrap())
+                        Some(sendvalue.to_value().get::<String>().expect("Failed accessing encoding-name parameter"))
                     } else {
                         None
                     }
@@ -191,7 +194,9 @@ impl RTSPServer {
             .mount_points()
             .context("Could not get mount points")?;
 
-        let factory = rtsp_server.path_to_factory.get(path).unwrap();
+        let factory = rtsp_server.path_to_factory.get(path).context(format!(
+            "Factory for path {path:?} not found in RTSP factories"
+        ))?;
 
         // Now we add a new mount-point and tell the RTSP server to serve the content
         // provided by the factory we configured above, when a client connects to
