@@ -126,6 +126,7 @@ impl SinkInterface for RtspSink {
         self.sink_id
     }
 
+    #[instrument(level = "trace")]
     fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
         Err(anyhow!(
             "Not available. Reason: RTSP Sink should only be connected from its RTSP endpoint."
@@ -170,10 +171,12 @@ impl RtspSink {
         })
     }
 
+    #[instrument(level = "trace")]
     pub fn path(&self) -> String {
         self.path.clone()
     }
 
+    #[instrument(level = "trace")]
     pub fn socket_path(&self) -> String {
         self.socket_path.clone()
     }
