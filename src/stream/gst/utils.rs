@@ -1,5 +1,5 @@
+use anyhow::{anyhow, Result};
 use gst::prelude::*;
-use simple_error::{simple_error, SimpleResult};
 
 #[derive(Debug)]
 pub struct PluginRankConfig {
@@ -24,7 +24,7 @@ pub fn is_gst_plugin_available(plugin_name: &str, min_version: &str) -> bool {
     )
 }
 
-pub fn set_plugin_rank(plugin_name: &str, rank: gst::Rank) -> SimpleResult<()> {
+pub fn set_plugin_rank(plugin_name: &str, rank: gst::Rank) -> Result<()> {
     if let Err(error) = gst::init() {
         tracing::error!("Error! {error}");
     }
@@ -32,6 +32,13 @@ pub fn set_plugin_rank(plugin_name: &str, rank: gst::Rank) -> SimpleResult<()> {
     if let Some(feature) = gst::Registry::get().lookup_feature(plugin_name) {
         feature.set_rank(rank);
     } else {
+        return Err(anyhow!(
+            "Cannot found Gstreamer feature {plugin_name:#?} in the registry.",
+        ));
+    }
+
+    Ok(())
+}
 
 pub fn wait_for_element_state(
     element: &gst::Element,
