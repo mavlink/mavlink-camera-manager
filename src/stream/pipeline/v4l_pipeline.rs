@@ -1,5 +1,5 @@
 use crate::{
-    stream::types::CaptureConfiguration,
+    stream::{gst::utils::wait_for_element_state, types::CaptureConfiguration},
     video::{
         types::{VideoEncodeType, VideoSourceType},
         video_source_local::find_h264_profile_for_device,
@@ -172,8 +172,16 @@ pub fn get_default_v4l2_h264_profile(
     pipeline
         .set_state(gst::State::Playing)
         .expect("Unable to set the pipeline to the `Playing` state");
-    while pipeline.current_state() != gst::State::Playing {
-        std::thread::sleep(std::time::Duration::from_millis(100));
+    if let Err(error) = wait_for_element_state(
+        pipeline.upcast_ref::<gst::Element>(),
+        gst::State::Playing,
+        100,
+        2,
+    ) {
+        let _ = pipeline.set_state(gst::State::Null);
+        return Err(anyhow!(
+            "Failed setting Pipeline state to Playing to get H264 Profile. Reason: {error:?}"
+        ));
     }
 
     debug!("Getting current profile...");
