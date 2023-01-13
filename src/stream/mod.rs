@@ -21,6 +21,8 @@ use anyhow::{anyhow, Result};
 
 use tracing::*;
 
+use self::rtsp::rtsp_server::RTSP_SERVER_PORT;
+
 #[derive(Debug)]
 pub struct Stream {
     pub id: PeerId,
@@ -140,6 +142,11 @@ fn validate_endpoints(video_and_stream_information: &VideoAndStreamInformation) 
                 if endpoint.host().is_none() || endpoint.port().is_none() || endpoint.path().is_empty() {
                     return Some(anyhow!(
                         "Endpoint with rtsp scheme should contain host, port, and path. Endpoint: {endpoint:?}"
+                    ));
+                }
+                if endpoint.port() != Some(RTSP_SERVER_PORT) {
+                    return Some(anyhow!(
+                        "Endpoint with rtsp scheme should use port {RTSP_SERVER_PORT:?}. Endpoint: {endpoint:?}"
                     ));
                 }
             }
