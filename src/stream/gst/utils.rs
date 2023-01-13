@@ -32,9 +32,23 @@ pub fn set_plugin_rank(plugin_name: &str, rank: gst::Rank) -> SimpleResult<()> {
     if let Some(feature) = gst::Registry::get().lookup_feature(plugin_name) {
         feature.set_rank(rank);
     } else {
-        return Err(simple_error!(format!(
-            "Cannot found Gstreamer feature {plugin_name:#?} in the registry."
-        )));
+
+pub fn wait_for_element_state(
+    element: &gst::Element,
+    state: gst::State,
+    polling_time_millis: u64,
+    timeout_time_secs: u64,
+) -> Result<()> {
+    let mut trials = 1000 * timeout_time_secs / polling_time_millis;
+
+    while element.current_state() != state {
+        std::thread::sleep(std::time::Duration::from_millis(polling_time_millis));
+        trials -= 1;
+        if trials == 0 {
+            return Err(anyhow!(
+                "set state timed-out ({timeout_time_secs:?} seconds)"
+            ));
+        }
     }
 
     Ok(())

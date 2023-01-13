@@ -5,6 +5,8 @@ use anyhow::{anyhow, Context, Result};
 use tokio::sync::broadcast;
 use tracing::*;
 
+use crate::stream::gst::utils::wait_for_element_state;
+
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct PipelineRunner {
@@ -103,10 +105,25 @@ impl PipelineRunner {
                         if lost_timestamps > max_lost_timestamps {
                             error!("Pipeline lost too many timestamps (max. was {max_lost_timestamps}).");
                             let _ = pipeline.set_state(gst::State::Null);
-                            while pipeline.current_state() != gst::State::Null {
-                                std::thread::sleep(std::time::Duration::from_millis(100));
+                            if let Err(error) = wait_for_element_state(
+                                pipeline.upcast_ref::<gst::Element>(),
+                                gst::State::Null,
+                                100,
+                                2,
+                            ) {
+                                error!("Failed setting Pipeline {pipeline_id} to Null state. Reason: {error:?}");
+                                break;
                             }
                             let _ = pipeline.set_state(gst::State::Playing);
+                            if let Err(error) = wait_for_element_state(
+                                pipeline.upcast_ref::<gst::Element>(),
+                                gst::State::Playing,
+                                100,
+                                2,
+                            ) {
+                                error!("Failed setting Pipeline {pipeline_id} to Playing state. Reason: {error:?}");
+                                break;
+                            }
                             lost_timestamps = 0;
                         }
 

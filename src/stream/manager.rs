@@ -6,7 +6,10 @@ use std::{
 
 use crate::{
     settings,
-    stream::{types::CaptureConfiguration, webrtc::signalling_protocol::BindAnswer},
+    stream::{
+        gst::utils::wait_for_element_state, types::CaptureConfiguration,
+        webrtc::signalling_protocol::BindAnswer,
+    },
     video::video_source,
 };
 use crate::{stream::sink::SinkInterface, video::types::VideoSourceType};
@@ -17,7 +20,7 @@ use crate::{
 
 use anyhow::{anyhow, Context, Result};
 
-use gst::{prelude::ElementExtManual, traits::ElementExt};
+use gst::{prelude::*, traits::ElementExt};
 use tracing::*;
 
 use super::{
@@ -373,10 +376,16 @@ impl StreamManagementInterface<StreamStatus> for Manager {
             .pipeline
             .set_state(gst::State::Null)
         {
-            error!("Failed setting Pipeline {pipeline_id:?} state to NULL. Reason: {error:?}");
+            error!("Failed setting Pipeline {pipeline_id:?} state to Null. Reason: {error:?}");
         }
-        while pipeline.current_state() != gst::State::Null {
-            std::thread::sleep(std::time::Duration::from_millis(100));
+        if let Err(error) = wait_for_element_state(
+            pipeline.upcast_ref::<gst::Element>(),
+            gst::State::Null,
+            100,
+            10,
+        ) {
+            let _ = pipeline.set_state(gst::State::Null);
+            error!("Failed setting Pipeline {pipeline_id:?} state to Null. Reason: {error:?}");
         }
 
         // Remove all Sinks

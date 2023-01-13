@@ -15,6 +15,7 @@ use tracing::*;
 
 use crate::{
     stream::{
+        gst::utils::wait_for_element_state,
         manager::Manager,
         rtsp::rtsp_server::RTSPServer,
         sink::{Sink, SinkInterface},
@@ -181,8 +182,17 @@ impl PipelineState {
             }
         }
 
-        while pipeline.current_state() != gst::State::Playing {
-            std::thread::sleep(std::time::Duration::from_millis(100));
+        if let Err(error) = wait_for_element_state(
+            pipeline.upcast_ref::<gst::Element>(),
+            gst::State::Playing,
+            100,
+            2,
+        ) {
+            let _ = pipeline.set_state(gst::State::Null);
+            sink.unlink(pipeline, &self.pipeline_id)?;
+            return Err(anyhow!(
+                "Failed setting Pipeline {pipeline_id} to Null state. Reason: {error:?}"
+            ));
         }
 
         pipeline.debug_to_dot_file_with_ts(
