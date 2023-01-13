@@ -182,8 +182,6 @@ pub fn get_first_sdp_from_source(source: String) -> Result<gst_sdp::SDPMessage> 
 
 #[instrument(level = "debug")]
 pub fn add_stream_and_start(video_and_stream_information: VideoAndStreamInformation) -> Result<()> {
-    let stream = Stream::try_new(&video_and_stream_information)?;
-
     let manager = MANAGER.as_ref().lock().unwrap();
     for stream in manager.streams.values() {
         stream
@@ -191,6 +189,8 @@ pub fn add_stream_and_start(video_and_stream_information: VideoAndStreamInformat
             .conflicts_with(&video_and_stream_information)?;
     }
     drop(manager);
+
+    let stream = Stream::try_new(&video_and_stream_information)?;
     Manager::add_stream(stream)?;
 
     Ok(())
