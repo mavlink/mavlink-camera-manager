@@ -162,7 +162,11 @@
                 },
                 checkResponse: async function(response) {
                     if (!response.ok) {
-                        const text = await response.text().replaceAll("\\n", "\n").replaceAll("\\\"", "\"")
+                        // To make the alert text more human readable, here we are:
+                        //   1. removing the external double quotes pair, making the string `"text"` turns into `text`
+                        //   2. unescaping new lines, making the string `text\\n newline` turns into `text\n newline`
+                        //   3. unescaping double quotes, making the  string `text \\"quoted\\"` turns into `text \"quoted\"`
+                        const text = await response.text().then((text) => text.replace(/^"(.+(?="$))"$/, '$1').replaceAll("\\n", "\n").replaceAll("\\\"", "\""))
                         console.warn(`Something went wrong: ${text}`)
                         alert(text)
                     } else {
