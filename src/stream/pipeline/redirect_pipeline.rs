@@ -3,7 +3,7 @@ use crate::{
     video_stream::types::VideoAndStreamInformation,
 };
 
-use super::{PipelineGstreamerInterface, PipelineState, PIPELINE_TEE_NAME};
+use super::{PipelineGstreamerInterface, PipelineState, PIPELINE_SINK_TEE_NAME};
 
 use anyhow::{anyhow, Context, Result};
 
@@ -16,6 +16,7 @@ pub struct RedirectPipeline {
 
 impl RedirectPipeline {
     pub fn try_new(
+        pipeline_id: uuid::Uuid,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<gst::Pipeline> {
         match &video_and_stream_information
@@ -59,10 +60,10 @@ impl RedirectPipeline {
                     concat!(
                         "rtspsrc location={location} is-live=true latency=0",
                         " ! application/x-rtp",
-                        " ! tee name={tee_name} allow-not-linked=true"
+                        " ! tee name={sink_tee_name} allow-not-linked=true"
                     ),
                     location = url,
-                    tee_name = PIPELINE_TEE_NAME
+                    sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"),
                 )
             }
             "udp" => {
@@ -70,11 +71,11 @@ impl RedirectPipeline {
                     concat!(
                         "udpsrc address={address} port={port} close-socket=false auto-multicast=true",
                         " ! application/x-rtp",
-                        " ! tee name={tee_name} allow-not-linked=true"
+                        " ! tee name={sink_tee_name} allow-not-linked=true"
                     ),
                     address = url.host().unwrap(),
                     port = url.port().unwrap(),
-                    tee_name = PIPELINE_TEE_NAME
+                    sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"),
                 )
             }
             unsupported => {

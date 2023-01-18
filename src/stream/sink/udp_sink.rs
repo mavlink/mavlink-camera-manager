@@ -5,7 +5,7 @@ use tracing::*;
 use gst::prelude::*;
 
 use super::SinkInterface;
-use crate::stream::pipeline::PIPELINE_TEE_NAME;
+use crate::stream::pipeline::PIPELINE_SINK_TEE_NAME;
 
 #[derive(Debug)]
 pub struct UdpSink {
@@ -102,9 +102,10 @@ impl SinkInterface for UdpSink {
             ));
         }
 
+        let sink_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}");
         let tee = pipeline
-            .by_name(PIPELINE_TEE_NAME)
-            .context(format!("no element named {PIPELINE_TEE_NAME:#?}"))?;
+            .by_name(&sink_name)
+            .context(format!("no element named {sink_name:#?}"))?;
         if let Err(error) = tee.remove_pad(tee_src_pad) {
             return Err(anyhow!(
                 "Failed removing Tee's source pad. Reason: {error:?}"

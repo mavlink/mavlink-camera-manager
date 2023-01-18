@@ -7,7 +7,9 @@ use crate::{
     video_stream::types::VideoAndStreamInformation,
 };
 
-use super::{PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_TEE_NAME};
+use super::{
+    PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_SINK_TEE_NAME,
+};
 
 use anyhow::{anyhow, Result};
 
@@ -20,6 +22,7 @@ pub struct FakePipeline {
 
 impl FakePipeline {
     pub fn try_new(
+        pipeline_id: uuid::Uuid,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<gst::Pipeline> {
         let configuration = match &video_and_stream_information
@@ -66,7 +69,7 @@ impl FakePipeline {
                         " ! h264parse",
                         " ! capsfilter name={filter_name} caps=video/x-h264,profile={profile},stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! rtph264pay aggregate-mode=zero-latency config-interval=10 pt=96",
-                        " ! tee name={tee_name} allow-not-linked=true"
+                        " ! tee name={sink_tee_name} allow-not-linked=true"
                     ),
                     pattern = pattern,
                     profile = "constrained-baseline",
@@ -74,8 +77,8 @@ impl FakePipeline {
                     height = configuration.height,
                     interval_denominator = configuration.frame_interval.denominator,
                     interval_numerator = configuration.frame_interval.numerator,
-                    filter_name = PIPELINE_FILTER_NAME,
-                    tee_name = PIPELINE_TEE_NAME
+                    filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}"),
+                    sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"),
                 )
             }
             VideoEncodeType::Yuyv => {
@@ -89,15 +92,15 @@ impl FakePipeline {
                         " ! video/x-raw,format=I420",
                         " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! rtpvrawpay pt=96",
-                        " ! tee name={tee_name} allow-not-linked=true",
+                        " ! tee name={sink_tee_name} allow-not-linked=true",
                     ),
                     pattern = pattern,
                     width = configuration.width,
                     height = configuration.height,
                     interval_denominator = configuration.frame_interval.denominator,
                     interval_numerator = configuration.frame_interval.numerator,
-                    filter_name = PIPELINE_FILTER_NAME,
-                    tee_name = PIPELINE_TEE_NAME
+                    filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}"),
+                    sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"),
                 )
             }
             VideoEncodeType::Mjpg => {
@@ -109,15 +112,15 @@ impl FakePipeline {
                         " ! jpegenc quality=85 idct-method=1",
                         " ! capsfilter name={filter_name} caps=image/jpeg,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! rtpjpegpay pt=96",
-                        " ! tee name={tee_name} allow-not-linked=true",
+                        " ! tee name={sink_tee_name} allow-not-linked=true",
                     ),
                     pattern = pattern,
                     width = configuration.width,
                     height = configuration.height,
                     interval_denominator = configuration.frame_interval.denominator,
                     interval_numerator = configuration.frame_interval.numerator,
-                    filter_name = PIPELINE_FILTER_NAME,
-                    tee_name = PIPELINE_TEE_NAME
+                    filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}"),
+                    sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"),
                 )
             }
             unsupported => {

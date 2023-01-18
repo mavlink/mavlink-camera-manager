@@ -7,7 +7,9 @@ use crate::{
     video_stream::types::VideoAndStreamInformation,
 };
 
-use super::{PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_TEE_NAME};
+use super::{
+    PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_SINK_TEE_NAME,
+};
 
 use anyhow::{anyhow, Context, Result};
 
@@ -23,6 +25,7 @@ pub struct V4lPipeline {
 impl V4lPipeline {
     #[instrument(level = "debug")]
     pub fn try_new(
+        pipeline_id: uuid::Uuid,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<gst::Pipeline> {
         let configuration = match &video_and_stream_information
@@ -61,7 +64,7 @@ impl V4lPipeline {
                         " ! h264parse",
                         " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au,profile={profile},width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! rtph264pay aggregate-mode=zero-latency config-interval=10 pt=96",
-                        " ! tee name={tee_name} allow-not-linked=true"
+                        " ! tee name={sink_tee_name} allow-not-linked=true"
                     ),
                     device = device,
                     profile = profile,
@@ -69,8 +72,8 @@ impl V4lPipeline {
                     height = height,
                     interval_denominator = interval_denominator,
                     interval_numerator = interval_numerator,
-                    filter_name = PIPELINE_FILTER_NAME,
-                    tee_name = PIPELINE_TEE_NAME
+                    filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}"),
+                    sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"),
                 )
             }
             VideoEncodeType::Yuyv => {
@@ -80,15 +83,15 @@ impl V4lPipeline {
                         " ! videoconvert",
                         " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! rtpvrawpay pt=96",
-                        " ! tee name={tee_name} allow-not-linked=true"
+                        " ! tee name={sink_tee_name} allow-not-linked=true"
                     ),
                     device = device,
                     width = width,
                     height = height,
                     interval_denominator = interval_denominator,
                     interval_numerator = interval_numerator,
-                    filter_name = PIPELINE_FILTER_NAME,
-                    tee_name = PIPELINE_TEE_NAME
+                    filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}"),
+                    sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"),
                 )
             }
             VideoEncodeType::Mjpg => {
@@ -98,15 +101,15 @@ impl V4lPipeline {
                         " ! jpegparse",
                         " ! capsfilter name={filter_name} caps=image/jpeg,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! rtpjpegpay pt=96",
-                        " ! tee name={tee_name} allow-not-linked=true"
+                        " ! tee name={sink_tee_name} allow-not-linked=true"
                     ),
                     device = device,
                     width = width,
                     height = height,
                     interval_denominator = interval_denominator,
                     interval_numerator = interval_numerator,
-                    filter_name = PIPELINE_FILTER_NAME,
-                    tee_name = PIPELINE_TEE_NAME
+                    filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}"),
+                    sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"),
                 )
             }
             unsupported => {
@@ -209,9 +212,16 @@ pub fn get_default_v4l2_h264_profile(
     debug!("Finishing...");
     pipeline
         .set_state(gst::State::Null)
-        .expect("Unable to set the pipeline to the `Null` state");
-    while pipeline.current_state() != gst::State::Null {
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        .context("Unable to set the pipeline to the `Null` state")?;
+    if let Err(error) = wait_for_element_state(
+        pipeline.upcast_ref::<gst::Element>(),
+        gst::State::Null,
+        100,
+        2,
+    ) {
+        return Err(anyhow!(
+            "Failed setting Pipeline to Null state. Reason: {error:?}"
+        ));
     }
 
     Ok(profile)
