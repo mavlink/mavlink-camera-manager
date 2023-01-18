@@ -1,3 +1,4 @@
+pub mod image_sink;
 pub mod rtsp_sink;
 pub mod udp_sink;
 pub mod webrtc_sink;
@@ -6,11 +7,12 @@ use enum_dispatch::enum_dispatch;
 
 use crate::video_stream::types::VideoAndStreamInformation;
 
+use image_sink::ImageSink;
 use rtsp_sink::RtspSink;
 use udp_sink::UdpSink;
 use webrtc_sink::WebRTCSink;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 use tracing::*;
 
@@ -44,6 +46,7 @@ pub enum Sink {
     Udp(UdpSink),
     Rtsp(RtspSink),
     WebRTC(WebRTCSink),
+    Image(ImageSink),
 }
 
 #[instrument(level = "debug")]
@@ -70,4 +73,24 @@ pub fn create_rtsp_sink(
         .clone();
 
     Ok(Sink::Rtsp(RtspSink::try_new(id, addresses)?))
+}
+
+pub fn create_image_sink(
+    id: uuid::Uuid,
+    video_and_stream_information: &VideoAndStreamInformation,
+) -> Result<Sink> {
+    let encoding = match &video_and_stream_information
+        .stream_information
+        .configuration
+    {
+        super::types::CaptureConfiguration::Video(video_configuraiton) => {
+            video_configuraiton.encode.clone()
+        }
+        super::types::CaptureConfiguration::Redirect(_) => {
+            return Err(anyhow!(
+                "ImageSinks are not yet implemented for Redirect sources"
+            ))
+        }
+    };
+    Ok(Sink::Image(ImageSink::try_new(id, encoding)?))
 }
