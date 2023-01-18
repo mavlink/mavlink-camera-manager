@@ -92,28 +92,35 @@ impl Pipeline {
 pub struct PipelineState {
     pub pipeline_id: uuid::Uuid,
     pub pipeline: gst::Pipeline,
-    pub tee: gst::Element,
+    pub sink_tee: gst::Element,
     pub sinks: HashMap<uuid::Uuid, Sink>,
     pub pipeline_runner: PipelineRunner,
     _watcher_thread_handle: std::thread::JoinHandle<()>,
 }
 
-pub const PIPELINE_TEE_NAME: &str = "Tee";
+pub const PIPELINE_SINK_TEE_NAME: &str = "SinkTee";
 pub const PIPELINE_FILTER_NAME: &str = "Filter";
 
 impl PipelineState {
     #[instrument(level = "debug")]
     pub fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
-        let pipeline = match &video_and_stream_information.video_source {
-            VideoSourceType::Gst(_) => FakePipeline::try_new(video_and_stream_information),
-            VideoSourceType::Local(_) => V4lPipeline::try_new(video_and_stream_information),
-            VideoSourceType::Redirect(_) => RedirectPipeline::try_new(video_and_stream_information),
-        }?;
         let pipeline_id = Manager::generate_uuid();
 
-        let tee = pipeline
-            .by_name(PIPELINE_TEE_NAME)
-            .context(format!("no element named {PIPELINE_TEE_NAME:#?}"))?;
+        let pipeline = match &video_and_stream_information.video_source {
+            VideoSourceType::Gst(_) => {
+                FakePipeline::try_new(pipeline_id, video_and_stream_information)
+            }
+            VideoSourceType::Local(_) => {
+                V4lPipeline::try_new(pipeline_id, video_and_stream_information)
+            }
+            VideoSourceType::Redirect(_) => {
+                RedirectPipeline::try_new(pipeline_id, video_and_stream_information)
+            }
+        }?;
+
+        let sink_tee = pipeline
+            .by_name(&format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"))
+            .context(format!("no element named {PIPELINE_SINK_TEE_NAME:#?}"))?;
 
         let pipeline_runner = PipelineRunner::try_new(&pipeline, pipeline_id)?;
         let mut killswitch_receiver = pipeline_runner.get_receiver();
@@ -126,7 +133,7 @@ impl PipelineState {
         Ok(Self {
             pipeline_id,
             pipeline,
-            tee,
+            sink_tee,
             sinks: Default::default(),
             pipeline_runner,
             _watcher_thread_handle: thread::spawn(move || loop {
@@ -152,7 +159,7 @@ impl PipelineState {
         let pipeline_id = &self.pipeline_id;
 
         // Request a new src pad for the Tee
-        let tee_src_pad = self.tee.request_pad_simple("src_%u").context(format!(
+        let tee_src_pad = self.sink_tee.request_pad_simple("src_%u").context(format!(
             "Failed requesting src pad for Tee of the pipeline {pipeline_id}"
         ))?;
         debug!("Got tee's src pad {:#?}", tee_src_pad.name());
@@ -186,7 +193,7 @@ impl PipelineState {
             let _ = pipeline.set_state(gst::State::Null);
             sink.unlink(pipeline, &self.pipeline_id)?;
             return Err(anyhow!(
-                "Failed setting Pipeline {pipeline_id} to Null state. Reason: {error:?}"
+                "Failed setting Pipeline {pipeline_id} to Playing state. Reason: {error:?}"
             ));
         }
 
@@ -197,7 +204,7 @@ impl PipelineState {
 
         if let Sink::Rtsp(sink) = &sink {
             let caps = &self
-                .tee
+                .sink_tee
                 .static_pad("sink")
                 .expect("No static sink pad found on capsfilter")
                 .current_caps()
@@ -235,9 +242,10 @@ impl PipelineState {
         sink.unlink(pipeline, pipeline_id)?;
 
         // Set pipeline state to NULL when there are no consumers to save CPU usage.
+        let sink_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}");
         let tee = pipeline
-            .by_name(PIPELINE_TEE_NAME)
-            .context(format!("no element named {PIPELINE_TEE_NAME:#?}"))?;
+            .by_name(&sink_name)
+            .context(format!("no element named {sink_name:#?}"))?;
         if tee.src_pads().is_empty() {
             if let Err(error) = pipeline.set_state(gst::State::Null) {
                 return Err(anyhow!(
