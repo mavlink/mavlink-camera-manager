@@ -12,7 +12,7 @@ use crate::video_stream::types::VideoAndStreamInformation;
 
 use manager::Manager;
 use pipeline::Pipeline;
-use sink::{create_rtsp_sink, create_udp_sink};
+use sink::{create_image_sink, create_rtsp_sink, create_udp_sink};
 use types::*;
 use webrtc::signalling_protocol::PeerId;
 use webrtc::signalling_server::StreamManagementInterface;
@@ -85,6 +85,15 @@ impl Stream {
                     "Failed to add Sink of type RTSP to the Pipeline. Reason: {reason}"
                 ));
             }
+        }
+
+        if let Err(reason) =
+            create_image_sink(Manager::generate_uuid(), video_and_stream_information)
+                .and_then(|sink| stream.pipeline.add_sink(sink))
+        {
+            return Err(anyhow!(
+                "Failed to add Sink of type Image to the Pipeline. Reason: {reason}"
+            ));
         }
 
         Ok(stream)
