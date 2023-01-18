@@ -181,6 +181,37 @@ pub fn get_first_sdp_from_source(source: String) -> Result<gst_sdp::SDPMessage> 
 }
 
 #[instrument(level = "debug")]
+pub fn get_jpeg_thumbnail_from_source(
+    source: String,
+    quality: u8,
+    target_height: Option<u32>,
+) -> Option<Result<Vec<u8>>> {
+    MANAGER.lock().unwrap().streams.values().find_map(|stream| {
+        if stream
+            .video_and_stream_information
+            .video_source
+            .inner()
+            .source_string()
+            == source
+        {
+            stream
+                .pipeline
+                .inner_state_as_ref()
+                .sinks
+                .values()
+                .find_map(|sink| match sink {
+                    Sink::Image(image_sink) => {
+                        Some(image_sink.make_jpeg_thumbnail_from_last_frame(quality, target_height))
+                    }
+                    _ => None,
+                })
+        } else {
+            None
+        }
+    })
+}
+
+#[instrument(level = "debug")]
 pub fn add_stream_and_start(video_and_stream_information: VideoAndStreamInformation) -> Result<()> {
     let manager = MANAGER.as_ref().lock().unwrap();
     for stream in manager.streams.values() {
