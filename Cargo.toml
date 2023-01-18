@@ -29,16 +29,18 @@ regex = "1.6.0"
 # https://github.com/kdy1/rweb
 actix-files = "0.6.2"
 actix-web = "4.1.0"
+actix-web-validator = "5.0.1"
 actix-service = "2.0.2"
 serde = { version = "1.0.140", features = ["derive"] }
 serde_json = "1.0.82"
+validator = { version = "0.16", features = ["derive"] }
 
 ## FINAL
 sys-info = "0.9.1"
 chrono = "0.4.19"
 lazy_static = "1.4.0"
 include_dir = "0.7.3"
-paperclip = { version = "0.8.0", features = ["paperclip-actix", "actix4", "swagger-ui", "url", "uuid"] }
+paperclip = { version = "0.8", features = ["paperclip-actix", "actix4",  "swagger-ui", "url", "uuid"] }
 #TODO: Replace it with yaserde
 quick-xml = { version = "0.23.0", features = ["serialize"] }
 simple-error = "0.2.3"
