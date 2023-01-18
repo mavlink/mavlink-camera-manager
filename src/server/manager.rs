@@ -63,6 +63,7 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
             )
             .route("/xml", web::get().to(pages::xml))
             .route("/sdp", web::get().to(pages::sdp))
+            .route("/thumbnail", web::get().to(pages::thumbnail))
             .build()
     })
     .bind(server_address)

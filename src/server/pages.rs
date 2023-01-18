@@ -10,6 +10,7 @@ use crate::video::{
     xml,
 };
 use crate::video_stream::types::VideoAndStreamInformation;
+use actix_web::http::header;
 use actix_web::{
     web::{self, Json},
     HttpRequest, HttpResponse,
@@ -18,6 +19,7 @@ use paperclip::actix::{api_v2_operation, Apiv2Schema};
 use serde::{Deserialize, Serialize};
 use simple_error::SimpleError;
 use tracing::*;
+use validator::Validate;
 
 use std::io::prelude::*;
 
@@ -66,6 +68,17 @@ pub struct XmlFileRequest {
 #[derive(Apiv2Schema, Debug, Deserialize)]
 pub struct SdpFileRequest {
     source: String,
+}
+
+#[derive(Apiv2Schema, Debug, Deserialize, Validate)]
+pub struct ThumbnailFileRequest {
+    source: String,
+    /// The Quality level (a percentage value as an integer between 1 and 100) is inversely proportional to JPEG compression level, which means the higher, the best.
+    #[validate(range(min = 1, max = 100))]
+    quality: Option<u8>,
+    /// Target height of the thumbnail. The value should be an integer between 1 and 1080 (because of memory constraints).
+    #[validate(range(min = 1, max = 1080))]
+    target_height: Option<u16>,
 }
 
 use std::{ffi::OsStr, path::Path};
@@ -302,5 +315,46 @@ pub fn sdp(sdp_file_request: web::Query<SdpFileRequest>) -> HttpResponse {
                 "Failed to get SDP file for {:?}. Reason: {error:?}",
                 sdp_file_request.source
             )),
+    }
+}
+
+#[api_v2_operation]
+/// Provides a thumbnail file of the given source
+pub fn thumbnail(thumbnail_file_request: web::Query<ThumbnailFileRequest>) -> HttpResponse {
+    debug!("{thumbnail_file_request:#?}");
+
+    // Ideally, we should be using `actix_web_validator::Query` instead of `web::Query`,
+    // but because paperclip (at least until 0.8) is using `actix-web-validator 3.x`,
+    // and `validator 0.14`, the newest api needed to use it along #[api_v2_operation]
+    // wasn't implemented yet, it doesn't compile.
+    // To workaround this, we are manually calling the validator here, using actix to
+    // automatically handle the validation error for us as it normally would.
+    // TODO: update this function to use `actix_web_validator::Query` directly and get
+    // rid of this workaround.
+    if let Err(errors) = thumbnail_file_request.validate() {
+        warn!("Failed validating ThumbnailFileRequest. Reason: {errors:?}");
+        return actix_web::ResponseError::error_response(&actix_web_validator::Error::from(errors));
+    }
+
+    let source = thumbnail_file_request.source.clone();
+    let quality = thumbnail_file_request.quality.unwrap_or(70u8);
+    let target_height = thumbnail_file_request.target_height.map(|v| v as u32);
+
+    match stream_manager::get_jpeg_thumbnail_from_source(source, quality, target_height) {
+        Some(Ok(image)) => HttpResponse::Ok().content_type("image/jpeg").body(image),
+        None => HttpResponse::NotFound()
+            .content_type("text/plain")
+            .body(format!(
+                "Thumbnail not found for source {:?}.",
+                thumbnail_file_request.source
+            )),
+        Some(Err(error)) => HttpResponse::ServiceUnavailable()
+            .reason("Thumbnail temporarily unavailable")
+            .insert_header((header::RETRY_AFTER, 10))
+            .content_type("text/plain")
+            .body(format!(
+            "Thumbnail for source {:?} is temporarily unavailable. Try again later. Details: {error:?}",
+            thumbnail_file_request.source
+        )),
     }
 }
