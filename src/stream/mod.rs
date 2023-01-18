@@ -57,7 +57,6 @@ impl Stream {
         let endpoints = &video_and_stream_information.stream_information.endpoints;
 
         // Disable concurrent RTSP and UDP sinks creation, as it is failing.
-        // TODO: Enable this and investigate why it is failing when we try to create RTSP+UDP: "rtsp://0.0.0.0:8554/test, udp://localhost:5600"
         if endpoints.iter().any(|endpoint| endpoint.scheme() == "udp")
             && endpoints.iter().any(|endpoint| endpoint.scheme() == "rtsp")
         {
