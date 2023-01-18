@@ -38,7 +38,7 @@ sys-info = "0.9.1"
 chrono = "0.4.19"
 lazy_static = "1.4.0"
 include_dir = "0.7.3"
-paperclip = { version = "0.7.0", features = ["paperclip-actix", "actix4", "swagger-ui", "url", "uuid"] }
+paperclip = { version = "0.8.0", features = ["paperclip-actix", "actix4", "swagger-ui", "url", "uuid"] }
 #TODO: Replace it with yaserde
 quick-xml = { version = "0.23.0", features = ["serialize"] }
 simple-error = "0.2.3"
