@@ -103,7 +103,7 @@ impl PipelineRunner {
                         }
 
                         if lost_timestamps > max_lost_timestamps {
-                            error!("Pipeline lost too many timestamps (max. was {max_lost_timestamps}).");
+                            warn!("Pipeline lost too many timestamps (max. was {max_lost_timestamps}).");
                             let _ = pipeline.set_state(gst::State::Null);
                             if let Err(error) = wait_for_element_state(
                                 pipeline.upcast_ref::<gst::Element>(),
