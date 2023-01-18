@@ -167,13 +167,8 @@ impl PipelineState {
             format!("pipeline-{pipeline_id}-sink-{sink_id}-before-playing"),
         );
 
-        // Syncronize states
-        if let Err(error) = pipeline.sync_children_states() {
-            return Err(anyhow!("Failed syncronizing Sink elements' state to the Pipeline's state. Reason: {error:#?}"));
-        }
-
-        // Start the pipeline if it is the first Sink being added
-        if self.sinks.is_empty() {
+        // Start the pipeline if not playing yet
+        if pipeline.current_state() != gst::State::Playing {
             if let Err(error) = pipeline.set_state(gst::State::Playing) {
                 sink.unlink(pipeline, &self.pipeline_id)?;
                 return Err(anyhow!(
