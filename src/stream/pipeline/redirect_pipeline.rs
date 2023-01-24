@@ -7,6 +7,8 @@ use super::{PipelineGstreamerInterface, PipelineState, PIPELINE_SINK_TEE_NAME};
 
 use anyhow::{anyhow, Context, Result};
 
+use tracing::*;
+
 use gst::prelude::*;
 
 #[derive(Debug)]
@@ -15,6 +17,7 @@ pub struct RedirectPipeline {
 }
 
 impl RedirectPipeline {
+    #[instrument(level = "debug")]
     pub fn try_new(
         pipeline_id: uuid::Uuid,
         video_and_stream_information: &VideoAndStreamInformation,
@@ -96,6 +99,7 @@ impl RedirectPipeline {
 }
 
 impl PipelineGstreamerInterface for RedirectPipeline {
+    #[instrument(level = "trace")]
     fn is_running(&self) -> bool {
         self.state.pipeline_runner.is_running()
     }

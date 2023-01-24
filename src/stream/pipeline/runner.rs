@@ -52,12 +52,12 @@ impl PipelineRunner {
         })
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     pub fn get_receiver(&self) -> broadcast::Receiver<String> {
         self.killswitch_sender.subscribe()
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     pub fn is_running(&self) -> bool {
         !self._watcher_thread_handle.is_finished()
     }
@@ -181,7 +181,7 @@ impl PipelineRunner {
 }
 
 impl Drop for PipelineRunner {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn drop(&mut self) {
         if let Err(reason) = self
             .killswitch_sender

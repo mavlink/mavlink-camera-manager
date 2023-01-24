@@ -45,6 +45,7 @@ lazy_static! {
 }
 
 impl Manager {
+    #[instrument(level = "debug", skip(self))]
     fn update_settings(&self) {
         let video_and_stream_informations = self
             .streams
