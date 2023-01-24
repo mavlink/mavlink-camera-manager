@@ -217,6 +217,15 @@ impl PipelineState {
             RTSPServer::start_pipeline(&sink.path())?;
         }
 
+        // Skipping ImageSink syncronization because it goes to some wrong state,
+        // and all other sinks need it to work without freezing when dynamically
+        // added.
+        if !matches!(&sink, Sink::Image(..)) {
+            if let Err(error) = pipeline.sync_children_states() {
+                error!("Failed to syncronize children states. Reason: {:?}", error);
+            }
+        }
+
         self.sinks.insert(*sink_id, sink);
 
         Ok(())
