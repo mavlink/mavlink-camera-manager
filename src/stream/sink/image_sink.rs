@@ -2,8 +2,9 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Context, Result};
 
-use image::FlatSamples;
 use tracing::*;
+
+use image::FlatSamples;
 
 use gst::prelude::*;
 
@@ -20,7 +21,7 @@ pub struct ImageSink {
     flat_samples: Arc<Mutex<Option<FlatSamples<Vec<u8>>>>>,
 }
 impl SinkInterface for ImageSink {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn link(
         &mut self,
         pipeline: &gst::Pipeline,
@@ -82,7 +83,7 @@ impl SinkInterface for ImageSink {
         Ok(())
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
         let sink_id = self.get_id();
 
@@ -135,11 +136,12 @@ impl SinkInterface for ImageSink {
         Ok(())
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn get_id(&self) -> uuid::Uuid {
         self.sink_id
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
         Err(anyhow!(
             "Not available. Reason: Image Sink doesn't provide endpoints"
@@ -148,6 +150,7 @@ impl SinkInterface for ImageSink {
 }
 
 impl ImageSink {
+    #[instrument(level = "debug")]
     pub fn try_new(id: uuid::Uuid, encoding: VideoEncodeType) -> Result<Self> {
         let queue = gst::ElementFactory::make("queue")
             .property_from_str("leaky", "downstream") // Throw away any data
@@ -288,6 +291,7 @@ impl ImageSink {
         })
     }
 
+    #[instrument(level = "debug", skip(self))]
     pub fn make_jpeg_thumbnail_from_last_frame(
         &self,
         quality: u8,

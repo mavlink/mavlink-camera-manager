@@ -372,7 +372,7 @@ impl TryFrom<tungstenite::Message> for signalling_protocol::Protocol {
 impl TryInto<tungstenite::Message> for signalling_protocol::Protocol {
     type Error = anyhow::Error;
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", skip(self))]
     fn try_into(self) -> Result<tungstenite::Message, Self::Error> {
         let json_str = serde_json::to_string(&self)?;
 

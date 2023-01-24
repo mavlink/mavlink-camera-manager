@@ -13,6 +13,8 @@ use super::{
 
 use anyhow::{anyhow, Result};
 
+use tracing::*;
+
 use gst::prelude::*;
 
 #[derive(Debug)]
@@ -21,6 +23,7 @@ pub struct FakePipeline {
 }
 
 impl FakePipeline {
+    #[instrument(level = "debug")]
     pub fn try_new(
         pipeline_id: uuid::Uuid,
         video_and_stream_information: &VideoAndStreamInformation,
@@ -141,6 +144,7 @@ impl FakePipeline {
 }
 
 impl PipelineGstreamerInterface for FakePipeline {
+    #[instrument(level = "trace")]
     fn is_running(&self) -> bool {
         self.state.pipeline_runner.is_running()
     }

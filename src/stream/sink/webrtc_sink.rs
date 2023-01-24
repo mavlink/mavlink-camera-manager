@@ -41,7 +41,7 @@ pub struct WebRTCSinkInner {
     pub end_reason: Option<String>,
 }
 impl SinkInterface for WebRTCSink {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn link(
         self: &mut WebRTCSink,
         pipeline: &gst::Pipeline,
@@ -95,13 +95,13 @@ impl SinkInterface for WebRTCSink {
         Ok(())
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
         let inner = self.0.lock().unwrap(); // We are getting locked here!
         inner.unlink(pipeline, pipeline_id)
     }
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", skip(self))]
     fn get_id(&self) -> uuid::Uuid {
         self.0.lock().unwrap().get_id()
     }
@@ -206,7 +206,7 @@ impl WebRTCSink {
         Ok(this)
     }
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", skip(self))]
     pub fn send(&self, message: Message) -> Result<()> {
         self.lock()
             .unwrap()
@@ -217,7 +217,7 @@ impl WebRTCSink {
             .context("Failed sending message {message:#?}")
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     pub fn close(&self, reason: &str) {
         let bind = &self.lock().unwrap().bind.clone();
         if let Err(error) = Manager::remove_session(bind, reason.to_string()) {
@@ -230,7 +230,7 @@ impl WebRTCBinInterface for WebRTCSink {
     // Whenever webrtcbin tells us that (re-)negotiation is needed, simply ask
     // for a new offer SDP from webrtcbin without any customization and then
     // asynchronously send it to the peer via the WebSocket connection
-    // #[instrument(level = "debug")]
+    // #[instrument(level = "debug", skip(self))]
     fn on_negotiation_needed(&self, webrtcbin: &gst::Element) -> Result<()> {
         let this = self.clone();
         let webrtcbin_clone = webrtcbin.clone();
@@ -276,7 +276,7 @@ impl WebRTCBinInterface for WebRTCSink {
 
     // Once webrtcbin has create the offer SDP for us, handle it by sending it to the peer via the
     // WebSocket connection
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn on_offer_created(
         &self,
         _webrtcbin: &gst::Element,
@@ -313,7 +313,7 @@ impl WebRTCBinInterface for WebRTCSink {
 
     // Once webrtcbin has create the answer SDP for us, handle it by sending it to the peer via the
     // WebSocket connection
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn on_answer_created(
         &self,
         _webrtcbin: &gst::Element,
@@ -342,7 +342,7 @@ impl WebRTCBinInterface for WebRTCSink {
         Ok(())
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn on_ice_candidate(
         &self,
         _webrtcbin: &gst::Element,
@@ -367,7 +367,7 @@ impl WebRTCBinInterface for WebRTCSink {
         Ok(())
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn on_ice_gathering_state_change(
         &self,
         _webrtcbin: &gst::Element,
@@ -378,7 +378,7 @@ impl WebRTCBinInterface for WebRTCSink {
         }
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn on_ice_connection_state_change(
         &self,
         _webrtcbin: &gst::Element,
@@ -393,7 +393,7 @@ impl WebRTCBinInterface for WebRTCSink {
         };
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn on_connection_state_change(
         &self,
         webrtcbin: &gst::Element,
@@ -412,7 +412,7 @@ impl WebRTCBinInterface for WebRTCSink {
         }
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn handle_sdp(&self, sdp: &gst_webrtc::WebRTCSessionDescription) -> Result<()> {
         self.lock()
             .unwrap()
@@ -421,7 +421,7 @@ impl WebRTCBinInterface for WebRTCSink {
         Ok(())
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn handle_ice(&self, sdp_m_line_index: &u32, candidate: &str) -> Result<()> {
         self.lock()
             .unwrap()
@@ -432,7 +432,7 @@ impl WebRTCBinInterface for WebRTCSink {
 }
 
 impl SinkInterface for WebRTCSinkInner {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn link(
         &mut self,
         pipeline: &gst::Pipeline,
@@ -484,7 +484,7 @@ impl SinkInterface for WebRTCSinkInner {
         Ok(())
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
         let sink_id = self.get_id();
 
@@ -530,10 +530,12 @@ impl SinkInterface for WebRTCSinkInner {
         Ok(())
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn get_id(&self) -> uuid::Uuid {
         self.bind.session_id
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
         Err(anyhow!(
             "Not available. Reason: WebRTC Sink should only be connected by means of its Signalling protocol."
@@ -542,7 +544,7 @@ impl SinkInterface for WebRTCSinkInner {
 }
 
 impl Drop for WebRTCSinkInner {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn drop(&mut self) {
         // Send EndSession to consumers, if the WebSocket and MPSC are still available
         if let Ok(sender) = self.sender.lock() {

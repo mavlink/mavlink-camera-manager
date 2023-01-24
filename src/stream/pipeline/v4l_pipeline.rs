@@ -132,6 +132,7 @@ impl V4lPipeline {
 }
 
 impl PipelineGstreamerInterface for V4lPipeline {
+    #[instrument(level = "trace")]
     fn is_running(&self) -> bool {
         self.state.pipeline_runner.is_running()
     }

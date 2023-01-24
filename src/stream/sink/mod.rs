@@ -75,6 +75,7 @@ pub fn create_rtsp_sink(
     Ok(Sink::Rtsp(RtspSink::try_new(id, addresses)?))
 }
 
+#[instrument(level = "debug")]
 pub fn create_image_sink(
     id: uuid::Uuid,
     video_and_stream_information: &VideoAndStreamInformation,

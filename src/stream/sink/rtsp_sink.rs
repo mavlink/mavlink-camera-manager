@@ -18,7 +18,7 @@ pub struct RtspSink {
     socket_path: String,
 }
 impl SinkInterface for RtspSink {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn link(
         &mut self,
         pipeline: &gst::Pipeline,
@@ -72,7 +72,7 @@ impl SinkInterface for RtspSink {
         Ok(())
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
         let sink_id = self.get_id();
 
@@ -122,12 +122,12 @@ impl SinkInterface for RtspSink {
         Ok(())
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn get_id(&self) -> uuid::Uuid {
         self.sink_id
     }
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", skip(self))]
     fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
         Err(anyhow!(
             "Not available. Reason: RTSP Sink should only be connected from its RTSP endpoint."
@@ -172,12 +172,12 @@ impl RtspSink {
         })
     }
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", skip(self))]
     pub fn path(&self) -> String {
         self.path.clone()
     }
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", skip(self))]
     pub fn socket_path(&self) -> String {
         self.socket_path.clone()
     }

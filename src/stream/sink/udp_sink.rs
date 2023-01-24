@@ -17,7 +17,7 @@ pub struct UdpSink {
     addresses: Vec<url::Url>,
 }
 impl SinkInterface for UdpSink {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn link(
         &mut self,
         pipeline: &gst::Pipeline,
@@ -69,7 +69,7 @@ impl SinkInterface for UdpSink {
         Ok(())
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
         let sink_id = self.get_id();
 
@@ -115,11 +115,12 @@ impl SinkInterface for UdpSink {
         Ok(())
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn get_id(&self) -> uuid::Uuid {
         self.sink_id
     }
 
+    #[instrument(level = "debug", skip(self))]
     fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
         let caps = self
             .udpsink_sink_pad

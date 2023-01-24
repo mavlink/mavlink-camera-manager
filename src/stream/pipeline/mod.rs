@@ -9,9 +9,9 @@ use enum_dispatch::enum_dispatch;
 
 use anyhow::{anyhow, Context, Result};
 
-use gst::prelude::*;
-
 use tracing::*;
+
+use gst::prelude::*;
 
 use crate::{
     stream::{
@@ -76,13 +76,13 @@ impl Pipeline {
         })
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     pub fn add_sink(&mut self, sink: Sink) -> Result<()> {
         self.inner_state_mut().add_sink(sink)
     }
 
     #[allow(dead_code)] // This functions is reserved here for when we start dynamically add/remove Sinks
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     pub fn remove_sink(&mut self, sink_id: &uuid::Uuid) -> Result<()> {
         self.inner_state_mut().remove_sink(sink_id)
     }
@@ -154,7 +154,7 @@ impl PipelineState {
     }
 
     /// Links the sink pad from the given Sink to this Pipeline's Tee element
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     pub fn add_sink(&mut self, mut sink: Sink) -> Result<()> {
         let pipeline_id = &self.pipeline_id;
 
@@ -225,7 +225,7 @@ impl PipelineState {
     /// Unlinks the src pad from this Sink from the given sink pad of a Tee element
     ///
     /// Important notes about pad unlinking: [here](https://gstreamer.freedesktop.org/documentation/application-development/advanced/pipeline-manipulation.html?gi-language=c#dynamically-changing-the-pipeline)
-    #[instrument(level = "info")]
+    #[instrument(level = "info", skip(self))]
     pub fn remove_sink(&mut self, sink_id: &uuid::Uuid) -> Result<()> {
         let pipeline_id = &self.pipeline_id;
         let sink = self.sinks.remove(sink_id).context(format!(
