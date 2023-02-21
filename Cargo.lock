@@ -2108,6 +2108,7 @@ dependencies = [
  "tracing",
  "tracing-actix-web",
  "tracing-appender",
+ "tracing-gstreamer",
  "tracing-log",
  "tracing-subscriber",
  "tracing-test",
@@ -3562,6 +3563,20 @@ checksum = "24eb03ba0eab1fd845050058ce5e616558e8f8d8fca633e6b163fe25c797213a"
 dependencies = [
  "once_cell",
  "valuable",
+]
+
+[[package]]
+name = "tracing-gstreamer"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5e2f5446459d0c88134d40fb74a76f95343ac332db9c0085104a4d1c9926b0b"
+dependencies = [
+ "gstreamer",
+ "libc",
+ "once_cell",
+ "thread_local",
+ "tracing",
+ "tracing-core",
 ]
 
 [[package]]

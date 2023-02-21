@@ -48,6 +48,10 @@ pub fn init() {
         .with(file_layer);
     tracing::subscriber::set_global_default(subscriber).expect("Unable to set a global subscriber");
 
+    // Redirects all gstreamer logs to tracing.
+    tracing_gstreamer::integrate_events(); // This must be called before any gst::init()
+    gst::debug_remove_default_log_function();
+
     info!(
         "{}, version: {}-{}, build date: {}",
         env!("CARGO_PKG_NAME"),
