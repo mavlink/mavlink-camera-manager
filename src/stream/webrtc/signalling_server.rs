@@ -59,6 +59,13 @@ impl SignallingServer {
     fn run_main_loop() {
         let endpoint = url::Url::parse(DEFAULT_SIGNALLING_ENDPOINT).unwrap();
 
+        // TODO: found a better and more consistent solution:
+        //   - The underlying problem when we start the SignallingServer, we are allowing WebRTC sinks to be created on demand,
+        //     which may happen while the pipeline is still negotiating capabilities, distributing latencies or some other
+        //     internal thing it does before stabilizes.
+        // [This is only a temporary solution] Give time to the rest of the system stabilizes before accepting traffic here
+        std::thread::sleep(std::time::Duration::from_secs(10));
+
         debug!("Starting Signalling server on {endpoint:?}...");
 
         match task::block_on(SignallingServer::runner(endpoint.clone())) {
