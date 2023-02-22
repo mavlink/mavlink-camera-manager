@@ -10,7 +10,7 @@ pub fn init() {
     LogTracer::init_with_filter(tracing::log::LevelFilter::Trace).expect("Failed to set logger");
 
     // Configure the console log
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+    let console_env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         if cli::manager::is_verbose() {
             EnvFilter::new(LevelFilter::DEBUG.to_string())
         } else {
@@ -26,9 +26,14 @@ pub fn init() {
         .with_target(false)
         .with_thread_ids(true)
         .with_thread_names(true)
-        .with_filter(env_filter);
+        .with_filter(console_env_filter);
 
-    // Configure file log
+    // Configure the file log
+    let file_env_filter = if cli::manager::is_tracing() {
+        EnvFilter::new(LevelFilter::TRACE.to_string())
+    } else {
+        EnvFilter::new(LevelFilter::DEBUG.to_string())
+    };
     let dir = cli::manager::log_path();
     let file_appender = tracing_appender::rolling::daily(dir, "mavlink-camera-manager.log");
     let file_layer = fmt::Layer::new()
@@ -40,7 +45,7 @@ pub fn init() {
         .with_target(false)
         .with_thread_ids(true)
         .with_thread_names(true)
-        .with_filter(LevelFilter::DEBUG);
+        .with_filter(file_env_filter);
 
     // Configure the default subscriber
     let subscriber = tracing_subscriber::registry()
