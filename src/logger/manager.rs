@@ -60,6 +60,8 @@ pub fn init() {
     // Redirects all gstreamer logs to tracing.
     tracing_gstreamer::integrate_events(); // This must be called before any gst::init()
     gst::debug_remove_default_log_function();
+    gst::init().unwrap();
+    tracing_gstreamer::integrate_spans(); // This must be called after gst::init(), this is necessary to have GStreamer on tracy
 
     info!(
         "{}, version: {}-{}, build date: {}",
