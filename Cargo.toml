@@ -55,6 +55,7 @@ tracing-log = "0.1.3"
 tracing-appender = "0.2.2"
 tracing-actix-web = "0.6.0"
 tracing-gstreamer = "0.4.0"
+tracing-tracy = { version = "0.10.2", features = ["ondemand", "broadcast"] } # Note that these features defines the tracy client behavior.
 anyhow = "1"
 tokio = { version = "1.21", features = ["full"] }
 enum_dispatch = "0.3.8"
