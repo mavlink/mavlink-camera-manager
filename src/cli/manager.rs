@@ -40,6 +40,13 @@ pub fn is_verbose() -> bool {
     return MANAGER.as_ref().clap_matches.is_present("verbose");
 }
 
+pub fn is_tracing() -> bool {
+    return MANAGER
+        .as_ref()
+        .clap_matches
+        .is_present("enable-tracing-level-log-file");
+}
+
 pub fn is_reset() -> bool {
     return MANAGER.as_ref().clap_matches.is_present("reset");
 }
@@ -185,6 +192,12 @@ fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
                 .help("Specifies the path in witch the logs will be stored.")
                 .default_value("./logs")
                 .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("enable-tracing-level-log-file")
+                .long("enable-tracing-level-log-file")
+                .help("Turns all log categories up to Trace to the log file, for more information check RUST_LOG env variable.")
+                .takes_value(false),
         )
         .arg(
             clap::Arg::with_name("vehicle-ddns")
