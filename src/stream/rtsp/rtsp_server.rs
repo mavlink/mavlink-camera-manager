@@ -205,9 +205,13 @@ impl RTSPServer {
             .mount_points()
             .context("Could not get mount points")?;
 
-        let factory = rtsp_server.path_to_factory.get(path).context(format!(
-            "Factory for path {path:?} not found in RTSP factories"
-        ))?;
+        let factory = rtsp_server
+            .path_to_factory
+            .get(path)
+            .context(format!(
+                "Factory for path {path:?} not found in RTSP factories"
+            ))?
+            .to_owned();
 
         // Now we add a new mount-point and tell the RTSP server to serve the content
         // provided by the factory we configured above, when a client connects to
