@@ -35,7 +35,7 @@ pub fn init() {
         EnvFilter::new(LevelFilter::DEBUG.to_string())
     };
     let dir = cli::manager::log_path();
-    let file_appender = tracing_appender::rolling::hourly(dir, "mavlink-camera-manager.log");
+    let file_appender = tracing_appender::rolling::hourly(dir, "mavlink-camera-manager.", ".log");
     let file_layer = fmt::Layer::new()
         .with_writer(file_appender)
         .with_ansi(false)
