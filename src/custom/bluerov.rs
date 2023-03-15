@@ -4,6 +4,7 @@ use crate::network::utils::get_visible_qgc_address;
 use crate::stream::types::*;
 use crate::video::{self, types::*, video_source::VideoSourceAvailable};
 use crate::video_stream::types::VideoAndStreamInformation;
+use log::*;
 
 pub fn udp() -> Vec<VideoAndStreamInformation> {
     video::video_source_local::VideoSourceLocal::cameras_available()
@@ -28,9 +29,13 @@ pub fn udp() -> Vec<VideoAndStreamInformation> {
                 (10 * first_size.width + first_size.height)
                     .cmp(&(10 * second_size.width + second_size.height))
             });
+            if sizes.last().is_none() {
+                warn!("Unable to find a valid size for {:?}", cam);
+                return None;
+            }
             let size = sizes.last().unwrap();
 
-            VideoAndStreamInformation {
+            Some(VideoAndStreamInformation {
                 name: format!("UDP Stream {}", index),
                 stream_information: StreamInformation {
                     endpoints: vec![
@@ -93,7 +98,8 @@ pub fn rtsp() -> Vec<VideoAndStreamInformation> {
                     extended_configuration: None,
                 },
                 video_source: cam.clone(),
-            }
+            })
         })
+        .filter_map(|result| result)
         .collect()
 }
