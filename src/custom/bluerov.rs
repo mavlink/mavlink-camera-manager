@@ -3,6 +3,7 @@ use url::Url;
 use crate::stream::types::*;
 use crate::video::{self, types::*, video_source::VideoSourceAvailable};
 use crate::video_stream::types::VideoAndStreamInformation;
+use log::*;
 
 pub fn udp() -> Vec<VideoAndStreamInformation> {
     video::video_source_local::VideoSourceLocal::cameras_available()
@@ -14,7 +15,7 @@ pub fn udp() -> Vec<VideoAndStreamInformation> {
                 .any(|format| format.encode == VideoEncodeType::H264)
         })
         .enumerate()
-        .map(|(index, cam)| {
+        .flat_map(|(index, cam)| {
             let formats = cam.inner().formats();
             let format = formats
                 .iter()
@@ -27,9 +28,13 @@ pub fn udp() -> Vec<VideoAndStreamInformation> {
                 (10 * first_size.width + first_size.height)
                     .cmp(&(10 * second_size.width + second_size.height))
             });
-            let size = sizes.last().unwrap();
 
-            VideoAndStreamInformation {
+            let Some(size) = sizes.last() else {
+                warn!("Unable to find a valid size for {:?}", cam);
+                return None;
+            };
+
+            Some(VideoAndStreamInformation {
                 name: format!("UDP Stream {}", index),
                 stream_information: StreamInformation {
                     endpoints: vec![
@@ -44,7 +49,7 @@ pub fn udp() -> Vec<VideoAndStreamInformation> {
                     extended_configuration: None,
                 },
                 video_source: cam.clone(),
-            }
+            })
         })
         .collect()
 }
