@@ -85,7 +85,7 @@ impl SignallingServer {
         while let Ok((stream, _)) = listener.accept().await {
             let peer = stream
                 .peer_addr()
-                .expect("connected streams should have a peer address");
+                .context("connected streams should have a peer address")?;
             debug!("Peer address: {peer:?}");
 
             tokio::spawn(Self::accept_connection(peer, stream));
@@ -108,10 +108,12 @@ impl SignallingServer {
 
     #[instrument(level = "debug")]
     async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> tungstenite::Result<()> {
-        let (mut ws_sender, mut ws_receiver) = tokio_tungstenite::accept_async(stream)
-            .await
-            .expect("Failed to accept")
-            .split();
+        let result = tokio_tungstenite::accept_async(stream).await;
+        if let Err(error) = result {
+            error!("Failed to accept websocket connection. Reason: {error:?}");
+            return Err(error);
+        }
+        let (mut ws_sender, mut ws_receiver) = result.expect("Failed to accept").split();
 
         info!("New WebSocket connection: {peer:?}");
 
