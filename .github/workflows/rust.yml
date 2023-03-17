@@ -9,7 +9,10 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Install libraries
-      run: sudo apt install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-dev libclang-dev openssl
+      run: |
+        sudo apt update
+        sudo apt install -y libunwind-dev
+        sudo apt install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-dev libclang-dev openssl
     - uses: actions-rs/toolchain@v1.0.1
       with:
         toolchain: stable
