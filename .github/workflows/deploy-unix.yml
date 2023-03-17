@@ -27,7 +27,7 @@ jobs:
       run: |
         uname -a
         sudo apt update
-        sudo apt install -y libclang-dev openssl
+        sudo apt install -y libunwind-dev libclang-dev openssl
         sudo apt install -y libgstrtspserver-1.0-dev libavahi-glib-dev libavahi-core-dev
 
     - uses: actions-rs/cargo@v1
