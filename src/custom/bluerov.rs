@@ -5,15 +5,30 @@ use crate::stream::types::*;
 use crate::video::{self, types::*, video_source::VideoSourceAvailable};
 use crate::video_stream::types::VideoAndStreamInformation;
 
-pub fn udp() -> Vec<VideoAndStreamInformation> {
-    video::video_source_local::VideoSourceLocal::cameras_available()
+fn get_cameras_with_encode_type(encode: VideoEncodeType) -> Vec<VideoSourceType> {
+    let cameras = video::video_source_local::VideoSourceLocal::cameras_available();
+    cameras
         .iter()
-        .filter(|cam| {
+        .filter(move |cam| {
             cam.inner()
                 .formats()
                 .iter()
-                .any(|format| format.encode == VideoEncodeType::H264)
+                .any(|format| format.encode == encode)
         })
+        .cloned()
+        .collect()
+}
+
+fn sort_sizes(sizes: &mut Vec<Size>) {
+    sizes.sort_by(|first_size, second_size| {
+        (10 * first_size.width + first_size.height)
+            .cmp(&(10 * second_size.width + second_size.height))
+    });
+}
+
+pub fn udp() -> Vec<VideoAndStreamInformation> {
+    get_cameras_with_encode_type(VideoEncodeType::H264)
+        .iter()
         .enumerate()
         .map(|(index, cam)| {
             let formats = cam.inner().formats();
@@ -24,10 +39,7 @@ pub fn udp() -> Vec<VideoAndStreamInformation> {
 
             // Get the biggest resolution possible
             let mut sizes = format.sizes.clone();
-            sizes.sort_by(|first_size, second_size| {
-                (10 * first_size.width + first_size.height)
-                    .cmp(&(10 * second_size.width + second_size.height))
-            });
+            sort_sizes(&mut sizes);
             let size = sizes.last().unwrap();
 
             VideoAndStreamInformation {
@@ -45,20 +57,14 @@ pub fn udp() -> Vec<VideoAndStreamInformation> {
                     extended_configuration: None,
                 },
                 video_source: cam.clone(),
-            }
+            })
         })
         .collect()
 }
 
 pub fn rtsp() -> Vec<VideoAndStreamInformation> {
-    video::video_source_local::VideoSourceLocal::cameras_available()
+    get_cameras_with_encode_type(VideoEncodeType::H264)
         .iter()
-        .filter(|cam| {
-            cam.inner()
-                .formats()
-                .iter()
-                .any(|format| format.encode == VideoEncodeType::H264)
-        })
         .enumerate()
         .map(|(index, cam)| {
             let formats = cam.inner().formats();
@@ -69,10 +75,7 @@ pub fn rtsp() -> Vec<VideoAndStreamInformation> {
 
             // Get the biggest resolution possible
             let mut sizes = format.sizes.clone();
-            sizes.sort_by(|first_size, second_size| {
-                (10 * first_size.width + first_size.height)
-                    .cmp(&(10 * second_size.width + second_size.height))
-            });
+            sort_sizes(&mut sizes);
             let size = sizes.last().unwrap();
 
             let visible_qgc_ip_address = get_visible_qgc_address();
