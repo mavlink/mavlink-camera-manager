@@ -42,11 +42,10 @@ pub fn udp() -> Vec<VideoAndStreamInformation> {
             let mut sizes = format.sizes.clone();
             sort_sizes(&mut sizes);
 
-            if sizes.last().is_none() {
-                warn!("Unable to find a valid size for {:?}", cam);
+            let Some(size) = sizes.last() else {
+                warn!("Unable to find a valid size for {cam:?}");
                 return None;
-            }
-            let size = sizes.last().unwrap();
+            };
 
             Some(VideoAndStreamInformation {
                 name: format!("UDP Stream {}", index),
@@ -83,11 +82,10 @@ pub fn rtsp() -> Vec<VideoAndStreamInformation> {
             let mut sizes = format.sizes.clone();
             sort_sizes(&mut sizes);
 
-            if sizes.last().is_none() {
-                warn!("Unable to find a valid size for {:?}", cam);
+            let Some(size) = sizes.last() else {
+                warn!("Unable to find a valid size for {cam:?}");
                 return None;
-            }
-            let size = sizes.last().unwrap();
+            };
 
             let visible_qgc_ip_address = get_visible_qgc_address();
 
