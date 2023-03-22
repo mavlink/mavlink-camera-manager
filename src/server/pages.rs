@@ -358,9 +358,7 @@ pub fn sdp(sdp_file_request: web::Query<SdpFileRequest>) -> HttpResponse {
 
 #[api_v2_operation]
 /// Provides a thumbnail file of the given source
-pub fn thumbnail(thumbnail_file_request: web::Query<ThumbnailFileRequest>) -> HttpResponse {
-    debug!("{thumbnail_file_request:#?}");
-
+pub async fn thumbnail(thumbnail_file_request: web::Query<ThumbnailFileRequest>) -> HttpResponse {
     // Ideally, we should be using `actix_web_validator::Query` instead of `web::Query`,
     // but because paperclip (at least until 0.8) is using `actix-web-validator 3.x`,
     // and `validator 0.14`, the newest api needed to use it along #[api_v2_operation]
@@ -378,14 +376,14 @@ pub fn thumbnail(thumbnail_file_request: web::Query<ThumbnailFileRequest>) -> Ht
     let quality = thumbnail_file_request.quality.unwrap_or(70u8);
     let target_height = thumbnail_file_request.target_height.map(|v| v as u32);
 
-    match stream_manager::get_jpeg_thumbnail_from_source(source, quality, target_height) {
+    match stream_manager::get_jpeg_thumbnail_from_source(source, quality, target_height).await {
         Some(Ok(image)) => HttpResponse::Ok().content_type("image/jpeg").body(image),
         None => HttpResponse::NotFound()
             .content_type("text/plain")
             .body(format!(
                 "Thumbnail not found for source {:?}.",
                 thumbnail_file_request.source
-            )),
+        )),
         Some(Err(error)) => HttpResponse::ServiceUnavailable()
             .reason("Thumbnail temporarily unavailable")
             .insert_header((header::RETRY_AFTER, 10))
