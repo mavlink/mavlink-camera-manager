@@ -26,6 +26,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "actix-extensible-rate-limit"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ea990351e38b399d3d1a96eef5e8feba721974a4319f6c66186b05782f6a05b"
+dependencies = [
+ "actix-web",
+ "async-trait",
+ "dashmap",
+ "futures",
+ "log",
+ "once_cell",
+ "thiserror",
+]
+
+[[package]]
 name = "actix-files"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2247,6 +2262,7 @@ dependencies = [
 name = "mavlink-camera-manager"
 version = "0.2.4"
 dependencies = [
+ "actix-extensible-rate-limit",
  "actix-files",
  "actix-service",
  "actix-web",
