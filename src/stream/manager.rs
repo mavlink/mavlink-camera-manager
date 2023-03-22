@@ -85,8 +85,13 @@ fn config_gst_plugins() {
 }
 
 #[instrument(level = "debug")]
-pub fn start_default() {
-    MANAGER.as_ref().lock().unwrap().streams.clear();
+pub fn start_default() -> Result<()> {
+    match MANAGER.lock() {
+        Ok(guard) => guard,
+        Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+    }
+    .streams
+    .clear();
 
     let mut streams = settings::manager::streams();
 
@@ -107,6 +112,8 @@ pub fn start_default() {
             error!("Not possible to start stream: {error:?}");
         });
     }
+
+    Ok(())
 }
 
 #[instrument(level = "debug")]
