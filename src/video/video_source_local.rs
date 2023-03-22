@@ -2,7 +2,6 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::stream::pipeline::v4l_pipeline::get_default_v4l2_h264_profile;
 use crate::stream::types::VideoCaptureConfiguration;
 
 use super::types::*;
@@ -561,27 +560,6 @@ impl VideoSourceAvailable for VideoSourceLocal {
             let caps = caps.unwrap();
 
             let typ = VideoSourceLocalType::from_str(&caps.bus);
-            if let Some((interval, width, height)) = get_device_formats(camera_path, &typ)
-                .iter()
-                .find_map(|format| {
-                    if format.encode == VideoEncodeType::H264 {
-                        format.sizes.iter().find_map(|size| {
-                            let Some(interval) = size.intervals.first() else { return None; };
-                            Some((interval, size.width, size.height))
-                        })
-                    } else {
-                        None
-                    }
-                })
-            {
-                find_h264_profile_for_device(
-                    camera_path,
-                    &width,
-                    &height,
-                    &interval.numerator,
-                    &interval.denominator,
-                );
-            }
 
             if let Err(error) = camera.format() {
                 if error.kind() != std::io::ErrorKind::InvalidInput {
@@ -600,33 +578,6 @@ impl VideoSourceAvailable for VideoSourceLocal {
 
         cameras
     }
-}
-
-pub fn find_h264_profile_for_device(
-    device: &str,
-    width: &u32,
-    height: &u32,
-    interval_denominator: &u32,
-    interval_numerator: &u32,
-) -> Option<String> {
-    if let Some(profile) = H264_PROFILES.lock().unwrap().get(&device.to_string()) {
-        return Some(profile.clone());
-    }
-
-    debug!("Getting default H264 profile from device {device:#?}. Testing at {width:#?}x{height:#?} @ {fps:#?} FPS", fps = (*interval_denominator as f32 / *interval_numerator as f32));
-
-    let Ok(profile) = get_default_v4l2_h264_profile(device, width, height, interval_numerator, interval_denominator) else {
-        warn!("Failed to find a compatible profile for device {device:#?}");
-        return None;
-    };
-
-    debug!("Found a compatible H264 profiles for device {device:#?}. Profile: {profile:#?}");
-    H264_PROFILES
-        .lock()
-        .unwrap()
-        .insert(device.to_string(), profile.to_string());
-
-    Some(profile)
 }
 
 #[cfg(test)]
