@@ -202,9 +202,19 @@ pub async fn reset_settings(query: web::Query<ResetSettings>) -> HttpResponse {
 
 #[api_v2_operation]
 /// Provide a list of all streams configured
-pub async fn streams() -> Json<Vec<StreamStatus>> {
-    let streams = stream_manager::streams();
-    Json(streams)
+pub async fn streams() -> HttpResponse {
+    let streams = match stream_manager::streams() {
+        Ok(streams) => streams,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .content_type("text/plain")
+                .body(format!("{error:#?}"))
+        }
+    };
+
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .body(serde_json::to_string_pretty(&streams).unwrap())
 }
 
 #[api_v2_operation]
@@ -231,9 +241,18 @@ pub fn streams_post(json: web::Json<PostStream>) -> HttpResponse {
             .body(format!("{error:#?}"));
     }
 
+    let streams = match stream_manager::streams() {
+        Ok(streams) => streams,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .content_type("text/plain")
+                .body(format!("{error:#?}"))
+        }
+    };
+
     HttpResponse::Ok()
         .content_type("application/json")
-        .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap())
+        .body(serde_json::to_string_pretty(&streams).unwrap())
 }
 
 #[api_v2_operation]
@@ -245,9 +264,18 @@ pub fn remove_stream(query: web::Query<RemoveStream>) -> HttpResponse {
             .body(format!("{error:#?}"));
     }
 
+    let streams = match stream_manager::streams() {
+        Ok(streams) => streams,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .content_type("text/plain")
+                .body(format!("{error:#?}"))
+        }
+    };
+
     HttpResponse::Ok()
         .content_type("application/json")
-        .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap())
+        .body(serde_json::to_string_pretty(&streams).unwrap())
 }
 
 #[api_v2_operation]
@@ -266,9 +294,18 @@ pub fn camera_reset_controls(json: web::Json<ResetCameraControls>) -> HttpRespon
             ));
     }
 
+    let streams = match stream_manager::streams() {
+        Ok(streams) => streams,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .content_type("text/plain")
+                .body(format!("{error:#?}"))
+        }
+    };
+
     HttpResponse::Ok()
         .content_type("application/json")
-        .body(serde_json::to_string_pretty(&stream_manager::streams()).unwrap())
+        .body(serde_json::to_string_pretty(&streams).unwrap())
 }
 
 #[api_v2_operation]
