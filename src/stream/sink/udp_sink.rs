@@ -131,9 +131,9 @@ impl SinkInterface for UdpSink {
         let mut sdp_media = gst_sdp::SDPMedia::new();
         gst_sdp::SDPMediaRef::set_media_from_caps(&caps, &mut sdp_media)?;
 
-        let url = self.addresses.first().unwrap().clone();
-        sdp_media.add_connection("IN", "IP4", url.host_str().expect("Missing host"), 127, 1);
-        sdp_media.set_port_info(url.port().expect("Missing port") as u32, 1);
+        let url = self.addresses.first().context("Missing address")?.clone();
+        sdp_media.add_connection("IN", "IP4", url.host_str().context("Missing host")?, 127, 1);
+        sdp_media.set_port_info(url.port().context("Missing port")? as u32, 1);
         sdp_media.set_proto("RTP/AVP");
 
         let mut sdp = gst_sdp::SDPMessage::new();
@@ -152,10 +152,9 @@ impl SinkInterface for UdpSink {
         sdp.add_attribute("type", Some("broadcast"));
         sdp.add_attribute("recvonly", None);
 
-        debug!(
-            "Got the SDPMessage: {sdp:#?}\n\n..Which as text is: {:?}\n\n",
-            &sdp.as_text().unwrap()
-        );
+        if let Ok(sdp_str) = sdp.as_text() {
+            debug!("Got the SDPMessage: {sdp:#?}\n\n..Which as text is: {sdp_str:?}\n\n");
+        };
 
         Ok(sdp)
     }
