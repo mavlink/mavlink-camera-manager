@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context, Error, Result};
 
 use tracing::*;
 
@@ -10,6 +10,8 @@ use gst::prelude::*;
 
 use super::SinkInterface;
 use crate::{stream::pipeline::runner::PipelineRunner, video::types::VideoEncodeType};
+
+type ClonableResult<T> = Result<T, Arc<Error>>;
 
 #[derive(Debug)]
 pub struct ImageSink {
@@ -21,7 +23,8 @@ pub struct ImageSink {
     _transcoding_elements: Vec<gst::Element>,
     appsink: gst_app::AppSink,
     tee_src_pad: Option<gst::Pad>,
-    flat_samples: Arc<Mutex<Option<FlatSamples<Vec<u8>>>>>,
+    flat_samples_sender: tokio::sync::broadcast::Sender<ClonableResult<FlatSamples<Vec<u8>>>>,
+    pad_blocker: Arc<Mutex<Option<gst::PadProbeId>>>,
     _pipeline_runner: PipelineRunner,
 }
 impl SinkInterface for ImageSink {
@@ -303,29 +306,56 @@ impl ImageSink {
             .field("format", gst_video::VideoFormat::Rgbx.to_str())
             .build();
 
+        let pad_blocker: Arc<Mutex<Option<gst::PadProbeId>>> = Default::default();
+        let pad_blocker_clone = pad_blocker.clone();
+        let queue_src_pad = queue.static_pad("src").expect("No src pad found on Queue");
+
         // To get data out of the callback, we'll be using this arc mutex
-        let flat_samples: Arc<Mutex<Option<image::FlatSamples<Vec<u8>>>>> = Default::default();
-        let flat_samples_cloned = flat_samples.clone();
+        let (sender, _) = tokio::sync::broadcast::channel(1);
+        let flat_samples_sender = sender.clone();
+        let mut pending = false;
 
         // The appsink will then call those handlers, as soon as data is available.
         let appsink_callbacks = gst_app::AppSinkCallbacks::builder()
             // Add a handler to the "new-sample" signal.
             .new_sample(move |appsink| {
-                // Pull the sample in question out of the appsink's buffer.
+                // Only process if requested
+                if sender.receiver_count() == 0 || pending {
+                    // This is defines the maximum frequency of this loop, and also the delay between the request and the answer
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    return Ok(gst::FlowSuccess::Ok);
+                }
+                debug!("Starting a snapshot");
+                pending = true;
+
+                // Pull the sample in question out of the appsink's buffer
                 let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
                 let buffer = sample.buffer().ok_or_else(|| {
-                    gst::element_error!(
-                        appsink,
-                        gst::ResourceError::Failed,
-                        ("Failed to get buffer from appsink")
-                    );
+                    let reason = "Failed to get buffer from appsink";
+                    gst::element_error!(appsink, gst::ResourceError::Failed, (reason));
+
+                    let _ = sender.send(Err(Arc::new(anyhow!(reason))));
+                    pending = false;
 
                     gst::FlowError::Error
                 })?;
 
                 // Drop non-key frames
                 if buffer.flags().contains(gst::BufferFlags::DELTA_UNIT) {
+                    let _ = sender.send(Err(Arc::new(anyhow!("Not a valid frame"))));
+                    pending = false;
+
                     return Ok(gst::FlowSuccess::Ok);
+                }
+
+                // Got a valid frame, block any further frame until next request
+                if let Some(old_blocker) = queue_src_pad
+                    .add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, |_pad, _info| {
+                        gst::PadProbeReturn::Ok
+                    })
+                    .and_then(|blocker| pad_blocker_clone.lock().unwrap().replace(blocker))
+                {
+                    queue_src_pad.remove_probe(old_blocker);
                 }
 
                 let caps = sample.caps().expect("Sample without caps");
@@ -340,38 +370,39 @@ impl ImageSink {
                 // See: https://gstreamer.freedesktop.org/documentation/plugin-development/advanced/allocation.html
                 let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info)
                     .map_err(|_| {
-                        gst::element_error!(
-                            appsink,
-                            gst::ResourceError::Failed,
-                            ("Failed to map buffer readable")
-                        );
+                        let reason = "Failed to map buffer readable";
+                        gst::element_error!(appsink, gst::ResourceError::Failed, (reason));
+
+                        let _ = sender.send(Err(Arc::new(anyhow!(reason))));
+                        pending = false;
 
                         gst::FlowError::Error
                     })?;
 
                 // Create a FlatSamples around the borrowed video frame data from GStreamer with
                 // the correct stride as provided by GStreamer.
-                flat_samples_cloned
-                    .lock()
-                    .unwrap()
-                    .replace(image::FlatSamples::<Vec<u8>> {
-                        samples: frame.plane_data(0).unwrap().to_vec(),
-                        layout: image::flat::SampleLayout {
-                            // RGB
-                            channels: 3,
-                            // 1 byte from component to component
-                            channel_stride: 1,
-                            width: frame.width(),
-                            // 4 byte from pixel to pixel
-                            width_stride: 4,
-                            height: frame.height(),
-                            // stride from line to line
-                            height_stride: frame.plane_stride()[0] as usize,
-                        },
-                        color_hint: Some(image::ColorType::Rgb8),
-                    });
+                let frame = image::FlatSamples::<Vec<u8>> {
+                    samples: frame.plane_data(0).unwrap().to_vec(),
+                    layout: image::flat::SampleLayout {
+                        // RGB
+                        channels: 3,
+                        // 1 byte from component to component
+                        channel_stride: 1,
+                        width: frame.width(),
+                        // 4 byte from pixel to pixel
+                        width_stride: 4,
+                        height: frame.height(),
+                        // stride from line to line
+                        height_stride: frame.plane_stride()[0] as usize,
+                    },
+                    color_hint: Some(image::ColorType::Rgb8),
+                };
 
-                std::thread::sleep(std::time::Duration::from_secs(1)); // This defines the interval between shots
+                // Send the data
+                let _ = sender.send(Ok(frame));
+                pending = false;
+                debug!("Finished the snapshot");
+
                 Ok(gst::FlowSuccess::Ok)
             })
             .build();
@@ -379,6 +410,8 @@ impl ImageSink {
         let appsink = gst_app::AppSink::builder()
             .name(format!("AppSink-{sink_id}"))
             .sync(false)
+            .max_buffers(1u32)
+            .drop(true)
             .caps(&caps)
             .callbacks(appsink_callbacks)
             .build();
@@ -407,9 +440,10 @@ impl ImageSink {
 
         let _pipeline_runner = PipelineRunner::try_new(&pipeline, sink_id, true)?;
 
-        if let Err(state_err) = pipeline.set_state(gst::State::Playing) {
+        // Start the pipeline in Pause, because we want to wait the snapshot
+        if let Err(state_err) = pipeline.set_state(gst::State::Paused) {
             return Err(anyhow!(
-                "Failed starting ImageSink's pipeline: {state_err:#?}"
+                "Failed pausing ImageSink's pipeline: {state_err:#?}"
             ));
         }
 
@@ -427,13 +461,14 @@ impl ImageSink {
             _transcoding_elements,
             appsink,
             tee_src_pad: Default::default(),
-            flat_samples,
+            flat_samples_sender,
+            pad_blocker,
             _pipeline_runner,
         })
     }
 
     #[instrument(level = "debug", skip(self))]
-    pub fn make_jpeg_thumbnail_from_last_frame(
+    pub async fn make_jpeg_thumbnail_from_last_frame(
         &self,
         quality: u8,
         target_height: Option<u32>,
@@ -446,32 +481,66 @@ impl ImageSink {
             .context("Failed to get caps from capsfilter sink pad")?;
         let info = gst_video::VideoInfo::from_caps(caps).context("Failed to parse caps")?;
 
-        let Some(flat_samples) = self.flat_samples.lock().unwrap().clone() else {
-            return Err(anyhow!("Thumbnail not available yet"))
-        };
+        // Play the pipeline if it's not playing yet.
+        // Here we can ignore the result because we have a timeout when waiting for the snapshot
+        if self.pipeline.current_state() != gst::State::Playing {
+            let _ = self.pipeline.set_state(gst::State::Playing);
+        }
 
-        // Calculate a target width/height that keeps the display aspect ratio while having
-        // a height of the given target_height (eg 240 pixels)
-        let display_aspect_ratio = (flat_samples.layout.width as f64 * info.par().numer() as f64)
-            / (flat_samples.layout.height as f64 * info.par().denom() as f64);
-        let target_height = target_height.unwrap_or(flat_samples.layout.height);
-        let target_width = (target_height as f64 * display_aspect_ratio) as u32;
+        // Unblock the data from entering the ProxySink
+        if let Some(blocker) = self.pad_blocker.lock().unwrap().take() {
+            self.queue
+                .static_pad("src")
+                .expect("No src pad found on Queue")
+                .remove_probe(blocker);
+        }
 
-        // Scale image to our target dimensions
-        let img_buf = image::imageops::thumbnail(
-            &flat_samples
-                .as_view::<image::Rgb<u8>>()
-                .expect("couldn't create image view"),
-            target_width,
-            target_height,
-        );
+        // Trigger the snapshot
+        let mut receiver = self.flat_samples_sender.subscribe();
 
-        // Transmute it to our output buffer, which represents the image itself in the chosen file format
-        let mut buffer = std::io::Cursor::new(Vec::new());
-        image::DynamicImage::ImageRgb8(img_buf)
-            .write_to(&mut buffer, image::ImageOutputFormat::Jpeg(quality))
-            .unwrap();
+        // Wait for the snapshot to be taken, with a timeout
+        // Here we'd have the raw snapshot, we just need to convert it to the final format/size
+        let flat_samples =
+            tokio::time::timeout(tokio::time::Duration::from_secs(2), receiver.recv())
+                .await??
+                .map_err(|e| anyhow!(e.to_string()))?;
+        drop(receiver);
 
-        Ok(buffer.into_inner())
+        // TODO: to save the CPU spent processing the same received sample, we should process
+        // the image only once per batch of requests, using the same channel technique used above
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<u8>>>();
+        // std::thread::spawn(move || {
+        tokio::task::spawn(async move {
+            // Calculate a target width/height that keeps the display aspect ratio while having
+            // a height of the given target_height (eg 240 pixels)
+            let display_aspect_ratio = (flat_samples.layout.width as f64
+                * info.par().numer() as f64)
+                / (flat_samples.layout.height as f64 * info.par().denom() as f64);
+            let target_height = target_height.unwrap_or(flat_samples.layout.height);
+            let target_width = (target_height as f64 * display_aspect_ratio) as u32;
+
+            // Scale image to our target dimensions
+            let image_view = match flat_samples.as_view::<image::Rgb<u8>>() {
+                Ok(image_view) => image_view,
+                Err(error) => {
+                    let _ = tx.send(Err(anyhow!("Failed creating image view. Reason: {error}")));
+                    return;
+                }
+            };
+            let img_buf = image::imageops::thumbnail(&image_view, target_width, target_height);
+
+            // Transmute it to our output buffer, which represents the image itself in the chosen file format
+            let mut buffer = std::io::Cursor::new(Vec::new());
+            if let Err(error) = image::DynamicImage::ImageRgb8(img_buf)
+                .write_to(&mut buffer, image::ImageOutputFormat::Jpeg(quality))
+            {
+                let _ = tx.send(Err(anyhow!("Failed creating image. Reason: {error}")));
+                return;
+            }
+
+            let _ = tx.send(Ok(buffer.into_inner()));
+        });
+
+        tokio::time::timeout(tokio::time::Duration::from_secs(2), rx).await??
     }
 }
