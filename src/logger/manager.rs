@@ -47,15 +47,25 @@ pub fn init() {
         .with_thread_names(true)
         .with_filter(file_env_filter);
 
-    // Configure tracing to tracy
-    let tracy_layer = tracing_tracy::TracyLayer::new();
-
     // Configure the default subscriber
-    let subscriber = tracing_subscriber::registry()
-        .with(console_layer)
-        .with(file_layer)
-        .with(tracy_layer);
-    tracing::subscriber::set_global_default(subscriber).expect("Unable to set a global subscriber");
+    match cli::manager::is_tracy() {
+        true => {
+            let tracy_layer = tracing_tracy::TracyLayer::new();
+            let subscriber = tracing_subscriber::registry()
+                .with(console_layer)
+                .with(file_layer)
+                .with(tracy_layer);
+            tracing::subscriber::set_global_default(subscriber)
+                .expect("Unable to set a global subscriber");
+        }
+        false => {
+            let subscriber = tracing_subscriber::registry()
+                .with(console_layer)
+                .with(file_layer);
+            tracing::subscriber::set_global_default(subscriber)
+                .expect("Unable to set a global subscriber");
+        }
+    };
 
     // Redirects all gstreamer logs to tracing.
     tracing_gstreamer::integrate_events(); // This must be called before any gst::init()
