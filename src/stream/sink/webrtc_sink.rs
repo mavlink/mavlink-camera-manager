@@ -121,8 +121,6 @@ impl WebRTCSink {
         bind: BindAnswer,
         sender: mpsc::UnboundedSender<Result<Message>>,
     ) -> Result<Self> {
-        sender.send(Ok(Message::from(Answer::StartSession(bind.clone()))))?;
-
         let queue = gst::ElementFactory::make("queue")
             .property_from_str("leaky", "downstream") // Throw away any data
             .property("flush-on-eos", true)
@@ -141,6 +139,8 @@ impl WebRTCSink {
         let webrtcbin_sink_pad = webrtcbin
             .request_pad_simple("sink_%u")
             .context("Failed requesting sink pad for webrtcsink")?;
+
+        sender.send(Ok(Message::from(Answer::StartSession(bind.clone()))))?;
 
         let this = WebRTCSink(Arc::new(Mutex::new(WebRTCSinkInner {
             queue,
