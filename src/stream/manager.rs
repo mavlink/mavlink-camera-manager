@@ -17,8 +17,11 @@ use crate::{
     video_stream::types::VideoAndStreamInformation,
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context, Error, Result};
 
+type ClonableResult<T> = Result<T, Arc<Error>>;
+
+use async_std::stream::StreamExt;
 use gst::{prelude::*, traits::ElementExt};
 use tracing::*;
 
@@ -191,39 +194,78 @@ pub fn get_first_sdp_from_source(source: String) -> Result<gst_sdp::SDPMessage> 
 }
 
 #[instrument(level = "debug")]
-pub fn get_jpeg_thumbnail_from_source(
+pub async fn get_jpeg_thumbnail_from_source(
     source: String,
     quality: u8,
     target_height: Option<u32>,
-) -> Option<Result<Vec<u8>>> {
-    let manager = match MANAGER.lock() {
-        Ok(guard) => guard,
-        Err(error) => return Some(Err(anyhow!("Failed locking a Mutex. Reason: {error}"))),
-    };
+) -> Option<ClonableResult<Vec<u8>>> {
+    // Tokio runtime create workers within OS threads. These workers receive tasks to run.
+    // Tokio runtime uses a non-preemptive task manager, so it can only switch tasks when
+    // they yield, which might happen in the .await parts of the code, or when the task
+    // finishes.
+    // When a blocking task is running, all other tasks in the same pool will also block.
+    // If one of the other tasks happens to have acquired a Mutex (like here, most of our
+    // endpoints asks for something that depends on the MANAGER, which sits behind a
+    // Mutex), then all subsequent tasks waiting for that Mutex to be available will
+    // be blocked until that blocking task finishes. This is not the case here, but by
+    // chance it can also be the case of that blocking task be waiting for that same
+    // MANAGER Mutex, and then it will be a deadlock. Another deadlock could happen if
+    // the blocking task never finishes. To solve this, a naive approach would be to
+    // use a timeout, but this timeout could be running in the same blocked pool, and
+    // therefore, also be blocked.
+    // A reliable solution is to spawn a new OS thread for each blocking task, and
+    // if we need async, we just create another single-threaded tokio runtime.
+    // Differently from using Tokio's spawn_blocking (plus block_on to use async), this
+    // method will garantee that every request will not interfer with other running tasks,
+    // as those dealing with Mutexes, or other requests of the same nature. The drawnback
+    // is to have the overhead of a new OS thread plus a new Tokio runtime for each request
+    // of this kind.
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap()
+        .block_on(async move {
+            let res = async move {
+                    let manager = match MANAGER.lock() {
+                        Ok(guard) => guard,
+                        Err(error) => {
+                            return Some(Err(Arc::new(anyhow!(
+                                "Failed locking a Mutex. Reason: {error}"
+                            ))))
+                        }
+                    };
+                    let Some(stream) = manager.streams.values().find(|stream| {
+                        stream
+                            .video_and_stream_information
+                            .video_source
+                            .inner()
+                            .source_string()
+                            == source
+                    }) else {
+                        return None
+                    };
 
-    manager.streams.values().find_map(|stream| {
-        if stream
-            .video_and_stream_information
-            .video_source
-            .inner()
-            .source_string()
-            == source
-        {
-            stream
-                .pipeline
-                .inner_state_as_ref()
-                .sinks
-                .values()
-                .find_map(|sink| match sink {
-                    Sink::Image(image_sink) => {
-                        Some(image_sink.make_jpeg_thumbnail_from_last_frame(quality, target_height))
-                    }
-                    _ => None,
-                })
-        } else {
-            None
-        }
-    })
+                    let mut sinks = futures::stream::iter(stream.pipeline.inner_state_as_ref().sinks.values());
+                    let Some(Sink::Image(image_sink)) = sinks.find(|sink| matches!(sink, Sink::Image(_))).await else {
+                        return None;
+                    };
+
+                    Some(image_sink
+                        .make_jpeg_thumbnail_from_last_frame(quality, target_height)
+                        .await
+                        .map_err(Arc::new))
+                }.await;
+
+            let _ = tx.send(res);
+        });
+    });
+
+    match rx.await {
+        Ok(res) => res,
+        Err(error) => Some(Err(Arc::new(anyhow!(error.to_string())))),
+    }
 }
 
 #[instrument(level = "debug")]
