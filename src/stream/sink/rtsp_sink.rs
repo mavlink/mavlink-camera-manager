@@ -5,7 +5,6 @@ use tracing::*;
 use gst::prelude::*;
 
 use super::SinkInterface;
-use crate::stream::pipeline::PIPELINE_SINK_TEE_NAME;
 
 #[derive(Debug)]
 pub struct RtspSink {
@@ -40,12 +39,32 @@ impl SinkInterface for RtspSink {
             unreachable!()
         };
 
+        // Block data flow to prevent any data before set Playing, which would cause an error
+        let Some(tee_src_pad_data_blocker) = tee_src_pad
+            .add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, |_pad, _info| {
+                gst::PadProbeReturn::Ok
+            }) else {
+                let msg = "Failed adding probe to Tee's src pad to block data before going to playing state".to_string();
+                error!(msg);
+
+                if let Some(parent) = tee_src_pad.parent_element() {
+                    parent.release_request_pad(tee_src_pad)
+                }
+
+                return Err(anyhow!(msg));
+            };
+
         // Add the Sink elements to the Pipeline
         let elements = &[&self.queue, &self.sink];
-        if let Err(error) = pipeline.add_many(elements) {
-            return Err(anyhow!(
-                "Failed to add WebRTCBin {sink_id} to Pipeline {pipeline_id}. Reason: {error:#?}"
-            ));
+        if let Err(add_err) = pipeline.add_many(elements) {
+            let msg = format!("Failed to add WebRTCSink's elements to the Pipeline: {add_err:?}");
+            error!(msg);
+
+            if let Some(parent) = tee_src_pad.parent_element() {
+                parent.release_request_pad(tee_src_pad)
+            }
+
+            return Err(anyhow!(msg));
         }
 
         // Link the queue's src pad to the Sink's sink pad
@@ -53,9 +72,20 @@ impl SinkInterface for RtspSink {
             .queue
             .static_pad("src")
             .expect("No sink pad found on Queue");
-        if let Err(error) = queue_src_pad.link(&self.sink_sink_pad) {
-            pipeline.remove_many(elements)?;
-            return Err(anyhow!(error));
+        if let Err(link_err) = queue_src_pad.link(&self.sink_sink_pad) {
+            let msg =
+                format!("Failed to link Queue's src pad with RtspSink's sink pad: {link_err:?}");
+            error!(msg);
+
+            if let Some(parent) = tee_src_pad.parent_element() {
+                parent.release_request_pad(tee_src_pad)
+            }
+
+            if let Err(remove_err) = pipeline.remove_many(elements) {
+                error!("Failed to remove elements from pipeline: {remove_err:?}");
+            }
+
+            return Err(anyhow!(msg));
         }
 
         // Link the new Tee's src pad to the queue's sink pad
@@ -63,11 +93,50 @@ impl SinkInterface for RtspSink {
             .queue
             .static_pad("sink")
             .expect("No src pad found on Queue");
-        if let Err(error) = tee_src_pad.link(queue_sink_pad) {
-            pipeline.remove_many(elements)?;
-            queue_src_pad.unlink(&self.sink_sink_pad)?;
-            return Err(anyhow!(error));
+        if let Err(link_err) = tee_src_pad.link(queue_sink_pad) {
+            let msg = format!("Failed to link Tee's src pad with Queue's sink pad: {link_err:?}");
+            error!(msg);
+
+            if let Err(unlink_err) = queue_src_pad.unlink(&self.sink_sink_pad) {
+                error!("Failed to unlink Queue's src pad from RtspSink's sink pad: {unlink_err:?}");
+            }
+
+            if let Some(parent) = tee_src_pad.parent_element() {
+                parent.release_request_pad(tee_src_pad)
+            }
+            if let Err(remove_err) = pipeline.remove_many(elements) {
+                error!("Failed to remove elements from pipeline: {remove_err:?}");
+            }
+
+            return Err(anyhow!(msg));
         }
+
+        // Syncronize added and linked elements
+        if let Err(sync_err) = pipeline.sync_children_states() {
+            let msg = format!("Failed to synchronize children states: {sync_err:?}");
+            error!(msg);
+
+            if let Err(unlink_err) = queue_src_pad.unlink(&self.sink_sink_pad) {
+                error!("Failed to unlink Queue's src pad from RtspSink's sink pad: {unlink_err:?}");
+            }
+
+            if let Err(unlink_err) = tee_src_pad.unlink(queue_sink_pad) {
+                error!("Failed to unlink Tee's src pad and Qeueu's sink pad: {unlink_err:?}");
+            }
+
+            if let Some(parent) = tee_src_pad.parent_element() {
+                parent.release_request_pad(tee_src_pad)
+            }
+
+            if let Err(remove_err) = pipeline.remove_many(elements) {
+                error!("Failed to remove elements from pipeline: {remove_err:?}");
+            }
+
+            return Err(anyhow!(msg));
+        }
+
+        // Unblock data to go through this added Tee src pad
+        tee_src_pad.remove_probe(tee_src_pad_data_blocker);
 
         Ok(())
     }
@@ -85,38 +154,47 @@ impl SinkInterface for RtspSink {
             return Ok(());
         };
 
+        // Block data flow to prevent any data from holding the Pipeline elements alive
+        if tee_src_pad
+            .add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, |_pad, _info| {
+                gst::PadProbeReturn::Ok
+            })
+            .is_none()
+        {
+            warn!(
+                "Failed adding probe to Tee's src pad to block data before going to playing state"
+            );
+        }
+
+        // Unlink the Queue element from the source's pipeline Tee's src pad
         let queue_sink_pad = self
             .queue
             .static_pad("sink")
             .expect("No sink pad found on Queue");
-        if let Err(error) = tee_src_pad.unlink(&queue_sink_pad) {
-            return Err(anyhow!(
-                "Failed unlinking Sink {sink_id} from Tee's source pad. Reason: {error:?}"
-            ));
+        if let Err(unlink_err) = tee_src_pad.unlink(&queue_sink_pad) {
+            warn!("Failed unlinking WebRTC's Queue element from Tee's src pad: {unlink_err:?}");
         }
         drop(queue_sink_pad);
 
+        // Release Tee's src pad
+        if let Some(parent) = tee_src_pad.parent_element() {
+            parent.release_request_pad(tee_src_pad)
+        }
+
+        // Remove the Sink's elements from the Source's pipeline
         let elements = &[&self.queue, &self.sink];
-        if let Err(error) = pipeline.remove_many(elements) {
-            return Err(anyhow!(
-                "Failed removing RtspSrc element {sink_id} from Pipeline {pipeline_id}. Reason: {error:?}"
-            ));
+        if let Err(remove_err) = pipeline.remove_many(elements) {
+            warn!("Failed removing RtspSink's elements from pipeline: {remove_err:?}");
         }
 
-        if let Err(error) = self.queue.set_state(gst::State::Null) {
-            return Err(anyhow!(
-                "Failed to set queue from sink {sink_id} state to NULL. Reason: {error:#?}"
-            ));
+        // Set Queue to null
+        if let Err(state_err) = self.queue.set_state(gst::State::Null) {
+            warn!("Failed to set Queue's state to NULL: {state_err:#?}");
         }
 
-        let sink_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}");
-        let tee = pipeline
-            .by_name(&sink_name)
-            .context(format!("no element named {sink_name:#?}"))?;
-        if let Err(error) = tee.remove_pad(tee_src_pad) {
-            return Err(anyhow!(
-                "Failed removing Tee's source pad. Reason: {error:?}"
-            ));
+        // Set Sink to null
+        if let Err(state_err) = self.sink.set_state(gst::State::Null) {
+            warn!("Failed to set RtspSink's to NULL: {state_err:#?}");
         }
 
         Ok(())
