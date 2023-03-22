@@ -237,7 +237,10 @@ pub fn add_stream_and_start(video_and_stream_information: VideoAndStreamInformat
 
 #[instrument(level = "debug")]
 pub fn remove_stream_by_name(stream_name: &str) -> Result<()> {
-    let manager = MANAGER.as_ref().lock().unwrap();
+    let manager = match MANAGER.lock() {
+        Ok(guard) => guard,
+        Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+    };
     if let Some(stream_id) = &manager.streams.iter().find_map(|(id, stream)| {
         if stream.video_and_stream_information.name == *stream_name {
             return Some(*id);
