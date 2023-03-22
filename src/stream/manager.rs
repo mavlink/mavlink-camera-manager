@@ -151,7 +151,7 @@ fn update_devices(
 }
 
 #[instrument(level = "debug")]
-pub fn streams() -> Vec<StreamStatus> {
+pub fn streams() -> Result<Vec<StreamStatus>> {
     Manager::streams_information()
 }
 
@@ -442,10 +442,13 @@ impl StreamManagementInterface<StreamStatus> for Manager {
     }
 
     #[instrument(level = "debug")]
-    fn streams_information() -> Vec<StreamStatus> {
-        MANAGER
-            .lock()
-            .unwrap()
+    fn streams_information() -> Result<Vec<StreamStatus>> {
+        let manager = match MANAGER.lock() {
+            Ok(guard) => guard,
+            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+        };
+
+        Ok(manager
             .streams
             .values()
             .map(|stream| StreamStatus {
@@ -453,7 +456,7 @@ impl StreamManagementInterface<StreamStatus> for Manager {
                 running: stream.pipeline.is_running(),
                 video_and_stream: stream.video_and_stream_information.clone(),
             })
-            .collect()
+            .collect())
     }
 
     #[instrument(level = "debug")]
