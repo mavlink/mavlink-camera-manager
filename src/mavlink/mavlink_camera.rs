@@ -4,9 +4,9 @@ use crate::settings;
 use crate::video::types::VideoSourceType;
 use crate::video_stream::types::VideoAndStreamInformation;
 
+use anyhow::anyhow;
 use mavlink::common::MavMessage;
 use mavlink::MavConnection;
-use simple_error::simple_error;
 use tracing::*;
 use url::Url;
 
@@ -994,9 +994,9 @@ fn control_value_from_param_value(
         mavlink::common::MavParamExtType::MAV_PARAM_EXT_TYPE_INT64 => {
             Ok(i64::from_ne_bytes(bytes[0..8].try_into().unwrap()))
         }
-        something_else => Err(simple_error!(format!(
+        something_else => Err(anyhow!(
             "Received parameter of untreatable type: {something_else:#?}",
-        ))),
+        )),
     };
     if let Err(error) = control_value {
         error!("Failed to parse parameter value: {error:#?}.");
