@@ -258,8 +258,10 @@ impl WebRTCSessionManagementInterface for Manager {
         bind: &webrtc::signalling_protocol::BindOffer,
         sender: tokio::sync::mpsc::UnboundedSender<Result<webrtc::signalling_protocol::Message>>,
     ) -> Result<webrtc::signalling_protocol::SessionId> {
-        let mut guard = MANAGER.lock().unwrap();
-        let manager = guard.deref_mut();
+        let mut manager = match MANAGER.lock() {
+            Ok(guard) => guard,
+            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+        };
 
         let producer_id = bind.producer_id;
         let consumer_id = bind.consumer_id;
@@ -287,7 +289,10 @@ impl WebRTCSessionManagementInterface for Manager {
         bind: &webrtc::signalling_protocol::BindAnswer,
         _reason: String,
     ) -> Result<()> {
-        let mut manager = MANAGER.lock().unwrap();
+        let mut manager = match MANAGER.lock() {
+            Ok(guard) => guard,
+            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+        };
 
         let stream = manager
             .streams
@@ -310,7 +315,10 @@ impl WebRTCSessionManagementInterface for Manager {
         bind: &webrtc::signalling_protocol::BindAnswer,
         sdp: &webrtc::signalling_protocol::RTCSessionDescription,
     ) -> Result<()> {
-        let manager = MANAGER.lock().unwrap();
+        let manager = match MANAGER.lock() {
+            Ok(guard) => guard,
+            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+        };
 
         let sink = manager
             .streams
@@ -350,7 +358,10 @@ impl WebRTCSessionManagementInterface for Manager {
         sdp_m_line_index: u32,
         candidate: &str,
     ) -> Result<()> {
-        let manager = MANAGER.lock().unwrap();
+        let manager = match MANAGER.lock() {
+            Ok(guard) => guard,
+            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+        };
 
         let sink = manager
             .streams
@@ -377,7 +388,10 @@ impl WebRTCSessionManagementInterface for Manager {
 impl StreamManagementInterface<StreamStatus> for Manager {
     #[instrument(level = "debug")]
     fn add_stream(stream: Stream) -> Result<()> {
-        let mut manager = MANAGER.lock().unwrap();
+        let mut manager = match MANAGER.lock() {
+            Ok(guard) => guard,
+            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+        };
 
         let stream_id = stream.id;
         if manager.streams.insert(stream_id, stream).is_some() {
@@ -390,7 +404,10 @@ impl StreamManagementInterface<StreamStatus> for Manager {
 
     #[instrument(level = "debug")]
     fn remove_stream(stream_id: &webrtc::signalling_protocol::PeerId) -> Result<()> {
-        let mut manager = MANAGER.lock().unwrap();
+        let mut manager = match MANAGER.lock() {
+            Ok(guard) => guard,
+            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+        };
 
         if !manager.streams.contains_key(stream_id) {
             return Err(anyhow!("Already removed"));
