@@ -164,9 +164,12 @@ pub fn streams() -> Result<Vec<StreamStatus>> {
 
 #[instrument(level = "debug")]
 pub fn get_first_sdp_from_source(source: String) -> Result<gst_sdp::SDPMessage> {
-    let Some(result) = MANAGER
-        .lock()
-        .unwrap()
+    let manager = match MANAGER.lock() {
+        Ok(guard) => guard,
+        Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+    };
+
+    let Some(result) = manager
         .streams
         .values()
         .find_map(|stream| {
