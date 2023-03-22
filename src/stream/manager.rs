@@ -22,6 +22,7 @@ use anyhow::{anyhow, Context, Error, Result};
 type ClonableResult<T> = Result<T, Arc<Error>>;
 
 use async_std::stream::StreamExt;
+use cached::proc_macro::cached;
 use gst::{prelude::*, traits::ElementExt};
 use tracing::*;
 
@@ -165,10 +166,11 @@ pub fn streams() -> Result<Vec<StreamStatus>> {
 }
 
 #[instrument(level = "debug")]
-pub fn get_first_sdp_from_source(source: String) -> Result<gst_sdp::SDPMessage> {
+#[cached(time = 1)]
+pub fn get_first_sdp_from_source(source: String) -> ClonableResult<gst_sdp::SDPMessage> {
     let manager = match MANAGER.lock() {
         Ok(guard) => guard,
-        Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+        Err(error) => return Err(Arc::new(anyhow!("Failed locking a Mutex. Reason: {error}"))),
     };
 
     let Some(result) = manager
@@ -188,12 +190,13 @@ pub fn get_first_sdp_from_source(source: String) -> Result<gst_sdp::SDPMessage> 
                 None
             }
         }) else {
-            return Err(anyhow!("Failed to find any valid sdp for souce {source:?}"));
+            return Err(Arc::new(anyhow!("Failed to find any valid sdp for souce {source:?}")));
         };
     Ok(result)
 }
 
 #[instrument(level = "debug")]
+#[cached(time = 1)]
 pub async fn get_jpeg_thumbnail_from_source(
     source: String,
     quality: u8,
