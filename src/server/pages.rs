@@ -17,7 +17,6 @@ use actix_web::{
 };
 use paperclip::actix::{api_v2_operation, Apiv2Schema};
 use serde::{Deserialize, Serialize};
-use simple_error::SimpleError;
 use tracing::*;
 use validator::Validate;
 
@@ -256,9 +255,10 @@ pub fn remove_stream(query: web::Query<RemoveStream>) -> HttpResponse {
 pub fn camera_reset_controls(json: web::Json<ResetCameraControls>) -> HttpResponse {
     if let Err(errors) = video_source::reset_controls(&json.device) {
         let mut error: String = Default::default();
-        errors.iter().enumerate().for_each(|(i, e)| {
-            error.push_str(format!("{}: {}\n", i + 1, SimpleError::from(e)).as_str())
-        });
+        errors
+            .iter()
+            .enumerate()
+            .for_each(|(i, e)| error.push_str(&format!("{}: {e}\n", i + 1)));
         return HttpResponse::NotAcceptable()
             .content_type("text/plain")
             .body(format!(

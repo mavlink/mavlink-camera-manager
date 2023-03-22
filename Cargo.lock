@@ -2186,7 +2186,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
- "simple-error",
  "sys-info",
  "tokio",
  "tokio-tungstenite",
@@ -3254,12 +3253,6 @@ name = "simd-adler32"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "14a5df39617d7c8558154693a1bb8157a4aab8179209540cc0b10e5dc24e0b18"
-
-[[package]]
-name = "simple-error"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc47a29ce97772ca5c927f75bac34866b16d64e07f330c3248e2d7226623901b"
 
 [[package]]
 name = "slab"
