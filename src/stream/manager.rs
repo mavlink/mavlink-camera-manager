@@ -194,7 +194,12 @@ pub fn get_jpeg_thumbnail_from_source(
     quality: u8,
     target_height: Option<u32>,
 ) -> Option<Result<Vec<u8>>> {
-    MANAGER.lock().unwrap().streams.values().find_map(|stream| {
+    let manager = match MANAGER.lock() {
+        Ok(guard) => guard,
+        Err(error) => return Some(Err(anyhow!("Failed locking a Mutex. Reason: {error}"))),
+    };
+
+    manager.streams.values().find_map(|stream| {
         if stream
             .video_and_stream_information
             .video_source
