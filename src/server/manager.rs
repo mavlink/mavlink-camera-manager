@@ -1,5 +1,9 @@
 use super::pages;
 
+use actix_extensible_rate_limit::{
+    backend::{memory::InMemoryBackend, SimpleInputFunctionBuilder},
+    RateLimiter,
+};
 use actix_service::Service;
 use actix_web::{error::JsonPayloadError, App, HttpRequest, HttpServer};
 use paperclip::{
@@ -63,7 +67,21 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
             )
             .route("/xml", web::get().to(pages::xml))
             .route("/sdp", web::get().to(pages::sdp))
-            .route("/thumbnail", web::get().to(pages::thumbnail))
+            .service(
+                web::scope("/thumbnail")
+                    // Add a rate limitter to prevent flood
+                    .wrap(
+                        RateLimiter::builder(
+                            InMemoryBackend::builder().build(),
+                            SimpleInputFunctionBuilder::new(std::time::Duration::from_secs(1), 4)
+                                .real_ip_key()
+                                .build(),
+                        )
+                        .add_headers()
+                        .build(),
+                    )
+                    .route("", web::get().to(pages::thumbnail)),
+            )
             .build()
     })
     .bind(server_address)
