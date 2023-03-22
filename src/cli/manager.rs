@@ -51,6 +51,10 @@ pub fn is_reset() -> bool {
     return MANAGER.as_ref().clap_matches.is_present("reset");
 }
 
+pub fn is_tracy() -> bool {
+    return MANAGER.as_ref().clap_matches.is_present("enable-tracy");
+}
+
 #[allow(dead_code)]
 // Return the mavlink connection string
 pub fn mavlink_connection_string() -> Option<&'static str> {
@@ -204,6 +208,12 @@ fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
                 .long("vehicle-ddns")
                 .help("Specifies the Dynamic DNS to use as vehicle IP when advertising streams via mavlink.")
                 .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("enable-tracy")
+                .long("enable-tracy")
+                .help("Turns on the Tracy tool integration. Learn more: https://github.com/wolfpld/tracy")
+                .takes_value(false),
         );
 
     matches.get_matches()
