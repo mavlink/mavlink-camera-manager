@@ -33,7 +33,7 @@ pub trait WebRTCSessionManagementInterface {
 pub trait StreamManagementInterface<T> {
     fn add_stream(stream: crate::stream::Stream) -> Result<()>;
     fn remove_stream(stream_id: &PeerId) -> Result<()>;
-    fn streams_information() -> Vec<T>;
+    fn streams_information() -> Result<Vec<T>>;
     fn generate_uuid() -> uuid::Uuid;
 }
 
@@ -204,7 +204,7 @@ impl SignallingServer {
                         // This looks something dumb, but in fact, by keeping signalling_protocol::Stream and
                         // webrtc_manager::VideoAndStreamInformation as different things, we can change internal logics
                         // without changing the protocol's interface.
-                        let streams = Self::streams_information();
+                        let streams = Self::streams_information().unwrap_or_default();
                         Some(Answer::AvailableStreams(streams))
                     }
                     Question::StartSession(bind) => {
@@ -297,10 +297,10 @@ impl StreamManagementInterface<Stream> for SignallingServer {
         Manager::remove_stream(stream_id)
     }
 
-    fn streams_information() -> Vec<Stream> {
-        let streams = Manager::streams_information();
+    fn streams_information() -> Result<Vec<Stream>> {
+        let streams = Manager::streams_information()?;
 
-        streams
+        Ok(streams
             .iter()
             .filter_map(|stream| {
                 let (height, width, encode, interval) =
@@ -350,7 +350,7 @@ impl StreamManagementInterface<Stream> for SignallingServer {
                     created: None,
                 })
             })
-            .collect()
+            .collect())
     }
 
     fn generate_uuid() -> uuid::Uuid {
