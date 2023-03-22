@@ -835,7 +835,7 @@ mod device_identification_tests {
         // IF we remove the only device with the same name and encode, we should get an error
         source
             .to_owned()
-            .try_identify_device(capture_configuration, &candidates[1..].to_vec())
+            .try_identify_device(capture_configuration, &candidates[1..])
             .expect_err("Failed to identify the only device with the same name and encode");
 
         VIDEO_FORMATS.lock().unwrap().clear();

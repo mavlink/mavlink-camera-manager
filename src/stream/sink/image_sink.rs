@@ -275,7 +275,7 @@ impl ImageSink {
             .build();
 
         let appsink = gst_app::AppSink::builder()
-            .name(&format!("AppSink-{id}"))
+            .name(format!("AppSink-{id}"))
             .sync(false)
             .caps(&caps)
             .callbacks(appsink_callbacks)

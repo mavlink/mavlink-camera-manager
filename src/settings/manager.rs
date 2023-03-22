@@ -273,7 +273,7 @@ mod tests {
                 typ: VideoSourceLocalType::Usb("usb-0420:08:47.42-77".into()),
             }),
         }];
-        set_streams(&mut fake_streams.clone());
+        set_streams(&fake_streams);
         assert_eq!(streams(), fake_streams);
 
         save();
