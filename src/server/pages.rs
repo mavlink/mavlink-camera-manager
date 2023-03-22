@@ -1,8 +1,5 @@
 use crate::settings;
-use crate::stream::{
-    manager as stream_manager,
-    types::{StreamInformation, StreamStatus},
-};
+use crate::stream::{manager as stream_manager, types::StreamInformation};
 use crate::video::{
     types::{Control, Format, VideoSourceType},
     video_source,
