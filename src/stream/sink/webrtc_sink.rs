@@ -8,7 +8,6 @@ use gst::prelude::*;
 
 use super::SinkInterface;
 use crate::stream::manager::Manager;
-use crate::stream::pipeline::PIPELINE_SINK_TEE_NAME;
 use crate::stream::webrtc::signalling_protocol::{
     Answer, BindAnswer, EndSessionQuestion, IceNegotiation, MediaNegotiation, Message, Question,
     RTCIceCandidateInit, RTCSessionDescription, Sdp,
@@ -454,12 +453,32 @@ impl SinkInterface for WebRTCSinkInner {
             unreachable!()
         };
 
+        // Block data flow to prevent any data before set Playing, which would cause an error
+        let Some(tee_src_pad_data_blocker) = tee_src_pad
+            .add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, |_pad, _info| {
+                gst::PadProbeReturn::Ok
+            }) else {
+                let msg = "Failed adding probe to Tee's src pad to block data before going to playing state".to_string();
+                error!(msg);
+
+                if let Some(parent) = tee_src_pad.parent_element() {
+                    parent.release_request_pad(tee_src_pad)
+                }
+
+                return Err(anyhow!(msg));
+            };
+
         // Add the Sink elements to the Pipeline
         let elements = &[&self.queue, &self.webrtcbin];
-        if let Err(error) = pipeline.add_many(elements) {
-            return Err(anyhow!(
-                "Failed to add WebRTCBin {sink_id} to Pipeline {pipeline_id}. Reason: {error:#?}"
-            ));
+        if let Err(add_err) = pipeline.add_many(elements) {
+            let msg = format!("Failed to add WebRTCSink's elements to the Pipeline: {add_err:?}");
+            error!(msg);
+
+            if let Some(parent) = tee_src_pad.parent_element() {
+                parent.release_request_pad(tee_src_pad)
+            }
+
+            return Err(anyhow!(msg));
         }
 
         // Link the queue's src pad to the Sink's sink pad
@@ -467,9 +486,20 @@ impl SinkInterface for WebRTCSinkInner {
             .queue
             .static_pad("src")
             .expect("No sink pad found on Queue");
-        if let Err(error) = queue_src_pad.link(&self.webrtcbin_sink_pad) {
-            pipeline.remove_many(elements)?;
-            return Err(anyhow!(error));
+        if let Err(link_err) = queue_src_pad.link(&self.webrtcbin_sink_pad) {
+            let msg =
+                format!("Failed to link Queue's src pad with WebRTCBin's sink pad: {link_err:?}");
+            error!(msg);
+
+            if let Some(parent) = tee_src_pad.parent_element() {
+                parent.release_request_pad(tee_src_pad)
+            }
+
+            if let Err(remove_err) = pipeline.remove_many(elements) {
+                error!("Failed to remove elements from pipeline: {remove_err:?}");
+            }
+
+            return Err(anyhow!(msg));
         }
 
         // Link the new Tee's src pad to the queue's sink pad
@@ -477,11 +507,54 @@ impl SinkInterface for WebRTCSinkInner {
             .queue
             .static_pad("sink")
             .expect("No src pad found on Queue");
-        if let Err(error) = tee_src_pad.link(queue_sink_pad) {
-            pipeline.remove_many(elements)?;
-            queue_src_pad.unlink(&self.webrtcbin_sink_pad)?;
-            return Err(anyhow!(error));
+        if let Err(link_err) = tee_src_pad.link(queue_sink_pad) {
+            let msg = format!("Failed to link Tee's src pad with Queue's sink pad: {link_err:?}");
+            error!(msg);
+
+            if let Err(unlink_err) = queue_src_pad.unlink(&self.webrtcbin_sink_pad) {
+                error!(
+                    "Failed to unlink Queue's src pad from WebRTCBin's sink pad: {unlink_err:?}"
+                );
+            }
+
+            if let Some(parent) = tee_src_pad.parent_element() {
+                parent.release_request_pad(tee_src_pad)
+            }
+            if let Err(remove_err) = pipeline.remove_many(elements) {
+                error!("Failed to remove elements from pipeline: {remove_err:?}");
+            }
+
+            return Err(anyhow!(msg));
         }
+
+        // Syncronize added and linked elements
+        if let Err(sync_err) = pipeline.sync_children_states() {
+            let msg = format!("Failed to synchronize children states: {sync_err:?}");
+            error!(msg);
+
+            if let Err(unlink_err) = queue_src_pad.unlink(&self.webrtcbin_sink_pad) {
+                error!(
+                    "Failed to unlink Queue's src pad from WebRTCBin's sink pad: {unlink_err:?}"
+                );
+            }
+
+            if let Err(unlink_err) = tee_src_pad.unlink(queue_sink_pad) {
+                error!("Failed to unlink Tee's src pad from Queue's sink pad: {unlink_err:?}");
+            }
+
+            if let Some(parent) = tee_src_pad.parent_element() {
+                parent.release_request_pad(tee_src_pad)
+            }
+
+            if let Err(remove_err) = pipeline.remove_many(elements) {
+                error!("Failed to remove elements from pipeline: {remove_err:?}");
+            }
+
+            return Err(anyhow!(msg));
+        }
+
+        // Unblock data to go through this added Tee src pad
+        tee_src_pad.remove_probe(tee_src_pad_data_blocker);
 
         Ok(())
     }
