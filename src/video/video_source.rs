@@ -45,12 +45,12 @@ pub fn get_video_source(source_string: &str) -> Result<VideoSourceType, std::io:
         .map(|source| source.inner().source_string().to_string())
         .collect();
 
-    return Err(std::io::Error::new(
+    Err(std::io::Error::new(
         std::io::ErrorKind::NotFound,
         format!(
             "The source string '{source_string}' does not exist, the available options are: {sources_available:?}."
         ),
-    ));
+    ))
 }
 
 pub fn set_control(source_string: &str, control_id: u64, value: i64) -> std::io::Result<()> {

@@ -217,7 +217,7 @@ mod tests {
                         name: "Magic Parameter Bool".into(),
                         cpp_type: "bool".into(),
                         default: 1,
-                        v4l_id: 012345678,
+                        v4l_id: 12345678,
                         description: Description {
                             body: "Do magic bool stuff".into(),
                         },

@@ -226,6 +226,6 @@ mod tests {
 
     #[test]
     fn default_arguments() {
-        assert_eq!(is_verbose(), false);
+        assert!(!is_verbose());
     }
 }

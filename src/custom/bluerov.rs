@@ -20,7 +20,7 @@ fn get_cameras_with_encode_type(encode: VideoEncodeType) -> Vec<VideoSourceType>
         .collect()
 }
 
-fn sort_sizes(sizes: &mut Vec<Size>) {
+fn sort_sizes(sizes: &mut [Size]) {
     sizes.sort_by(|first_size, second_size| {
         (10 * first_size.width + first_size.height)
             .cmp(&(10 * second_size.width + second_size.height))
