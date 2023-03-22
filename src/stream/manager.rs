@@ -221,7 +221,10 @@ pub fn get_jpeg_thumbnail_from_source(
 
 #[instrument(level = "debug")]
 pub fn add_stream_and_start(video_and_stream_information: VideoAndStreamInformation) -> Result<()> {
-    let manager = MANAGER.as_ref().lock().unwrap();
+    let manager = match MANAGER.lock() {
+        Ok(guard) => guard,
+        Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+    };
     for stream in manager.streams.values() {
         stream
             .video_and_stream_information
