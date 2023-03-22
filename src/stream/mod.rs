@@ -39,7 +39,7 @@ impl Stream {
         }
 
         let pipeline = Pipeline::try_new(video_and_stream_information)?;
-        let mavlink_camera = MavlinkCameraHandle::try_new(video_and_stream_information);
+        let mavlink_camera = MavlinkCameraHandle::try_new(video_and_stream_information).ok();
         let id = pipeline.inner_state_as_ref().pipeline_id;
 
         let mut stream = Stream {
