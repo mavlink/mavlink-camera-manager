@@ -191,7 +191,11 @@ pub fn v4l_post(json: web::Json<V4lControl>) -> HttpResponse {
 pub async fn reset_settings(query: web::Query<ResetSettings>) -> HttpResponse {
     if query.all.unwrap_or_default() {
         settings::manager::reset();
-        stream_manager::start_default();
+        if let Err(error) = stream_manager::start_default() {
+            return HttpResponse::InternalServerError()
+                .content_type("text/plain")
+                .body(format!("{error:#?}"));
+        };
         return HttpResponse::Ok().finish();
     }
 
