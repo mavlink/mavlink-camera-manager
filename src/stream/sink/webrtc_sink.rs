@@ -259,10 +259,9 @@ impl WebRTCBinInterface for WebRTCSink {
                 }
             };
 
-            debug!(
-                "Sending SDP offer to peer. Offer: {}",
-                offer.sdp().as_text().unwrap()
-            );
+            if let Ok(sdp) = offer.sdp().as_text() {
+                debug!("Sending SDP offer to peer. Offer: {sdp}")
+            }
 
             if let Err(error) = this.on_offer_created(&webrtcbin_clone, &offer) {
                 error!("Failed to send SDP offer: {error:?}");
@@ -288,13 +287,13 @@ impl WebRTCBinInterface for WebRTCSink {
             .emit_by_name::<()>("set-local-description", &[&offer, &None::<gst::Promise>]);
 
         // Here we hack the SDP lying about our the profile-level-id (to constrained-baseline) so any browser can accept it
-        let sdp = offer.sdp().as_text().unwrap();
-        let sdp = regex::Regex::new("level-asymmetry-allowed=[01]")
-            .unwrap()
-            .replace(&sdp, "");
-        let sdp = regex::Regex::new(";;").unwrap().replace(&sdp, ";");
-        let sdp = regex::Regex::new("profile-level-id=[[:xdigit:]]{6}")
-            .unwrap()
+        let Ok(sdp) = offer.sdp().as_text() else {
+            return Err(anyhow!("Failed reading the received SDP"));
+        };
+
+        let sdp = regex::Regex::new("level-asymmetry-allowed=[01]")?.replace(&sdp, "");
+        let sdp = regex::Regex::new(";;")?.replace(&sdp, ";");
+        let sdp = regex::Regex::new("profile-level-id=[[:xdigit:]]{6}")?
             .replace(&sdp, "profile-level-id=42e01f;level-asymmetry-allowed=1")
             .to_string();
 
@@ -324,16 +323,15 @@ impl WebRTCBinInterface for WebRTCSink {
             .webrtcbin
             .emit_by_name::<()>("set-local-description", &[&answer, &None::<gst::Promise>]);
 
-        debug!(
-            "sending SDP answer to peer: {}",
-            answer.sdp().as_text().unwrap()
-        );
+        let Ok(sdp) = answer.sdp().as_text() else {
+            return Err(anyhow!("Failed reading the received SDP"));
+        };
+
+        debug!("Sending SDP offer to peer. Offer: {sdp}");
 
         let message = MediaNegotiation {
             bind: self.lock().unwrap().bind.clone(),
-            sdp: RTCSessionDescription::Answer(Sdp {
-                sdp: answer.sdp().as_text().unwrap(),
-            }),
+            sdp: RTCSessionDescription::Answer(Sdp { sdp }),
         }
         .into();
 
