@@ -4,6 +4,9 @@ extern crate paperclip;
 extern crate sys_info;
 extern crate tracing;
 
+#[macro_use]
+mod helper;
+
 use tracing::*;
 mod cli;
 mod custom;
