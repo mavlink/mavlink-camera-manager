@@ -146,14 +146,7 @@ impl Drop for MavlinkCameraComponent {
     fn drop(&mut self) {
         // Remove id from used ids
         let id = self.component_id - mavlink::common::MavComponent::MAV_COMP_ID_CAMERA as u8;
-        let mut vector = match ID_CONTROL.lock() {
-            Ok(guard) => guard,
-            Err(error) => {
-                error!("Failed locking a Mutex. Reason: {error}");
-                return;
-            }
-        };
-
+        let mut vector = lock_or_return_error!(ID_CONTROL);
         if let Some(position) = vector.iter().position(|&vec_id| vec_id == id) {
             vector.remove(position);
         } else {
@@ -269,13 +262,7 @@ impl MavlinkCameraHandle {
 impl Drop for MavlinkCameraHandle {
     fn drop(&mut self) {
         debug!("Dropping {self:#?}");
-        let mut state = match self.thread_state.lock() {
-            Ok(guard) => guard,
-            Err(error) => {
-                error!("Failed to get the mutex. Reason: {error}");
-                return;
-            }
-        };
+        let mut state = lock_or_return_error!(self.thread_state);
         *state = ThreadState::Dead;
     }
 }
@@ -285,14 +272,7 @@ fn heartbeat_loop(
     mavlink_camera_information: Arc<Mutex<MavlinkCameraInformation>>,
 ) {
     let mut header = mavlink::MavHeader::default();
-    let information = match mavlink_camera_information.lock() {
-        Ok(guard) => guard,
-        Err(error) => {
-            error!("Failed locking a Mutex. Reason: {error}");
-            return;
-        }
-    };
-
+    let information = lock_or_return_error!(mavlink_camera_information);
     header.system_id = information.component.system_id;
     header.component_id = information.component.component_id;
     let vehicle = information.vehicle.clone();
@@ -327,13 +307,7 @@ fn heartbeat_loop(
                     continue;
                 }
             }
-            let mut state = match atomic_thread_state.lock() {
-                Ok(guard) => guard,
-                Err(error) => {
-                    error!("Failed locking a Mutex. Reason: {error}");
-                    return;
-                }
-            };
+            let mut state = lock_or_return_error!(atomic_thread_state);
             *state = ThreadState::Restart;
         } else {
             debug!(
@@ -349,13 +323,7 @@ fn receive_message_loop(
     mavlink_camera_information: Arc<Mutex<MavlinkCameraInformation>>,
 ) {
     let mut our_header = mavlink::MavHeader::default();
-    let information = match mavlink_camera_information.lock() {
-        Ok(guard) => guard,
-        Err(error) => {
-            error!("Failed locking a Mutex. Reason: {error}");
-            return;
-        }
-    };
+    let information = lock_or_return_error!(mavlink_camera_information);
     our_header.system_id = information.component.system_id;
     our_header.component_id = information.component.component_id;
     let vehicle = information.vehicle.clone();
@@ -367,13 +335,7 @@ fn receive_message_loop(
                 ThreadState::Dead => break,
                 ThreadState::Running => (),
                 ThreadState::Restart => {
-                    let information = match mavlink_camera_information.lock() {
-                        Ok(guard) => guard,
-                        Err(error) => {
-                            error!("Failed locking a Mutex. Reason: {error}");
-                            return;
-                        }
-                    };
+                    let information = lock_or_return_error!(mavlink_camera_information);
                     *vehicle.write().as_deref_mut().unwrap() = reconnect(&information.clone());
                     *state = ThreadState::Running;
                 }
@@ -420,14 +382,7 @@ fn receive_message_loop(
 
                         match command_long.command {
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_INFORMATION => {
-                                let information = match mavlink_camera_information.lock() {
-                                    Ok(guard) => guard,
-                                    Err(error) => {
-                                        error!("Failed locking a Mutex. Reason: {error}");
-                                        return;
-                                    }
-                                };
-
+                                let information = lock_or_return_error!(mavlink_camera_information);
                                 send_command_ack(
                                     &vehicle,
                                     &our_header,
@@ -520,14 +475,7 @@ fn receive_message_loop(
                                 );
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION => {
-                                let information = match mavlink_camera_information.lock() {
-                                    Ok(guard) => guard,
-                                    Err(error) => {
-                                        error!("Failed locking a Mutex. Reason: {error}");
-                                        return;
-                                    }
-                                };
-
+                                let information = lock_or_return_error!(mavlink_camera_information);
                                 const ALL_CAMERAS: u8 = 0u8;
                                 if command_long.param2 != (information.component.stream_id as f32)
                                     && command_long.param2 != (ALL_CAMERAS as f32)
@@ -569,13 +517,7 @@ fn receive_message_loop(
                                 );
                             }
                             mavlink::common::MavCmd::MAV_CMD_RESET_CAMERA_SETTINGS => {
-                                let information = match mavlink_camera_information.lock() {
-                                    Ok(guard) => guard,
-                                    Err(error) => {
-                                        error!("Failed locking a Mutex. Reason: {error}");
-                                        return;
-                                    }
-                                };
+                                let information = lock_or_return_error!(mavlink_camera_information);
                                 let source_string = &information
                                     .video_source_type
                                     .inner()
@@ -609,14 +551,7 @@ fn receive_message_loop(
                                 );
                             }
                             mavlink::common::MavCmd::MAV_CMD_REQUEST_VIDEO_STREAM_STATUS => {
-                                let information = match mavlink_camera_information.lock() {
-                                    Ok(guard) => guard,
-                                    Err(error) => {
-                                        error!("Failed locking a Mutex. Reason: {error}");
-                                        return;
-                                    }
-                                };
-
+                                let information = lock_or_return_error!(mavlink_camera_information);
                                 send_command_ack(
                                     &vehicle,
                                     &our_header,
@@ -731,14 +666,7 @@ fn receive_message_loop(
 
                         let mut param_result = mavlink::common::ParamAck::PARAM_ACK_ACCEPTED;
 
-                        let information = match mavlink_camera_information.lock() {
-                            Ok(guard) => guard,
-                            Err(error) => {
-                                error!("Failed locking a Mutex. Reason: {error}");
-                                return;
-                            }
-                        };
-
+                        let information = lock_or_return_error!(mavlink_camera_information);
                         if let Err(error) = information
                             .video_source_type
                             .inner()
@@ -767,13 +695,7 @@ fn receive_message_loop(
                             continue;
                         }
 
-                        let information = match mavlink_camera_information.lock() {
-                            Ok(guard) => guard,
-                            Err(error) => {
-                                error!("Failed locking a Mutex. Reason: {error}");
-                                return;
-                            }
-                        };
+                        let information = lock_or_return_error!(mavlink_camera_information);
                         let controls = &information.video_source_type.inner().controls();
                         let (param_index, control_id) =
                             match get_param_index_and_control_id(param_ext_req, controls) {
@@ -828,14 +750,7 @@ fn receive_message_loop(
                             continue;
                         }
 
-                        let information = match mavlink_camera_information.lock() {
-                            Ok(guard) => guard,
-                            Err(error) => {
-                                error!("Failed locking a Mutex. Reason: {error}");
-                                return;
-                            }
-                        };
-
+                        let information = lock_or_return_error!(mavlink_camera_information);
                         let controls = information.video_source_type.inner().controls();
 
                         let mut no_errors = true;
@@ -896,13 +811,7 @@ fn receive_message_loop(
                 }
             }
             Err(error) => {
-                let information = match mavlink_camera_information.lock() {
-                    Ok(guard) => guard,
-                    Err(error) => {
-                        error!("Failed locking a Mutex. Reason: {error}");
-                        return;
-                    }
-                };
+                let information = lock_or_return_error!(mavlink_camera_information);
                 error!("Error receiving a message as {:#?}:{:#?}. Reason: {error:#?}. Camera: {information:#?}",
                     our_header.system_id, our_header.component_id
                 );
@@ -911,13 +820,7 @@ fn receive_message_loop(
                         continue;
                     }
                 }
-                let mut state = match atomic_thread_state.lock() {
-                    Ok(guard) => guard,
-                    Err(error) => {
-                        error!("Failed locking a Mutex. Reason: {error}");
-                        return;
-                    }
-                };
+                let mut state = lock_or_return_error!(atomic_thread_state);
                 *state = ThreadState::Restart;
             }
         }
