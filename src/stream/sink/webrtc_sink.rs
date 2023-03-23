@@ -84,7 +84,11 @@ impl SinkInterface for WebRTCSink {
                         if weak_this.lock().unwrap().webrtcbin.current_state()
                             == gst::State::Playing
                         {
-                            weak_this.close("DTLS Transport connection lost")
+                            let weak_this = weak_this.clone();
+                            // Closing the channel from the same thread can cause a deadlock, so we are calling it from another one:
+                            std::thread::spawn(move || {
+                                weak_this.close("DTLS Transport connection lost")
+                            });
                         }
                     }
                     _ => (),
