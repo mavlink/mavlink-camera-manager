@@ -328,8 +328,7 @@ impl UdpSink {
             return Err(anyhow!("Failed linking UdpSink's elements: {link_err:?}"));
         }
 
-        let _pipeline_runner = PipelineRunner::try_new(&pipeline, sink_id)?;
-        let mut killswitch_receiver = _pipeline_runner.get_receiver();
+        let _pipeline_runner = PipelineRunner::try_new(&pipeline, sink_id, false)?;
 
         // Start the pipeline
         if let Err(state_err) = pipeline.set_state(gst::State::Playing) {
