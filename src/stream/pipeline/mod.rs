@@ -3,7 +3,7 @@ pub mod redirect_pipeline;
 pub mod runner;
 pub mod v4l_pipeline;
 
-use std::{collections::HashMap, thread};
+use std::collections::HashMap;
 
 use enum_dispatch::enum_dispatch;
 
@@ -95,7 +95,7 @@ pub struct PipelineState {
     pub sink_tee: gst::Element,
     pub sinks: HashMap<uuid::Uuid, Sink>,
     pub pipeline_runner: PipelineRunner,
-    _watcher_thread_handle: std::thread::JoinHandle<()>,
+    _watcher_thread_handle: tokio::task::JoinHandle<()>,
 }
 
 pub const PIPELINE_SINK_TEE_NAME: &str = "SinkTee";
@@ -136,19 +136,16 @@ impl PipelineState {
             sink_tee,
             sinks: Default::default(),
             pipeline_runner,
-            _watcher_thread_handle: thread::spawn(move || loop {
+            _watcher_thread_handle: tokio::task::spawn(async move {
                 // Here we end the stream if any error is received. This should end all sessions too.
-                if let Ok(reason) = killswitch_receiver.try_recv() {
+                if let Ok(reason) = killswitch_receiver.recv().await {
                     debug!("Killswitch received as {pipeline_id:#?} from PipelineState's watcher. Reason: {reason:#?}");
-                    // TODO: We need to decide the behavior and implement it. The older behavior was to remove the entire pipeline whenever any error had occured, thus the "killswitch"
                     if let Err(reason) = Manager::remove_stream(&pipeline_id) {
                         warn!("Failed removing Pipeline {pipeline_id}. Reason: {reason}");
                     } else {
                         info!("Pipeline {pipeline_id} removed. Reason: {reason}");
                     }
-                    break;
                 }
-                thread::sleep(std::time::Duration::from_secs(1));
             }),
         })
     }
