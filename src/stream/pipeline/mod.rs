@@ -122,7 +122,7 @@ impl PipelineState {
             .by_name(&format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"))
             .context(format!("no element named {PIPELINE_SINK_TEE_NAME:#?}"))?;
 
-        let pipeline_runner = PipelineRunner::try_new(&pipeline, pipeline_id)?;
+        let pipeline_runner = PipelineRunner::try_new(&pipeline, pipeline_id, false)?;
         let mut killswitch_receiver = pipeline_runner.get_receiver();
 
         pipeline.debug_to_dot_file_with_ts(
