@@ -183,6 +183,10 @@ impl PipelineRunner {
 impl Drop for PipelineRunner {
     #[instrument(level = "debug", skip(self))]
     fn drop(&mut self) {
+        if let Some(pipeline) = self.pipeline_weak.upgrade() {
+            pipeline.send_event(gst::event::Eos::new());
+        }
+
         if let Err(reason) = self
             .killswitch_sender
             .send("PipelineRunner Dropped.".to_string())
