@@ -89,7 +89,7 @@ impl V4lPipeline {
                 format!(
                     concat!(
                         "v4l2src device={device} do-timestamp=false",
-                        " ! jpegparse",
+                        // We don't need a jpegparse, as it leads to incompatible caps, spoiling the negotiation.
                         " ! capsfilter name={filter_name} caps=image/jpeg,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! rtpjpegpay pt=96",
                         " ! tee name={sink_tee_name} allow-not-linked=true"
