@@ -143,14 +143,12 @@ impl SinkInterface for RtspSink {
 
     #[instrument(level = "debug", skip(self))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
-        let sink_id = self.get_id();
-
         if let Err(error) = std::fs::remove_file(&self.socket_path) {
             warn!("Failed removing the RTSP Sink socket file. Reason: {error:?}");
         }
 
         let Some(tee_src_pad) = &self.tee_src_pad else {
-            warn!("Tried to unlink sink {sink_id} from pipeline {pipeline_id} without a Tee src pad.");
+            warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
             return Ok(());
         };
 

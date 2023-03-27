@@ -70,7 +70,7 @@ impl SinkInterface for WebRTCSink {
         rtp_sender.connect_notify(Some("transport"), move |rtp_sender, _pspec| {
             let transport = rtp_sender.property::<gst_webrtc::WebRTCDTLSTransport>("transport");
 
-            debug!("DTLS Transport: {:#?}", transport);
+            debug!("DTLS Transport: {transport:#?}");
 
             let weak_this = weak_this.clone();
             transport.connect_state_notify(move |transport| {
@@ -224,7 +224,7 @@ impl WebRTCSink {
     pub fn close(&self, reason: &str) {
         let bind = &self.lock().unwrap().bind.clone();
         if let Err(error) = Manager::remove_session(bind, reason.to_string()) {
-            error!("Failed removing session {bind:#?}. Reason: {error}");
+            error!("Failed removing session {bind:#?}: {error}");
         }
     }
 }
@@ -561,10 +561,8 @@ impl SinkInterface for WebRTCSinkInner {
 
     #[instrument(level = "debug", skip(self))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
-        let sink_id = self.get_id();
-
         let Some(tee_src_pad) = &self.tee_src_pad else {
-            warn!("Tried to unlink sink {sink_id} from pipeline {pipeline_id} without a Tee src pad.");
+            warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
             return Ok(());
         };
 
@@ -622,7 +620,7 @@ impl SinkInterface for WebRTCSinkInner {
     #[instrument(level = "trace", skip(self))]
     fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
         Err(anyhow!(
-            "Not available. Reason: WebRTC Sink should only be connected by means of its Signalling protocol."
+            "Not available: WebRTC Sink should only be connected by means of its Signalling protocol."
         ))
     }
 }
@@ -640,8 +638,8 @@ impl Drop for WebRTCSinkInner {
                     .unwrap_or_else(|| "unknown".to_string()),
             });
 
-            if let Err(reason) = sender.send(Ok(Message::from(question))) {
-                error!("Failed to send EndSession question to MPSC channel. Reason: {reason}");
+            if let Err(send_err) = sender.send(Ok(Message::from(question))) {
+                error!("Failed to send EndSession question to MPSC channel: {send_err:?}");
             }
         }
     }
