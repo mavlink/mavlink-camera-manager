@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::{anyhow, Context, Error, Result};
 
@@ -13,6 +16,47 @@ use crate::{stream::pipeline::runner::PipelineRunner, video::types::VideoEncodeT
 
 type ClonableResult<T> = Result<T, Arc<Error>>;
 
+#[derive(Debug, Hash, Eq, PartialEq, Clone)]
+struct ThumbnailSettings {
+    quality: u8,
+    target_height: Option<u32>,
+}
+
+#[derive(Debug)]
+struct Thumbnail {
+    pub instant: std::time::Instant,
+    pub image: Vec<u8>,
+}
+
+#[derive(Debug, Default)]
+struct CachedThumbnails {
+    map: HashMap<ThumbnailSettings, Thumbnail>,
+}
+
+impl CachedThumbnails {
+    pub fn try_get(&self, settings: &ThumbnailSettings) -> Result<Option<Vec<u8>>> {
+        if let Some(thumbnail) = self.map.get(settings) {
+            if std::time::Instant::now() - thumbnail.instant < std::time::Duration::from_secs(1) {
+                return Ok(Some(thumbnail.image.to_vec()));
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn try_set(&mut self, settings: &ThumbnailSettings, image: Vec<u8>) -> Result<()> {
+        self.map.insert(
+            settings.to_owned(),
+            Thumbnail {
+                instant: std::time::Instant::now(),
+                image,
+            },
+        );
+
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct ImageSink {
     sink_id: uuid::Uuid,
@@ -26,6 +70,7 @@ pub struct ImageSink {
     flat_samples_sender: tokio::sync::broadcast::Sender<ClonableResult<FlatSamples<Vec<u8>>>>,
     pad_blocker: Arc<Mutex<Option<gst::PadProbeId>>>,
     _pipeline_runner: PipelineRunner,
+    thumbnails: Arc<Mutex<CachedThumbnails>>,
 }
 impl SinkInterface for ImageSink {
     #[instrument(level = "debug", skip(self))]
@@ -464,23 +509,12 @@ impl ImageSink {
             flat_samples_sender,
             pad_blocker,
             _pipeline_runner,
+            thumbnails: Default::default(),
         })
     }
 
     #[instrument(level = "debug", skip(self))]
-    pub async fn make_jpeg_thumbnail_from_last_frame(
-        &self,
-        quality: u8,
-        target_height: Option<u32>,
-    ) -> Result<Vec<u8>> {
-        let caps = &self
-            .appsink
-            .static_pad("sink")
-            .expect("No static sink pad found on capsfilter")
-            .current_caps()
-            .context("Failed to get caps from capsfilter sink pad")?;
-        let info = gst_video::VideoInfo::from_caps(caps).context("Failed to parse caps")?;
-
+    async fn try_get_flat_sample(&self) -> Result<FlatSamples<Vec<u8>>> {
         // Play the pipeline if it's not playing yet.
         // Here we can ignore the result because we have a timeout when waiting for the snapshot
         if self.pipeline.current_state() != gst::State::Playing {
@@ -500,27 +534,31 @@ impl ImageSink {
 
         // Wait for the snapshot to be taken, with a timeout
         // Here we'd have the raw snapshot, we just need to convert it to the final format/size
-        let flat_samples =
-            tokio::time::timeout(tokio::time::Duration::from_secs(2), receiver.recv())
-                .await??
-                .map_err(|e| anyhow!(e.to_string()))?;
-        drop(receiver);
+        tokio::time::timeout(tokio::time::Duration::from_secs(2), receiver.recv())
+            .await??
+            .map_err(|e| anyhow!(e.to_string()))
+    }
 
-        // TODO: to save the CPU spent processing the same received sample, we should process
-        // the image only once per batch of requests, using the same channel technique used above
+    #[instrument(level = "debug", skip(self, flat_sample))]
+    async fn try_process_sample(
+        &self,
+        flat_sample: FlatSamples<Vec<u8>>,
+        info: gst_video::VideoInfo,
+        settings: ThumbnailSettings,
+    ) -> Result<Vec<u8>> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<u8>>>();
-        // std::thread::spawn(move || {
+        let (quality, target_height) = (settings.quality, settings.target_height);
         tokio::task::spawn(async move {
             // Calculate a target width/height that keeps the display aspect ratio while having
             // a height of the given target_height (eg 240 pixels)
-            let display_aspect_ratio = (flat_samples.layout.width as f64
+            let display_aspect_ratio = (flat_sample.layout.width as f64
                 * info.par().numer() as f64)
-                / (flat_samples.layout.height as f64 * info.par().denom() as f64);
-            let target_height = target_height.unwrap_or(flat_samples.layout.height);
+                / (flat_sample.layout.height as f64 * info.par().denom() as f64);
+            let target_height = target_height.unwrap_or(flat_sample.layout.height);
             let target_width = (target_height as f64 * display_aspect_ratio) as u32;
 
             // Scale image to our target dimensions
-            let image_view = match flat_samples.as_view::<image::Rgb<u8>>() {
+            let image_view = match flat_sample.as_view::<image::Rgb<u8>>() {
                 Ok(image_view) => image_view,
                 Err(error) => {
                     let _ = tx.send(Err(anyhow!("Failed creating image view. Reason: {error}")));
@@ -541,6 +579,56 @@ impl ImageSink {
             let _ = tx.send(Ok(buffer.into_inner()));
         });
 
-        tokio::time::timeout(tokio::time::Duration::from_secs(2), rx).await??
+        let thumbnail = tokio::time::timeout(tokio::time::Duration::from_secs(2), rx).await???;
+
+        {
+            let mut thumbnails = match self.thumbnails.lock() {
+                Ok(guard) => guard,
+                Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+            };
+
+            if let Err(error) = thumbnails.try_set(&settings, thumbnail.clone()) {
+                error!("Failed setting cached thumbnail. Reason: {error:?}");
+            }
+        }
+
+        Ok(thumbnail)
+    }
+
+    #[instrument(level = "debug", skip(self))]
+    pub async fn make_jpeg_thumbnail_from_last_frame(
+        &self,
+        quality: u8,
+        target_height: Option<u32>,
+    ) -> Result<Vec<u8>> {
+        let settings = ThumbnailSettings {
+            quality,
+            target_height,
+        };
+
+        // Try to get from cache
+        {
+            let thumbnails = match self.thumbnails.lock() {
+                Ok(guard) => guard,
+                Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+            };
+
+            if let Some(thumbnail) = thumbnails.try_get(&settings)? {
+                return Ok(thumbnail);
+            };
+        }
+
+        // If cache doesn't hit, produce a new one
+        let flat_sample = self.try_get_flat_sample().await?;
+
+        let caps = &self
+            .appsink
+            .static_pad("sink")
+            .expect("No static sink pad found on capsfilter")
+            .current_caps()
+            .context("Failed to get caps from capsfilter sink pad")?;
+        let info = gst_video::VideoInfo::from_caps(caps).context("Failed to parse caps")?;
+
+        self.try_process_sample(flat_sample, info, settings).await
     }
 }
