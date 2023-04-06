@@ -131,7 +131,7 @@ impl SinkInterface for ImageSink {
             .expect("No sink pad found on ProxySink");
         if let Err(link_err) = queue_src_pad.link(proxysink_sink_pad) {
             let msg =
-                format!("Failed to link Queue's src pad with WebRTCBin's sink pad: {link_err:?}");
+                format!("Failed to link Queue's src pad with ProxySink's sink pad: {link_err:?}");
             error!(msg);
 
             if let Some(parent) = tee_src_pad.parent_element() {
@@ -175,7 +175,7 @@ impl SinkInterface for ImageSink {
             error!(msg);
 
             if let Err(unlink_err) = queue_src_pad.unlink(proxysink_sink_pad) {
-                error!("Failed to unlink Queue's src pad and ProxySink's sink pad: {unlink_err:?}");
+                error!("Failed to unlink Tee's src pad and Queue's sink pad: {unlink_err:?}");
             }
 
             if let Err(unlink_err) = queue_src_pad.unlink(proxysink_sink_pad) {
