@@ -10,11 +10,10 @@ use super::SinkInterface;
 pub struct RtspSink {
     sink_id: uuid::Uuid,
     queue: gst::Element,
-    sink: gst::Element,
+    proxysink: gst::Element,
     sink_sink_pad: gst::Pad,
     tee_src_pad: Option<gst::Pad>,
     path: String,
-    socket_path: String,
 }
 impl SinkInterface for RtspSink {
     #[instrument(level = "debug", skip(self))]
@@ -25,8 +24,6 @@ impl SinkInterface for RtspSink {
         tee_src_pad: gst::Pad,
     ) -> Result<()> {
         let sink_id = &self.get_id();
-
-        let _ = std::fs::remove_file(&self.socket_path); // Remove if already exists
 
         // Set Tee's src pad
         if self.tee_src_pad.is_some() {
@@ -55,7 +52,7 @@ impl SinkInterface for RtspSink {
             };
 
         // Add the Sink elements to the Pipeline
-        let elements = &[&self.queue, &self.sink];
+        let elements = &[&self.queue, &self.proxysink];
         if let Err(add_err) = pipeline.add_many(elements) {
             let msg = format!("Failed to add WebRTCSink's elements to the Pipeline: {add_err:?}");
             error!(msg);
@@ -143,10 +140,6 @@ impl SinkInterface for RtspSink {
 
     #[instrument(level = "debug", skip(self))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
-        if let Err(error) = std::fs::remove_file(&self.socket_path) {
-            warn!("Failed removing the RTSP Sink socket file. Reason: {error:?}");
-        }
-
         let Some(tee_src_pad) = &self.tee_src_pad else {
             warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
             return Ok(());
@@ -180,7 +173,7 @@ impl SinkInterface for RtspSink {
         }
 
         // Remove the Sink's elements from the Source's pipeline
-        let elements = &[&self.queue, &self.sink];
+        let elements = &[&self.queue, &self.proxysink];
         if let Err(remove_err) = pipeline.remove_many(elements) {
             warn!("Failed removing RtspSink's elements from pipeline: {remove_err:?}");
         }
@@ -191,7 +184,7 @@ impl SinkInterface for RtspSink {
         }
 
         // Set Sink to null
-        if let Err(state_err) = self.sink.set_state(gst::State::Null) {
+        if let Err(state_err) = self.proxysink.set_state(gst::State::Null) {
             warn!("Failed to set RtspSink's to NULL: {state_err:#?}");
         }
 
@@ -227,34 +220,29 @@ impl RtspSink {
                 "Failed to find RTSP compatible address. Example: \"rtsp://0.0.0.0:8554/test\"",
             )?;
 
-        let socket_path = format!("/tmp/{id}");
-        let sink = gst::ElementFactory::make("shmsink")
-            .property_from_str("socket-path", &socket_path)
-            .property("sync", true)
-            .property("wait-for-connection", false)
-            .property("shm-size", 10_000_000u32)
-            .build()?;
+        let proxysink = gst::ElementFactory::make("proxysink").build()?;
 
-        let sink_sink_pad = sink.static_pad("sink").context("Failed to get Sink Pad")?;
+        let sink_sink_pad = proxysink
+            .static_pad("sink")
+            .context("Failed to get Sink Pad")?;
 
         Ok(Self {
             sink_id: id,
             queue,
-            sink,
+            proxysink,
             sink_sink_pad,
             path,
-            socket_path,
             tee_src_pad: Default::default(),
         })
     }
 
     #[instrument(level = "trace", skip(self))]
-    pub fn path(&self) -> String {
-        self.path.clone()
+    pub fn proxysink(&self) -> &gst::Element {
+        &self.proxysink
     }
 
     #[instrument(level = "trace", skip(self))]
-    pub fn socket_path(&self) -> String {
-        self.socket_path.clone()
+    pub fn path(&self) -> String {
+        self.path.clone()
     }
 }

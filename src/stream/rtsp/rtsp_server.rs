@@ -7,13 +7,15 @@ use gst_rtsp::RTSPLowerTrans;
 use gst_rtsp_server::{prelude::*, RTSPTransportMode};
 use tracing::*;
 
+use crate::stream::rtsp::rtsp_media_factory;
+
 #[allow(dead_code)]
 pub struct RTSPServer {
     pub server: gst_rtsp_server::RTSPServer,
     host: String,
     port: u16,
     run: bool,
-    pub path_to_factory: HashMap<String, gst_rtsp_server::RTSPMediaFactory>,
+    pub path_to_factory: HashMap<String, rtsp_media_factory::Factory>,
     main_loop_thread: Option<std::thread::JoinHandle<()>>,
     main_loop_thread_rx_channel: std::sync::mpsc::Receiver<String>,
 }
@@ -105,70 +107,30 @@ impl RTSPServer {
     }
 
     #[instrument(level = "debug")]
-    pub fn add_pipeline(path: &str, socket_path: &str, rtp_caps: &gst::Caps) -> Result<()> {
-        // Initialize the singleton before calling gst factory
-        let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
-
-        let factory = gst_rtsp_server::RTSPMediaFactory::new();
-        factory.set_shared(true);
-        factory.set_buffer_size(0);
-        factory.set_latency(0u32);
-        factory.set_transport_mode(RTSPTransportMode::PLAY);
-        factory.set_protocols(RTSPLowerTrans::UDP | RTSPLowerTrans::UDP_MCAST);
-
-        let Some(encode) = rtp_caps
-            .iter()
-            .find_map(|structure| {
-                structure.iter().find_map(|(key, sendvalue)| {
-                    if key == "encoding-name" {
-                        Some(sendvalue.to_value().get::<String>().expect("Failed accessing encoding-name parameter"))
-                    } else {
-                        None
-                    }
-                })
-            }) else {
-                return Err(anyhow!("Cannot find 'media' in caps"));
-            };
-
-        let rtp_caps = rtp_caps.to_string();
-        let description = match encode.as_str() {
+    fn create_rtsp_bin(proxysink: &gst::Element, encode: &str) -> Result<gst::Bin> {
+        let description = match encode {
             "H264" => {
-                format!(
-                    concat!(
-                        "shmsrc socket-path={socket_path} do-timestamp=true",
-                        " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
-                        " ! capsfilter caps={rtp_caps:?}",
-                        " ! rtph264depay",
-                        " ! rtph264pay name=pay0 aggregate-mode=zero-latency config-interval=10 pt=96",
-                    ),
-                    socket_path = socket_path,
-                    rtp_caps = rtp_caps,
+                concat!(
+                    "proxysrc name=ProxySrc message-forward=true",
+                    " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
+                    " ! rtph264depay",
+                    " ! rtph264pay name=pay0 aggregate-mode=zero-latency config-interval=10 pt=96",
                 )
             }
             "RAW" => {
-                format!(
-                    concat!(
-                        "shmsrc socket-path={socket_path} do-timestamp=true",
-                        " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
-                        " ! capsfilter caps={rtp_caps:?}",
-                        " ! rtpvrawdepay",
-                        " ! rtpvrawpay name=pay0 pt=96",
-                    ),
-                    socket_path = socket_path,
-                    rtp_caps = rtp_caps,
+                concat!(
+                    "proxysrc name=ProxySrc",
+                    " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
+                    " ! rtpvrawdepay",
+                    " ! rtpvrawpay name=pay0 pt=96",
                 )
             }
             "JPEG" => {
-                format!(
-                    concat!(
-                        "shmsrc socket-path={socket_path} do-timestamp=true",
-                        " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
-                        " ! capsfilter caps={rtp_caps:?}",
-                        " ! rtpjpegdepay",
-                        " ! rtpjpegpay name=pay0 pt=96",
-                    ),
-                    socket_path = socket_path,
-                    rtp_caps = rtp_caps,
+                concat!(
+                    "proxysrc name=ProxySrc",
+                    " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
+                    " ! rtpjpegdepay",
+                    " ! rtpjpegpay name=pay0 pt=96",
                 )
             }
             unsupported => {
@@ -180,7 +142,31 @@ impl RTSPServer {
 
         debug!("RTSP Server description: {description:#?}");
 
-        factory.set_launch(&description);
+        let rtsp_bin = gst::parse_bin_from_description(&description, true)?;
+        {
+            let proxysrc = rtsp_bin
+                .by_name("ProxySrc")
+                .expect("Failed to find proxysrc by name: wrong name?");
+            proxysrc.set_property("proxysink", proxysink);
+            let _ = rtsp_bin.set_state(gst::State::Playing);
+        }
+
+        Ok(rtsp_bin)
+    }
+
+    #[instrument(level = "debug")]
+    pub fn add_pipeline(path: &str, proxysink: &gst::Element, encode: &str) -> Result<()> {
+        // Initialize the singleton before calling gst factory
+        let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
+
+        let rtsp_bin = Self::create_rtsp_bin(proxysink, encode)?;
+
+        let factory = rtsp_media_factory::Factory::new(rtsp_bin);
+        factory.set_shared(true);
+        factory.set_buffer_size(0);
+        factory.set_latency(0u32);
+        factory.set_transport_mode(RTSPTransportMode::PLAY);
+        factory.set_protocols(RTSPLowerTrans::UDP | RTSPLowerTrans::UDP_MCAST);
 
         if let Some(server) = rtsp_server
             .path_to_factory
