@@ -96,6 +96,13 @@ impl Stream {
             ));
         }
 
+        // Start the pipeline. This will automatically start sinks with linked proxy-isolated pipelines
+        stream
+            .pipeline
+            .inner_state_as_ref()
+            .pipeline_runner
+            .start()?;
+
         Ok(stream)
     }
 }
