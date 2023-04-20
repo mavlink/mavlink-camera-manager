@@ -8,6 +8,7 @@ use gst_rtsp_server::{prelude::*, RTSPTransportMode};
 use tracing::*;
 
 use crate::stream::rtsp::rtsp_media_factory;
+use crate::video::types::VideoEncodeType;
 
 #[allow(dead_code)]
 pub struct RTSPServer {
@@ -107,9 +108,9 @@ impl RTSPServer {
     }
 
     #[instrument(level = "debug")]
-    fn create_rtsp_bin(proxysink: &gst::Element, encode: &str) -> Result<gst::Bin> {
+    fn create_rtsp_bin(proxysink: &gst::Element, encode: &VideoEncodeType) -> Result<gst::Bin> {
         let description = match encode {
-            "H264" => {
+            VideoEncodeType::H264 => {
                 concat!(
                     "proxysrc name=ProxySrc message-forward=true",
                     " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
@@ -117,7 +118,7 @@ impl RTSPServer {
                     " ! rtph264pay name=pay0 aggregate-mode=zero-latency config-interval=10 pt=96",
                 )
             }
-            "RAW" => {
+            VideoEncodeType::Yuyv => {
                 concat!(
                     "proxysrc name=ProxySrc",
                     " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
@@ -125,7 +126,7 @@ impl RTSPServer {
                     " ! rtpvrawpay name=pay0 pt=96",
                 )
             }
-            "JPEG" => {
+            VideoEncodeType::Mjpg => {
                 concat!(
                     "proxysrc name=ProxySrc",
                     " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
@@ -155,11 +156,15 @@ impl RTSPServer {
     }
 
     #[instrument(level = "debug")]
-    pub fn add_pipeline(path: &str, proxysink: &gst::Element, encode: &str) -> Result<()> {
+    pub fn add_pipeline(
+        path: &str,
+        proxysink: &gst::Element,
+        encoding: &VideoEncodeType,
+    ) -> Result<()> {
         // Initialize the singleton before calling gst factory
         let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
 
-        let rtsp_bin = Self::create_rtsp_bin(proxysink, encode)?;
+        let rtsp_bin = Self::create_rtsp_bin(proxysink, encoding)?;
 
         let factory = rtsp_media_factory::Factory::new(rtsp_bin);
         factory.set_shared(true);
