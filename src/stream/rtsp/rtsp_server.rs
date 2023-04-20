@@ -109,29 +109,39 @@ impl RTSPServer {
 
     #[instrument(level = "debug")]
     fn create_rtsp_bin(proxysink: &gst::Element, encode: &VideoEncodeType) -> Result<gst::Bin> {
+        let proxysrc_name = format!("proxysrc-{}", uuid::Uuid::new_v4());
         let description = match encode {
             VideoEncodeType::H264 => {
-                concat!(
-                    "proxysrc name=ProxySrc message-forward=true",
-                    " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
-                    " ! rtph264depay",
-                    " ! rtph264pay name=pay0 aggregate-mode=zero-latency config-interval=10 pt=96",
+                format!(
+                    concat!(
+                        "proxysrc name={proxysrc_name}",
+                        " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
+                        " ! rtph264depay",
+                        " ! rtph264pay name=pay0 aggregate-mode=zero-latency config-interval=10 pt=96",
+                    ),
+                    proxysrc_name=proxysrc_name
                 )
             }
             VideoEncodeType::Yuyv => {
-                concat!(
-                    "proxysrc name=ProxySrc",
-                    " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
-                    " ! rtpvrawdepay",
-                    " ! rtpvrawpay name=pay0 pt=96",
+                format!(
+                    concat!(
+                        "proxysrc name={proxysrc_name}",
+                        " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
+                        " ! rtpvrawdepay",
+                        " ! rtpvrawpay name=pay0 pt=96",
+                    ),
+                    proxysrc_name = proxysrc_name
                 )
             }
             VideoEncodeType::Mjpg => {
-                concat!(
-                    "proxysrc name=ProxySrc",
-                    " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
-                    " ! rtpjpegdepay",
-                    " ! rtpjpegpay name=pay0 pt=96",
+                format!(
+                    concat!(
+                        "proxysrc name={proxysrc_name}",
+                        " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
+                        " ! rtpjpegdepay",
+                        " ! rtpjpegpay name=pay0 pt=96",
+                    ),
+                    proxysrc_name = proxysrc_name
                 )
             }
             unsupported => {
@@ -143,14 +153,11 @@ impl RTSPServer {
 
         debug!("RTSP Server description: {description:#?}");
 
-        let rtsp_bin = gst::parse_bin_from_description(&description, true)?;
-        {
-            let proxysrc = rtsp_bin
-                .by_name("ProxySrc")
-                .expect("Failed to find proxysrc by name: wrong name?");
-            proxysrc.set_property("proxysink", proxysink);
-            let _ = rtsp_bin.set_state(gst::State::Playing);
-        }
+        let rtsp_bin = gst::parse_bin_from_description(&description, false)?;
+        let proxysrc = rtsp_bin
+            .by_name(&proxysrc_name)
+            .expect("Failed to find proxysrc by name: wrong name?");
+        proxysrc.set_property("proxysink", proxysink);
 
         Ok(rtsp_bin)
     }
@@ -170,6 +177,7 @@ impl RTSPServer {
         factory.set_shared(true);
         factory.set_buffer_size(0);
         factory.set_latency(0u32);
+        factory.set_do_retransmission(false);
         factory.set_transport_mode(RTSPTransportMode::PLAY);
         factory.set_protocols(RTSPLowerTrans::UDP | RTSPLowerTrans::UDP_MCAST);
 
