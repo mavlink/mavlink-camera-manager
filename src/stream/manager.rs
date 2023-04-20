@@ -87,14 +87,36 @@ fn config_gst_plugins() {
     }
 }
 
+pub fn remove_all_streams() -> Result<()> {
+    let keys = {
+        let mut ids = vec![];
+
+        match MANAGER.lock() {
+            Ok(guard) => guard,
+            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+        }
+        .streams
+        .keys()
+        .for_each(|id| {
+            ids.push(id.clone());
+        });
+
+        ids
+    };
+
+    keys.iter().for_each(|stream_id| {
+        if let Err(error) = Manager::remove_stream(&stream_id) {
+            warn!("Failed removing stream {stream_id:?}: {error:?}")
+        }
+    });
+
+    Ok(())
+}
+
 #[instrument(level = "debug")]
 pub fn start_default() -> Result<()> {
-    match MANAGER.lock() {
-        Ok(guard) => guard,
-        Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-    }
-    .streams
-    .clear();
+    // First of all, gently remove all streams as we are going to replace the entire list below
+    remove_all_streams()?;
 
     let mut streams = settings::manager::streams();
 
