@@ -200,29 +200,7 @@ impl PipelineState {
         );
 
         if let Sink::Rtsp(sink) = &sink {
-            let caps = &self
-                .sink_tee
-                .static_pad("sink")
-                .expect("No static sink pad found on capsfilter")
-                .current_caps()
-                .context("Failed to get caps from capsfilter sink pad")?;
-            let Some(encode) = caps
-            .iter()
-            .find_map(|structure| {
-                structure.iter().find_map(|(key, sendvalue)| {
-                    if key == "encoding-name" {
-                        Some(sendvalue.to_value().get::<String>().expect("Failed accessing encoding-name parameter"))
-                    } else {
-                        None
-                    }
-                })
-            }) else {
-                return Err(anyhow!("Cannot find 'media' in caps"));
-            };
-
-            debug!("caps: {:#?}", caps.to_string());
-
-            RTSPServer::add_pipeline(&sink.path(), sink.proxysink(), &encode)?;
+            RTSPServer::add_pipeline(&sink.path(), sink.proxysink(), &sink.encoding())?;
 
             RTSPServer::start_pipeline(&sink.path())?;
         }
