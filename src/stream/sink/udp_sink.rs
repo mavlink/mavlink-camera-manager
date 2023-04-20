@@ -299,7 +299,7 @@ impl UdpSink {
             })
             .collect::<Vec<String>>()
             .join(",");
-        let description = format!("multiudpsink clients={clients}");
+        let description = format!("multiudpsink sync=false clients={clients}");
         let _udpsink =
             gst::parse_launch(&description).context("Failed parsing pipeline description")?;
 
