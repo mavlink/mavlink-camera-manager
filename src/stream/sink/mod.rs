@@ -16,6 +16,8 @@ use anyhow::{anyhow, Result};
 
 use tracing::*;
 
+use super::types::CaptureConfiguration;
+
 #[enum_dispatch]
 pub trait SinkInterface {
     /// Link this Sink's sink pad to the given Pipelines's Tee element's src pad.
@@ -72,7 +74,15 @@ pub fn create_rtsp_sink(
         .endpoints
         .clone();
 
-    Ok(Sink::Rtsp(RtspSink::try_new(id, addresses)?))
+    let encoding = match &video_and_stream_information
+        .stream_information
+        .configuration
+    {
+        CaptureConfiguration::Video(configuration) => configuration.encode.clone(),
+        _ => unreachable!(),
+    };
+
+    Ok(Sink::Rtsp(RtspSink::try_new(id, addresses, encoding)?))
 }
 
 #[instrument(level = "debug")]

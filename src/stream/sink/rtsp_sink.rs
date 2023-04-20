@@ -4,6 +4,8 @@ use tracing::*;
 
 use gst::prelude::*;
 
+use crate::video::types::VideoEncodeType;
+
 use super::SinkInterface;
 
 #[derive(Debug)]
@@ -13,6 +15,7 @@ pub struct RtspSink {
     proxysink: gst::Element,
     sink_sink_pad: gst::Pad,
     tee_src_pad: Option<gst::Pad>,
+    encoding: VideoEncodeType,
     path: String,
 }
 impl SinkInterface for RtspSink {
@@ -206,7 +209,11 @@ impl SinkInterface for RtspSink {
 
 impl RtspSink {
     #[instrument(level = "debug")]
-    pub fn try_new(id: uuid::Uuid, addresses: Vec<url::Url>) -> Result<Self> {
+    pub fn try_new(
+        id: uuid::Uuid,
+        addresses: Vec<url::Url>,
+        encoding: VideoEncodeType,
+    ) -> Result<Self> {
         let queue = gst::ElementFactory::make("queue")
             .property_from_str("leaky", "downstream") // Throw away any data
             .property("flush-on-eos", true)
@@ -231,6 +238,7 @@ impl RtspSink {
             queue,
             proxysink,
             sink_sink_pad,
+            encoding,
             path,
             tee_src_pad: Default::default(),
         })
@@ -239,6 +247,11 @@ impl RtspSink {
     #[instrument(level = "trace", skip(self))]
     pub fn proxysink(&self) -> &gst::Element {
         &self.proxysink
+    }
+
+    #[instrument(level = "trace", skip(self))]
+    pub fn encoding(&self) -> VideoEncodeType {
+        self.encoding.clone()
     }
 
     #[instrument(level = "trace", skip(self))]
