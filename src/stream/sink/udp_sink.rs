@@ -149,11 +149,6 @@ impl SinkInterface for UdpSink {
         // Unblock data to go through this added Tee src pad
         tee_src_pad.remove_probe(tee_src_pad_data_blocker);
 
-        self.pipeline.debug_to_dot_file_with_ts(
-            gst::DebugGraphDetails::all(),
-            format!("pipeline-{sink_id}-playing"),
-        );
-
         Ok(())
     }
 
@@ -348,11 +343,6 @@ impl UdpSink {
                 "Failed starting UdpSink's pipeline: {state_err:#?}"
             ));
         }
-
-        pipeline.debug_to_dot_file_with_ts(
-            gst::DebugGraphDetails::all(),
-            format!("pipeline-{sink_id}-created"),
-        );
 
         Ok(Self {
             sink_id,

@@ -166,11 +166,6 @@ impl PipelineState {
         sink.link(pipeline, &self.pipeline_id, tee_src_pad)?;
         let sink_id = &sink.get_id();
 
-        pipeline.debug_to_dot_file_with_ts(
-            gst::DebugGraphDetails::all(),
-            format!("pipeline-{pipeline_id}-sink-{sink_id}-before-playing"),
-        );
-
         // Start the pipeline if not playing yet
         if pipeline.current_state() != gst::State::Playing {
             if let Err(error) = pipeline.set_state(gst::State::Playing) {
@@ -193,11 +188,6 @@ impl PipelineState {
                 "Failed setting Pipeline {pipeline_id} to Playing state. Reason: {error:?}"
             ));
         }
-
-        pipeline.debug_to_dot_file_with_ts(
-            gst::DebugGraphDetails::all(),
-            format!("pipeline-{pipeline_id}-sink-{sink_id}-playing"),
-        );
 
         if let Sink::Rtsp(sink) = &sink {
             let caps = &self
