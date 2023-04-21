@@ -115,10 +115,14 @@ pub fn remove_all_streams() -> Result<()> {
 
 #[instrument(level = "debug")]
 pub fn start_default() -> Result<()> {
-    // First of all, gently remove all streams as we are going to replace the entire list below
-    remove_all_streams()?;
-
+    // Get streams from default settings, this needs to be done first because
+    // remove_all_streams will modify the settings as its using the stream manager
+    // to remove the streams, and the stream manager will save the state after
+    // each removal in the settings
     let mut streams = settings::manager::streams();
+
+    // Gently remove all streams as we are going to replace the entire list below
+    remove_all_streams()?;
 
     // Update all local video sources to make sure that they are available
     let mut candidates = video_source::cameras_available();
