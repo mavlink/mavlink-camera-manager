@@ -179,6 +179,10 @@ impl PipelineRunner {
                     match msg.view() {
                         MessageView::Eos(eos) => {
                             warn!("Received EndOfStream: {eos:#?}");
+                            pipeline.debug_to_dot_file_with_ts(
+                                gst::DebugGraphDetails::all(),
+                                format!("pipeline-{pipeline_id}-eos"),
+                            );
                             break 'outer;
                         }
                         MessageView::Error(error) => {
@@ -190,11 +194,20 @@ impl PipelineRunner {
                             );
                             pipeline.debug_to_dot_file_with_ts(
                                 gst::DebugGraphDetails::all(),
-                                format!("pipeline-error-{pipeline_id}"),
+                                format!("pipeline-{pipeline_id}-error"),
                             );
                             break 'inner;
                         }
                         MessageView::StateChanged(state) => {
+                            pipeline.debug_to_dot_file_with_ts(
+                                gst::DebugGraphDetails::all(),
+                                format!(
+                                    "pipeline-{pipeline_id}-{:?}-to-{:?}",
+                                    state.old(),
+                                    state.current()
+                                ),
+                            );
+
                             trace!(
                                 "State changed from {:?}: {:?} to {:?} ({:?})",
                                 state.src().map(|s| s.path_string()),
