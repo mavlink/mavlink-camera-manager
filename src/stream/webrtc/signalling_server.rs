@@ -57,7 +57,15 @@ impl Default for SignallingServer {
 impl SignallingServer {
     #[instrument(level = "debug")]
     fn run_main_loop() {
-        let endpoint = url::Url::parse(DEFAULT_SIGNALLING_ENDPOINT).unwrap();
+        let endpoint = match url::Url::parse(DEFAULT_SIGNALLING_ENDPOINT)
+            .context("Failed parsing endpoint")
+        {
+            Ok(endpoint) => endpoint,
+            Err(error) => {
+                error!("Failed parsing TurnServer url {DEFAULT_SIGNALLING_ENDPOINT:?}: {error:?}");
+                return;
+            }
+        };
 
         debug!("Starting Signalling server on {endpoint:?}...");
 
