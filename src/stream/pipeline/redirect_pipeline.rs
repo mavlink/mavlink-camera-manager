@@ -76,8 +76,8 @@ impl RedirectPipeline {
                         " ! application/x-rtp",
                         " ! tee name={sink_tee_name} allow-not-linked=true"
                     ),
-                    address = url.host().unwrap(),
-                    port = url.port().unwrap(),
+                    address = url.host().context("UDP URL without host")?,
+                    port = url.port().context("UDP URL without port")?,
                     sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"),
                 )
             }
