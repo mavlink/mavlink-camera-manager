@@ -33,10 +33,12 @@ pub fn udp() -> Vec<VideoAndStreamInformation> {
         .enumerate()
         .filter_map(|(index, cam)| {
             let formats = cam.inner().formats();
-            let format = formats
+            let Some(format) = formats
                 .iter()
-                .find(|format| format.encode == VideoEncodeType::H264)
-                .unwrap();
+                .find(|format| format.encode == VideoEncodeType::H264) else {
+                    warn!("Unable to find a valid format for {cam:?}");
+                    return None;
+                };
 
             // Get the biggest resolution possible
             let mut sizes = format.sizes.clone();
@@ -51,13 +53,13 @@ pub fn udp() -> Vec<VideoAndStreamInformation> {
                 name: format!("UDP Stream {}", index),
                 stream_information: StreamInformation {
                     endpoints: vec![
-                        Url::parse(&format!("udp://192.168.2.1:{}", 5600 + index)).unwrap()
+                        Url::parse(&format!("udp://192.168.2.1:{}", 5600 + index)).ok()?
                     ],
                     configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
                         encode: format.encode.clone(),
                         height: size.height,
                         width: size.width,
-                        frame_interval: size.intervals.first().unwrap().clone(),
+                        frame_interval: size.intervals.first()?.clone(),
                     }),
                     extended_configuration: None,
                 },
@@ -73,10 +75,12 @@ pub fn rtsp() -> Vec<VideoAndStreamInformation> {
         .enumerate()
         .filter_map(|(index, cam)| {
             let formats = cam.inner().formats();
-            let format = formats
+            let Some(format) = formats
                 .iter()
-                .find(|format| format.encode == VideoEncodeType::H264)
-                .unwrap();
+                .find(|format| format.encode == VideoEncodeType::H264) else {
+                    warn!("Unable to find a valid format for {cam:?}");
+                    return None;
+                };
 
             // Get the biggest resolution possible
             let mut sizes = format.sizes.clone();
@@ -95,12 +99,12 @@ pub fn rtsp() -> Vec<VideoAndStreamInformation> {
                     endpoints: vec![Url::parse(&format!(
                         "rtsp://{visible_qgc_ip_address}:8554/video_{index}"
                     ))
-                    .unwrap()],
+                    .ok()?],
                     configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
                         encode: format.encode.clone(),
                         height: size.height,
                         width: size.width,
-                        frame_interval: size.intervals.first().unwrap().clone(),
+                        frame_interval: size.intervals.first()?.clone(),
                     }),
                     extended_configuration: None,
                 },
