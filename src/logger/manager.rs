@@ -73,8 +73,10 @@ pub fn init() {
     // This fundamentally changes the CPU usage of our streams, so we are only enabling
     // this integration if absolutely necessary.
     if cli::manager::is_tracy() {
-        gst::init().unwrap();
-        tracing_gstreamer::integrate_spans(); // This must be called after gst::init(), this is necessary to have GStreamer on tracy
+        match gst::init() {
+            Ok(_) => tracing_gstreamer::integrate_spans(), // This must be called after gst::init(), this is necessary to have GStreamer on tracy
+            Err(error) => error!("Failed to enable GStreamer integration with tracy: {error:?}"),
+        }
     }
 
     info!(
