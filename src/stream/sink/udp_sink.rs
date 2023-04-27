@@ -275,15 +275,29 @@ impl UdpSink {
         let _proxysrc = gst::ElementFactory::make("proxysrc")
             .property("proxysink", &proxysink)
             .build()?;
-        let proxy_queue = _proxysrc
-            .downcast_ref::<gst::Bin>()
-            .unwrap()
-            .child_by_index(0)
-            .unwrap();
-        proxy_queue.set_property_from_str("leaky", "downstream"); // Throw away any data
-        proxy_queue.set_property("flush-on-eos", true);
-        proxy_queue.set_property("max-size-buffers", 0u32); // Disable buffers
-        drop(proxy_queue);
+
+        // Configure proxysrc's queue, skips if fails
+        match _proxysrc.downcast_ref::<gst::Bin>() {
+            Some(bin) => {
+                let elements = bin.children();
+                match elements
+                    .iter()
+                    .find(|element| element.name().starts_with("queue"))
+                {
+                    Some(element) => {
+                        element.set_property_from_str("leaky", "downstream"); // Throw away any data
+                        element.set_property("flush-on-eos", true);
+                        element.set_property("max-size-buffers", 0u32); // Disable buffers
+                    }
+                    None => {
+                        warn!("Failed to customize proxysrc's queue: Failed to find queue in proxysrc");
+                    }
+                }
+            }
+            None => {
+                warn!("Failed to customize proxysrc's queue: Failed to downcast element to bin")
+            }
+        }
 
         let clients = addresses
             .iter()
