@@ -254,7 +254,7 @@ pub async fn get_jpeg_thumbnail_from_source(
         tokio::runtime::Builder::new_current_thread()
         .enable_time()
         .build()
-        .unwrap()
+        .expect("Failed building a new tokio runtime")
         .block_on(async move {
             let res = async move {
                     let manager = match MANAGER.lock() {
