@@ -66,7 +66,9 @@ impl SinkInterface for WebRTCSink {
         // we are directly connecting to webrtcbin->transceiver->transport->connect_state_notify:
         // When the bug is solved, we should remove this code and use WebRTCPeerConnectionState instead.
         let weak_this = self.clone();
-        let rtp_sender = transceiver.sender().unwrap();
+        let rtp_sender = transceiver
+            .sender()
+            .context("Failed getting transceiver's RTP sender element")?;
         rtp_sender.connect_notify(Some("transport"), move |rtp_sender, _pspec| {
             let transport = rtp_sender.property::<gst_webrtc::WebRTCDTLSTransport>("transport");
 
