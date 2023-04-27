@@ -116,12 +116,13 @@ impl SignallingServer {
 
     #[instrument(level = "debug")]
     async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> tungstenite::Result<()> {
-        let result = tokio_tungstenite::accept_async(stream).await;
-        if let Err(error) = result {
-            error!("Failed to accept websocket connection. Reason: {error:?}");
-            return Err(error);
-        }
-        let (mut ws_sender, mut ws_receiver) = result.expect("Failed to accept").split();
+        let (mut ws_sender, mut ws_receiver) = match tokio_tungstenite::accept_async(stream).await {
+            Ok(result) => result.split(),
+            Err(error) => {
+                error!("Failed to accept websocket connection. Reason: {error:?}");
+                return Err(error);
+            }
+        };
 
         info!("New WebSocket connection: {peer:?}");
 
