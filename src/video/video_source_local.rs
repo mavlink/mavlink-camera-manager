@@ -274,19 +274,36 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
         return formats.clone();
     }
 
-    let device = Device::with_path(device_path).unwrap();
-    let v4l_formats = device.enum_formats().unwrap_or_default();
     let mut formats = vec![];
+    let device = match Device::with_path(device_path) {
+        Ok(device) => device,
+        Err(error) => {
+            error!("Faield to get device {device_path:?}: {error:?}");
+            return formats;
+        }
+    };
+
+    let v4l_formats = device.enum_formats().unwrap_or_default();
     trace!("Checking resolutions for camera {device_path:?}");
     for v4l_format in v4l_formats {
         let mut sizes = vec![];
         let mut errors: Vec<String> = vec![];
 
-        for v4l_framesizes in device.enum_framesizes(v4l_format.fourcc).unwrap() {
-            match v4l_framesizes.size {
+        let v4l_framesizes = match device.enum_framesizes(v4l_format.fourcc) {
+            Ok(v4l_framesizes) => v4l_framesizes,
+            Err(error) => {
+                warn!(
+                    "Failed to get framesizes from format {v4l_format:?} for device {device_path:?}: {error:#?}"
+                );
+                continue;
+            }
+        };
+
+        for v4l_framesize in v4l_framesizes {
+            match v4l_framesize.size {
                 v4l::framesize::FrameSizeEnum::Discrete(v4l_size) => {
                     match &device.enum_frameintervals(
-                        v4l_framesizes.fourcc,
+                        v4l_framesize.fourcc,
                         v4l_size.width,
                         v4l_size.height,
                     ) {
@@ -311,7 +328,7 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
                     std_sizes.push((v4l_size.max_width, v4l_size.max_height));
 
                     std_sizes.iter().for_each(|(width, height)| {
-                        match &device.enum_frameintervals(v4l_framesizes.fourcc, *width, *height) {
+                        match &device.enum_frameintervals(v4l_framesize.fourcc, *width, *height) {
                             Ok(enum_frameintervals) => {
                                 let intervals = convert_v4l_intervals(enum_frameintervals);
                                 sizes.push(Size {
@@ -341,10 +358,18 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
             trace!("Failed to fetch frameintervals for camera {device_path}: {errors:#?}");
         }
 
-        formats.push(Format {
-            encode: VideoEncodeType::from_str(v4l_format.fourcc.str().unwrap()),
-            sizes,
-        });
+        match v4l_format.fourcc.str() {
+            Ok(encode_str) => {
+                formats.push(Format {
+                    encode: VideoEncodeType::from_str(encode_str),
+                    sizes,
+                });
+            }
+            Err(error) => warn!(
+                "Failed to represent fourcc {:?} as a string: {error:?}",
+                v4l_format.fourcc
+            ),
+        }
     }
     // V4l2 reports unsupported sizes for Raspberry Pi
     // Cameras in Legacy Mode, showing the following:
@@ -467,11 +492,18 @@ impl VideoSource for VideoSourceLocal {
     }
 
     fn controls(&self) -> Vec<Control> {
-        //TODO: create function to encapsulate device
-        let device = Device::with_path(&self.device_path).unwrap();
-        let v4l_controls = device.query_controls().unwrap_or_default();
-
         let mut controls: Vec<Control> = vec![];
+
+        //TODO: create function to encapsulate device
+        let device = match Device::with_path(&self.device_path) {
+            Ok(device) => device,
+            Err(error) => {
+                error!("Faield to get device {:?}: {error:?}", self.device_path);
+                return controls;
+            }
+        };
+
+        let v4l_controls = device.query_controls().unwrap_or_default();
         for v4l_control in v4l_controls {
             let mut control = Control {
                 name: v4l_control.name,
@@ -490,15 +522,16 @@ impl VideoSource for VideoSourceLocal {
                 continue;
             }
 
-            let value = self.control_value_by_id(v4l_control.id as u64);
-            if let Err(error) = value {
-                error!(
-                    "Failed to get control {:?} ({:?}) from device {:?}: {error:?}",
-                    control.name, control.id, &self.device_path
-                );
-                continue;
-            }
-            let value = value.unwrap();
+            let value = match self.control_value_by_id(v4l_control.id as u64) {
+                Ok(value) => value,
+                Err(error) => {
+                    error!(
+                        "Failed to get control {:?} ({:?}) from device {:?}: {error:?}",
+                        control.name, control.id, &self.device_path
+                    );
+                    continue;
+                }
+            };
             let default = v4l_control.default;
 
             match v4l_control.typ {
@@ -556,26 +589,53 @@ impl VideoSource for VideoSourceLocal {
 
 impl VideoSourceAvailable for VideoSourceLocal {
     fn cameras_available() -> Vec<VideoSourceType> {
-        let cameras_path: Vec<String> = std::fs::read_dir("/dev/")
-            .unwrap()
-            .map(|f| String::from(f.unwrap().path().to_str().unwrap()))
-            .filter(|f| f.starts_with("/dev/video"))
-            .collect();
-
         let mut cameras: Vec<VideoSourceType> = vec![];
-        for camera_path in &cameras_path {
-            let camera = Device::with_path(camera_path).unwrap();
-            let caps = camera.query_caps();
 
-            if let Err(error) = caps {
-                debug!("Failed to capture caps for device: {camera_path} {error:#?}");
-                continue;
-            }
-            let caps = caps.unwrap();
+        let cameras_path = {
+            let read_dir = match std::fs::read_dir("/dev/") {
+                Ok(cameras_path) => cameras_path,
+                Err(error) => {
+                    error!("Failed to get cameras from \"/dev/\": {error:?}");
+                    return cameras;
+                }
+            };
+
+            read_dir
+                .filter_map(|dir_entry| {
+                    let dir_entry = match dir_entry {
+                        Ok(dir_entry) => dir_entry,
+                        Err(error) => {
+                            debug!("Failed reading a device: {error:?}");
+                            return None;
+                        }
+                    };
+
+                    dir_entry.path().to_str().map(String::from)
+                })
+                .filter(|entry_str| entry_str.starts_with("/dev/video"))
+                .collect::<Vec<String>>()
+        };
+
+        for camera_path in &cameras_path {
+            let device = match Device::with_path(camera_path) {
+                Ok(device) => device,
+                Err(error) => {
+                    error!("Faield to get device {camera_path:?}: {error:?}");
+                    continue;
+                }
+            };
+
+            let caps = match device.query_caps() {
+                Ok(caps) => caps,
+                Err(error) => {
+                    debug!("Failed to capture caps for device: {camera_path} {error:#?}");
+                    continue;
+                }
+            };
 
             let typ = VideoSourceLocalType::from_str(&caps.bus);
 
-            if let Err(error) = camera.format() {
+            if let Err(error) = device.format() {
                 if error.kind() != std::io::ErrorKind::InvalidInput {
                     debug!("Failed to capture formats for device: {camera_path}\nError: {error:?}");
                 }
