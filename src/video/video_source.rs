@@ -60,11 +60,10 @@ pub fn set_control(source_string: &str, control_id: u64, value: i64) -> std::io:
 }
 
 pub fn reset_controls(source_string: &str) -> Result<(), Vec<std::io::Error>> {
-    let camera = get_video_source(source_string);
-    if let Err(error) = camera {
-        return Err(vec![error]);
-    }
-    let camera = camera.unwrap();
+    let camera = match get_video_source(source_string) {
+        Ok(camera) => camera,
+        Err(error) => return Err(vec![error]),
+    };
 
     debug!("Resetting all controls of camera ({source_string}).",);
 
