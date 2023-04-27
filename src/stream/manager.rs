@@ -98,14 +98,14 @@ pub fn remove_all_streams() -> Result<()> {
         .streams
         .keys()
         .for_each(|id| {
-            ids.push(id.clone());
+            ids.push(*id);
         });
 
         ids
     };
 
     keys.iter().for_each(|stream_id| {
-        if let Err(error) = Manager::remove_stream(&stream_id) {
+        if let Err(error) = Manager::remove_stream(stream_id) {
             warn!("Failed removing stream {stream_id:?}: {error:?}")
         }
     });
