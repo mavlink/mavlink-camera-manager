@@ -213,9 +213,14 @@ pub async fn streams() -> HttpResponse {
         }
     };
 
-    HttpResponse::Ok()
-        .content_type("application/json")
-        .body(serde_json::to_string_pretty(&streams).unwrap())
+    match serde_json::to_string_pretty(&streams) {
+        Ok(json) => HttpResponse::Ok()
+            .content_type("application/json")
+            .body(json),
+        Err(error) => HttpResponse::InternalServerError()
+            .content_type("text/plain")
+            .body(format!("{error:#?}")),
+    }
 }
 
 #[api_v2_operation]
@@ -251,9 +256,14 @@ pub fn streams_post(json: web::Json<PostStream>) -> HttpResponse {
         }
     };
 
-    HttpResponse::Ok()
-        .content_type("application/json")
-        .body(serde_json::to_string_pretty(&streams).unwrap())
+    match serde_json::to_string_pretty(&streams) {
+        Ok(json) => HttpResponse::Ok()
+            .content_type("application/json")
+            .body(json),
+        Err(error) => HttpResponse::InternalServerError()
+            .content_type("text/plain")
+            .body(format!("{error:#?}")),
+    }
 }
 
 #[api_v2_operation]
@@ -274,9 +284,14 @@ pub fn remove_stream(query: web::Query<RemoveStream>) -> HttpResponse {
         }
     };
 
-    HttpResponse::Ok()
-        .content_type("application/json")
-        .body(serde_json::to_string_pretty(&streams).unwrap())
+    match serde_json::to_string_pretty(&streams) {
+        Ok(json) => HttpResponse::Ok()
+            .content_type("application/json")
+            .body(json),
+        Err(error) => HttpResponse::InternalServerError()
+            .content_type("text/plain")
+            .body(format!("{error:#?}")),
+    }
 }
 
 #[api_v2_operation]
@@ -304,9 +319,14 @@ pub fn camera_reset_controls(json: web::Json<ResetCameraControls>) -> HttpRespon
         }
     };
 
-    HttpResponse::Ok()
-        .content_type("application/json")
-        .body(serde_json::to_string_pretty(&streams).unwrap())
+    match serde_json::to_string_pretty(&streams) {
+        Ok(json) => HttpResponse::Ok()
+            .content_type("application/json")
+            .body(json),
+        Err(error) => HttpResponse::InternalServerError()
+            .content_type("text/plain")
+            .body(format!("{error:#?}")),
+    }
 }
 
 #[api_v2_operation]
