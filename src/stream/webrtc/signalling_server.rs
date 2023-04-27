@@ -133,19 +133,21 @@ impl SignallingServer {
                     }
                 };
 
-                let protocol = Some(Protocol::from(message));
-
+                let protocol = Protocol::from(message);
                 trace!("Sending..: {protocol:#?}");
 
                 // Transform our Protocol into a tungstenite's Message
-                let message: Option<tungstenite::Message> =
-                    protocol.map(|protocol| protocol.try_into().unwrap());
-
-                if let Some(message) = message {
-                    if let Err(error) = ws_sender.send(message).await {
-                        error!("Failed repassing message from the MPSC to the WebSocket. Reason: {error:?}");
+                let message: tungstenite::Message = match protocol.try_into() {
+                    Ok(message) => message,
+                    Err(error) => {
+                        error!("Failed transforming Protocol into Tungstenite' message: {error:?}");
                         break;
                     }
+                };
+
+                if let Err(error) = ws_sender.send(message).await {
+                    error!("Failed repassing message from the MPSC to the WebSocket. Reason: {error:?}");
+                    break;
                 }
             }
 
