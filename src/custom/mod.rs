@@ -16,15 +16,9 @@ arg_enum! {
 }
 
 pub fn create_default_streams() -> Vec<VideoAndStreamInformation> {
-    let default_environment: CustomEnvironment = match cli::manager::default_settings() {
-        Some(value) => CustomEnvironment::from_str(value).unwrap(),
-        None => {
-            return vec![];
-        }
-    };
-
-    match default_environment {
-        CustomEnvironment::BlueROVUDP => bluerov::udp(),
-        CustomEnvironment::BlueROVRTSP => bluerov::rtsp(),
+    match cli::manager::default_settings().map(CustomEnvironment::from_str) {
+        Some(Ok(CustomEnvironment::BlueROVUDP)) => bluerov::udp(),
+        Some(Ok(CustomEnvironment::BlueROVRTSP)) => bluerov::rtsp(),
+        _ => vec![],
     }
 }
