@@ -75,9 +75,16 @@ impl VideoSourceLocalType {
     }
 
     fn usb_from_str(description: &str) -> Option<Self> {
-        let regex =
-            Regex::new(r"usb-(?P<interface>(([0-9a-fA-F]{2}){1,2}:?){4})?\.(usb-)?(?P<device>.*)")
-                .unwrap();
+        let regex = match Regex::new(
+            r"usb-(?P<interface>(([0-9a-fA-F]{2}){1,2}:?){4})?\.(usb-)?(?P<device>.*)",
+        ) {
+            Ok(regex) => regex,
+            Err(error) => {
+                error!("Failed to construct regex: {error:?}");
+                return None;
+            }
+        };
+
         if regex.is_match(description) {
             return Some(VideoSourceLocalType::Usb(description.into()));
         }
@@ -85,7 +92,14 @@ impl VideoSourceLocalType {
     }
 
     fn v4l2_from_str(description: &str) -> Option<Self> {
-        let regex = Regex::new(r"platform:(?P<device>\S+)-v4l2-[0-9]").unwrap();
+        let regex = match Regex::new(r"platform:(?P<device>\S+)-v4l2-[0-9]") {
+            Ok(regex) => regex,
+            Err(error) => {
+                error!("Failed to construct regex: {error:?}");
+                return None;
+            }
+        };
+
         if regex.is_match(description) {
             return Some(VideoSourceLocalType::LegacyRpiCam(description.into()));
         }
