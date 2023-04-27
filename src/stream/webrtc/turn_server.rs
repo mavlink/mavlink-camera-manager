@@ -65,7 +65,14 @@ impl Default for TurnServer {
 impl TurnServer {
     #[instrument(level = "debug")]
     fn run_main_loop() {
-        let endpoint = url::Url::parse(DEFAULT_TURN_ENDPOINT).unwrap();
+        let endpoint =
+            match url::Url::parse(DEFAULT_TURN_ENDPOINT).context("Failed parsing endpoint") {
+                Ok(endpoint) => endpoint,
+                Err(error) => {
+                    error!("Failed parsing TurnServer url {DEFAULT_TURN_ENDPOINT:?}: {error:?}");
+                    return;
+                }
+            };
         let realm = "some".into();
 
         debug!("Starting TURN server on {endpoint:?}...");
@@ -109,7 +116,7 @@ impl TurnServer {
             conn_configs: vec![ConnConfig {
                 conn,
                 relay_addr_generator: Box::new(RelayAddressGeneratorStatic {
-                    relay_address: IpAddr::V4(public_ip.parse::<Ipv4Addr>().unwrap()),
+                    relay_address: IpAddr::V4(public_ip.parse::<Ipv4Addr>()?),
                     address: public_ip,
                     net: Arc::new(Net::new(None)),
                 }),
