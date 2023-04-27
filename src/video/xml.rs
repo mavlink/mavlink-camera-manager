@@ -1,5 +1,7 @@
 use super::types::*;
 use super::video_source::VideoSource;
+
+use anyhow::{anyhow, Result};
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -112,7 +114,7 @@ impl Description {
     }
 }
 
-pub fn from_video_source(video_source: &dyn VideoSource) -> String {
+pub fn from_video_source(video_source: &dyn VideoSource) -> Result<String> {
     let controls = video_source.controls();
 
     let definition = Definition {
@@ -172,7 +174,7 @@ pub fn from_video_source(video_source: &dyn VideoSource) -> String {
         },
     };
 
-    quick_xml::se::to_string(&mavlink_camera).unwrap()
+    quick_xml::se::to_string(&mavlink_camera).map_err(|e| anyhow!(e.to_string()))
 }
 
 #[cfg(test)]
@@ -185,7 +187,7 @@ mod tests {
         use crate::video::video_source;
         for camera in video_source::cameras_available() {
             if let VideoSourceType::Local(camera) = camera {
-                let xml_string = from_video_source(&camera);
+                let xml_string = from_video_source(&camera).unwrap();
                 println!("{}", xml_string);
             }
         }
