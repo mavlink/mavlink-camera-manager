@@ -114,16 +114,13 @@ fn fallback_settings_with_backup_file(file_name: &str) -> SettingsStruct {
 }
 
 fn load_settings_from_file(file_name: &str) -> SettingsStruct {
-    let result = std::fs::read_to_string(file_name);
-    if let Err(error) = result {
-        error!("Error loading settings file {file_name:?}. Reason: {error:?}");
-        return fallback_settings_with_backup_file(file_name);
-    };
-
-    serde_json::from_str(result.unwrap().as_str()).unwrap_or_else(|error| {
-        error!("Failed to load settings file {file_name:?}. Reason: {error}");
-        fallback_settings_with_backup_file(file_name)
-    })
+    std::fs::read_to_string(file_name)
+        .map_err(Error::msg)
+        .and_then(|value| serde_json::from_str(&value).map_err(Error::msg))
+        .unwrap_or_else(|error| {
+            error!("Failed to load settings file {file_name:?}. Reason: {error}");
+            fallback_settings_with_backup_file(file_name)
+        })
 }
 
 fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> Result<()> {
