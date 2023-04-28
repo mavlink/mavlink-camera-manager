@@ -142,9 +142,11 @@ pub fn save() {
                 "Failed to save settings: file: {:#?}, configuration: {:#?}, error: {:#?}",
                 &content.file_name, &content.config, error
             );
+            return;
         }
+        debug!("Settings saved: {content:#?}");
     } else {
-        debug!("saved!");
+        warn!("Skipped saving: the configuration (manager.content) was None");
     }
 }
 
