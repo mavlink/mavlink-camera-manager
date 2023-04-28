@@ -1,3 +1,4 @@
+use anyhow::{Error, Result};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
@@ -125,11 +126,14 @@ fn load_settings_from_file(file_name: &str) -> SettingsStruct {
     })
 }
 
-fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> std::io::Result<()> {
+fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> Result<()> {
+    let json = serde_json::to_string_pretty(content)?;
+
     let mut file = std::fs::File::create(file_name)?;
-    debug!("Settings saved: {content:#?}");
-    let value = serde_json::to_string_pretty(content).unwrap();
-    file.write_all(value.as_bytes())
+
+    file.write_all(json.as_bytes())?;
+
+    Ok(())
 }
 
 // Save the latest state of the settings
