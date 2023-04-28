@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap;
 use std::sync::Arc;
 use tracing::error;
@@ -14,11 +15,14 @@ lazy_static! {
     static ref CURRENT_EXECUTION_WWW_PATH: String = format!(
         "{}/www",
         std::env::current_exe()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .to_str()
-            .unwrap()
+            .and_then(std::fs::canonicalize)
+            .map_err(anyhow::Error::msg)
+            .and_then(|path| path
+                .to_owned()
+                .to_str()
+                .context("Failed to convert path to str")
+                .map(String::from))
+            .expect("Failed to get current executable path")
     );
 }
 
