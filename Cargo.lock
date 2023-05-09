@@ -2314,6 +2314,7 @@ dependencies = [
  "v4l",
  "validator",
  "vergen",
+ "webrtc-sdp",
  "webrtc-util",
 ]
 
@@ -4267,6 +4268,16 @@ checksum = "e33b99f4b23ba3eec1a53ac264e35a755f00e966e0065077d6027c0f575b0b97"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "webrtc-sdp"
+version = "0.3.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b27cfe685c697666a76932399d55026bf2a5a205d91d277fd16346f0c65a7c06"
+dependencies = [
+ "log",
+ "url",
 ]
 
 [[package]]
