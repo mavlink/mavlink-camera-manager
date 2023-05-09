@@ -18,7 +18,6 @@ lazy_static! {
             .and_then(std::fs::canonicalize)
             .map_err(anyhow::Error::msg)
             .and_then(|path| path
-                .to_owned()
                 .to_str()
                 .context("Failed to convert path to str")
                 .map(String::from))
