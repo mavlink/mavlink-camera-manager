@@ -264,10 +264,6 @@ impl WebRTCBinInterface for WebRTCSink {
                 }
             };
 
-            if let Ok(sdp) = offer.sdp().as_text() {
-                debug!("Sending SDP offer to peer. Offer: {sdp}")
-            }
-
             if let Err(error) = this.on_offer_created(&webrtcbin_clone, &offer) {
                 error!("Failed to send SDP offer: {error:?}");
             }
