@@ -349,12 +349,10 @@ pub fn xml(xml_file_request: web::Query<XmlFileRequest>) -> HttpResponse {
 
     match xml::from_video_source(camera.inner()) {
         Ok(xml) => HttpResponse::Ok().content_type("text/xml").body(xml),
-        Err(error) => {
-            return HttpResponse::InternalServerError().body(format!(
-                "Failed getting XML file {}: {error:?}",
-                xml_file_request.file
-            ))
-        }
+        Err(error) => HttpResponse::InternalServerError().body(format!(
+            "Failed getting XML file {}: {error:?}",
+            xml_file_request.file
+        )),
     }
 }
 
