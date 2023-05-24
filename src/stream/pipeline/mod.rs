@@ -238,15 +238,24 @@ impl PipelineState {
         sink.unlink(pipeline, pipeline_id)?;
 
         // Set pipeline state to NULL when there are no consumers to save CPU usage.
-        let sink_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}");
-        let tee = pipeline
-            .by_name(&sink_name)
-            .context(format!("no element named {sink_name:#?}"))?;
-        if tee.src_pads().is_empty() {
-            if let Err(error) = pipeline.set_state(gst::State::Null) {
-                return Err(anyhow!(
-                    "Failed to change state of Pipeline {pipeline_id} to NULL. Reason: {error}"
-                ));
+        // TODO: We are skipping rtspsrc here because once back to null, we are having
+        // trouble knowing how to propper reuse it.
+        if !self
+            .pipeline
+            .children()
+            .iter()
+            .any(|child| child.name().starts_with("rtspsrc"))
+        {
+            let sink_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}");
+            let tee = pipeline
+                .by_name(&sink_name)
+                .context(format!("no element named {sink_name:#?}"))?;
+            if tee.src_pads().is_empty() {
+                if let Err(error) = pipeline.set_state(gst::State::Null) {
+                    return Err(anyhow!(
+                        "Failed to change state of Pipeline {pipeline_id} to NULL. Reason: {error}"
+                    ));
+                }
             }
         }
 
