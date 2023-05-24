@@ -1,62 +1,186 @@
-# Mavlink Camera Manager [WIP for 0.3.0, check release tags]
+<!-- TODO: Place a logo below -->
+<!-- <p align="center">[ A LOGO HERE ]</p> -->
+<h1 align="center">
+   Mavlink Camera Manager
+</h1>
+<h4 align="center">
+   An extensible cross-platform camera server built on top of GStreamer and Rust-MAVLink
+</h4>
+
+---
+
 [![Build status](https://github.com/bluerobotics/mavlink-camera-manager/workflows/Rust/badge.svg)](https://github.com/bluerobotics/mavlink-camera-manager/actions)
 [![Cargo download](https://img.shields.io/crates/d/mavlink-camera-manager)](https://crates.io/crates/mavlink-camera-manager)
 [![Crate info](https://img.shields.io/crates/v/mavlink-camera-manager.svg)](https://crates.io/crates/mavlink-camera-manager)
 [![Documentation](https://docs.rs/mavlink-camera-manager/badge.svg)](https://docs.rs/mavlink-camera-manager)
 
-The Mavlink Camera Manager is an extensible cross-platform camera server.
+## Key Features
 
-It provides a RTSP service for sharing video stream and a MAVLink camera protocol compatible API to configure ground control stations (E.g: QGroundControl).
+- Create and manage streams:
+  - from local devices, like most USB cameras (using video4linux)
+  - from remote devices, like most IP cameras
+  - with suported encodings: H264, MJPG, Raw (YUYV)
+- REST API for full control over streams and easy integrations
+  - With Swagger UI always available for easy development <sup>([What is this?](https://swagger.io/tools/swagger-ui/))</sup>
+- Configure video4linux camera controls, like brightness, saturation, etc.
+- SDP files available, allowing easy access from video players like [VLC](https://www.videolan.org/)
+- Redirect 3rd party streams, advertising them via MAVLink protocol
+- MAVLink protocol using [rust-mavlink](https://github.com/mavlink/rust-mavlink):
+  - Work with multiple cameras
+  - Interface video4linux camera controls
+- WebRTC-ready, for modern control stations
+- Remember configured streams
+- Rotated logs with configurable path and verbosity level
+- Generate thumbnails/snapshots for streams from local devices
+- Configurable via CLI arguments
+- Cross-platform, deployed for x64 and armv7 Linux
 
-# Run it
-1. Install: `gstreamer1.0-plugins-ugly gstreamer1.0-plugins-bad libgstrtspserver-1.0-0`
-2. Download
-3. Run!
+## Table of Contents
 
-# Warning!
-The break changes for the new release are big and this documentation may be outdated.
-For more information about the API, check: http://0.0.0.0:6020/docs
+- [Key Features](#key-features)
+- [Table of Contents](#table-of-contents)
+- [How to use it](#how-to-use-it)
+  - [1. Downloading](#1-downloading)
+  - [2. Installing](#2-installing)
+  - [3. Running](#3-running)
+- [Quick test guide](#quick-test-guide)
+  - [Receiving a stream from a MAVLink ground control stations like QGroundControl](#receiving-a-stream-from-a-mavlink-ground-control-stations-like-qgroundcontrol)
+  - [Receiving a stream from a GStreamer pipeline](#receiving-a-stream-from-a-gstreamer-pipeline)
+- [How to build it](#how-to-build-it)
+- [License](#license)
+- [Project origins](#project-origins)
 
-# How to test it
+## How to use it
 
-## Get video via player
-You can get the video via VLC or any other media player that can receive video via rtsp
+### 1. Downloading
 
-### Guide:
-1. Start `mavlink-camera-manager` via `cargo run` or calling the binary directly.
-2. Open player and set the rtsp string that the command line provides
-3. Done
+Download the mavlink-camera-manager binary for your architecture from our [releases](https://github.com/bluerobotics/mavlink-camera-manager/releases), or build it from sources as [described here](#how-to-build-it)
 
-## Get video via Ground Control Stations
+### 2. Installing
+
+- First, install the required runtime dependencies (assuming a ubuntu-based distro):
+
+```Bash
+sudo apt update -y && \
+sudo apt install -y --no-install-recommends \
+   libgstreamer1.0 \
+   libgstreamer-plugins-base1.0 \
+   libgstreamer-plugins-bad1.0 \
+   libgstrtspserver-1.0
+```
+
+_note: GSTreamer needs to be at least version `1.16.0`. You can check it by running `gst-launch-1.0 --version`._
+
+- Extract the zip
+- optionally, put the folder to your Linux PATH
+
+### 3. Running
+
+After [the installion](#2-installing), the binary can be run by calling it from the terminal, as simple as:
+
+```Bash
+mavlink-camera-manager --mavlink=tcpout:0.0.0.0:14000 --verbose
+```
+
+At this point, the API should be ready. By default, it's accessible from any computer in the same network at port `6020`, but it is customizable using the `--rest-server` CLI argument.
+
+For more information about the CLI arguments, `mavlink-camera-manager --help` will give a list of accepted parameters for your version.
+
+- Along with the REST API, a simple management interface is available at http://localhost:6020, in which streams can be created and managed:
+  ![picture 1](images/management_interface.png)
+
+- For developers, the Swagger UI with documentation for the entire REST API can be found at http://localhost:6020/docs
+  ![picture 2](images/swagger_ui.png)
+
+## Quick test guide
+
+The short clip below shows how an H264 UDP stream can be configured using the management interface, and how it can be accessed as a WebRTC stream.
+
+![Creating H264 Usb camera stream and testing it via WebRTC](images/creating_h264_usb_camera_stream_and_testing_via_webrtc.gif)
+
+<!-- TODO: #### Receiving a stream from a video player like VLC -->
+
+#### Receiving a stream from a MAVLink ground control stations like QGroundControl
+
 The video should automatically popup if you are using any modern GCS, like QGroundControl, that has support for MAVLink camera messages.
 
-### Guide:
-1. Start `mavlink-camera-manager` via `cargo run` or calling the binary directly.
-2. Start `mavproxy` or `sim_vehicle` with `--out=udpbcast:0.0.0.0:14550`
-   - By default mavlink-camera-manager uses 14550 to perform the mavlink connection
+1. Start `mavlink-camera-manager`
+2. Start `mavproxy` or `sim_vehicle` with a **TCP server** at `5777` (mavlink-camera-manager's default can be changed via the CLI argument `--mavlink`)
 3. Open your Ground Control Station
 4. Done
 
-# Use your own pipeline
-You can use your own pipeline via `--pipeline-rtsp` parameter, some examples:
-- `'videotestsrc ! video/x-raw,width=640,height=480 ! videoconvert ! x264enc ! rtph264pay name=pay0'`
-- `'rtspsrc location="rtsp://wowzaec2demo.streamlock.net/vod/mp4:BigBuckBunny_115k.mov" latency=100 ! rtph264depay ! rtph264pay name=pay0'`
-- `'v4l2src device=/dev/video0 ! video/x-h264,width=1920,height=1080,type=video ! rtph264pay name=pay0'`
+#### Receiving a stream from a GStreamer pipeline
 
-> Note that some GCS only supports video encoded with H264
+1. Start `mavlink-camera-manager`
+2. Run the following pipeline:
 
-# How to build it
-Remember to install:
-- libgstreamer1.0-dev
-- libgstreamer-plugins-base1.0-dev
-- libgstrtspserver-1.0-dev
+- If **RTSP** (any encoding):
 
-If the compilation is failing to find one of this packages, make sure that they are visible for `pkg-config`, may be necessary to set **PKG_CONFIG_PATH** environment variable.
+```Bash
+gstreamer-launch-1.0 rtspsrc location=$RTSP_ADDR latency=0 \
+   ! decodebin
+   ! fpsdisplaysink sync=false
+```
 
-Example:
-- export `PKG_CONFIG_PATH=/usr/local/Cellar/gst-plugins-base/1.16.2/lib/pkgconfig/`
+- If **UDP** (H264 only):
 
-After having installed all dependencies, you'll be able to build via cargo after cloning.
-- `cargo build`
+```Bash
+gstreamer-launch-1.0 udpsrc port=$PORT \
+   ! application/x-rtp,payload=96 \
+   ! rtph264depay \
+   ! avdec_h264 discard-corrupted-frames=true \
+   ! videoconvert
+   ! fpsdisplaysink sync=false
+```
 
-If `cargo` is not available, install and configure [rustup](https://rustup.rs/).
+## How to build it
+
+1. Install the development dependencies:
+
+```Bash
+sudo apt update -y \
+sudo apt install -y libunwind-dev
+sudo apt install -y --no-install-recommends \
+   libclang-dev \
+   libssl-dev \
+   pkg-config \
+   libmount-dev \
+   libsepol-dev \
+   libselinux1-dev \
+   libglib2.0-dev \
+   libgudev-1.0-dev \
+   gstreamer1.0-tools \
+   libgstreamer1.0-dev \
+   libgstreamer-plugins-base1.0-dev \
+   libgstreamer-plugins-bad1.0-dev \
+   libgstrtspserver-1.0-dev
+```
+
+2. Install cargo if not available <sup>([click here to see how](https://rustup.rs/))</sup>
+
+3. Clone this repository and enter it
+
+```Bash
+git clone git@github.com:mavlink/mavlink-camera-manager.git
+cd mavlink-camera-manager
+```
+
+3. Build it with cargo:
+
+```Bash
+cargo build
+```
+
+_note: If the compilation is failing to find one of this packages, make sure that they are visible for `pkg-config`, may be necessary to set `PKG_CONFIG_PATH` environment variable._
+
+## License
+
+This project is licensed under the [MIT License](/LICENSE).
+
+## Project origins
+
+The Mavlink Camera Manager project originated as a personal experiment by [@patrickelectric](github.com/patrickelectric/), driven by the need to address a critical challenge in remotely operated vehicles – effectively managing and providing camera streams to the topside computer. At the time, there was a noticeable absence of open-source alternatives, which motivated the project's inception.
+
+Over time, the project gained recognition and was officially embraced by [**Blue Robotics**](https://github.com/bluerobotics) as a core development effort. It became an integral part of their operating system, BlueOS, and was widely distributed worldwide. The adoption of the Mavlink Camera Manager by Blue Robotics served as a testament to its capabilities and value.
+
+Due to increasing interest from other developers and integrators, the project was transferred to the [**MAVLink organization**](https://github.com/mavlink) on May 25, 2023.
