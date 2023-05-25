@@ -190,16 +190,7 @@ impl PipelineState {
         }
 
         if let Sink::Rtsp(sink) = &sink {
-            let caps = &self
-                .sink_tee
-                .static_pad("sink")
-                .expect("No static sink pad found on capsfilter")
-                .current_caps()
-                .context("Failed to get caps from capsfilter sink pad")?;
-
-            debug!("caps: {:#?}", caps.to_string());
-
-            RTSPServer::add_pipeline(&sink.path(), &sink.socket_path(), caps)?;
+            RTSPServer::add_pipeline(&sink.path(), sink.proxysink(), &sink.encoding())?;
 
             RTSPServer::start_pipeline(&sink.path())?;
         }
