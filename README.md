@@ -9,7 +9,7 @@
 
 ---
 
-[![Build status](https://github.com/bluerobotics/mavlink-camera-manager/workflows/Rust/badge.svg)](https://github.com/bluerobotics/mavlink-camera-manager/actions)
+[![Build status](https://github.com/mavlink/mavlink-camera-manager/workflows/Rust/badge.svg)](https://github.com/mavlink/mavlink-camera-manager/actions)
 [![Cargo download](https://img.shields.io/crates/d/mavlink-camera-manager)](https://crates.io/crates/mavlink-camera-manager)
 [![Crate info](https://img.shields.io/crates/v/mavlink-camera-manager.svg)](https://crates.io/crates/mavlink-camera-manager)
 [![Documentation](https://docs.rs/mavlink-camera-manager/badge.svg)](https://docs.rs/mavlink-camera-manager)
@@ -54,7 +54,7 @@
 
 ### 1. Downloading
 
-Download the mavlink-camera-manager binary for your architecture from our [releases](https://github.com/bluerobotics/mavlink-camera-manager/releases), or build it from sources as [described here](#how-to-build-it)
+Download the mavlink-camera-manager binary for your architecture from our [releases](https://github.com/mavlink/mavlink-camera-manager/releases), or build it from sources as [described here](#how-to-build-it)
 
 ### 2. Installing
 
