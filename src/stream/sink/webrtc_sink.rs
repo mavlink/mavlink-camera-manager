@@ -49,7 +49,7 @@ impl SinkInterface for WebRTCSink {
     ) -> Result<()> {
         let mut inner = self.0.lock().unwrap();
 
-        // Configure transceiver
+        // Configure transceiver https://gstreamer.freedesktop.org/documentation/webrtclib/gstwebrtc-transceiver.html?gi-language=c
         let webrtcbin_sink_pad = &inner.webrtcbin_sink_pad;
         let transceiver =
             webrtcbin_sink_pad.property::<gst_webrtc::WebRTCRTPTransceiver>("transceiver");
@@ -57,6 +57,8 @@ impl SinkInterface for WebRTCSink {
             "direction",
             gst_webrtc::WebRTCRTPTransceiverDirection::Sendonly,
         );
+        transceiver.set_property("do-nack", false);
+        transceiver.set_property("fec-type", gst_webrtc::WebRTCFECType::None);
 
         // Link
         inner.link(pipeline, pipeline_id, tee_src_pad)?;
