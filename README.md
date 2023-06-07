@@ -63,10 +63,10 @@ Download the mavlink-camera-manager binary for your architecture from our [relea
 ```Bash
 sudo apt update -y && \
 sudo apt install -y --no-install-recommends \
-   libgstreamer1.0 \
-   libgstreamer-plugins-base1.0 \
-   libgstreamer-plugins-bad1.0 \
-   libgstrtspserver-1.0
+   libgstreamer1.0-0 \
+   libgstreamer-plugins-base1.0-0 \
+   libgstreamer-plugins-bad1.0-0 \
+   libgstrtspserver-1.0-0
 ```
 
 _note: GSTreamer needs to be at least version `1.16.0`. You can check it by running `gst-launch-1.0 --version`._
