@@ -19,7 +19,7 @@ lazy_static! {
     static ref ID_CONTROL: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(vec![]));
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)] // Do not Clone this, otherwise it's very likely to have unwanted Drop calls
 #[allow(dead_code)]
 pub struct MavlinkCameraComponent {
     // MAVLink specific information
@@ -39,7 +39,6 @@ pub struct MavlinkCameraComponent {
     thermal: bool,
 }
 
-#[derive(Clone)]
 pub struct MavlinkCameraInformation {
     component: MavlinkCameraComponent,
     mavlink_connection_string: String,
@@ -234,15 +233,17 @@ impl MavlinkCameraHandle {
         let heartbeat_state = thread_state.clone();
         let receive_message_state = thread_state.clone();
 
-        let component = match heartbeat_mavlink_information.lock() {
-            Ok(guard) => guard,
-            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-        }
-        .component
-        .to_owned();
+        let (system_id, component_id) = {
+            let mavlink_information = match heartbeat_mavlink_information.lock() {
+                Ok(guard) => guard,
+                Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+            };
 
-        let system_id = component.system_id;
-        let component_id = component.component_id;
+            (
+                mavlink_information.component.system_id,
+                mavlink_information.component.component_id,
+            )
+        };
 
         Ok(Self {
             mavlink_camera_information,
@@ -287,7 +288,7 @@ fn heartbeat_loop(
                 ThreadState::Running => (),
                 ThreadState::Restart => {
                     *vehicle.write().as_deref_mut().unwrap() =
-                        reconnect(&mavlink_camera_information.lock().unwrap().clone());
+                        reconnect(&mavlink_camera_information.lock().unwrap());
                     *state = ThreadState::Running;
                 }
                 ThreadState::Zombie => continue,
@@ -336,7 +337,7 @@ fn receive_message_loop(
                 ThreadState::Running => (),
                 ThreadState::Restart => {
                     let information = lock_or_return_error!(mavlink_camera_information);
-                    *vehicle.write().as_deref_mut().unwrap() = reconnect(&information.clone());
+                    *vehicle.write().as_deref_mut().unwrap() = reconnect(&information);
                     *state = ThreadState::Running;
                 }
                 ThreadState::Zombie => {
