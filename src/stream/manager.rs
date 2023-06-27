@@ -53,7 +53,13 @@ impl Manager {
         let video_and_stream_informations = self
             .streams
             .values()
-            .map(|stream| stream.video_and_stream_information.clone())
+            .filter_map(|stream| match stream.state.lock() {
+                Ok(guard) => Some(guard.video_and_stream_information.clone()),
+                Err(error) => {
+                    error!("Failed locking a Mutex. Reason: {error}");
+                    None
+                }
+            })
             .collect::<Vec<VideoAndStreamInformation>>();
 
         settings::manager::set_streams(video_and_stream_informations.as_slice());
@@ -126,7 +132,7 @@ pub fn start_default() -> Result<()> {
 
     // Update all local video sources to make sure that they are available
     let mut candidates = video_source::cameras_available();
-    update_devices(&mut streams, &mut candidates);
+    update_devices(&mut streams, &mut candidates, true);
 
     // Remove all invalid video_sources
     let streams: Vec<VideoAndStreamInformation> = streams
@@ -146,9 +152,10 @@ pub fn start_default() -> Result<()> {
 }
 
 #[instrument(level = "debug")]
-fn update_devices(
+pub fn update_devices(
     streams: &mut Vec<VideoAndStreamInformation>,
     candidates: &mut Vec<VideoSourceType>,
+    verbose: bool,
 ) {
     for stream in streams {
         let VideoSourceType::Local(source) = &mut stream.video_source else {
@@ -179,7 +186,9 @@ fn update_devices(
             Err(reason) => {
                 // Invalidate the device
                 source.device_path = "".into();
-                warn!("Device {source:?} was invalidated. Reason: {reason:?}");
+                if verbose {
+                    warn!("Device {source:?} was invalidated. Reason: {reason:?}");
+                };
             }
             _ => (),
         }
@@ -203,9 +212,16 @@ pub fn get_first_sdp_from_source(source: String) -> ClonableResult<gst_sdp::SDPM
         .streams
         .values()
         .find_map(|stream| {
-            if stream.video_and_stream_information.video_source.inner().source_string() == source {
-                stream
-                    .pipeline
+            let state = match stream.state.lock() {
+                Ok(guard) => guard,
+                Err(error) => {
+                    error!("Failed locking a Mutex. Reason: {error}");
+                    return None;
+                },
+            };
+
+            if state.video_and_stream_information.video_source.inner().source_string() == source {
+                state.pipeline
                     .inner_state_as_ref()
                     .sinks
                     .values()
@@ -266,8 +282,15 @@ pub async fn get_jpeg_thumbnail_from_source(
                         }
                     };
                     let Some(stream) = manager.streams.values().find(|stream| {
-                        stream
-                            .video_and_stream_information
+                        let state = match stream.state.lock() {
+                            Ok(guard) => guard,
+                            Err(error) => {
+                                error!("Failed locking a Mutex. Reason: {error}");
+                                return false;
+                            },
+                        };
+
+                        state.video_and_stream_information
                             .video_source
                             .inner()
                             .source_string()
@@ -276,7 +299,15 @@ pub async fn get_jpeg_thumbnail_from_source(
                         return None
                     };
 
-                    let mut sinks = futures::stream::iter(stream.pipeline.inner_state_as_ref().sinks.values());
+                    let state = match stream.state.lock() {
+                        Ok(guard) => guard,
+                        Err(error) => {
+                            error!("Failed locking a Mutex. Reason: {error}");
+                            return None;
+                        },
+                    };
+
+                    let mut sinks = futures::stream::iter(state.pipeline.inner_state_as_ref().sinks.values());
                     let Some(Sink::Image(image_sink)) = sinks.find(|sink| matches!(sink, Sink::Image(_))).await else {
                         return None;
                     };
@@ -304,7 +335,14 @@ pub fn add_stream_and_start(video_and_stream_information: VideoAndStreamInformat
         Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
     };
     for stream in manager.streams.values() {
-        stream
+        let state = match stream.state.lock() {
+            Ok(guard) => guard,
+            Err(error) => {
+                return Err(anyhow!("Failed locking a Mutex. Reason: {error}"));
+            }
+        };
+
+        state
             .video_and_stream_information
             .conflicts_with(&video_and_stream_information)?;
     }
@@ -323,7 +361,15 @@ pub fn remove_stream_by_name(stream_name: &str) -> Result<()> {
         Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
     };
     if let Some(stream_id) = &manager.streams.iter().find_map(|(id, stream)| {
-        if stream.video_and_stream_information.name == *stream_name {
+        let state = match stream.state.lock() {
+            Ok(guard) => guard,
+            Err(error) => {
+                error!("Failed locking a Mutex. Reason: {error}");
+                return None;
+            }
+        };
+
+        if state.video_and_stream_information.name == *stream_name {
             return Some(*id);
         }
         None
@@ -362,7 +408,7 @@ impl WebRTCSessionManagementInterface for Manager {
         };
 
         let sink = Sink::WebRTC(WebRTCSink::try_new(bind, sender)?);
-        stream.pipeline.add_sink(sink)?;
+        stream.state.lock().unwrap().pipeline.add_sink(sink)?;
         debug!("WebRTC session created: {session_id:?}");
 
         Ok(session_id)
@@ -383,7 +429,12 @@ impl WebRTCSessionManagementInterface for Manager {
             .get_mut(&bind.producer_id)
             .context(format!("Producer {:?} not found", bind.producer_id))?;
 
-        stream
+        let mut state = match stream.state.lock() {
+            Ok(guard) => guard,
+            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+        };
+
+        state
             .pipeline
             .inner_state_mut()
             .remove_sink(&bind.session_id)
@@ -404,10 +455,18 @@ impl WebRTCSessionManagementInterface for Manager {
             Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
         };
 
-        let sink = manager
+        let state = match manager
             .streams
             .get(&bind.producer_id)
             .context(format!("Producer {:?} not found", bind.producer_id))?
+            .state
+            .lock()
+        {
+            Ok(guard) => guard,
+            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+        };
+
+        let sink = state
             .pipeline
             .inner_state_as_ref()
             .sinks
@@ -447,10 +506,18 @@ impl WebRTCSessionManagementInterface for Manager {
             Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
         };
 
-        let sink = manager
+        let state = match manager
             .streams
             .get(&bind.producer_id)
             .context(format!("Producer {:?} not found", bind.producer_id))?
+            .state
+            .lock()
+        {
+            Ok(guard) => guard,
+            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+        };
+
+        let sink = state
             .pipeline
             .inner_state_as_ref()
             .sinks
@@ -477,7 +544,11 @@ impl StreamManagementInterface<StreamStatus> for Manager {
             Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
         };
 
-        let stream_id = stream.id;
+        let stream_id = match stream.state.lock() {
+            Ok(guard) => guard.pipeline_id,
+            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+        };
+
         if manager.streams.insert(stream_id, stream).is_some() {
             return Err(anyhow!("Failed adding stream {stream_id:?}"));
         }
@@ -559,10 +630,20 @@ impl StreamManagementInterface<StreamStatus> for Manager {
         Ok(manager
             .streams
             .values()
-            .map(|stream| StreamStatus {
-                id: stream.id,
-                running: stream.pipeline.is_running(),
-                video_and_stream: stream.video_and_stream_information.clone(),
+            .filter_map(|stream| {
+                let state = match stream.state.lock() {
+                    Ok(guard) => guard,
+                    Err(error) => {
+                        error!("Failed locking a Mutex. Reason: {error}");
+                        return None;
+                    }
+                };
+
+                Some(StreamStatus {
+                    id: state.pipeline_id,
+                    running: state.pipeline.is_running(),
+                    video_and_stream: state.video_and_stream_information.clone(),
+                })
             })
             .collect())
     }
