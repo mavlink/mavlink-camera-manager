@@ -5,10 +5,7 @@ use std::{
 
 use crate::{
     settings,
-    stream::{
-        gst::utils::wait_for_element_state, types::CaptureConfiguration,
-        webrtc::signalling_protocol::BindAnswer,
-    },
+    stream::{types::CaptureConfiguration, webrtc::signalling_protocol::BindAnswer},
     video::video_source,
 };
 use crate::{stream::sink::SinkInterface, video::types::VideoSourceType};
@@ -23,7 +20,6 @@ type ClonableResult<T> = Result<T, Arc<Error>>;
 
 use async_std::stream::StreamExt;
 use cached::proc_macro::cached;
-use gst::{prelude::*, traits::ElementExt};
 use tracing::*;
 
 use super::{
@@ -568,52 +564,12 @@ impl StreamManagementInterface<StreamStatus> for Manager {
             return Err(anyhow!("Already removed"));
         }
 
-        let mut stream = manager
+        manager
             .streams
             .remove(stream_id)
             .context(format!("Stream {stream_id:?} not found"))?;
         manager.update_settings();
         drop(manager);
-
-        let pipeline = &stream.pipeline.inner_state_as_ref().pipeline;
-        let pipeline_id = stream_id;
-        if let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
-            error!("Failed posting Eos message into Pipeline' bus. Reason: {error:?}");
-        }
-
-        if let Err(error) = stream
-            .pipeline
-            .inner_state_as_ref()
-            .pipeline
-            .set_state(gst::State::Null)
-        {
-            error!("Failed setting Pipeline {pipeline_id:?} state to Null. Reason: {error:?}");
-        }
-        if let Err(error) = wait_for_element_state(
-            pipeline.upcast_ref::<gst::Element>(),
-            gst::State::Null,
-            100,
-            10,
-        ) {
-            let _ = pipeline.set_state(gst::State::Null);
-            error!("Failed setting Pipeline {pipeline_id:?} state to Null. Reason: {error:?}");
-        }
-
-        // Remove all Sinks
-        let sink_ids = &stream
-            .pipeline
-            .inner_state_as_ref()
-            .sinks
-            .keys()
-            .cloned()
-            .collect::<Vec<uuid::Uuid>>();
-        for sink_id in sink_ids {
-            if let Err(error) = stream.pipeline.remove_sink(sink_id) {
-                warn!(
-                    "Failed unlinking Sink {sink_id:?} from Pipeline {pipeline_id:?}. Reason: {error:?}"
-                );
-            }
-        }
 
         info!("Stream {stream_id} successfully removed!");
 
