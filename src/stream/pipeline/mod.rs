@@ -16,10 +16,8 @@ use gst::prelude::*;
 use crate::{
     stream::{
         gst::utils::wait_for_element_state,
-        manager::Manager,
         rtsp::rtsp_server::RTSPServer,
         sink::{Sink, SinkInterface},
-        webrtc::signalling_server::StreamManagementInterface,
     },
     video::types::VideoSourceType,
     video_stream::types::VideoAndStreamInformation,
@@ -98,7 +96,6 @@ pub struct PipelineState {
     pub sink_tee: gst::Element,
     pub sinks: HashMap<uuid::Uuid, Sink>,
     pub pipeline_runner: PipelineRunner,
-    _watcher_thread_handle: tokio::task::JoinHandle<()>,
 }
 
 pub const PIPELINE_SINK_TEE_NAME: &str = "SinkTee";
@@ -127,7 +124,6 @@ impl PipelineState {
             .context(format!("no element named {PIPELINE_SINK_TEE_NAME:#?}"))?;
 
         let pipeline_runner = PipelineRunner::try_new(&pipeline, pipeline_id, false)?;
-        let mut killswitch_receiver = pipeline_runner.get_receiver();
 
         pipeline.debug_to_dot_file_with_ts(
             gst::DebugGraphDetails::all(),
@@ -140,17 +136,6 @@ impl PipelineState {
             sink_tee,
             sinks: Default::default(),
             pipeline_runner,
-            _watcher_thread_handle: tokio::task::spawn(async move {
-                // Here we end the stream if any error is received. This should end all sessions too.
-                if let Ok(reason) = killswitch_receiver.recv().await {
-                    debug!("Killswitch received as {pipeline_id:#?} from PipelineState's watcher. Reason: {reason:#?}");
-                    if let Err(reason) = Manager::remove_stream(&pipeline_id) {
-                        warn!("Failed removing Pipeline {pipeline_id}. Reason: {reason}");
-                    } else {
-                        info!("Pipeline {pipeline_id} removed. Reason: {reason}");
-                    }
-                }
-            }),
         })
     }
 
