@@ -98,10 +98,9 @@ impl PipelineRunner {
                     100,
                     5,
                 ) {
-                    error!(
+                    return Err(anyhow!(
                         "Failed setting Pipeline {pipeline_id} to Playing state. Reason: {error:?}"
-                    );
-                    continue;
+                    ));
                 }
             }
 
