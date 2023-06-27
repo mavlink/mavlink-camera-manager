@@ -115,16 +115,15 @@ impl PipelineRunner {
                                     && current_previous_position == position
                                 {
                                     lost_timestamps += 1;
-                                    warn!("Position did not change {lost_timestamps}");
-                                } else {
+                                } else if lost_timestamps > 0 {
                                     // We are back in track, erase lost timestamps
+                                    warn!("Position normalized, but didn't changed for {lost_timestamps} timestamps");
                                     lost_timestamps = 0;
                                 }
-
-                                if lost_timestamps > max_lost_timestamps {
-                                    warn!("Pipeline lost too many timestamps (max. was {max_lost_timestamps}).");
-                                    lost_timestamps = 0;
-                                    break 'inner;
+                                if lost_timestamps == 1 {
+                                    warn!("Position did not change for {lost_timestamps}, silently tracking until {max_lost_timestamps}, then the stream will be recreated");
+                                } else if lost_timestamps > max_lost_timestamps {
+                                    return Err(anyhow!("Pipeline lost too many timestamps (max. was {max_lost_timestamps})"));
                                 }
 
                                 Some(position)
