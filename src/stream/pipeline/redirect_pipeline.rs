@@ -19,7 +19,7 @@ pub struct RedirectPipeline {
 impl RedirectPipeline {
     #[instrument(level = "debug")]
     pub fn try_new(
-        pipeline_id: uuid::Uuid,
+        pipeline_id: &uuid::Uuid,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<gst::Pipeline> {
         match &video_and_stream_information

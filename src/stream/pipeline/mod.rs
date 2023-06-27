@@ -61,8 +61,11 @@ impl Pipeline {
     }
 
     #[instrument(level = "debug")]
-    pub fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
-        let pipeline_state = PipelineState::try_new(video_and_stream_information)?;
+    pub fn try_new(
+        video_and_stream_information: &VideoAndStreamInformation,
+        pipeline_id: &uuid::Uuid,
+    ) -> Result<Self> {
+        let pipeline_state = PipelineState::try_new(video_and_stream_information, pipeline_id)?;
         Ok(match &video_and_stream_information.video_source {
             VideoSourceType::Gst(_) => Pipeline::Fake(FakePipeline {
                 state: pipeline_state,
@@ -103,9 +106,10 @@ pub const PIPELINE_FILTER_NAME: &str = "Filter";
 
 impl PipelineState {
     #[instrument(level = "debug")]
-    pub fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
-        let pipeline_id = Manager::generate_uuid();
-
+    pub fn try_new(
+        video_and_stream_information: &VideoAndStreamInformation,
+        pipeline_id: &uuid::Uuid,
+    ) -> Result<Self> {
         let pipeline = match &video_and_stream_information.video_source {
             VideoSourceType::Gst(_) => {
                 FakePipeline::try_new(pipeline_id, video_and_stream_information)
@@ -131,7 +135,7 @@ impl PipelineState {
         );
 
         Ok(Self {
-            pipeline_id,
+            pipeline_id: *pipeline_id,
             pipeline,
             sink_tee,
             sinks: Default::default(),
@@ -163,13 +167,13 @@ impl PipelineState {
 
         // Link the Sink
         let pipeline = &self.pipeline;
-        sink.link(pipeline, &self.pipeline_id, tee_src_pad)?;
+        sink.link(pipeline, pipeline_id, tee_src_pad)?;
         let sink_id = &sink.get_id();
 
         // Start the pipeline if not playing yet
         if pipeline.current_state() != gst::State::Playing {
             if let Err(error) = pipeline.set_state(gst::State::Playing) {
-                sink.unlink(pipeline, &self.pipeline_id)?;
+                sink.unlink(pipeline, pipeline_id)?;
                 return Err(anyhow!(
                     "Failed starting Pipeline {pipeline_id}. Reason: {error:#?}"
                 ));
@@ -183,7 +187,7 @@ impl PipelineState {
             2,
         ) {
             let _ = pipeline.set_state(gst::State::Null);
-            sink.unlink(pipeline, &self.pipeline_id)?;
+            sink.unlink(pipeline, pipeline_id)?;
             return Err(anyhow!(
                 "Failed setting Pipeline {pipeline_id} to Playing state. Reason: {error:?}"
             ));

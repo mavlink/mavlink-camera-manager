@@ -21,7 +21,7 @@ impl PipelineRunner {
     #[instrument(level = "debug")]
     pub fn try_new(
         pipeline: &gst::Pipeline,
-        pipeline_id: uuid::Uuid,
+        pipeline_id: &uuid::Uuid,
         allow_block: bool,
     ) -> Result<Self> {
         let pipeline_weak = pipeline.downgrade();
@@ -83,9 +83,7 @@ impl PipelineRunner {
     #[instrument(level = "debug")]
     fn runner(
         pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
-        pipeline_id: uuid::Uuid,
-        mut killswitch_receiver: broadcast::Receiver<String>,
-        mut start_signal_receiver: broadcast::Receiver<()>,
+        pipeline_id: &uuid::Uuid,
         allow_block: bool,
     ) -> Result<()> {
         let pipeline = pipeline_weak

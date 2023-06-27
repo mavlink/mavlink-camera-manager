@@ -54,7 +54,7 @@ impl Stream {
         };
 
         let mut stream = Stream {
-            id,
+            pipeline_id: *pipeline_id,
             pipeline,
             video_and_stream_information: video_and_stream_information.clone(),
             mavlink_camera,
