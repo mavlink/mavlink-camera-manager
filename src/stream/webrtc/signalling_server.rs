@@ -334,6 +334,13 @@ impl StreamManagementInterface<Stream> for SignallingServer {
                             )
                         }
                         crate::stream::types::CaptureConfiguration::Redirect(_) => {
+                            // Filter out non RTSP redirect streams
+                            let scheme = stream.video_and_stream.stream_information.endpoints.first()?.scheme();
+                            if scheme != "rtsp" {
+                                trace!("Stream {:?} will not be listed in available streams because it's scheme isn't RTSP (it's {scheme:?} instead)", stream.video_and_stream.name);
+                                return None;
+                            }
+
                             (None, None, None, None)
                         }
                     };
