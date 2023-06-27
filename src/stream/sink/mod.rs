@@ -38,6 +38,12 @@ pub trait SinkInterface {
     ///
     /// For a better grasp of SDP parameters, read [here](https://www.iana.org/assignments/sdp-parameters/sdp-parameters.xhtml)
     fn get_sdp(&self) -> Result<gst_sdp::SDPMessage>;
+
+    /// Start the Sink
+    fn start(&self) -> Result<()>;
+
+    /// Terminates the Sink
+    fn eos(&self);
 }
 
 #[enum_dispatch(SinkInterface)]

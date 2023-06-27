@@ -238,6 +238,9 @@ impl PipelineState {
             format!("pipeline-{pipeline_id}-sink-{sink_id}-before-removing"),
         );
 
+        // Terminate the Sink
+        sink.eos();
+
         // Unlink the Sink
         sink.unlink(pipeline, pipeline_id)?;
 

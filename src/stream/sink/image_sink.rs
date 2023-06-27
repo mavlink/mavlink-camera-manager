@@ -69,7 +69,7 @@ pub struct ImageSink {
     tee_src_pad: Option<gst::Pad>,
     flat_samples_sender: tokio::sync::broadcast::Sender<ClonableResult<FlatSamples<Vec<u8>>>>,
     pad_blocker: Arc<Mutex<Option<gst::PadProbeId>>>,
-    _pipeline_runner: PipelineRunner,
+    pipeline_runner: PipelineRunner,
     thumbnails: Arc<Mutex<CachedThumbnails>>,
 }
 impl SinkInterface for ImageSink {
@@ -272,6 +272,18 @@ impl SinkInterface for ImageSink {
         Err(anyhow!(
             "Not available. Reason: Image Sink doesn't provide endpoints"
         ))
+    }
+
+    #[instrument(level = "debug", skip(self))]
+    fn start(&self) -> Result<()> {
+        self.pipeline_runner.start()
+    }
+
+    #[instrument(level = "debug", skip(self))]
+    fn eos(&self) {
+        if let Err(error) = self.pipeline.post_message(gst::message::Eos::new()) {
+            error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
+        }
     }
 }
 
@@ -491,7 +503,7 @@ impl ImageSink {
             return Err(anyhow!("Failed linking ImageSink's elements: {link_err:?}"));
         }
 
-        let _pipeline_runner = PipelineRunner::try_new(&pipeline, sink_id, true)?;
+        let pipeline_runner = PipelineRunner::try_new(&pipeline, &sink_id, true)?;
 
         // Start the pipeline in Pause, because we want to wait the snapshot
         if let Err(state_err) = pipeline.set_state(gst::State::Paused) {
@@ -511,7 +523,7 @@ impl ImageSink {
             tee_src_pad: Default::default(),
             flat_samples_sender,
             pad_blocker,
-            _pipeline_runner,
+            pipeline_runner,
             thumbnails: Default::default(),
         })
     }

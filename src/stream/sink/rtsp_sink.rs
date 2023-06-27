@@ -209,6 +209,14 @@ impl SinkInterface for RtspSink {
             "Not available. Reason: RTSP Sink should only be connected from its RTSP endpoint."
         ))
     }
+
+    #[instrument(level = "debug", skip(self))]
+    fn start(&self) -> Result<()> {
+        Ok(())
+    }
+
+    #[instrument(level = "debug", skip(self))]
+    fn eos(&self) {}
 }
 
 impl RtspSink {
