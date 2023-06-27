@@ -141,7 +141,7 @@ impl PipelineRunner {
 
                     match msg.view() {
                         MessageView::Eos(eos) => {
-                            warn!("Received EndOfStream: {eos:#?}");
+                            debug!("Received EndOfStream: {eos:?}");
                             pipeline.debug_to_dot_file_with_ts(
                                 gst::DebugGraphDetails::all(),
                                 format!("pipeline-{pipeline_id}-eos"),
