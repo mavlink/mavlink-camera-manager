@@ -113,6 +113,7 @@ impl SinkInterface for WebRTCSink {
         self.0.lock().unwrap().get_id()
     }
 
+    #[instrument(level = "debug", skip(self))]
     fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
         self.0.lock().unwrap().get_sdp()
     }
