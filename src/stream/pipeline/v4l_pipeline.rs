@@ -47,6 +47,8 @@ impl V4lPipeline {
         let height = configuration.height;
         let interval_numerator = configuration.frame_interval.numerator;
         let interval_denominator = configuration.frame_interval.denominator;
+        let filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}");
+        let sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}");
 
         let description = match &configuration.encode {
             VideoEncodeType::H264 => {
@@ -63,8 +65,8 @@ impl V4lPipeline {
                     height = height,
                     interval_denominator = interval_denominator,
                     interval_numerator = interval_numerator,
-                    filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}"),
-                    sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"),
+                    filter_name = filter_name,
+                    sink_tee_name = sink_tee_name,
                 )
             }
             VideoEncodeType::Yuyv => {
@@ -81,8 +83,8 @@ impl V4lPipeline {
                     height = height,
                     interval_denominator = interval_denominator,
                     interval_numerator = interval_numerator,
-                    filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}"),
-                    sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"),
+                    filter_name = filter_name,
+                    sink_tee_name = sink_tee_name
                 )
             }
             VideoEncodeType::Mjpg => {
@@ -99,8 +101,8 @@ impl V4lPipeline {
                     height = height,
                     interval_denominator = interval_denominator,
                     interval_numerator = interval_numerator,
-                    filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}"),
-                    sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"),
+                    filter_name = filter_name,
+                    sink_tee_name = sink_tee_name
                 )
             }
             unsupported => {

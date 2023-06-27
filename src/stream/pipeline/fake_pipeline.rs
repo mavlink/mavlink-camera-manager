@@ -56,6 +56,9 @@ impl FakePipeline {
             }
         };
 
+        let filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}");
+        let sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}");
+
         // Fakes (videotestsrc) are only "video/x-raw" or "video/x-bayer",
         // and to be able to encode it, we need to define an available
         // format for both its src the next element's sink pad.
@@ -80,8 +83,8 @@ impl FakePipeline {
                     height = configuration.height,
                     interval_denominator = configuration.frame_interval.denominator,
                     interval_numerator = configuration.frame_interval.numerator,
-                    filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}"),
-                    sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"),
+                    filter_name = filter_name,
+                    sink_tee_name = sink_tee_name,
                 )
             }
             VideoEncodeType::Yuyv => {
@@ -102,8 +105,8 @@ impl FakePipeline {
                     height = configuration.height,
                     interval_denominator = configuration.frame_interval.denominator,
                     interval_numerator = configuration.frame_interval.numerator,
-                    filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}"),
-                    sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"),
+                    filter_name = filter_name,
+                    sink_tee_name = sink_tee_name,
                 )
             }
             VideoEncodeType::Mjpg => {
@@ -122,8 +125,8 @@ impl FakePipeline {
                     height = configuration.height,
                     interval_denominator = configuration.frame_interval.denominator,
                     interval_numerator = configuration.frame_interval.numerator,
-                    filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}"),
-                    sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"),
+                    filter_name = filter_name,
+                    sink_tee_name = sink_tee_name,
                 )
             }
             unsupported => {
