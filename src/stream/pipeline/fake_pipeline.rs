@@ -25,7 +25,7 @@ pub struct FakePipeline {
 impl FakePipeline {
     #[instrument(level = "debug")]
     pub fn try_new(
-        pipeline_id: uuid::Uuid,
+        pipeline_id: &uuid::Uuid,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<gst::Pipeline> {
         let configuration = match &video_and_stream_information
