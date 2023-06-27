@@ -117,6 +117,7 @@
                         }
                     }
                     response += 'Thermal: ' + video_and_stream.stream_information.extended_configuration?.thermal ?? false
+                    response += 'Disable Mavlink: ' + video_and_stream.stream_information.extended_configuration?.disable_mavlink ?? false
                     return response
                 },
                 requestData: async function() {
@@ -202,6 +203,7 @@
                             "configuration": configuration,
                             "extended_configuration": {
                                 "thermal": Boolean(stream.extended_configuration.thermal),
+                                "disable_mavlink": Boolean(stream.extended_configuration.disable_mavlink),
                             },
                         }
                     }
@@ -300,6 +302,7 @@
                         this.stream_setting.configuration.endpoints = this.stream.video_and_stream.stream_information.endpoints ?
                             this.stream.video_and_stream.stream_information.endpoints.join(", ") : ""
                         this.stream_setting.extended_configuration.thermal = Boolean(this.stream.video_and_stream.stream_information.extended_configuration?.thermal)
+                        this.stream_setting.extended_configuration.disable_mavlink = Boolean(this.stream.video_and_stream.stream_information.extended_configuration?.disable_mavlink)
                     },
                     deep: true
                 },
@@ -357,6 +360,7 @@
                         },
                         extended_configuration: {
                             thermal: undefined,
+                            disable_mavlink: undefined,
                         },
                     },
                     stream_options: {
@@ -427,6 +431,13 @@
                         <input
                             type="checkbox"
                             v-model="stream_setting.extended_configuration.thermal"
+                        >
+                    </div>
+                    <div>
+                        <label>Disable Mavlink: </label>
+                        <input
+                            type="checkbox"
+                            v-model="stream_setting.extended_configuration.disable_mavlink"
                         >
                     </div>
 
