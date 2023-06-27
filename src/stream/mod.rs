@@ -24,7 +24,11 @@ use anyhow::{anyhow, Context, Result};
 
 use tracing::*;
 
+use self::gst::utils::wait_for_element_state;
 use self::rtsp::rtsp_server::RTSP_SERVER_PORT;
+use self::sink::SinkInterface;
+
+use ::gst::prelude::*;
 
 #[derive(Debug)]
 pub struct Stream {
@@ -178,6 +182,12 @@ impl Stream {
     }
 }
 
+impl Drop for Stream {
+    fn drop(&mut self) {
+        *self.terminated.lock().unwrap() = true;
+    }
+}
+
 impl StreamState {
     #[instrument(level = "debug")]
     pub fn try_new(
@@ -188,8 +198,7 @@ impl StreamState {
             return Err(anyhow!("Failed validating endpoints. Reason: {error:?}"));
         }
 
-        let pipeline = Pipeline::try_new(video_and_stream_information)?;
-        let id = pipeline.inner_state_as_ref().pipeline_id;
+        let pipeline = Pipeline::try_new(video_and_stream_information, pipeline_id)?;
 
         // Only create the Mavlink Handle when mavlink is not disabled
         let mavlink_camera = match video_and_stream_information
@@ -203,7 +212,7 @@ impl StreamState {
             _ => MavlinkCameraHandle::try_new(video_and_stream_information).ok(),
         };
 
-        let mut stream = Stream {
+        let mut stream = StreamState {
             pipeline_id: *pipeline_id,
             pipeline,
             video_and_stream_information: video_and_stream_information.clone(),
@@ -270,6 +279,43 @@ impl StreamState {
         }
 
         Ok(stream)
+    }
+}
+
+impl Drop for StreamState {
+    fn drop(&mut self) {
+        let pipeline_state = self.pipeline.inner_state_as_ref();
+        let pipeline = &pipeline_state.pipeline;
+
+        if let Err(error) = pipeline.post_message(::gst::message::Eos::new()) {
+            error!("Failed posting Eos message into Pipeline bus. Reason: {error:?}");
+        }
+
+        if let Err(error) = pipeline.set_state(::gst::State::Null) {
+            error!("Failed setting Pipeline state to Null. Reason: {error:?}");
+        }
+        if let Err(error) = wait_for_element_state(
+            pipeline.upcast_ref::<::gst::Element>(),
+            ::gst::State::Null,
+            100,
+            10,
+        ) {
+            let _ = pipeline.set_state(::gst::State::Null);
+            error!("Failed setting Pipeline state to Null. Reason: {error:?}");
+        }
+
+        // Remove all Sinks
+        let pipeline_state = self.pipeline.inner_state_mut();
+        let sink_ids = &pipeline_state
+            .sinks
+            .keys()
+            .cloned()
+            .collect::<Vec<uuid::Uuid>>();
+        for sink_id in sink_ids {
+            if let Err(error) = pipeline_state.remove_sink(sink_id) {
+                warn!("Failed unlinking Sink {sink_id:?} from Pipeline. Reason: {error:?}");
+            }
+        }
     }
 }
 
