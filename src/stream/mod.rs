@@ -39,8 +39,19 @@ impl Stream {
         }
 
         let pipeline = Pipeline::try_new(video_and_stream_information)?;
-        let mavlink_camera = MavlinkCameraHandle::try_new(video_and_stream_information).ok();
         let id = pipeline.inner_state_as_ref().pipeline_id;
+
+        // Only create the Mavlink Handle when mavlink is not disabled
+        let mavlink_camera = match video_and_stream_information
+            .stream_information
+            .extended_configuration
+        {
+            Some(ExtendedConfiguration {
+                thermal: _,
+                disable_mavlink: true,
+            }) => None,
+            _ => MavlinkCameraHandle::try_new(video_and_stream_information).ok(),
+        };
 
         let mut stream = Stream {
             id,

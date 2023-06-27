@@ -28,6 +28,7 @@ pub enum CaptureConfiguration {
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
 pub struct ExtendedConfiguration {
     pub thermal: bool,
+    pub disable_mavlink: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Apiv2Schema)]
