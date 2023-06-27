@@ -116,6 +116,16 @@ impl SinkInterface for WebRTCSink {
     fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
         self.0.lock().unwrap().get_sdp()
     }
+
+    #[instrument(level = "debug", skip(self))]
+    fn start(&self) -> Result<()> {
+        self.0.lock().unwrap().start()
+    }
+
+    #[instrument(level = "debug", skip(self))]
+    fn eos(&self) {
+        self.0.lock().unwrap().eos()
+    }
 }
 
 impl WebRTCSink {
@@ -659,6 +669,18 @@ impl SinkInterface for WebRTCSinkInner {
         Err(anyhow!(
             "Not available: WebRTC Sink should only be connected by means of its Signalling protocol."
         ))
+    }
+
+    #[instrument(level = "debug", skip(self))]
+    fn start(&self) -> Result<()> {
+        Ok(())
+    }
+
+    #[instrument(level = "debug", skip(self))]
+    fn eos(&self) {
+        if let Err(error) = self.webrtcbin.post_message(gst::message::Eos::new()) {
+            error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
+        }
     }
 }
 

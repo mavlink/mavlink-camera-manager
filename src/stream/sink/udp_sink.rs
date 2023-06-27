@@ -18,7 +18,7 @@ pub struct UdpSink {
     udpsink_sink_pad: gst::Pad,
     tee_src_pad: Option<gst::Pad>,
     addresses: Vec<url::Url>,
-    _pipeline_runner: PipelineRunner,
+    pipeline_runner: PipelineRunner,
 }
 impl SinkInterface for UdpSink {
     #[instrument(level = "debug", skip(self))]
@@ -253,6 +253,18 @@ impl SinkInterface for UdpSink {
 
         Ok(sdp)
     }
+
+    #[instrument(level = "debug", skip(self))]
+    fn start(&self) -> Result<()> {
+        self.pipeline_runner.start()
+    }
+
+    #[instrument(level = "debug", skip(self))]
+    fn eos(&self) {
+        if let Err(error) = self.pipeline.post_message(gst::message::Eos::new()) {
+            error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
+        }
+    }
 }
 
 impl UdpSink {
@@ -335,7 +347,7 @@ impl UdpSink {
             return Err(anyhow!("Failed linking UdpSink's elements: {link_err:?}"));
         }
 
-        let _pipeline_runner = PipelineRunner::try_new(&pipeline, sink_id, false)?;
+        let pipeline_runner = PipelineRunner::try_new(&pipeline, &sink_id, false)?;
 
         // Start the pipeline
         if let Err(state_err) = pipeline.set_state(gst::State::Playing) {
@@ -354,7 +366,7 @@ impl UdpSink {
             udpsink_sink_pad,
             addresses,
             tee_src_pad: Default::default(),
-            _pipeline_runner,
+            pipeline_runner,
         })
     }
 }

@@ -114,6 +114,11 @@ impl Stream {
             .pipeline_runner
             .start()?;
 
+        // Start all the sinks
+        for sink in stream.pipeline.inner_state_mut().sinks.values() {
+            sink.start()?
+        }
+
         Ok(stream)
     }
 }
