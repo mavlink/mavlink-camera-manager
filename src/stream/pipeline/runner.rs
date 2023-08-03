@@ -179,6 +179,17 @@ impl PipelineRunner {
                                 state.pending()
                             );
                         }
+                        MessageView::Latency(latency) => {
+                            let current_latency = pipeline.latency();
+                            trace!("Latency message: {latency:?}. Current latency: {latency:?}",);
+                            if let Err(error) = pipeline.recalculate_latency() {
+                                warn!("Failed to recalculate latency: {error:?}");
+                            }
+                            let new_latency = pipeline.latency();
+                            if current_latency != new_latency {
+                                debug!("New latency: {new_latency:?}");
+                            }
+                        }
                         other_message => trace!("{other_message:#?}"),
                     };
                 }
