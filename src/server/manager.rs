@@ -6,7 +6,7 @@ use actix_extensible_rate_limit::{
     RateLimiter,
 };
 use actix_service::Service;
-use actix_web::{error::JsonPayloadError, http::header, App, HttpRequest, HttpServer};
+use actix_web::{error::JsonPayloadError, App, HttpRequest, HttpServer};
 use paperclip::{
     actix::{web, OpenApiExt},
     v2::models::{Api, Info},
@@ -29,8 +29,7 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
             // Add debug call for API access
             .wrap_fn(|req, srv| {
                 trace!("{:#?}", &req);
-                let fut = srv.call(req);
-                async { fut.await }
+                srv.call(req)
             })
             .wrap(
                 Cors::default()

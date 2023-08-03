@@ -17,9 +17,6 @@ use tracing::*;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref H264_PROFILES: Arc<Mutex<HashMap<String, String>>> = Default::default();
-}
-lazy_static! {
     static ref VIDEO_FORMATS: Arc<Mutex<HashMap<String, Vec<Format>>>> = Default::default();
 }
 

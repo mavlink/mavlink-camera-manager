@@ -1,6 +1,6 @@
-import type { Stream } from "@/signalling_protocol";
+import type { Stream } from "@/signalling_protocol"
 
-import type { Signaller } from "@/signaller";
+import type { Signaller } from "@/signaller"
 
 type on_close_callback = (session_id: string, reason: string) => void;
 
@@ -117,6 +117,7 @@ export class Session {
   }
 
   public onIncomingSDP(description: RTCSessionDescription): void {
+    console.log("onIncomingSDP: ", description);
     this.peer_connection
       .setRemoteDescription(description)
       .then(() => {
@@ -133,6 +134,7 @@ export class Session {
   }
 
   private onRemoteDescriptionSet(): void {
+    console.log("onRemoteDescriptionSet: ");
     this.peer_connection
       .createAnswer()
       .then((description: RTCSessionDescriptionInit) => {
@@ -151,7 +153,7 @@ export class Session {
       .setLocalDescription(description)
       .then(() => {
         console.debug(
-          `Local description set as${JSON.stringify(description, null, 4)}`
+          `Local description set as ${JSON.stringify(description, null, 4)}`
         );
         this.onLocalDescriptionSet();
       })
@@ -161,6 +163,10 @@ export class Session {
   }
 
   private onLocalDescriptionSet(): void {
+    console.log(
+      "onLocalDescriptionSet:",
+      this.peer_connection.localDescription
+    );
     if (this.peer_connection.localDescription === null) {
       return;
     }
@@ -208,6 +214,7 @@ export class Session {
   }
 
   private onIceCandidate(event: RTCPeerConnectionIceEventInit): void {
+    console.log("onIceCandidate", event);
     if (!event.candidate) {
       // TODO: Add support for empty candidate, meaning ICE Gathering Completed.
       return;
@@ -222,6 +229,8 @@ export class Session {
   }
 
   private onTrackAdded(event: RTCTrackEvent): void {
+    console.log("onTrackAdded", event);
+
     let id: number | undefined = undefined;
     id = window.setInterval(() => {
       if (this.signaller.ws.readyState !== this.signaller.ws.OPEN) {
@@ -270,15 +279,27 @@ export class Session {
 
       const [remoteStream] = event.streams;
       this.media_element.srcObject = remoteStream;
-      this.media_element.play();
+      const playPromise = this.media_element.play();
 
-      this.updateStatus("Playing");
+      if (playPromise !== undefined) {
+        playPromise
+          .then((_) => {
+            this.updateStatus("Playing");
+          })
+          .catch((error) => {
+            console.error("Failed while trying to play:", error);
+          });
+      }
 
       clearInterval(id);
     }, 1000);
   }
 
   private onIceConnectionStateChange(): void {
+    console.log(
+      "onIceConnectionStateChange",
+      this.peer_connection.iceConnectionState
+    );
     switch (this.peer_connection.iceConnectionState) {
       case "closed":
       case "failed":
@@ -289,6 +310,10 @@ export class Session {
   }
 
   private onConnectionStateChange(): void {
+    console.log(
+      "onConnectionStateChange",
+      this.peer_connection.connectionState
+    );
     switch (this.peer_connection.connectionState) {
       case "closed":
       case "failed":
@@ -299,6 +324,7 @@ export class Session {
   }
 
   private onSignalingStateChange(): void {
+    console.log("onSignalingStateChange", this.peer_connection.signalingState);
     switch (this.peer_connection.signalingState) {
       case "closed":
         this.end();
@@ -307,6 +333,10 @@ export class Session {
   }
 
   private onIceGatheringStateChange(): void {
+    console.log(
+      "onIceGatheringStateChange",
+      this.peer_connection.iceGatheringState
+    );
     switch (this.peer_connection.iceGatheringState) {
       case "complete":
         console.debug(`ICE gathering completed for session ${this.id}`);
@@ -315,6 +345,7 @@ export class Session {
   }
 
   public end() {
+    console.log("end called. peer_connection: ", this.peer_connection);
     this.peer_connection.close();
 
     this.peer_connection.removeEventListener(

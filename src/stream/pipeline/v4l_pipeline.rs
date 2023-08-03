@@ -59,8 +59,29 @@ impl V4lPipeline {
                         "v4l2src device={device} do-timestamp=true",
                         " ! h264parse",  // Here we need the parse to help the stream-format and alignment part, which is being fixed here because avc/au seems to reduce the CPU usage in the RTP payloading part.
                         " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        // " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=byte-stream,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtph264pay aggregate-mode=zero-latency config-interval=10 pt=96",
+                        " ! tee name={rtp_tee_name} allow-not-linked=true"
+                    ),
+                    device = device,
+                    width = width,
+                    height = height,
+                    interval_denominator = interval_denominator,
+                    interval_numerator = interval_numerator,
+                    filter_name = filter_name,
+                    video_tee_name = video_tee_name,
+                    rtp_tee_name = rtp_tee_name,
+                )
+            }
+            VideoEncodeType::H265 => {
+                format!(
+                    concat!(
+                        "v4l2src device={device} do-timestamp=false",
+                        " ! h265parse",  // Here we need the parse to help the stream-format and alignment part, which is being fixed here because avc/au seems to reduce the CPU usage in the RTP payloading part.
+                        " ! capsfilter name={filter_name} caps=video/x-h265,stream-format=byte-stream,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! tee name={video_tee_name} allow-not-linked=true",
+                        " ! rtph265pay aggregate-mode=zero-latency config-interval=10 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     device = device,
