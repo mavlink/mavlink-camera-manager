@@ -87,6 +87,27 @@ impl FakePipeline {
                     sink_tee_name = sink_tee_name,
                 )
             }
+            VideoEncodeType::H265 => {
+                format!(concat!(
+                        "videotestsrc pattern={pattern} is-live=true do-timestamp=true",
+                        " ! timeoverlay",
+                        " ! video/x-raw,format=I420",
+                        " ! x265enc tune=zerolatency speed-preset=ultrafast bitrate=5000",
+                        " ! h265parse",
+                        " ! capsfilter name={filter_name} caps=video/x-h265,profile={profile},stream-format=byte-stream,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! rtph265pay aggregate-mode=zero-latency config-interval=10 pt=96",
+                        " ! tee name={sink_tee_name} allow-not-linked=true"
+                    ),
+                    pattern = pattern,
+                    profile = "main",
+                    width = configuration.width,
+                    height = configuration.height,
+                    interval_denominator = configuration.frame_interval.denominator,
+                    interval_numerator = configuration.frame_interval.numerator,
+                    filter_name = filter_name,
+                    sink_tee_name = sink_tee_name,
+                )
+            }
             VideoEncodeType::Yuyv => {
                 format!(
                     concat!(

@@ -145,6 +145,19 @@ impl RTSPServer {
                     rtp_caps = rtp_caps,
                 )
             }
+            "H265" => {
+                format!(
+                    concat!(
+                        "shmsrc socket-path={socket_path} do-timestamp=true",
+                        " ! queue leaky=downstream flush-on-eos=true max-size-buffers=0",
+                        " ! capsfilter caps={rtp_caps:?}",
+                        " ! rtph265depay",
+                        " ! rtph265pay name=pay0 aggregate-mode=zero-latency config-interval=10 pt=96",
+                    ),
+                    socket_path = socket_path,
+                    rtp_caps = rtp_caps,
+                )
+            }
             "RAW" => {
                 format!(
                     concat!(

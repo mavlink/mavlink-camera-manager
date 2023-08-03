@@ -309,7 +309,7 @@ impl UdpSink {
         let clients = addresses
             .iter()
             .filter_map(|address| {
-                if address.scheme() != "udp" {
+                if !matches!(address.scheme(), "udp" | "udp265") {
                     return None;
                 }
                 if let (Some(host), Some(port)) = (address.host(), address.port()) {
@@ -321,8 +321,9 @@ impl UdpSink {
             .collect::<Vec<String>>()
             .join(",");
         let description = format!("multiudpsink sync=false clients={clients}");
-        let _udpsink =
-            gst::parse_launch(&description).context("Failed parsing pipeline description")?;
+        let _udpsink = gst::parse_launch(&description).context(format!(
+            "Failed parsing pipeline description: {description:?}"
+        ))?;
 
         let udpsink_sink_pad = _udpsink
             .static_pad("sink")
