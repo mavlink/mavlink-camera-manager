@@ -227,6 +227,10 @@ impl RTSPServer {
     pub fn stop_pipeline(path: &str) -> Result<()> {
         let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
 
+        if !rtsp_server.path_to_factory.contains_key(path) {
+            return Err(anyhow!("Path {path:?} not known."));
+        }
+
         // Much like HTTP servers, RTSP servers have multiple endpoints that
         // provide different streams. Here, we ask our server to give
         // us a reference to his list of endpoints, so we can add our
@@ -239,6 +243,8 @@ impl RTSPServer {
         mounts.remove_factory(path);
 
         rtsp_server.path_to_factory.remove(path);
+
+        debug!("RTSP {path:?} removed.");
 
         Ok(())
     }
