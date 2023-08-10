@@ -340,6 +340,7 @@ impl ImageSink {
                 let decoder = gst::ElementFactory::make("avdec_h264")
                     .property_from_str("lowres", "2") // (0) is 'full'; (1) is '1/2-size'; (2) is '1/4-size'
                     .build()?;
+                decoder.has_property("discard-corrupted-frames", None).then(|| decoder.set_property("discard-corrupted-frames", true));
                 _transcoding_elements.push(depayloader);
                 _transcoding_elements.push(parser);
                 _transcoding_elements.push(filter);
@@ -348,9 +349,8 @@ impl ImageSink {
             VideoEncodeType::Mjpg => {
                 let depayloader = gst::ElementFactory::make("rtpjpegdepay").build()?;
                 let parser = gst::ElementFactory::make("jpegparse").build()?;
-                let decoder = gst::ElementFactory::make("jpegdec")
-                    .property("discard-corrupted-frames", true)
-                    .build()?;
+                let decoder = gst::ElementFactory::make("jpegdec").build()?;
+                decoder.has_property("discard-corrupted-frames", None).then(|| decoder.set_property("discard-corrupted-frames", true));
                 _transcoding_elements.push(depayloader);
                 _transcoding_elements.push(parser);
                 _transcoding_elements.push(decoder);
