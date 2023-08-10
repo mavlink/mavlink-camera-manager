@@ -396,7 +396,7 @@ impl ImageSink {
                 let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
                 let buffer = sample.buffer().ok_or_else(|| {
                     let reason = "Failed to get buffer from appsink";
-                    gst::element_error!(appsink, gst::ResourceError::Failed, (reason));
+                    gst::element_error!(appsink, gst::ResourceError::Failed, ("{reason:?}"));
 
                     let _ = sender.send(Err(Arc::new(anyhow!(reason))));
                     pending = false;
@@ -435,7 +435,7 @@ impl ImageSink {
                 let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info)
                     .map_err(|_| {
                         let reason = "Failed to map buffer readable";
-                        gst::element_error!(appsink, gst::ResourceError::Failed, (reason));
+                        gst::element_error!(appsink, gst::ResourceError::Failed, ("{reason:?}"));
 
                         let _ = sender.send(Err(Arc::new(anyhow!(reason))));
                         pending = false;
@@ -481,7 +481,9 @@ impl ImageSink {
             .build();
 
         // Create the pipeline
-        let pipeline = gst::Pipeline::new(Some(&format!("pipeline-sink-{sink_id}")));
+        let pipeline = gst::Pipeline::builder()
+            .name(format!("pipeline-sink-{sink_id}"))
+            .build();
 
         // Add Sink elements to the Sink's Pipeline
         let mut elements = vec![&_proxysrc];
