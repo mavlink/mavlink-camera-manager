@@ -334,11 +334,10 @@ impl ImageSink {
                 let parser = gst::ElementFactory::make("h264parse").build()?;
                 // For h264, we need to filter-out unwanted non-key frames here, before decoding it.
                 let filter = gst::ElementFactory::make("identity")
-                .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
-                .property("sync", false)
-                .build()?;
+                    .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
+                    .property("sync", false)
+                    .build()?;
                 let decoder = gst::ElementFactory::make("avdec_h264")
-                    .property("discard-corrupted-frames", true)
                     .property_from_str("lowres", "2") // (0) is 'full'; (1) is '1/2-size'; (2) is '1/4-size'
                     .build()?;
                 _transcoding_elements.push(depayloader);
