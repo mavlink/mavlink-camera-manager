@@ -329,7 +329,9 @@ impl UdpSink {
             .context("Failed to get Sink Pad")?;
 
         // Create the pipeline
-        let pipeline = gst::Pipeline::new(Some(&format!("pipeline-sink-{sink_id}")));
+        let pipeline = gst::Pipeline::builder()
+            .name(format!("pipeline-sink-{sink_id}"))
+            .build();
 
         // Add Sink elements to the Sink's Pipeline
         let elements = [&_proxysrc, &_udpsink];
