@@ -188,6 +188,9 @@ impl PipelineState {
 
             debug!("caps: {:#?}", caps.to_string());
 
+            // In case it exisits, try to remove it first, but skip the result
+            let _ = RTSPServer::stop_pipeline(&sink.path());
+
             RTSPServer::add_pipeline(&sink.path(), &sink.socket_path(), caps)?;
 
             RTSPServer::start_pipeline(&sink.path())?;
