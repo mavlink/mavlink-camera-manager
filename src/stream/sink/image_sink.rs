@@ -356,7 +356,7 @@ impl ImageSink {
                 _transcoding_elements.push(parser);
                 _transcoding_elements.push(decoder);
             }
-            VideoEncodeType::Yuyv => {
+            VideoEncodeType::Raw(_) => {
                 let depayloader = gst::ElementFactory::make("rtpvrawdepay").build()?;
                 _transcoding_elements.push(depayloader);
             }

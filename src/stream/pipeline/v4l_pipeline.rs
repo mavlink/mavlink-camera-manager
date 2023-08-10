@@ -1,6 +1,6 @@
 use crate::{
     stream::types::CaptureConfiguration,
-    video::types::{VideoEncodeType, VideoSourceType},
+    video::types::{VideoEncodeType, VideoSourceType, DEFAULT_RAW_FORMAT, KNOWN_RTP_RAW_FORMATS},
     video_stream::types::VideoAndStreamInformation,
 };
 
@@ -69,16 +69,22 @@ impl V4lPipeline {
                     sink_tee_name = sink_tee_name,
                 )
             }
-            VideoEncodeType::Yuyv => {
+            VideoEncodeType::Raw(fourcc) => {
+                let mut fourcc = fourcc.clone();
+                if !KNOWN_RTP_RAW_FORMATS.contains(&fourcc.as_str()) {
+                    fourcc = DEFAULT_RAW_FORMAT.to_string();
+                }
+
                 format!(
                     concat!(
                         "v4l2src device={device} do-timestamp=false",
                         " ! videoconvert",
-                        " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! capsfilter name={filter_name} caps=video/x-raw,format={format},width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! rtpvrawpay pt=96",
                         " ! tee name={sink_tee_name} allow-not-linked=true"
                     ),
                     device = device,
+                    format = fourcc,
                     width = width,
                     height = height,
                     interval_denominator = interval_denominator,

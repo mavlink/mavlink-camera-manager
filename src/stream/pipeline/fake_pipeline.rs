@@ -1,7 +1,7 @@
 use crate::{
     stream::types::CaptureConfiguration,
     video::{
-        types::{VideoEncodeType, VideoSourceType},
+        types::{VideoEncodeType, VideoSourceType, DEFAULT_RAW_FORMAT, KNOWN_RTP_RAW_FORMATS},
         video_source_gst::VideoSourceGstType,
     },
     video_stream::types::VideoAndStreamInformation,
@@ -70,7 +70,7 @@ impl FakePipeline {
                 format!(concat!(
                         "videotestsrc pattern={pattern} is-live=true do-timestamp=true",
                         " ! timeoverlay",
-                        " ! video/x-raw,format=I420",
+                        " ! video/x-raw,format={format}",
                         " ! x264enc tune=zerolatency speed-preset=ultrafast bitrate=5000",
                         " ! h264parse",
                         " ! capsfilter name={filter_name} caps=video/x-h264,profile={profile},stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
@@ -78,6 +78,7 @@ impl FakePipeline {
                         " ! tee name={sink_tee_name} allow-not-linked=true"
                     ),
                     pattern = pattern,
+                    format = DEFAULT_RAW_FORMAT,
                     profile = "constrained-baseline",
                     width = configuration.width,
                     height = configuration.height,
@@ -87,20 +88,22 @@ impl FakePipeline {
                     sink_tee_name = sink_tee_name,
                 )
             }
-            VideoEncodeType::Yuyv => {
+            VideoEncodeType::Raw(fourcc) => {
+                let mut fourcc = fourcc.clone();
+                if !KNOWN_RTP_RAW_FORMATS.contains(&fourcc.as_str()) {
+                    fourcc = DEFAULT_RAW_FORMAT.to_string();
+                }
+
                 format!(
                     concat!(
-                        // Because application-rtp templates doesn't accept "YUY2", we
-                        // need to transcode it. We are arbitrarily chosing the closest
-                        // format available ("UYVY").
                         "videotestsrc pattern={pattern} is-live=true do-timestamp=true",
                         " ! timeoverlay",
-                        " ! video/x-raw,format=I420",
-                        " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! capsfilter name={filter_name} caps=video/x-raw,format={format},width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! rtpvrawpay pt=96",
                         " ! tee name={sink_tee_name} allow-not-linked=true",
                     ),
                     pattern = pattern,
+                    format = fourcc,
                     width = configuration.width,
                     height = configuration.height,
                     interval_denominator = configuration.frame_interval.denominator,
@@ -114,13 +117,14 @@ impl FakePipeline {
                     concat!(
                         "videotestsrc pattern={pattern} is-live=true do-timestamp=true",
                         " ! timeoverlay",
-                        " ! video/x-raw,format=I420",
+                        " ! video/x-raw,format={format}",
                         " ! jpegenc quality=85 idct-method=1",
                         " ! capsfilter name={filter_name} caps=image/jpeg,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! rtpjpegpay pt=96",
                         " ! tee name={sink_tee_name} allow-not-linked=true",
                     ),
                     pattern = pattern,
+                    format = DEFAULT_RAW_FORMAT,
                     width = configuration.width,
                     height = configuration.height,
                     interval_denominator = configuration.frame_interval.denominator,
