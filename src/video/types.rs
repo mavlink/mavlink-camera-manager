@@ -5,6 +5,11 @@ use super::video_source_redirect::VideoSourceRedirect;
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 
+pub const KNOWN_RTP_RAW_FORMATS: [&str; 9] = [
+    "RGB", "RGBA", "BGR", "BGRA", "AYUV", "UYVY", "I420", "Y41B", "UYVP",
+];
+pub const DEFAULT_RAW_FORMAT: &str = "I420";
+
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum VideoSourceType {
     Gst(VideoSourceGst),
