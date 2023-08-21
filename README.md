@@ -158,14 +158,30 @@ sudo apt install -y --no-install-recommends \
 
 2. Install cargo if not available <sup>([click here to see how](https://rustup.rs/))</sup>
 
-3. Clone this repository and enter it
+3. Install NodeJS greatar or equal than 19, and the latest Yarn:
+```Bash
+curl -fsSL https://deb.nodesource.com/setup_19.x \
+  | sudo -E bash -
+curl -sL https://dl.yarnpkg.com/debian/pubkey.gpg \
+  | gpg --dearmor \
+  | sudo tee /usr/share/keyrings/yarnkey.gpg \
+  >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/yarnkey.gpg] https://dl.yarnpkg.com/debian stable main" \
+  | sudo tee /etc/apt/sources.list.d/yarn.list
+sudo apt-get update -y &&\
+  sudo apt-get install -y --no-install-recommends \
+  nodejs \
+  yarn
+```
+
+4. Clone this repository and enter it
 
 ```Bash
 git clone git@github.com:mavlink/mavlink-camera-manager.git
 cd mavlink-camera-manager
 ```
 
-3. Build it with cargo:
+5. Build it with cargo:
 
 ```Bash
 cargo build
