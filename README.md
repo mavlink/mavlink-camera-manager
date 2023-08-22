@@ -138,9 +138,9 @@ gstreamer-launch-1.0 udpsrc port=$PORT \
 1. Install the development dependencies:
 
 ```Bash
-sudo apt update -y \
-sudo apt install -y libunwind-dev
+sudo apt update -y &&\
 sudo apt install -y --no-install-recommends \
+   libunwind-dev \
    libclang-dev \
    libssl-dev \
    pkg-config \
@@ -177,7 +177,7 @@ sudo apt-get update -y &&\
 4. Clone this repository and enter it
 
 ```Bash
-git clone git@github.com:mavlink/mavlink-camera-manager.git
+git clone git@github.com:mavlink/mavlink-camera-manager.git &&\
 cd mavlink-camera-manager
 ```
 
