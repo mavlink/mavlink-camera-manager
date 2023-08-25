@@ -97,16 +97,19 @@ impl SinkInterface for ImageSink {
         let Some(tee_src_pad_data_blocker) = tee_src_pad
             .add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, |_pad, _info| {
                 gst::PadProbeReturn::Ok
-            }) else {
-                let msg = "Failed adding probe to Tee's src pad to block data before going to playing state".to_string();
-                error!(msg);
+            })
+        else {
+            let msg =
+                "Failed adding probe to Tee's src pad to block data before going to playing state"
+                    .to_string();
+            error!(msg);
 
-                if let Some(parent) = tee_src_pad.parent_element() {
-                    parent.release_request_pad(tee_src_pad)
-                }
+            if let Some(parent) = tee_src_pad.parent_element() {
+                parent.release_request_pad(tee_src_pad)
+            }
 
-                return Err(anyhow!(msg));
-            };
+            return Err(anyhow!(msg));
+        };
 
         // Add the ProxySink element to the source's pipeline
         let elements = &[&self.queue, &self.proxysink];

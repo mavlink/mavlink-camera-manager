@@ -116,19 +116,22 @@ impl RTSPServer {
         factory.set_transport_mode(RTSPTransportMode::PLAY);
         factory.set_protocols(RTSPLowerTrans::UDP | RTSPLowerTrans::UDP_MCAST);
 
-        let Some(encode) = rtp_caps
-            .iter()
-            .find_map(|structure| {
-                structure.iter().find_map(|(key, sendvalue)| {
-                    if key == "encoding-name" {
-                        Some(sendvalue.to_value().get::<String>().expect("Failed accessing encoding-name parameter"))
-                    } else {
-                        None
-                    }
-                })
-            }) else {
-                return Err(anyhow!("Cannot find 'media' in caps"));
-            };
+        let Some(encode) = rtp_caps.iter().find_map(|structure| {
+            structure.iter().find_map(|(key, sendvalue)| {
+                if key == "encoding-name" {
+                    Some(
+                        sendvalue
+                            .to_value()
+                            .get::<String>()
+                            .expect("Failed accessing encoding-name parameter"),
+                    )
+                } else {
+                    None
+                }
+            })
+        }) else {
+            return Err(anyhow!("Cannot find 'media' in caps"));
+        };
 
         let rtp_caps = rtp_caps.to_string();
         let description = match encode.as_str() {
