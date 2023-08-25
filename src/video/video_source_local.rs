@@ -414,6 +414,48 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
     formats
 }
 
+fn validate_control(control: &Control, value: i64) -> Result<(), String> {
+    if control.state.is_inactive {
+        return Err("Control is inactive".to_string());
+    } else if control.state.is_disabled {
+        return Err("Control is disabled".to_string());
+    }
+
+    match &control.configuration {
+        ControlType::Slider(control) => {
+            if value > control.max {
+                return Err(format!(
+                    "Value {value:?} is greater than the Control maximum value: {:?}",
+                    control.max
+                ));
+            } else if value < control.min {
+                return Err(format!(
+                    "Value {value:?} is lower than the Control minimum value: {:?}",
+                    control.min
+                ));
+            }
+        }
+        ControlType::Menu(control) => {
+            if !control.options.iter().any(|opt| opt.value == value) {
+                return Err(format!(
+                    "Value {value:?} is not one of the Control options: {:?}",
+                    control.options
+                ));
+            }
+        }
+        ControlType::Bool(_) => {
+            let values = &[0, 1];
+            if !values.contains(&value) {
+                return Err(format!(
+                    "Value {value:?} is not one of the Control accepted values: {values:?}"
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 impl VideoSource for VideoSourceLocal {
     fn name(&self) -> &String {
         &self.name
@@ -460,7 +502,13 @@ impl VideoSource for VideoSourceLocal {
             ));
         };
 
-        //TODO: Add control validation
+        if let Err(error) = validate_control(&control, value) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                format!("Failed setting {control_id:?} to {value:?}: {error}"),
+            ));
+        }
+
         let device = Device::with_path(&self.device_path)?;
         //TODO: we should handle value, value64 and string
         match device.set_control(v4l::Control {
@@ -497,14 +545,14 @@ impl VideoSource for VideoSourceLocal {
 
     fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64> {
         let device = Device::with_path(&self.device_path)?;
-        let value = device.control(control_id as u32)?;
+        let value = device.control(control_id as u32)?.value;
         match value {
-            v4l::control::Control::String(_) => Err(std::io::Error::new(
+            v4l::control::Value::Integer(value) => Ok(value),
+            v4l::control::Value::Boolean(value) => Ok(value as i64),
+            unsupported_type => Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                "String control type is not supported.",
+                format!("Control type {unsupported_type:?} is not supported.").as_str(),
             )),
-            v4l::control::Control::Value(value) => Ok(value as i64),
-            v4l::control::Control::Value64(value) => Ok(value),
         }
     }
 
