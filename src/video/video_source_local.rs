@@ -463,10 +463,10 @@ impl VideoSource for VideoSourceLocal {
         //TODO: Add control validation
         let device = Device::with_path(&self.device_path)?;
         //TODO: we should handle value, value64 and string
-        match device.set_control(
-            control_id as u32,
-            v4l::control::Control::Value(value as i32),
-        ) {
+        match device.set_control(v4l::Control {
+            id: control_id as u32,
+            value: v4l::control::Value::Integer(value),
+        }) {
             ok @ Ok(_) => ok,
             Err(error) => {
                 warn!("Failed to set control {control:#?}, error: {error:#?}");
