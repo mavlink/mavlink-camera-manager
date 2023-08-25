@@ -59,7 +59,7 @@ pub struct ParameterBool {
     pub name: String,
     #[serde(rename = "type")]
     pub cpp_type: String,
-    pub default: i32,
+    pub default: i64,
     pub v4l_id: u64,
     pub description: Description,
 }
@@ -69,11 +69,11 @@ pub struct ParameterSlider {
     pub name: String,
     #[serde(rename = "type")]
     pub cpp_type: String,
-    pub default: i32,
+    pub default: i64,
     pub v4l_id: u64,
-    pub step: i32,
-    pub max: i32,
-    pub min: i32,
+    pub step: u64,
+    pub max: i64,
+    pub min: i64,
     pub description: Description,
 }
 
@@ -82,7 +82,7 @@ pub struct ParameterMenu {
     pub name: String,
     #[serde(rename = "type")]
     pub cpp_type: String,
-    pub default: i32,
+    pub default: i64,
     pub v4l_id: u64,
     pub description: Description,
     pub options: Options,
