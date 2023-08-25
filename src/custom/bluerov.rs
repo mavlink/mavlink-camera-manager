@@ -35,10 +35,11 @@ pub fn udp() -> Vec<VideoAndStreamInformation> {
             let formats = cam.inner().formats();
             let Some(format) = formats
                 .iter()
-                .find(|format| format.encode == VideoEncodeType::H264) else {
-                    warn!("Unable to find a valid format for {cam:?}");
-                    return None;
-                };
+                .find(|format| format.encode == VideoEncodeType::H264)
+            else {
+                warn!("Unable to find a valid format for {cam:?}");
+                return None;
+            };
 
             // Get the biggest resolution possible
             let mut sizes = format.sizes.clone();
@@ -77,10 +78,11 @@ pub fn rtsp() -> Vec<VideoAndStreamInformation> {
             let formats = cam.inner().formats();
             let Some(format) = formats
                 .iter()
-                .find(|format| format.encode == VideoEncodeType::H264) else {
-                    warn!("Unable to find a valid format for {cam:?}");
-                    return None;
-                };
+                .find(|format| format.encode == VideoEncodeType::H264)
+            else {
+                warn!("Unable to find a valid format for {cam:?}");
+                return None;
+            };
 
             // Get the biggest resolution possible
             let mut sizes = format.sizes.clone();

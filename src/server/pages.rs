@@ -344,7 +344,7 @@ pub fn xml(xml_file_request: web::Query<XmlFileRequest>) -> HttpResponse {
             .body(format!(
                 "File for {} does not exist.",
                 xml_file_request.file
-            ))
+            ));
     };
 
     match xml::from_video_source(camera.inner()) {

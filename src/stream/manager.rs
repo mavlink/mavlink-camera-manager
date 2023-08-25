@@ -155,26 +155,30 @@ pub fn update_devices(
 ) {
     for stream in streams {
         let VideoSourceType::Local(source) = &mut stream.video_source else {
-            continue
+            continue;
         };
-        let CaptureConfiguration::Video(capture_configuration) = &stream.stream_information.configuration else {
-            continue
+        let CaptureConfiguration::Video(capture_configuration) =
+            &stream.stream_information.configuration
+        else {
+            continue;
         };
 
         match source.try_identify_device(capture_configuration, candidates) {
             Ok(Some(candidate_source_string)) => {
-                let Some((idx, candidate)) = candidates.iter().enumerate().find_map(|(idx, candidate)| {
+                let Some((idx, candidate)) =
+                    candidates.iter().enumerate().find_map(|(idx, candidate)| {
                         (candidate.inner().source_string() == candidate_source_string)
                             .then_some((idx, candidate))
-                    }) else {
-                        error!("CRITICAL: The device was identified as {candidate_source_string:?}, but it is not the candidates list"); // This shouldn't ever be reachable, otherwise the above logic is flawed
-                        continue
-                    };
+                    })
+                else {
+                    error!("CRITICAL: The device was identified as {candidate_source_string:?}, but it is not the candidates list"); // This shouldn't ever be reachable, otherwise the above logic is flawed
+                    continue;
+                };
 
                 let VideoSourceType::Local(camera) = candidate else {
-                        error!("CRITICAL: The device was identified as {candidate_source_string:?}, but it is not a Local device"); // This shouldn't ever be reachable, otherwise the above logic is flawed
-                        continue
-                    };
+                    error!("CRITICAL: The device was identified as {candidate_source_string:?}, but it is not a Local device"); // This shouldn't ever be reachable, otherwise the above logic is flawed
+                    continue;
+                };
                 *source = camera.clone();
                 // Only remove the candidate from the list after using it, avoiding the wrong but possible logic from the CRITICAL erros branches above, the additional cost is this clone
                 candidates.remove(idx);
@@ -204,32 +208,36 @@ pub fn get_first_sdp_from_source(source: String) -> ClonableResult<gst_sdp::SDPM
         Err(error) => return Err(Arc::new(anyhow!("Failed locking a Mutex. Reason: {error}"))),
     };
 
-    let Some(result) = manager
-        .streams
-        .values()
-        .find_map(|stream| {
-            let state = match stream.state.lock() {
-                Ok(guard) => guard,
-                Err(error) => {
-                    error!("Failed locking a Mutex. Reason: {error}");
-                    return None;
-                },
-            };
-
-            if state.video_and_stream_information.video_source.inner().source_string() == source {
-                state.pipeline
-                    .inner_state_as_ref()
-                    .sinks
-                    .values()
-                    .find_map(|sink| {
-                        sink.get_sdp().ok()
-                    })
-            } else {
-                None
+    let Some(result) = manager.streams.values().find_map(|stream| {
+        let state = match stream.state.lock() {
+            Ok(guard) => guard,
+            Err(error) => {
+                error!("Failed locking a Mutex. Reason: {error}");
+                return None;
             }
-        }) else {
-            return Err(Arc::new(anyhow!("Failed to find any valid sdp for souce {source:?}")));
         };
+
+        if state
+            .video_and_stream_information
+            .video_source
+            .inner()
+            .source_string()
+            == source
+        {
+            state
+                .pipeline
+                .inner_state_as_ref()
+                .sinks
+                .values()
+                .find_map(|sink| sink.get_sdp().ok())
+        } else {
+            None
+        }
+    }) else {
+        return Err(Arc::new(anyhow!(
+            "Failed to find any valid sdp for souce {source:?}"
+        )));
+    };
     Ok(result)
 }
 
@@ -264,11 +272,11 @@ pub async fn get_jpeg_thumbnail_from_source(
     let (tx, rx) = tokio::sync::oneshot::channel();
     std::thread::spawn(move || {
         tokio::runtime::Builder::new_current_thread()
-        .enable_time()
-        .build()
-        .expect("Failed building a new tokio runtime")
-        .block_on(async move {
-            let res = async move {
+            .enable_time()
+            .build()
+            .expect("Failed building a new tokio runtime")
+            .block_on(async move {
+                let res = async move {
                     let manager = match MANAGER.lock() {
                         Ok(guard) => guard,
                         Err(error) => {
@@ -283,16 +291,17 @@ pub async fn get_jpeg_thumbnail_from_source(
                             Err(error) => {
                                 error!("Failed locking a Mutex. Reason: {error}");
                                 return false;
-                            },
+                            }
                         };
 
-                        state.video_and_stream_information
+                        state
+                            .video_and_stream_information
                             .video_source
                             .inner()
                             .source_string()
                             == source
                     }) else {
-                        return None
+                        return None;
                     };
 
                     let state = match stream.state.lock() {
@@ -300,22 +309,28 @@ pub async fn get_jpeg_thumbnail_from_source(
                         Err(error) => {
                             error!("Failed locking a Mutex. Reason: {error}");
                             return None;
-                        },
+                        }
                     };
 
-                    let mut sinks = futures::stream::iter(state.pipeline.inner_state_as_ref().sinks.values());
-                    let Some(Sink::Image(image_sink)) = sinks.find(|sink| matches!(sink, Sink::Image(_))).await else {
+                    let mut sinks =
+                        futures::stream::iter(state.pipeline.inner_state_as_ref().sinks.values());
+                    let Some(Sink::Image(image_sink)) =
+                        sinks.find(|sink| matches!(sink, Sink::Image(_))).await
+                    else {
                         return None;
                     };
 
-                    Some(image_sink
-                        .make_jpeg_thumbnail_from_last_frame(quality, target_height)
-                        .await
-                        .map_err(Arc::new))
-                }.await;
+                    Some(
+                        image_sink
+                            .make_jpeg_thumbnail_from_last_frame(quality, target_height)
+                            .await
+                            .map_err(Arc::new),
+                    )
+                }
+                .await;
 
-            let _ = tx.send(res);
-        });
+                let _ = tx.send(res);
+            });
     });
 
     match rx.await {
