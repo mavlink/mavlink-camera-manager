@@ -65,22 +65,22 @@ pub struct ControlState {
 
 #[derive(Apiv2Schema, Clone, Debug, Serialize)]
 pub struct ControlBool {
-    pub default: i32,
+    pub default: i64,
     pub value: i64,
 }
 
 #[derive(Apiv2Schema, Clone, Debug, Serialize)]
 pub struct ControlSlider {
-    pub default: i32,
+    pub default: i64,
     pub value: i64,
-    pub step: i32,
-    pub max: i32,
-    pub min: i32,
+    pub step: u64,
+    pub max: i64,
+    pub min: i64,
 }
 
 #[derive(Apiv2Schema, Clone, Debug, Serialize)]
 pub struct ControlMenu {
-    pub default: i32,
+    pub default: i64,
     pub value: i64,
     pub options: Vec<ControlOption>,
 }
