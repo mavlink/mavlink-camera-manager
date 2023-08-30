@@ -28,7 +28,7 @@ regex = "1.6.0"
 #TODO: Investigate rweb to use openapi spec for free
 # https://github.com/kdy1/rweb
 actix-files = "0.6.2"
-actix-web = "4.1.0"
+actix-web = "4.4.0"
 actix-web-validator = "5.0.1"
 actix-service = "2.0.2"
 actix-extensible-rate-limit = "0.2.1"
