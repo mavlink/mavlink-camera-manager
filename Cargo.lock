@@ -2297,6 +2297,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "sys-info",
+ "thiserror",
  "tokio",
  "tokio-tungstenite",
  "tracing",

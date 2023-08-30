@@ -5,6 +5,7 @@ use validator::ValidationErrors;
 
 pub type Result<T> = actix_web::Result<T, Error>;
 
+#[allow(dead_code)]
 #[api_v2_errors(
     code = 400,
     description = "Bad Request: The client's request contains invalid or malformed data.",
