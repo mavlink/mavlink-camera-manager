@@ -68,7 +68,7 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
             .route("/xml", web::get().to(pages::xml))
             .route("/sdp", web::get().to(pages::sdp))
             .service(
-                web::scope("/thumbnail")
+                web::scope("")
                     // Add a rate limitter to prevent flood
                     .wrap(
                         RateLimiter::builder(
@@ -80,7 +80,7 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
                         .add_headers()
                         .build(),
                     )
-                    .route("", web::get().to(pages::thumbnail)),
+                    .route("thumbnail", web::get().to(pages::thumbnail)),
             )
             .build()
     })
