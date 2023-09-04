@@ -2,7 +2,6 @@ use std::net::SocketAddr;
 use std::thread;
 
 use anyhow::{anyhow, Context, Result};
-use async_std::task;
 use futures::{SinkExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedSender};
@@ -69,10 +68,20 @@ impl SignallingServer {
 
         debug!("Starting Signalling server on {endpoint:?}...");
 
-        match task::block_on(SignallingServer::runner(endpoint.clone())) {
-            Ok(_) => debug!("Signalling server successively Started!"),
-            Err(error) => error!("Error starting Signalling server on {endpoint:?}: {error:?}"),
-        }
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let handle = runtime.spawn(async move {
+            match SignallingServer::runner(endpoint.clone()).await {
+                Ok(_) => debug!("Signalling server successively Started!"),
+                Err(error) => error!("Error starting Signalling server on {endpoint:?}: {error:?}"),
+            };
+        });
+
+        runtime.block_on(handle).unwrap();
     }
 
     #[instrument(level = "debug")]

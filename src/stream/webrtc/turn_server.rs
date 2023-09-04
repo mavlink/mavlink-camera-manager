@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::thread;
 
 use anyhow::{Context, Result};
-use async_std::task;
 use tokio::net::UdpSocket;
 
 use webrtc_util::vnet::net::Net;
@@ -77,10 +76,20 @@ impl TurnServer {
 
         debug!("Starting TURN server on {endpoint:?}...");
 
-        match task::block_on(TurnServer::runner(endpoint.clone(), realm)) {
-            Ok(_) => debug!("TURN server successively Started!"),
-            Err(error) => error!("Error Starting TURN server on {endpoint:?}: {error:?}"),
-        };
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let handle = runtime.spawn(async move {
+            match TurnServer::runner(endpoint.clone(), realm).await {
+                Ok(_) => debug!("TURN server successively Started!"),
+                Err(error) => error!("Error Starting TURN server on {endpoint:?}: {error:?}"),
+            };
+        });
+
+        runtime.block_on(handle).unwrap();
     }
 
     #[instrument(level = "debug")]
