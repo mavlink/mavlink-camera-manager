@@ -66,7 +66,7 @@ impl VideoSource for VideoSourceGst {
                         sizes: sizes.clone(),
                     },
                     Format {
-                        encode: VideoEncodeType::Yuyv,
+                        encode: VideoEncodeType::Raw(DEFAULT_RAW_FORMAT.to_string()),
                         sizes: sizes.clone(),
                     },
                     Format {

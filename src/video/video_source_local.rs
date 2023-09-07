@@ -794,11 +794,26 @@ mod device_identification_tests {
 
         let candidates = vec![
             add_available_camera("A", "/dev/video0", "usb_port_0", vec![H264]),
-            add_available_camera("A", "/dev/video1", "usb_port_0", vec![Yuyv, Mjpg]),
+            add_available_camera(
+                "A",
+                "/dev/video1",
+                "usb_port_0",
+                vec![Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
             add_available_camera("A", "/dev/video2", "usb_port_1", vec![H264]),
-            add_available_camera("A", "/dev/video3", "usb_port_1", vec![Yuyv, Mjpg]),
+            add_available_camera(
+                "A",
+                "/dev/video3",
+                "usb_port_1",
+                vec![Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
             add_available_camera("B", "/dev/video4", "usb_port_2", vec![H264]),
-            add_available_camera("B", "/dev/video5", "usb_port_2", vec![Yuyv, Mjpg]),
+            add_available_camera(
+                "B",
+                "/dev/video5",
+                "usb_port_2",
+                vec![Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
         ];
 
         let same_name_candidates = VideoSourceLocal::get_cameras_with_same_name(&candidates, "A");
@@ -815,8 +830,18 @@ mod device_identification_tests {
         let candidates = vec![
             add_available_camera("A", "/dev/video0", "usb_port_0", vec![H264]),
             add_available_camera("B", "/dev/video1", "usb_port_1", vec![H264]),
-            add_available_camera("C", "/dev/video2", "usb_port_0", vec![Yuyv, Mjpg]),
-            add_available_camera("D", "/dev/video3", "usb_port_1", vec![Yuyv, Mjpg]),
+            add_available_camera(
+                "C",
+                "/dev/video2",
+                "usb_port_0",
+                vec![Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
+            add_available_camera(
+                "D",
+                "/dev/video3",
+                "usb_port_1",
+                vec![Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
         ];
 
         let same_encode_candidates =
@@ -833,9 +858,19 @@ mod device_identification_tests {
 
         let candidates = vec![
             add_available_camera("A", "/dev/video0", "usb_port_0", vec![H264]),
-            add_available_camera("B", "/dev/video1", "usb_port_0", vec![Yuyv, Mjpg]),
+            add_available_camera(
+                "B",
+                "/dev/video1",
+                "usb_port_0",
+                vec![Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
             add_available_camera("C", "/dev/video2", "usb_port_1", vec![H264]),
-            add_available_camera("D", "/dev/video3", "usb_port_1", vec![Yuyv, Mjpg]),
+            add_available_camera(
+                "D",
+                "/dev/video3",
+                "usb_port_1",
+                vec![Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
         ];
 
         let same_encode_candidates = VideoSourceLocal::get_cameras_with_same_bus(
@@ -855,10 +890,25 @@ mod device_identification_tests {
 
         let candidates = vec![
             add_available_camera("A", "/dev/video0", "usb_port_0", vec![H264]),
-            add_available_camera("A", "/dev/video1", "usb_port_0", vec![Yuyv, Mjpg]),
+            add_available_camera(
+                "A",
+                "/dev/video1",
+                "usb_port_0",
+                vec![Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
             add_available_camera("B", "/dev/video2", "usb_port_1", vec![H264]),
-            add_available_camera("B", "/dev/video3", "usb_port_1", vec![Yuyv, Mjpg]),
-            add_available_camera("C", "/dev/video3", "usb_port_1", vec![H264, Yuyv, Mjpg]),
+            add_available_camera(
+                "B",
+                "/dev/video3",
+                "usb_port_1",
+                vec![Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
+            add_available_camera(
+                "C",
+                "/dev/video3",
+                "usb_port_1",
+                vec![H264, Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
         ];
         let stream = create_stream("A", "/dev/video0", "usb_port_0", H264);
         let (VideoSourceType::Local(source), CaptureConfiguration::Video(capture_configuration)) = (
@@ -901,9 +951,19 @@ mod device_identification_tests {
 
         let candidates = vec![
             add_available_camera("A", "/dev/video0", current_usb_bus, vec![H264]),
-            add_available_camera("A", "/dev/video1", current_usb_bus, vec![Yuyv, Mjpg]),
+            add_available_camera(
+                "A",
+                "/dev/video1",
+                current_usb_bus,
+                vec![Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
             add_available_camera("B", "/dev/video2", "usb_port_3", vec![H264]),
-            add_available_camera("B", "/dev/video3", "usb_port_3", vec![Yuyv, Mjpg]),
+            add_available_camera(
+                "B",
+                "/dev/video3",
+                "usb_port_3",
+                vec![Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
         ];
 
         for n in (0..3).collect::<Vec<_>>() {
@@ -955,8 +1015,18 @@ mod device_identification_tests {
         let candidates = vec![
             add_available_camera("A", current_path, "usb_port_0", vec![H264]),
             add_available_camera("A", last_path, "usb_port_1", vec![H264]),
-            add_available_camera("A", "/dev/video3", "usb_port_0", vec![Yuyv, Mjpg]),
-            add_available_camera("A", "/dev/video5", "usb_port_1", vec![Yuyv, Mjpg]),
+            add_available_camera(
+                "A",
+                "/dev/video3",
+                "usb_port_0",
+                vec![Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
+            add_available_camera(
+                "A",
+                "/dev/video5",
+                "usb_port_1",
+                vec![Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
         ];
 
         for n in (0..=1).collect::<Vec<_>>() {
@@ -1000,9 +1070,19 @@ mod device_identification_tests {
 
         let candidates = vec![
             add_available_camera("A", "/dev/video0", current_usb_bus, vec![H264]),
-            add_available_camera("A", "/dev/video1", current_usb_bus, vec![Yuyv, Mjpg]),
+            add_available_camera(
+                "A",
+                "/dev/video1",
+                current_usb_bus,
+                vec![Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
             add_available_camera("A", "/dev/video4", "usb_port_2", vec![H264]),
-            add_available_camera("A", "/dev/video5", "usb_port_2", vec![Yuyv, Mjpg]),
+            add_available_camera(
+                "A",
+                "/dev/video5",
+                "usb_port_2",
+                vec![Raw(DEFAULT_RAW_FORMAT.to_string()), Mjpg],
+            ),
         ];
 
         for n in (0..5).collect::<Vec<_>>() {
