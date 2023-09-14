@@ -19,26 +19,6 @@ lazy_static! {
     static ref ID_CONTROL: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(vec![]));
 }
 
-#[derive(Debug)] // Do not Clone this, otherwise it's very likely to have unwanted Drop calls
-#[allow(dead_code)]
-pub struct MavlinkCameraComponent {
-    // MAVLink specific information
-    system_id: u8,
-    component_id: u8,
-    stream_id: u8,
-
-    vendor_name: String,
-    model_name: String,
-    firmware_version: u32,
-    resolution_h: u16,
-    resolution_v: u16,
-    framerate: f32,
-    bitrate: u32,
-    rotation: u16,
-    hfov: u16,
-    thermal: bool,
-}
-
 pub struct MavlinkCameraInformation {
     component: MavlinkCameraComponent,
     mavlink_connection_string: String,
@@ -77,80 +57,6 @@ impl std::fmt::Debug for MavlinkCameraInformation {
             .field("video_stream_uri", &self.video_stream_uri)
             .field("video_source_type", &self.video_source_type)
             .finish()
-    }
-}
-
-impl MavlinkCameraComponent {
-    fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
-        let mut vector = match ID_CONTROL.lock() {
-            Ok(guard) => guard,
-            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-        };
-
-        // Find the closer ID available
-        let mut id: u8 = 0;
-        loop {
-            if vector.contains(&id) {
-                id += 1;
-                continue;
-            } else {
-                vector.push(id);
-                break;
-            }
-        }
-
-        let (resolution_h, resolution_v, framerate) = match &video_and_stream_information
-            .stream_information
-            .configuration
-        {
-            crate::stream::types::CaptureConfiguration::Video(cfg) => {
-                let framerate =
-                    cfg.frame_interval.denominator as f32 / cfg.frame_interval.numerator as f32;
-                (cfg.height as u16, cfg.width as u16, framerate)
-            }
-            crate::stream::types::CaptureConfiguration::Redirect(_) => (0, 0, 0.0),
-        };
-
-        let thermal = video_and_stream_information
-            .stream_information
-            .extended_configuration
-            .clone()
-            .unwrap_or_default()
-            .thermal;
-
-        Ok(Self {
-            system_id: 1,
-            component_id: mavlink::common::MavComponent::MAV_COMP_ID_CAMERA as u8 + id,
-            stream_id: 1, // Starts at 1, 0 is for broadcast.
-
-            vendor_name: video_and_stream_information
-                .video_source
-                .inner()
-                .name()
-                .to_string(), // TODO: see what is more appropriate
-            model_name: video_and_stream_information.name.clone(), // TODO: see what is more appropriate
-            firmware_version: 0,
-            resolution_h,
-            resolution_v,
-            bitrate: 5000,
-            rotation: 0,
-            hfov: 90,
-            framerate,
-            thermal,
-        })
-    }
-}
-
-impl Drop for MavlinkCameraComponent {
-    fn drop(&mut self) {
-        // Remove id from used ids
-        let id = self.component_id - mavlink::common::MavComponent::MAV_COMP_ID_CAMERA as u8;
-        let mut vector = lock_or_return_error!(ID_CONTROL);
-        if let Some(position) = vector.iter().position(|&vec_id| vec_id == id) {
-            vector.remove(position);
-        } else {
-            error!("Id {id} not found when Dropping MavlinkCameraComponent {self:#?}.");
-        }
     }
 }
 
