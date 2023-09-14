@@ -28,6 +28,8 @@ async fn main() -> Result<(), std::io::Error> {
     // Settings should start before everybody else to ensure that the CLI are stored
     settings::manager::init(None);
 
+    mavlink::manager::Manager::init();
+
     stream::manager::init();
     if let Some(endpoint) = cli::manager::mavlink_connection_string() {
         settings::manager::set_mavlink_endpoint(endpoint);
