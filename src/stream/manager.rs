@@ -40,7 +40,7 @@ pub struct Manager {
 }
 
 lazy_static! {
-    static ref MANAGER: Arc<Mutex<Manager>> = Arc::new(Mutex::new(Manager::default()));
+    static ref MANAGER: Arc<Mutex<Manager>> = Default::default();
 }
 
 impl Manager {
