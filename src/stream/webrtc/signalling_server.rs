@@ -54,34 +54,26 @@ impl Default for SignallingServer {
 }
 
 impl SignallingServer {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", fields(endpoint))]
     fn run_main_loop() {
-        let endpoint = match url::Url::parse(DEFAULT_SIGNALLING_ENDPOINT)
-            .context("Failed parsing endpoint")
-        {
-            Ok(endpoint) => endpoint,
-            Err(error) => {
-                error!("Failed parsing TurnServer url {DEFAULT_SIGNALLING_ENDPOINT:?}: {error:?}");
-                return;
-            }
-        };
+        let endpoint = url::Url::parse(DEFAULT_SIGNALLING_ENDPOINT)
+            .expect("Wrong default signalling endpoint");
 
-        debug!("Starting Signalling server on {endpoint:?}...");
-
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
+        tokio::runtime::Builder::new_multi_thread()
+            .on_thread_start(|| debug!("Thread started"))
+            .on_thread_stop(|| debug!("Thread stopped"))
+            .thread_name_fn(|| {
+                static ATOMIC_ID: std::sync::atomic::AtomicUsize =
+                    std::sync::atomic::AtomicUsize::new(0);
+                let id = ATOMIC_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                format!("Signaller-{id}")
+            })
+            .worker_threads(2)
             .enable_all()
             .build()
-            .unwrap();
-
-        let handle = runtime.spawn(async move {
-            match SignallingServer::runner(endpoint.clone()).await {
-                Ok(_) => debug!("Signalling server successively Started!"),
-                Err(error) => error!("Error starting Signalling server on {endpoint:?}: {error:?}"),
-            };
-        });
-
-        runtime.block_on(handle).unwrap();
+            .expect("Failed building a new tokio runtime")
+            .block_on(SignallingServer::runner(endpoint))
+            .expect("Error starting Signalling server");
     }
 
     #[instrument(level = "debug")]
