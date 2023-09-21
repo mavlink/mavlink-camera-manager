@@ -36,25 +36,34 @@ pub trait WebRTCBinInterface {
         &self,
         webrtcbin: &gst::Element,
         state: &gst_webrtc::WebRTCICEGatheringState,
-    );
+    ) -> Result<()>;
 
     /// Signal emitted when this WebRTCBin ICE connection state changes.
     fn on_ice_connection_state_change(
         &self,
         webrtcbin: &gst::Element,
         state: &gst_webrtc::WebRTCICEConnectionState,
-    );
+    ) -> Result<()>;
 
     /// Signal emitted when this WebRTCBin connection state changes.
     fn on_connection_state_change(
         &self,
         webrtcbin: &gst::Element,
         state: &gst_webrtc::WebRTCPeerConnectionState,
-    );
+    ) -> Result<()>;
 
     /// Callback called by the WebRTC Signalling server (directly or by means of a session manager) for it to handle the incoming SDP.
-    fn handle_sdp(&self, sdp: &gst_webrtc::WebRTCSessionDescription) -> Result<()>;
+    fn handle_sdp(
+        &self,
+        webrtcbin: &gst::Element,
+        sdp: &gst_webrtc::WebRTCSessionDescription,
+    ) -> Result<()>;
 
     /// Callback called by the WebRTC Signalling server (directly or by means of a session manager) for it to handle the incoming ICE candidate.
-    fn handle_ice(&self, sdp_m_line_index: &u32, candidate: &str) -> Result<()>;
+    fn handle_ice(
+        &self,
+        webrtcbin: &gst::Element,
+        sdp_m_line_index: &u32,
+        candidate: &str,
+    ) -> Result<()>;
 }
