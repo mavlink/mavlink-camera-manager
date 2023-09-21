@@ -29,7 +29,6 @@ use super::{
         self,
         signalling_protocol::RTCSessionDescription,
         signalling_server::{StreamManagementInterface, WebRTCSessionManagementInterface},
-        webrtcbin_interface::WebRTCBinInterface,
     },
     Stream,
 };
