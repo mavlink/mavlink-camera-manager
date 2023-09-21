@@ -272,6 +272,14 @@ pub async fn get_jpeg_thumbnail_from_source(
     let (tx, rx) = tokio::sync::oneshot::channel();
     std::thread::spawn(move || {
         tokio::runtime::Builder::new_current_thread()
+            .on_thread_start(|| debug!("Thread started"))
+            .on_thread_stop(|| debug!("Thread stopped"))
+            .thread_name_fn(|| {
+                static ATOMIC_ID: std::sync::atomic::AtomicUsize =
+                    std::sync::atomic::AtomicUsize::new(0);
+                let id = ATOMIC_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                format!("Thumbnailer-{id}")
+            })
             .enable_time()
             .build()
             .expect("Failed building a new tokio runtime")
