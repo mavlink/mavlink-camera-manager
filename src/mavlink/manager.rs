@@ -1,5 +1,5 @@
 use std::marker::Send;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use mavlink::common::MavMessage;
 use mavlink::{MavConnection, MavHeader};
@@ -14,8 +14,8 @@ lazy_static! {
 }
 
 pub struct Manager {
-    connection: Arc<Mutex<Connection>>,
-    ids: Arc<Mutex<Vec<u8>>>,
+    connection: Arc<RwLock<Connection>>,
+    ids: Arc<RwLock<Vec<u8>>>,
 }
 
 struct Connection {
@@ -41,12 +41,12 @@ impl Default for Manager {
         let (sender, _receiver) = broadcast::channel(100);
 
         let this = Self {
-            connection: Arc::new(Mutex::new(Connection {
+            connection: Arc::new(RwLock::new(Connection {
                 address,
                 connection,
                 sender,
             })),
-            ids: Arc::new(Mutex::new(vec![])),
+            ids: Arc::new(RwLock::new(vec![])),
         };
 
         let connection = this.connection.clone();
@@ -73,7 +73,7 @@ impl Manager {
     }
 
     #[instrument(level = "debug", skip(inner))]
-    fn receiver_loop(inner: Arc<Mutex<Connection>>) {
+    fn receiver_loop(inner: Arc<RwLock<Connection>>) {
         loop {
             std::thread::sleep(std::time::Duration::from_micros(10));
 
@@ -112,7 +112,7 @@ impl Manager {
     }
 
     #[instrument(level = "debug", skip(inner))]
-    fn sender_loop(inner: Arc<Mutex<Connection>>) {
+    fn sender_loop(inner: Arc<RwLock<Connection>>) {
         let mut receiver = { inner.lock().unwrap().sender.subscribe() };
 
         loop {
