@@ -75,7 +75,7 @@ impl Manager {
     #[instrument(level = "debug", skip(inner))]
     fn receiver_loop(inner: Arc<Mutex<Connection>>) {
         loop {
-            std::thread::sleep(std::time::Duration::from_micros(10));
+            std::thread::sleep(std::time::Duration::from_millis(10));
 
             // Receive from the Mavlink network
             let (header, message) = match inner.lock().unwrap().connection.recv() {
@@ -117,7 +117,7 @@ impl Manager {
 
         loop {
             loop {
-                std::thread::sleep(std::time::Duration::from_micros(10));
+                std::thread::sleep(std::time::Duration::from_millis(10));
 
                 // Receive answer from the cameras
                 let (header, message) = match receiver.try_recv() {
