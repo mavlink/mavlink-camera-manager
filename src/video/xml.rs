@@ -13,6 +13,7 @@ pub struct MavlinkCamera {
 
 #[derive(Debug, Serialize)]
 pub struct Definition {
+    #[serde(rename = "@version")]
     pub version: u32,
     pub model: Model,
     pub vendor: Vendor,
@@ -56,33 +57,45 @@ pub enum ParameterType {
 
 #[derive(Debug, Serialize)]
 pub struct ParameterBool {
+    #[serde(rename = "@name")]
     pub name: String,
-    #[serde(rename = "type")]
+    #[serde(rename = "@type")]
     pub cpp_type: String,
+    #[serde(rename = "@default")]
     pub default: i64,
+    #[serde(rename = "@v4l_id")]
     pub v4l_id: u64,
     pub description: Description,
 }
 
 #[derive(Debug, Serialize)]
 pub struct ParameterSlider {
+    #[serde(rename = "@name")]
     pub name: String,
-    #[serde(rename = "type")]
+    #[serde(rename = "@type")]
     pub cpp_type: String,
+    #[serde(rename = "@default")]
     pub default: i64,
+    #[serde(rename = "@v4l_id")]
     pub v4l_id: u64,
+    #[serde(rename = "@step")]
     pub step: u64,
+    #[serde(rename = "@max")]
     pub max: i64,
+    #[serde(rename = "@min")]
     pub min: i64,
     pub description: Description,
 }
 
 #[derive(Debug, Serialize)]
 pub struct ParameterMenu {
+    #[serde(rename = "@name")]
     pub name: String,
-    #[serde(rename = "type")]
+    #[serde(rename = "@type")]
     pub cpp_type: String,
+    #[serde(rename = "@default")]
     pub default: i64,
+    #[serde(rename = "@v4l_id")]
     pub v4l_id: u64,
     pub description: Description,
     pub options: Options,
@@ -95,7 +108,9 @@ pub struct Options {
 
 #[derive(Debug, Serialize)]
 pub struct Option {
+    #[serde(rename = "@name")]
     pub name: String,
+    #[serde(rename = "@value")]
     pub value: i64,
 }
 
