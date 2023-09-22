@@ -81,13 +81,13 @@ turn = "0.6"
 image = "0.24"
 
 ## GSTREAMER
-gst = { package = "gstreamer", version = "0.20", features = ["v1_16"] }
-gst-app = { package = "gstreamer-app", version = "0.20", features = ["v1_16"] }
-gst-sdp = { package = "gstreamer-sdp", version = "0.20", features=["v1_16"] }
-gst-webrtc = { package = "gstreamer-webrtc", version = "0.20", features = ["v1_16"] }
-gst-rtsp = { package = "gstreamer-rtsp", version = "0.20", features = ["v1_16"] }
-gst-rtsp-server = { package = "gstreamer-rtsp-server", version = "0.20", features = ["v1_16"] }
-gst-video = { package = "gstreamer-video", version = "0.20", features = ["v1_16"] }
+gst = { package = "gstreamer", version = "0.21", features = ["v1_16"] }
+gst-app = { package = "gstreamer-app", version = "0.21", features = ["v1_16"] }
+gst-sdp = { package = "gstreamer-sdp", version = "0.21", features=["v1_16"] }
+gst-webrtc = { package = "gstreamer-webrtc", version = "0.21", features = ["v1_16"] }
+gst-rtsp = { package = "gstreamer-rtsp", version = "0.21", features = ["v1_16"] }
+gst-rtsp-server = { package = "gstreamer-rtsp-server", version = "0.21", features = ["v1_16"] }
+gst-video = { package = "gstreamer-video", version = "0.21", features = ["v1_16"] }
 webrtc-sdp = "0.3.10"
 
 [dev-dependencies]
