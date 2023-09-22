@@ -50,7 +50,7 @@ impl PipelineRunner {
 
     #[instrument(level = "debug", skip(self))]
     pub fn start(&self) -> Result<()> {
-        *self.start.lock().unwrap() = true;
+        *force_lock!(self.start) = true;
         Ok(())
     }
 
@@ -86,7 +86,7 @@ impl PipelineRunner {
             std::thread::sleep(std::time::Duration::from_millis(100));
 
             // Wait the signal to start
-            if *start.lock().unwrap() && pipeline.current_state() != gst::State::Playing {
+            if *force_lock!(start) && pipeline.current_state() != gst::State::Playing {
                 if let Err(error) = pipeline.set_state(gst::State::Playing) {
                     return Err(anyhow!(
                         "Failed setting Pipeline {pipeline_id} to Playing state. Reason: {error:?}"

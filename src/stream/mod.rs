@@ -99,9 +99,7 @@ impl Stream {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(100));
 
-            if !state
-                .lock()
-                .unwrap()
+            if !force_lock!(state)
                 .pipeline
                 .inner_state_as_ref()
                 .pipeline_runner
@@ -161,7 +159,7 @@ impl Stream {
                 }
 
                 // Try to recreate the stream
-                *state.lock().unwrap() = match StreamState::try_new(
+                *force_lock!(state) = match StreamState::try_new(
                     &video_and_stream_information,
                     &pipeline_id,
                 ) {
@@ -174,7 +172,7 @@ impl Stream {
                 };
             }
 
-            if *terminated.lock().unwrap() {
+            if *force_lock!(terminated) {
                 debug!("Ending stream {pipeline_id:?}.");
                 break;
             }
@@ -184,7 +182,7 @@ impl Stream {
 
 impl Drop for Stream {
     fn drop(&mut self) {
-        *self.terminated.lock().unwrap() = true;
+        *force_lock!(self.terminated) = true;
     }
 }
 

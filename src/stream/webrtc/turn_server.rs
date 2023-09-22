@@ -76,20 +76,25 @@ impl TurnServer {
 
         debug!("Starting TURN server on {endpoint:?}...");
 
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
+        tokio::runtime::Builder::new_multi_thread()
+            .on_thread_start(|| debug!("Thread started"))
+            .on_thread_stop(|| debug!("Thread stopped"))
+            .thread_name_fn(|| {
+                static ATOMIC_ID: std::sync::atomic::AtomicUsize =
+                    std::sync::atomic::AtomicUsize::new(0);
+                let id = ATOMIC_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                format!("TurnServer-{id}")
+            })
+            .worker_threads(2)
             .enable_all()
             .build()
-            .unwrap();
-
-        let handle = runtime.spawn(async move {
-            match TurnServer::runner(endpoint.clone(), realm).await {
-                Ok(_) => debug!("TURN server successively Started!"),
-                Err(error) => error!("Error Starting TURN server on {endpoint:?}: {error:?}"),
-            };
-        });
-
-        runtime.block_on(handle).unwrap();
+            .expect("Failed building a new tokio runtime")
+            .block_on(async move {
+                match TurnServer::runner(endpoint.clone(), realm).await {
+                    Ok(_) => debug!("TURN server successively Started!"),
+                    Err(error) => error!("Error Starting TURN server on {endpoint:?}: {error:?}"),
+                };
+            });
     }
 
     #[instrument(level = "debug")]

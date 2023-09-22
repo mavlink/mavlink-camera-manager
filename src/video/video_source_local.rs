@@ -270,7 +270,7 @@ fn convert_v4l_intervals(v4l_intervals: &[v4l::FrameInterval]) -> Vec<FrameInter
 }
 
 fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Format> {
-    if let Some(formats) = VIDEO_FORMATS.lock().unwrap().get(&device_path.to_string()) {
+    if let Some(formats) = force_lock!(VIDEO_FORMATS).get(&device_path.to_string()) {
         return formats.clone();
     }
 
@@ -407,10 +407,7 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
     formats.sort();
     formats.dedup();
 
-    VIDEO_FORMATS
-        .lock()
-        .unwrap()
-        .insert(device_path.to_string(), formats.clone());
+    force_lock!(VIDEO_FORMATS).insert(device_path.to_string(), formats.clone());
     formats
 }
 
@@ -794,10 +791,7 @@ mod device_identification_tests {
             .collect::<Vec<Format>>();
 
         // Register its formats
-        VIDEO_FORMATS
-            .lock()
-            .unwrap()
-            .insert(device_path.to_string(), formats);
+        force_lock!(VIDEO_FORMATS).insert(device_path.to_string(), formats);
 
         VideoSourceType::Local(VideoSourceLocal {
             name: name.into(),
@@ -838,7 +832,7 @@ mod device_identification_tests {
     #[serial("Using a mocked global VIDEO_FORMATS")]
     #[test]
     fn test_get_cameras_with_same_name() {
-        VIDEO_FORMATS.lock().unwrap().clear();
+        force_lock!(VIDEO_FORMATS).clear();
 
         let candidates = vec![
             add_available_camera("A", "/dev/video0", "usb_port_0", vec![H264]),
@@ -852,13 +846,13 @@ mod device_identification_tests {
         let same_name_candidates = VideoSourceLocal::get_cameras_with_same_name(&candidates, "A");
         assert_eq!(candidates[..4].to_vec(), same_name_candidates);
 
-        VIDEO_FORMATS.lock().unwrap().clear();
+        force_lock!(VIDEO_FORMATS).clear();
     }
 
     #[serial("Using a mocked global VIDEO_FORMATS")]
     #[test]
     fn test_get_cameras_with_same_encode() {
-        VIDEO_FORMATS.lock().unwrap().clear();
+        force_lock!(VIDEO_FORMATS).clear();
 
         let candidates = vec![
             add_available_camera("A", "/dev/video0", "usb_port_0", vec![H264]),
@@ -871,13 +865,13 @@ mod device_identification_tests {
             VideoSourceLocal::get_cameras_with_same_encode(&candidates, &H264);
         assert_eq!(candidates[..2].to_vec(), same_encode_candidates);
 
-        VIDEO_FORMATS.lock().unwrap().clear();
+        force_lock!(VIDEO_FORMATS).clear();
     }
 
     #[serial("Using a mocked global VIDEO_FORMATS")]
     #[test]
     fn test_get_cameras_with_same_bus() {
-        VIDEO_FORMATS.lock().unwrap().clear();
+        force_lock!(VIDEO_FORMATS).clear();
 
         let candidates = vec![
             add_available_camera("A", "/dev/video0", "usb_port_0", vec![H264]),
@@ -892,14 +886,14 @@ mod device_identification_tests {
         );
         assert_eq!(candidates[..2].to_vec(), same_encode_candidates);
 
-        VIDEO_FORMATS.lock().unwrap().clear();
+        force_lock!(VIDEO_FORMATS).clear();
     }
 
     #[traced_test]
     #[serial("Using a mocked global VIDEO_FORMATS")]
     #[test]
     fn identify_a_candidate_with_same_name_and_encode() {
-        VIDEO_FORMATS.lock().unwrap().clear();
+        force_lock!(VIDEO_FORMATS).clear();
 
         let candidates = vec![
             add_available_camera("A", "/dev/video0", "usb_port_0", vec![H264]),
@@ -934,14 +928,14 @@ mod device_identification_tests {
             .try_identify_device(capture_configuration, &candidates[1..])
             .expect_err("Failed to identify the only device with the same name and encode");
 
-        VIDEO_FORMATS.lock().unwrap().clear();
+        force_lock!(VIDEO_FORMATS).clear();
     }
 
     #[traced_test]
     #[serial("Using a mocked global VIDEO_FORMATS")]
     #[test]
     fn identify_a_candidate_when_usb_port_changed() {
-        VIDEO_FORMATS.lock().unwrap().clear();
+        force_lock!(VIDEO_FORMATS).clear();
 
         // Before this boot, the device candidates[0] was in "usb_port_0" and the device candidates[1] was in "usb_port_1":
         let last_usb_bus = "usb_port_1";
@@ -987,14 +981,14 @@ mod device_identification_tests {
                 .expect_err("Failed to identify the only device with the same name and encode");
         }
 
-        VIDEO_FORMATS.lock().unwrap().clear();
+        force_lock!(VIDEO_FORMATS).clear();
     }
 
     #[traced_test]
     #[serial("Using a mocked global VIDEO_FORMATS")]
     #[test]
     fn identify_a_candidate_when_path_changed() {
-        VIDEO_FORMATS.lock().unwrap().clear();
+        force_lock!(VIDEO_FORMATS).clear();
 
         // Before this boot, the device candidates[0] was in "/dev/video1" and the device candidates[1] was in "/dev/video0":
         let last_path = "/dev/video1";
@@ -1033,14 +1027,14 @@ mod device_identification_tests {
             );
         }
 
-        VIDEO_FORMATS.lock().unwrap().clear();
+        force_lock!(VIDEO_FORMATS).clear();
     }
 
     #[traced_test]
     #[serial("Using a mocked global VIDEO_FORMATS")]
     #[test]
     fn do_not_identify_if_several_devices_with_same_name_and_encode() {
-        VIDEO_FORMATS.lock().unwrap().clear();
+        force_lock!(VIDEO_FORMATS).clear();
 
         // Before this boot, the device candidates[0] was in "usb_port_0" and the device candidates[1] was in "usb_port_1":
         let last_usb_bus = "usb_port_1";
@@ -1073,6 +1067,6 @@ mod device_identification_tests {
                 .is_none())
         }
 
-        VIDEO_FORMATS.lock().unwrap().clear();
+        force_lock!(VIDEO_FORMATS).clear();
     }
 }
