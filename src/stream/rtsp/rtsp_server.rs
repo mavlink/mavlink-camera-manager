@@ -59,7 +59,7 @@ impl RTSPServer {
 
     #[instrument(level = "debug")]
     pub fn is_running() -> bool {
-        RTSP_SERVER.as_ref().lock().unwrap().run
+        force_lock!(RTSP_SERVER).run
     }
 
     #[instrument(level = "debug")]
@@ -75,7 +75,7 @@ impl RTSPServer {
                 continue;
             }
 
-            let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
+            let mut rtsp_server = force_lock!(RTSP_SERVER);
 
             // Attach the server to our main context.
             // A main context is the thing where other stuff is registering itself for its
@@ -97,7 +97,7 @@ impl RTSPServer {
 
             main_loop.run();
 
-            let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
+            let mut rtsp_server = force_lock!(RTSP_SERVER);
             rtsp_server.run = false;
 
             id.remove();
@@ -107,7 +107,7 @@ impl RTSPServer {
     #[instrument(level = "debug")]
     pub fn add_pipeline(path: &str, socket_path: &str, rtp_caps: &gst::Caps) -> Result<()> {
         // Initialize the singleton before calling gst factory
-        let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
+        let mut rtsp_server = force_lock!(RTSP_SERVER);
 
         let factory = gst_rtsp_server::RTSPMediaFactory::new();
         factory.set_shared(true);
@@ -197,7 +197,7 @@ impl RTSPServer {
 
     #[instrument(level = "debug")]
     pub fn start_pipeline(path: &str) -> Result<()> {
-        let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
+        let mut rtsp_server = force_lock!(RTSP_SERVER);
 
         // Much like HTTP servers, RTSP servers have multiple endpoints that
         // provide different streams. Here, we ask our server to give
@@ -228,7 +228,7 @@ impl RTSPServer {
 
     #[instrument(level = "debug")]
     pub fn stop_pipeline(path: &str) -> Result<()> {
-        let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
+        let mut rtsp_server = force_lock!(RTSP_SERVER);
 
         if !rtsp_server.path_to_factory.contains_key(path) {
             return Err(anyhow!("Path {path:?} not known."));

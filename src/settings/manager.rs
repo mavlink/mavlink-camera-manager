@@ -97,7 +97,7 @@ impl Manager {
 // Init settings manager with the desired settings file,
 // will be created if does not exist
 pub fn init(file_name: Option<&str>) {
-    let mut manager = MANAGER.lock().unwrap();
+    let mut manager = force_lock!(MANAGER);
     let file_name = file_name.unwrap_or("settings.json");
     manager.content = Some(Manager::with(file_name));
 }
@@ -135,7 +135,7 @@ fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> Result<()
 
 // Save the latest state of the settings
 pub fn save() {
-    let manager = MANAGER.lock().unwrap();
+    let manager = force_lock!(MANAGER);
     //TODO: deal com save problems here
     if let Some(content) = &manager.content {
         if let Err(error) = save_settings_to_file(&content.file_name, &content.config) {
@@ -153,12 +153,12 @@ pub fn save() {
 
 #[allow(dead_code)]
 pub fn header() -> HeaderSettingsFile {
-    let manager = MANAGER.lock().unwrap();
+    let manager = force_lock!(MANAGER);
     return manager.content.as_ref().unwrap().config.header.clone();
 }
 
 pub fn mavlink_endpoint() -> Option<String> {
-    let manager = MANAGER.lock().unwrap();
+    let manager = force_lock!(MANAGER);
     return manager
         .content
         .as_ref()
@@ -171,7 +171,7 @@ pub fn mavlink_endpoint() -> Option<String> {
 pub fn set_mavlink_endpoint(endpoint: &str) {
     //TODO: make content more easy to access
     {
-        let mut manager = MANAGER.lock().unwrap();
+        let mut manager = force_lock!(MANAGER);
         let mut content = manager.content.as_mut();
         content.as_mut().unwrap().config.mavlink_endpoint = Some(endpoint.into());
     }
@@ -179,7 +179,7 @@ pub fn set_mavlink_endpoint(endpoint: &str) {
 }
 
 pub fn streams() -> Vec<VideoAndStreamInformation> {
-    let manager = MANAGER.lock().unwrap();
+    let manager = force_lock!(MANAGER);
     let content = manager.content.as_ref();
     content.unwrap().config.streams.clone()
 }
@@ -187,7 +187,7 @@ pub fn streams() -> Vec<VideoAndStreamInformation> {
 pub fn set_streams(streams: &[VideoAndStreamInformation]) {
     // Take care of scope mutex
     {
-        let mut manager = MANAGER.lock().unwrap();
+        let mut manager = force_lock!(MANAGER);
         let mut content = manager.content.as_mut();
         content.as_mut().unwrap().config.streams.clear();
         content
@@ -203,7 +203,7 @@ pub fn set_streams(streams: &[VideoAndStreamInformation]) {
 pub fn reset() {
     // Take care of scope mutex
     {
-        let mut manager = MANAGER.lock().unwrap();
+        let mut manager = force_lock!(MANAGER);
         manager.content.as_mut().unwrap().config = SettingsStruct::default();
     }
     save();
@@ -236,7 +236,7 @@ mod tests {
     #[test]
     fn test_no_aboslute_path() {
         init(None);
-        let manager = MANAGER.lock().unwrap();
+        let manager = force_lock!(MANAGER);
         let file_name = &manager.content.as_ref().unwrap().file_name;
         assert!(
             std::path::Path::new(&file_name).exists(),

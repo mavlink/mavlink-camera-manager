@@ -420,7 +420,7 @@ impl ImageSink {
                     .add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, |_pad, _info| {
                         gst::PadProbeReturn::Ok
                     })
-                    .and_then(|blocker| pad_blocker_clone.lock().unwrap().replace(blocker))
+                    .and_then(|blocker| force_lock!(pad_blocker_clone).replace(blocker))
                 {
                     queue_src_pad.remove_probe(old_blocker);
                 }
@@ -541,7 +541,7 @@ impl ImageSink {
         }
 
         // Unblock the data from entering the ProxySink
-        if let Some(blocker) = self.pad_blocker.lock().unwrap().take() {
+        if let Some(blocker) = force_lock_async!(self.pad_blocker).take() {
             self.queue
                 .static_pad("src")
                 .expect("No src pad found on Queue")
@@ -601,11 +601,7 @@ impl ImageSink {
         let thumbnail = tokio::time::timeout(tokio::time::Duration::from_secs(2), rx).await???;
 
         {
-            let mut thumbnails = match self.thumbnails.lock() {
-                Ok(guard) => guard,
-                Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-            };
-
+            let mut thumbnails = force_lock_async!(self.thumbnails);
             if let Err(error) = thumbnails.try_set(&settings, thumbnail.clone()) {
                 error!("Failed setting cached thumbnail. Reason: {error:?}");
             }
@@ -627,10 +623,7 @@ impl ImageSink {
 
         // Try to get from cache
         {
-            let thumbnails = match self.thumbnails.lock() {
-                Ok(guard) => guard,
-                Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-            };
+            let thumbnails = force_lock_async!(self.thumbnails);
 
             if let Some(thumbnail) = thumbnails.try_get(&settings)? {
                 return Ok(thumbnail);
