@@ -23,32 +23,32 @@ path = "src/main.rs"
 
 [dependencies]
 clap = "2"
-regex = "1.6.0"
+regex = "1.9.5"
 
 #TODO: Investigate rweb to use openapi spec for free
 # https://github.com/kdy1/rweb
 actix-files = "0.6.2"
-actix-web = "4.1.0"
+actix-web = "4.4.0"
 actix-web-validator = "5.0.1"
 actix-service = "2.0.2"
 actix-extensible-rate-limit = "0.2.1"
-serde = { version = "1.0.140", features = ["derive"] }
-serde_json = "1.0.82"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 validator = { version = "0.16", features = ["derive"] }
 
 ## FINAL
 sys-info = "0.9.1"
-chrono = "0.4.19"
+chrono = "0.4.31"
 lazy_static = "1.4.0"
 include_dir = "0.7.3"
 paperclip = { version = "0.8", features = ["paperclip-actix", "actix4",  "swagger-ui", "url", "uuid"] }
 #TODO: Replace it with yaserde
 quick-xml = { version = "0.23.0", features = ["serialize"] }
-url = { version = "2.2.2", features = ["serde"] }
+url = { version = "2.4.1", features = ["serde"] }
 v4l = "0.14.0"
-directories = "4.0.1"
-pnet = { version = "0.31.0", features = ["std"] }
-semver = "1.0.12"
+directories = "5.0.1"
+pnet = { version = "0.34.0", features = ["std"] }
+semver = "1.0"
 tracing = { version = "0.1.37", features = ["log", "async-await"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 tracing-log = "0.1.3"
@@ -62,10 +62,10 @@ tracing-appender = { git = "https://github.com/joaoantoniocardoso/tracing", bran
 
 anyhow = "1"
 tokio = { version = "1.32", features = ["full"] }
-enum_dispatch = "0.3.8"
+enum_dispatch = "0.3.12"
 uuid = { version = "0.8", features = ["v4", "serde"] }
-ts-rs = "6.2"
-cached = { version = "0.42", features = ["serde", "serde_json", "async_tokio_rt_multi_thread"] }
+ts-rs = "7.0"
+cached = { version = "0.45", features = ["serde", "serde_json", "async_tokio_rt_multi_thread"] }
 
 ## Mavlink
 mavlink = { version = "0.10.1", features = ["default", "emit-extensions"] }
@@ -74,7 +74,7 @@ mavlink = { version = "0.10.1", features = ["default", "emit-extensions"] }
 tokio-tungstenite = { version = "0.20" }
 async-std = { version = "1.12", features =  ["tokio1"] }
 futures = "0.3"
-webrtc-util = { version = "0.7", default-features = false, features = ["vnet"] }
+webrtc-util = { version = "0.8", default-features = false, features = ["vnet"] }
 turn = "0.6"
 
 ## Image/Thumbnail
@@ -96,9 +96,9 @@ serial_test = "0.10"
 tracing-test = "0.2"
 
 [build-dependencies]
-reqwest = { version = "0.11.11", features = ["blocking"] }
-vergen = { version = "7.4.1", default-features = false, features = ["build", "git"] }
-ts-rs = "6.2"
+reqwest = { version = "0.11.20", features = ["blocking"] }
+vergen = { version = "7.5", default-features = false, features = ["build", "git"] }
+ts-rs = "7.0"
 uuid = { version = "0.8", features = ["v4", "serde"] }  # 0.8 because paperclip's "uuid" feature requires this vesion
 serde = { version = "1.0", features = ["derive"] }
 regex = "1"
