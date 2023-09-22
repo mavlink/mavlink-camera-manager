@@ -1,5 +1,5 @@
 use std::marker::Send;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use mavlink::common::MavMessage;
 use mavlink::{MavConnection, MavHeader};
@@ -14,8 +14,8 @@ lazy_static! {
 }
 
 pub struct Manager {
-    connection: Arc<Mutex<Connection>>,
-    ids: Arc<Mutex<Vec<u8>>>,
+    connection: Arc<RwLock<Connection>>,
+    ids: Arc<RwLock<Vec<u8>>>,
 }
 
 struct Connection {
@@ -41,12 +41,12 @@ impl Default for Manager {
         let (sender, _receiver) = broadcast::channel(100);
 
         let this = Self {
-            connection: Arc::new(Mutex::new(Connection {
+            connection: Arc::new(RwLock::new(Connection {
                 address,
                 connection,
                 sender,
             })),
-            ids: Arc::new(Mutex::new(vec![])),
+            ids: Arc::new(RwLock::new(vec![])),
         };
 
         let connection = this.connection.clone();
@@ -73,12 +73,12 @@ impl Manager {
     }
 
     #[instrument(level = "debug", skip(inner))]
-    fn receiver_loop(inner: Arc<Mutex<Connection>>) {
+    fn receiver_loop(inner: Arc<RwLock<Connection>>) {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(10));
 
             // Receive from the Mavlink network
-            let (header, message) = match inner.lock().unwrap().connection.recv() {
+            let (header, message) = match inner.read().unwrap().connection.recv() {
                 Ok(message) => message,
                 Err(error) => {
                     trace!("Failed receiving from mavlink: {error:?}");
@@ -100,7 +100,7 @@ impl Manager {
 
             // Send the received message to the cameras
             if let Err(error) = inner
-                .lock()
+                .read()
                 .unwrap()
                 .sender
                 .send(Message::Received((header, message)))
@@ -112,8 +112,8 @@ impl Manager {
     }
 
     #[instrument(level = "debug", skip(inner))]
-    fn sender_loop(inner: Arc<Mutex<Connection>>) {
-        let mut receiver = { inner.lock().unwrap().sender.subscribe() };
+    fn sender_loop(inner: Arc<RwLock<Connection>>) {
+        let mut receiver = { inner.read().unwrap().sender.subscribe() };
 
         loop {
             loop {
@@ -133,7 +133,7 @@ impl Manager {
                 };
 
                 // Send the response from the cameras to the Mavlink network
-                if let Err(error) = inner.lock().unwrap().connection.send(&header, &message) {
+                if let Err(error) = inner.read().unwrap().connection.send(&header, &message) {
                     error!("Failed sending message to Mavlink Connection: {error:?}");
 
                     break; // Break to trigger reconnection
@@ -144,7 +144,7 @@ impl Manager {
 
             // Reconnects
             {
-                let mut inner = inner.lock().unwrap();
+                let mut inner = inner.write().unwrap();
                 inner.connection = Connection::connect(&inner.address);
             }
 
@@ -157,7 +157,7 @@ impl Manager {
         let manager = MANAGER.lock().unwrap();
 
         let mut id = mavlink::common::MavComponent::MAV_COMP_ID_CAMERA as u8;
-        let mut vector = manager.ids.lock().unwrap();
+        let mut vector = manager.ids.write().unwrap();
 
         // Find the closest ID available
         while vector.contains(&id) {
@@ -171,7 +171,7 @@ impl Manager {
     #[instrument(level = "debug")]
     pub fn drop_id(id: u8) {
         let manager = MANAGER.lock().unwrap();
-        let mut vector = manager.ids.lock().unwrap();
+        let mut vector = manager.ids.write().unwrap();
 
         if let Some(position) = vector.iter().position(|&vec_id| vec_id == id) {
             vector.remove(position);
@@ -184,7 +184,7 @@ impl Manager {
     pub fn get_sender() -> broadcast::Sender<Message> {
         let manager = MANAGER.lock().unwrap();
 
-        let connection = manager.connection.lock().unwrap();
+        let connection = manager.connection.read().unwrap();
 
         connection.sender.clone()
     }
