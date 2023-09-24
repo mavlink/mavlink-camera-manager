@@ -462,8 +462,14 @@ fn customize_sdp(sdp: &gst_sdp::SDPMessage) -> Result<gst_sdp::SDPMessage> {
                 // Customize FMTP
                 // Here we are lying to the peer about our profile-level-id (to constrained-baseline) so any browser can accept it
                 Fmtp(mut fmtp) => {
-                    const CONSTRAINED_BASELINE_LEVEL_ID: u32 = 0x42e01f;
-                    fmtp.parameters.profile_level_id = CONSTRAINED_BASELINE_LEVEL_ID;
+                    // TODO: It might be neccessary to create a rule for H265 as well
+                    // if media
+                    //     .get_attribute(webrtc_sdp::attribute_type::SdpAttributeType::Rtpmap)
+                    //     .is_some_and(|rtpmap| rtpmap.to_string().contains("H264"))
+                    {
+                        const CONSTRAINED_BASELINE_LEVEL_ID: u32 = 0x42e01f;
+                        fmtp.parameters.profile_level_id = CONSTRAINED_BASELINE_LEVEL_ID;
+                    }
                     fmtp.parameters.level_asymmetry_allowed = true;
 
                     let attribute = webrtc_sdp::attribute_type::SdpAttribute::Fmtp(fmtp);

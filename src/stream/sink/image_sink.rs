@@ -349,6 +349,24 @@ impl ImageSink {
                 _transcoding_elements.push(filter);
                 _transcoding_elements.push(decoder);
             }
+            VideoEncodeType::H265 => {
+                let depayloader = gst::ElementFactory::make("rtph265depay").build()?;
+                let parser = gst::ElementFactory::make("h265parse").build()?;
+                // For h265, we need to filter-out unwanted non-key frames here, before decoding it.
+                let filter = gst::ElementFactory::make("identity")
+                .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
+                .property("sync", false)
+                .build()?;
+                let decoder = gst::ElementFactory::make("avdec_h265")
+                    .property("discard-corrupted-frames", true)
+                    .property_from_str("std-compliance", "normal")
+                    .property_from_str("lowres", "2") // (0) is 'full'; (1) is '1/2-size'; (2) is '1/4-size'
+                    .build()?;
+                _transcoding_elements.push(depayloader);
+                _transcoding_elements.push(parser);
+                _transcoding_elements.push(filter);
+                _transcoding_elements.push(decoder);
+            }
             VideoEncodeType::Mjpg => {
                 let depayloader = gst::ElementFactory::make("rtpjpegdepay").build()?;
                 let parser = gst::ElementFactory::make("jpegparse").build()?;

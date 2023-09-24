@@ -71,7 +71,7 @@ impl RedirectPipeline {
                     sink_tee_name = sink_tee_name,
                 )
             }
-            "udp" => {
+            "udp" | "udp265" => {
                 format!(
                     concat!(
                         "udpsrc address={address} port={port} close-socket=false auto-multicast=true",

@@ -43,6 +43,7 @@ impl VideoSource for VideoSourceGst {
                     .collect();
 
                 let sizes: Vec<Size> = [
+                    (160, 120),
                     (320, 240),
                     (640, 480),
                     (720, 480),
@@ -63,6 +64,10 @@ impl VideoSource for VideoSourceGst {
                 vec![
                     Format {
                         encode: VideoEncodeType::H264,
+                        sizes: sizes.clone(),
+                    },
+                    Format {
+                        encode: VideoEncodeType::H265,
                         sizes: sizes.clone(),
                     },
                     Format {

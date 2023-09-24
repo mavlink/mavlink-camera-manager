@@ -326,9 +326,9 @@ impl StreamManagementInterface<Stream> for SignallingServer {
                 let (height, width, encode, interval) =
                     match &stream.video_and_stream.stream_information.configuration {
                         crate::stream::types::CaptureConfiguration::Video(configuration) => {
-                            // Filter out non-H264 local streams
-                            if configuration.encode != crate::video::types::VideoEncodeType::H264 {
-                                trace!("Stream {:?} will not be listed in available streams because it's encoding isn't H264 (it's {:?} instead)", stream.video_and_stream.name, configuration.encode);
+                            // Filter out non-H264/h265 local streams
+                            if !matches!(configuration.encode, crate::video::types::VideoEncodeType::H264 | crate::video::types::VideoEncodeType::H265) {
+                                trace!("Stream {:?} will not be listed in available streams because it's encoding isn't H264 or H265 (it's {:?} instead)", stream.video_and_stream.name, configuration.encode);
                                 return None;
                             }
                             (
