@@ -13,6 +13,7 @@ mod custom;
 mod logger;
 mod mavlink;
 mod network;
+mod onvif;
 mod server;
 mod settings;
 mod stream;
@@ -29,6 +30,8 @@ async fn main() -> Result<(), std::io::Error> {
     settings::manager::init(None);
 
     mavlink::manager::Manager::init();
+
+    onvif::manager::Manager::init();
 
     stream::manager::init();
     if let Some(endpoint) = cli::manager::mavlink_connection_string() {
