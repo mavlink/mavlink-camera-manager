@@ -161,17 +161,17 @@ impl Stream {
                 }
 
                 // Try to recreate the stream
-                *state.lock().unwrap() = match StreamState::try_new(
-                    &video_and_stream_information,
-                    &pipeline_id,
-                ) {
-                    Ok(state) => state,
-                    Err(error) => {
-                        error!("Failed to recreate the stream {pipeline_id:?}: {error:#?}. Trying again in one second...");
-                        std::thread::sleep(std::time::Duration::from_secs(1));
-                        continue;
-                    }
-                };
+                if let Ok(mut state) = state.lock() {
+                    *state = match StreamState::try_new(&video_and_stream_information, &pipeline_id)
+                    {
+                        Ok(state) => state,
+                        Err(error) => {
+                            error!("Failed to recreate the stream {pipeline_id:?}: {error:#?}. Trying again in one second...");
+                            std::thread::sleep(std::time::Duration::from_secs(1));
+                            continue;
+                        }
+                    };
+                }
             }
 
             if *terminated.lock().unwrap() {
