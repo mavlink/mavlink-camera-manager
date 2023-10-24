@@ -33,7 +33,7 @@ pub fn set_plugin_rank(plugin_name: &str, rank: gst::Rank) -> Result<()> {
         feature.set_rank(rank);
     } else {
         return Err(anyhow!(
-            "Cannot found Gstreamer feature {plugin_name:#?} in the registry.",
+            "Cannot found GStreamer feature {plugin_name:#?} in the registry.",
         ));
     }
 

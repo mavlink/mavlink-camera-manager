@@ -51,7 +51,7 @@ impl RTSPServer {
                 thread::Builder::new()
                     .name("RTSPServer".to_string())
                     .spawn(move || RTSPServer::run_main_loop(sender))
-                    .expect("Failed when spawing RTSPServer thread"),
+                    .expect("Failed when spawning RTSPServer thread"),
             ),
             main_loop_thread_rx_channel: receiver,
         }

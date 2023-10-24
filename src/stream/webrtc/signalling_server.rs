@@ -48,7 +48,7 @@ impl Default for SignallingServer {
             _server_thread_handle: thread::Builder::new()
                 .name("SignallingServer".to_string())
                 .spawn(SignallingServer::run_main_loop)
-                .expect("Failed spawing SignallingServer thread"),
+                .expect("Failed spawning SignallingServer thread"),
         }
     }
 }

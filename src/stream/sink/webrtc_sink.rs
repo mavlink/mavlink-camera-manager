@@ -216,7 +216,7 @@ impl SinkInterface for WebRTCSink {
                                             error!("Failed removing session {bind:#?}: {error}");
                                         }
                                     })
-                                    .expect("Failed spawing DTLSKiller thread");
+                                    .expect("Failed spawning DTLSKiller thread");
                             }
                         }
                     }

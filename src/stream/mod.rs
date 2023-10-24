@@ -71,7 +71,7 @@ impl Stream {
                 )
             })
             .context(format!(
-                "Failed when spawing PipelineRunner thread for Pipeline {pipeline_id:#?}"
+                "Failed when spawning PipelineRunner thread for Pipeline {pipeline_id:#?}"
             ))?;
 
         Ok(Self {
