@@ -18,6 +18,7 @@ use super::utils::*;
 #[derive(Debug)]
 pub struct MavlinkCameraHandle {
     inner: Arc<MavlinkCamera>,
+    _runtime: tokio::runtime::Runtime,
     heartbeat_handle: tokio::task::JoinHandle<()>,
     messages_handle: tokio::task::JoinHandle<()>,
 }
@@ -38,14 +39,28 @@ impl MavlinkCameraHandle {
 
         let sender = crate::mavlink::manager::Manager::get_sender();
 
-        let heartbeat_handle =
-            tokio::task::spawn(MavlinkCamera::heartbeat_loop(inner.clone(), sender.clone()));
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .on_thread_start(|| debug!("Thread started"))
+            .on_thread_stop(|| debug!("Thread stopped"))
+            .thread_name_fn(|| {
+                static ATOMIC_ID: std::sync::atomic::AtomicUsize =
+                    std::sync::atomic::AtomicUsize::new(0);
+                let id = ATOMIC_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                format!("MavlinkCamera-{id}")
+            })
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("Failed building a new tokio runtime");
 
+        let heartbeat_handle =
+            runtime.spawn(MavlinkCamera::heartbeat_loop(inner.clone(), sender.clone()));
         let messages_handle =
-            tokio::task::spawn(MavlinkCamera::messages_loop(inner.clone(), sender.clone()));
+            runtime.spawn(MavlinkCamera::messages_loop(inner.clone(), sender.clone()));
 
         Ok(Self {
             inner,
+            _runtime: runtime,
             heartbeat_handle,
             messages_handle,
         })
