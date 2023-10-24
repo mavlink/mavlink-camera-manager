@@ -57,23 +57,33 @@ impl CachedThumbnails {
     }
 }
 
-#[derive(Debug)]
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
 pub struct ImageSink {
     sink_id: uuid::Uuid,
+    #[derivative(Debug = "ignore")]
     pipeline: gst::Pipeline,
+    #[derivative(Debug = "ignore")]
     queue: gst::Element,
+    #[derivative(Debug = "ignore")]
     proxysink: gst::Element,
+    #[derivative(Debug = "ignore")]
     _proxysrc: gst::Element,
+    #[derivative(Debug = "ignore")]
     _transcoding_elements: Vec<gst::Element>,
+    #[derivative(Debug = "ignore")]
     appsink: gst_app::AppSink,
+    #[derivative(Debug = "ignore")]
     tee_src_pad: Option<gst::Pad>,
+    #[derivative(Debug = "ignore")]
     flat_samples_sender: tokio::sync::broadcast::Sender<ClonableResult<FlatSamples<Vec<u8>>>>,
+    #[derivative(Debug = "ignore")]
     pad_blocker: Arc<Mutex<Option<gst::PadProbeId>>>,
     pipeline_runner: PipelineRunner,
     thumbnails: Arc<Mutex<CachedThumbnails>>,
 }
 impl SinkInterface for ImageSink {
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn link(
         &mut self,
         pipeline: &gst::Pipeline,
@@ -207,7 +217,7 @@ impl SinkInterface for ImageSink {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
         let Some(tee_src_pad) = &self.tee_src_pad else {
             warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
@@ -265,24 +275,24 @@ impl SinkInterface for ImageSink {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn get_id(&self) -> uuid::Uuid {
         self.sink_id
     }
 
-    #[instrument(level = "trace", skip(self))]
+    #[instrument(level = "trace")]
     fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
         Err(anyhow!(
             "Not available. Reason: Image Sink doesn't provide endpoints"
         ))
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn start(&self) -> Result<()> {
         self.pipeline_runner.start()
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn eos(&self) {
         if let Err(error) = self.pipeline.post_message(gst::message::Eos::new()) {
             error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
@@ -532,7 +542,7 @@ impl ImageSink {
         })
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     async fn try_get_flat_sample(&self) -> Result<FlatSamples<Vec<u8>>> {
         // Play the pipeline if it's not playing yet.
         // Here we can ignore the result because we have a timeout when waiting for the snapshot
@@ -614,7 +624,7 @@ impl ImageSink {
         Ok(thumbnail)
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     pub async fn make_jpeg_thumbnail_from_last_frame(
         &self,
         quality: u8,

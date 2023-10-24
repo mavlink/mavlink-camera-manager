@@ -21,11 +21,16 @@ pub struct WebRTCSinkWeakProxy {
     sender: WeakUnboundedSender<Result<Message>>,
 }
 
-#[derive(Debug)]
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
 pub struct WebRTCSink {
+    #[derivative(Debug = "ignore")]
     pub queue: gst::Element,
+    #[derivative(Debug = "ignore")]
     pub webrtcbin: gst::Element,
+    #[derivative(Debug = "ignore")]
     pub webrtcbin_sink_pad: gst::Pad,
+    #[derivative(Debug = "ignore")]
     pub tee_src_pad: Option<gst::Pad>,
     pub bind: BindAnswer,
     /// MPSC channel's sender to send messages to the respective Websocket from Signaller server. Err can be used to end the WebSocket.
@@ -33,7 +38,7 @@ pub struct WebRTCSink {
     pub end_reason: Option<String>,
 }
 impl SinkInterface for WebRTCSink {
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn link(
         self: &mut WebRTCSink,
         pipeline: &gst::Pipeline,
@@ -192,7 +197,7 @@ impl SinkInterface for WebRTCSink {
 
                 let bind = bind.clone();
                 let state = transport.state();
-                debug!("DTLS Transport Connection changed to {state:#?}");
+                debug!("DTLS Transport Connection changed");
                 match state {
                     Failed | Closed => {
                         if let Some(webrtcbin) = webrtcbin_clone.upgrade() {
@@ -223,7 +228,7 @@ impl SinkInterface for WebRTCSink {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
         let Some(tee_src_pad) = &self.tee_src_pad else {
             warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
@@ -276,24 +281,24 @@ impl SinkInterface for WebRTCSink {
         Ok(())
     }
 
-    #[instrument(level = "trace", skip(self))]
+    #[instrument(level = "trace")]
     fn get_id(&self) -> uuid::Uuid {
         self.bind.session_id
     }
 
-    #[instrument(level = "trace", skip(self))]
+    #[instrument(level = "trace")]
     fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
         Err(anyhow!(
             "Not available: WebRTC Sink should only be connected by means of its Signalling protocol."
         ))
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn start(&self) -> Result<()> {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn eos(&self) {
         if let Err(error) = self.webrtcbin.post_message(gst::message::Eos::new()) {
             error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
@@ -419,7 +424,7 @@ impl WebRTCSink {
         Ok(this)
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn downgrade(&self) -> WebRTCSinkWeakProxy {
         WebRTCSinkWeakProxy {
             bind: self.bind.clone(),
@@ -427,12 +432,12 @@ impl WebRTCSink {
         }
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     pub fn handle_sdp(&self, sdp: &gst_webrtc::WebRTCSessionDescription) -> Result<()> {
         self.downgrade().handle_sdp(&self.webrtcbin, sdp)
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     pub fn handle_ice(&self, sdp_m_line_index: &u32, candidate: &str) -> Result<()> {
         self.downgrade()
             .handle_ice(&self.webrtcbin, sdp_m_line_index, candidate)
@@ -443,7 +448,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
     // Whenever webrtcbin tells us that (re-)negotiation is needed, simply ask
     // for a new offer SDP from webrtcbin without any customization and then
     // asynchronously send it to the peer via the WebSocket connection
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, webrtcbin))]
     fn on_negotiation_needed(&self, webrtcbin: &gst::Element) -> Result<()> {
         let this = self.clone();
         let webrtcbin_weak = webrtcbin.downgrade();
@@ -486,7 +491,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
 
     // Once webrtcbin has create the offer SDP for us, handle it by sending it to the peer via the
     // WebSocket connection
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, webrtcbin))]
     fn on_offer_created(
         &self,
         webrtcbin: &gst::Element,
@@ -522,7 +527,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
 
     // Once webrtcbin has create the answer SDP for us, handle it by sending it to the peer via the
     // WebSocket connection
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, _webrtcbin))]
     fn on_answer_created(
         &self,
         _webrtcbin: &gst::Element,
@@ -556,7 +561,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, _webrtcbin))]
     fn on_ice_candidate(
         &self,
         _webrtcbin: &gst::Element,
@@ -580,12 +585,12 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
             .send(Ok(message))
             .context("Failed to send ICE candidate")?;
 
-        debug!("ICE candidate created!");
+        debug!("ICE candidate created");
 
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, _webrtcbin))]
     fn on_ice_gathering_state_change(
         &self,
         _webrtcbin: &gst::Element,
@@ -598,7 +603,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, webrtcbin))]
     fn on_ice_connection_state_change(
         &self,
         webrtcbin: &gst::Element,
@@ -606,7 +611,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
     ) -> Result<()> {
         use gst_webrtc::WebRTCICEConnectionState::*;
 
-        debug!("ICE connection changed to {state:#?}");
+        debug!("ICE connection changed");
         match state {
             Completed => {
                 let srcpads = webrtcbin.src_pads();
@@ -631,7 +636,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, _webrtcbin))]
     fn on_connection_state_change(
         &self,
         _webrtcbin: &gst::Element,
@@ -639,7 +644,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
     ) -> Result<()> {
         use gst_webrtc::WebRTCPeerConnectionState::*;
 
-        debug!("Connection changed to {state:#?}");
+        debug!("Connection changed");
         match state {
             // TODO: This would be the desired workflow, but it is not being detected, so we are using a workaround connecting direcly to the DTLS Transport connection state in the Session constructor.
             Disconnected | Failed | Closed => {
@@ -652,23 +657,27 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, webrtcbin))]
     fn handle_sdp(
         &self,
         webrtcbin: &gst::Element,
         sdp: &gst_webrtc::WebRTCSessionDescription,
     ) -> Result<()> {
+        debug!("Received a new SDP");
+
         webrtcbin.emit_by_name::<()>("set-remote-description", &[&sdp, &None::<gst::Promise>]);
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, webrtcbin))]
     fn handle_ice(
         &self,
         webrtcbin: &gst::Element,
         sdp_m_line_index: &u32,
         candidate: &str,
     ) -> Result<()> {
+        debug!("Received a new ICE Candidate");
+
         webrtcbin.emit_by_name::<()>("add-ice-candidate", &[&sdp_m_line_index, &candidate]);
         Ok(())
     }

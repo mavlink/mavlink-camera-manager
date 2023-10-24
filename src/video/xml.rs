@@ -3,6 +3,7 @@ use super::video_source::VideoSource;
 
 use anyhow::{anyhow, Result};
 use serde::Serialize;
+use tracing::*;
 
 #[derive(Debug, Serialize)]
 #[serde(rename = "mavlinkcamera")]
@@ -122,6 +123,7 @@ pub struct Description {
 
 impl Description {
     //TODO: impl fromStr
+    #[instrument(level = "debug")]
     pub fn new(description: &str) -> Self {
         Self {
             body: description.into(),
@@ -129,6 +131,7 @@ impl Description {
     }
 }
 
+#[instrument(level = "debug")]
 pub fn from_video_source(video_source: &dyn VideoSource) -> Result<String> {
     let controls = video_source.controls();
 

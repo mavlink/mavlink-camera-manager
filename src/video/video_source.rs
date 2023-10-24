@@ -4,7 +4,7 @@ use super::video_source_local::VideoSourceLocal;
 use super::video_source_redirect::VideoSourceRedirect;
 use tracing::*;
 
-pub trait VideoSource {
+pub trait VideoSource: std::fmt::Debug {
     fn name(&self) -> &String;
     fn source_string(&self) -> &str;
     fn formats(&self) -> Vec<Format>;
@@ -21,6 +21,7 @@ pub trait VideoSourceAvailable {
     fn cameras_available() -> Vec<VideoSourceType>;
 }
 
+#[instrument(level = "debug")]
 pub fn cameras_available() -> Vec<VideoSourceType> {
     [
         &VideoSourceLocal::cameras_available()[..],
@@ -30,6 +31,7 @@ pub fn cameras_available() -> Vec<VideoSourceType> {
     .concat()
 }
 
+#[instrument(level = "debug")]
 pub fn get_video_source(source_string: &str) -> Result<VideoSourceType, std::io::Error> {
     let cameras = cameras_available();
 
@@ -53,12 +55,14 @@ pub fn get_video_source(source_string: &str) -> Result<VideoSourceType, std::io:
     ))
 }
 
+#[instrument(level = "debug")]
 pub fn set_control(source_string: &str, control_id: u64, value: i64) -> std::io::Result<()> {
     let camera = get_video_source(source_string)?;
     debug!("Set camera ({source_string}) control ({control_id}) value ({value}).");
     return camera.inner().set_control_by_id(control_id, value);
 }
 
+#[instrument(level = "debug")]
 pub fn reset_controls(source_string: &str) -> Result<(), Vec<std::io::Error>> {
     let camera = match get_video_source(source_string) {
         Ok(camera) => camera,
@@ -103,6 +107,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[instrument(level = "debug")]
     fn simple_test() {
         println!("{:#?}", cameras_available());
     }

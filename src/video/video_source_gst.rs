@@ -4,6 +4,7 @@ use super::video_source_local::VideoSourceLocal;
 
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
+use tracing::*;
 
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum VideoSourceGstType {
@@ -19,10 +20,12 @@ pub struct VideoSourceGst {
 }
 
 impl VideoSource for VideoSourceGst {
+    #[instrument(level = "debug")]
     fn name(&self) -> &String {
         &self.name
     }
 
+    #[instrument(level = "debug")]
     fn source_string(&self) -> &str {
         match &self.source {
             VideoSourceGstType::Local(local) => local.source_string(),
@@ -30,6 +33,7 @@ impl VideoSource for VideoSourceGst {
         }
     }
 
+    #[instrument(level = "debug")]
     fn formats(&self) -> Vec<Format> {
         match &self.source {
             VideoSourceGstType::Local(local) => local.formats(),
@@ -78,6 +82,7 @@ impl VideoSource for VideoSourceGst {
         }
     }
 
+    #[instrument(level = "debug")]
     fn set_control_by_name(&self, _control_name: &str, _value: i64) -> std::io::Result<()> {
         Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -85,6 +90,7 @@ impl VideoSource for VideoSourceGst {
         ))
     }
 
+    #[instrument(level = "debug")]
     fn set_control_by_id(&self, _control_id: u64, _value: i64) -> std::io::Result<()> {
         Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -92,6 +98,7 @@ impl VideoSource for VideoSourceGst {
         ))
     }
 
+    #[instrument(level = "debug")]
     fn control_value_by_name(&self, _control_name: &str) -> std::io::Result<i64> {
         Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -99,6 +106,7 @@ impl VideoSource for VideoSourceGst {
         ))
     }
 
+    #[instrument(level = "debug")]
     fn control_value_by_id(&self, _control_id: u64) -> std::io::Result<i64> {
         Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -106,10 +114,12 @@ impl VideoSource for VideoSourceGst {
         ))
     }
 
+    #[instrument(level = "debug")]
     fn controls(&self) -> Vec<Control> {
         vec![]
     }
 
+    #[instrument(level = "debug")]
     fn is_valid(&self) -> bool {
         match &self.source {
             VideoSourceGstType::Local(local) => local.is_valid(),
@@ -123,12 +133,14 @@ impl VideoSource for VideoSourceGst {
         }
     }
 
+    #[instrument(level = "debug")]
     fn is_shareable(&self) -> bool {
         true
     }
 }
 
 impl VideoSourceAvailable for VideoSourceGst {
+    #[instrument(level = "debug")]
     fn cameras_available() -> Vec<VideoSourceType> {
         vec![VideoSourceType::Gst(VideoSourceGst {
             name: "Fake source".into(),

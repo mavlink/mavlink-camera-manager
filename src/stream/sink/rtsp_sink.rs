@@ -6,18 +6,23 @@ use gst::prelude::*;
 
 use super::SinkInterface;
 
-#[derive(Debug)]
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
 pub struct RtspSink {
     sink_id: uuid::Uuid,
+    #[derivative(Debug = "ignore")]
     queue: gst::Element,
+    #[derivative(Debug = "ignore")]
     sink: gst::Element,
+    #[derivative(Debug = "ignore")]
     sink_sink_pad: gst::Pad,
+    #[derivative(Debug = "ignore")]
     tee_src_pad: Option<gst::Pad>,
     path: String,
     socket_path: String,
 }
 impl SinkInterface for RtspSink {
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn link(
         &mut self,
         pipeline: &gst::Pipeline,
@@ -144,7 +149,7 @@ impl SinkInterface for RtspSink {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
         if let Err(error) = std::fs::remove_file(&self.socket_path) {
             warn!("Failed removing the RTSP Sink socket file. Reason: {error:?}");
@@ -201,24 +206,24 @@ impl SinkInterface for RtspSink {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn get_id(&self) -> uuid::Uuid {
         self.sink_id
     }
 
-    #[instrument(level = "trace", skip(self))]
+    #[instrument(level = "trace")]
     fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
         Err(anyhow!(
             "Not available. Reason: RTSP Sink should only be connected from its RTSP endpoint."
         ))
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn start(&self) -> Result<()> {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn eos(&self) {}
 }
 
@@ -259,12 +264,12 @@ impl RtspSink {
         })
     }
 
-    #[instrument(level = "trace", skip(self))]
+    #[instrument(level = "trace")]
     pub fn path(&self) -> String {
         self.path.clone()
     }
 
-    #[instrument(level = "trace", skip(self))]
+    #[instrument(level = "trace")]
     pub fn socket_path(&self) -> String {
         self.socket_path.clone()
     }

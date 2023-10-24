@@ -7,21 +7,28 @@ use gst::prelude::*;
 use super::SinkInterface;
 use crate::stream::pipeline::runner::PipelineRunner;
 
-#[derive(Debug)]
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
 pub struct UdpSink {
     sink_id: uuid::Uuid,
     pipeline: gst::Pipeline,
+    #[derivative(Debug = "ignore")]
     queue: gst::Element,
+    #[derivative(Debug = "ignore")]
     proxysink: gst::Element,
+    #[derivative(Debug = "ignore")]
     _proxysrc: gst::Element,
+    #[derivative(Debug = "ignore")]
     _udpsink: gst::Element,
+    #[derivative(Debug = "ignore")]
     udpsink_sink_pad: gst::Pad,
+    #[derivative(Debug = "ignore")]
     tee_src_pad: Option<gst::Pad>,
     addresses: Vec<url::Url>,
     pipeline_runner: PipelineRunner,
 }
 impl SinkInterface for UdpSink {
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn link(
         &mut self,
         pipeline: &gst::Pipeline,
@@ -155,7 +162,7 @@ impl SinkInterface for UdpSink {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
         let Some(tee_src_pad) = &self.tee_src_pad else {
             warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
@@ -213,12 +220,12 @@ impl SinkInterface for UdpSink {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn get_id(&self) -> uuid::Uuid {
         self.sink_id
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn get_sdp(&self) -> Result<gst_sdp::SDPMessage> {
         let caps = self
             .udpsink_sink_pad
@@ -257,12 +264,12 @@ impl SinkInterface for UdpSink {
         Ok(sdp)
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn start(&self) -> Result<()> {
         self.pipeline_runner.start()
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     fn eos(&self) {
         if let Err(error) = self.pipeline.post_message(gst::message::Eos::new()) {
             error!("Failed posting Eos message into Sink bus. Reason: {error:?}");

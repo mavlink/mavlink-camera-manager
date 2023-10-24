@@ -77,22 +77,25 @@ impl Pipeline {
         })
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     pub fn add_sink(&mut self, sink: Sink) -> Result<()> {
         self.inner_state_mut().add_sink(sink)
     }
 
     #[allow(dead_code)] // This functions is reserved here for when we start dynamically add/remove Sinks
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     pub fn remove_sink(&mut self, sink_id: &uuid::Uuid) -> Result<()> {
         self.inner_state_mut().remove_sink(sink_id)
     }
 }
 
-#[derive(Debug)]
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
 pub struct PipelineState {
     pub pipeline_id: uuid::Uuid,
+    #[derivative(Debug = "ignore")]
     pub pipeline: gst::Pipeline,
+    #[derivative(Debug = "ignore")]
     pub sink_tee: gst::Element,
     pub sinks: HashMap<uuid::Uuid, Sink>,
     pub pipeline_runner: PipelineRunner,
@@ -140,7 +143,7 @@ impl PipelineState {
     }
 
     /// Links the sink pad from the given Sink to this Pipeline's Tee element
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug")]
     pub fn add_sink(&mut self, mut sink: Sink) -> Result<()> {
         let pipeline_id = &self.pipeline_id;
 
@@ -213,7 +216,7 @@ impl PipelineState {
     /// Unlinks the src pad from this Sink from the given sink pad of a Tee element
     ///
     /// Important notes about pad unlinking: [here](https://gstreamer.freedesktop.org/documentation/application-development/advanced/pipeline-manipulation.html?gi-language=c#dynamically-changing-the-pipeline)
-    #[instrument(level = "info", skip(self))]
+    #[instrument(level = "info")]
     pub fn remove_sink(&mut self, sink_id: &uuid::Uuid) -> Result<()> {
         let pipeline_id = &self.pipeline_id;
         let sink = self.sinks.remove(sink_id).context(format!(

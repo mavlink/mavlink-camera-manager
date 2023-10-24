@@ -55,6 +55,7 @@ impl VideoSourceLocalType {
     //
     // https://www.kernel.org/doc/html/v4.9/media/uapi/v4l/vidioc-querycap.html#:~:text=__u8-,bus_info,-%5B32%5D
 
+    #[instrument(level = "debug")]
     pub fn from_str(description: &str) -> Self {
         if let Some(result) = VideoSourceLocalType::usb_from_str(description) {
             return result;
@@ -74,6 +75,7 @@ impl VideoSourceLocalType {
         VideoSourceLocalType::Unknown(description.into())
     }
 
+    #[instrument(level = "debug")]
     fn usb_from_str(description: &str) -> Option<Self> {
         let regex = match Regex::new(
             r"usb-(?P<interface>(([0-9a-fA-F]{2}){1,2}:?){4})?\.(usb-)?(?P<device>.*)",
@@ -91,6 +93,7 @@ impl VideoSourceLocalType {
         None
     }
 
+    #[instrument(level = "debug")]
     fn v4l2_from_str(description: &str) -> Option<Self> {
         let regex = match Regex::new(r"platform:(?P<device>\S+)-v4l2-[0-9]") {
             Ok(regex) => regex,
@@ -108,6 +111,7 @@ impl VideoSourceLocalType {
 }
 
 impl VideoSourceLocal {
+    #[instrument(level = "debug")]
     pub fn try_identify_device(
         &mut self,
         capture_configuration: &VideoCaptureConfiguration,
@@ -168,10 +172,11 @@ impl VideoSourceLocal {
         // Then in the next reboot, `Alpha` changed to port B, and `Beta` was changed to port A, then it's
         // impossible to differentiate them using only the name.
         trace!("Outcome n.5!");
-        warn!("There is more than one camera with the same name and encode, which means that their identification/configurations could have been swaped");
+        warn!("There is more than one camera with the same name and encode, which means that their identification/configurations could have been swapped");
         Ok(None)
     }
 
+    #[instrument(level = "debug")]
     fn get_cameras_with_same_name(
         candidates: &[VideoSourceType],
         name: &str,
@@ -189,6 +194,7 @@ impl VideoSourceLocal {
             .collect()
     }
 
+    #[instrument(level = "debug")]
     fn get_cameras_with_same_encode(
         candidates: &[VideoSourceType],
         encode: &VideoEncodeType,
@@ -206,6 +212,7 @@ impl VideoSourceLocal {
             .collect()
     }
 
+    #[instrument(level = "debug")]
     fn get_cameras_with_same_bus(
         candidates: &[VideoSourceType],
         typ: &VideoSourceLocalType,
@@ -223,6 +230,7 @@ impl VideoSourceLocal {
     }
 }
 
+#[instrument(level = "debug")]
 fn convert_v4l_intervals(v4l_intervals: &[v4l::FrameInterval]) -> Vec<FrameInterval> {
     let mut intervals: Vec<FrameInterval> = vec![];
 
@@ -269,6 +277,7 @@ fn convert_v4l_intervals(v4l_intervals: &[v4l::FrameInterval]) -> Vec<FrameInter
     intervals
 }
 
+#[instrument(level = "debug")]
 fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Format> {
     if let Some(formats) = VIDEO_FORMATS.lock().unwrap().get(&device_path.to_string()) {
         return formats.clone();
@@ -414,6 +423,7 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
     formats
 }
 
+#[instrument(level = "debug")]
 fn validate_control(control: &Control, value: i64) -> Result<(), String> {
     if control.state.is_inactive {
         return Err("Control is inactive".to_string());
@@ -457,18 +467,22 @@ fn validate_control(control: &Control, value: i64) -> Result<(), String> {
 }
 
 impl VideoSource for VideoSourceLocal {
+    #[instrument(level = "debug")]
     fn name(&self) -> &String {
         &self.name
     }
 
+    #[instrument(level = "debug")]
     fn source_string(&self) -> &str {
         &self.device_path
     }
 
+    #[instrument(level = "debug")]
     fn formats(&self) -> Vec<Format> {
         get_device_formats(&self.device_path, &self.typ)
     }
 
+    #[instrument(level = "debug")]
     fn set_control_by_name(&self, control_name: &str, value: i64) -> std::io::Result<()> {
         let Some(control_id) = self
             .controls()
@@ -489,6 +503,7 @@ impl VideoSource for VideoSourceLocal {
         self.set_control_by_id(control_id, value)
     }
 
+    #[instrument(level = "debug")]
     fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()> {
         let Some(control) = self
             .controls()
@@ -523,6 +538,7 @@ impl VideoSource for VideoSourceLocal {
         }
     }
 
+    #[instrument(level = "debug")]
     fn control_value_by_name(&self, control_name: &str) -> std::io::Result<i64> {
         let Some(control_id) = self
             .controls()
@@ -543,6 +559,7 @@ impl VideoSource for VideoSourceLocal {
         self.control_value_by_id(control_id)
     }
 
+    #[instrument(level = "debug")]
     fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64> {
         let device = Device::with_path(&self.device_path)?;
         let value = device.control(control_id as u32)?.value;
@@ -556,6 +573,7 @@ impl VideoSource for VideoSourceLocal {
         }
     }
 
+    #[instrument(level = "debug")]
     fn controls(&self) -> Vec<Control> {
         let mut controls: Vec<Control> = vec![];
 
@@ -643,16 +661,19 @@ impl VideoSource for VideoSourceLocal {
         controls
     }
 
+    #[instrument(level = "debug")]
     fn is_valid(&self) -> bool {
         !self.device_path.is_empty()
     }
 
+    #[instrument(level = "debug")]
     fn is_shareable(&self) -> bool {
         false
     }
 }
 
 impl VideoSourceAvailable for VideoSourceLocal {
+    #[instrument(level = "debug")]
     fn cameras_available() -> Vec<VideoSourceType> {
         let mut cameras: Vec<VideoSourceType> = vec![];
 
