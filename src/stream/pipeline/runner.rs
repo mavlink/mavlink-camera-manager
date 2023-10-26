@@ -77,10 +77,10 @@ impl PipelineRunner {
         // Check if we need to break external loop.
         // Some cameras have a duplicated timestamp when starting.
         // to avoid restarting the camera once and once again,
-        // this checks for a maximum of 10 lost before restarting.
+        // this checks for a maximum number of lost before restarting.
         let mut previous_position: Option<gst::ClockTime> = None;
         let mut lost_timestamps: usize = 0;
-        let max_lost_timestamps: usize = 15;
+        let max_lost_timestamps: usize = 30;
 
         'outer: loop {
             std::thread::sleep(std::time::Duration::from_millis(100));
