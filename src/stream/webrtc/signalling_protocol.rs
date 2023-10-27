@@ -143,9 +143,9 @@ pub struct RTCIceCandidateInit {
     /// Associated SDP index
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sdp_m_line_index: Option<u32>,
-    /// Producer's UUID
+    /// Producer's usernameFragment
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub username_fragment: Option<Uuid>,
+    pub username_fragment: Option<String>,
 }
 
 impl From<Message> for Protocol {
