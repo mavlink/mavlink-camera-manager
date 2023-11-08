@@ -48,7 +48,7 @@ fn main() {
 }
 
 fn generate_typescript_bindings() {
-    println!("cargo:rerun-if-changed=src/signalling_protocol.rs");
+    println!("cargo:rerun-if-changed=src/stream/webrtc/signalling_protocol.rs");
     // Generate all typescript bindings and join them into a single String
     let bindings = [
         Message::export_to_string().unwrap(),
