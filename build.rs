@@ -91,6 +91,10 @@ fn build_with_yarn() {
     let frontend_dir = Path::new("./src/stream/webrtc/frontend");
     frontend_dir.try_exists().unwrap();
     Command::new("yarn")
+        .args(["--version"])
+        .status()
+        .expect("Failed to build frontend, `yarn` appears to be not installed.");
+    Command::new("yarn")
         .args(["install"])
         .current_dir(frontend_dir)
         .status()
