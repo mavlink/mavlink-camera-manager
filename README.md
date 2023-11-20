@@ -19,7 +19,7 @@
 - Create and manage streams:
   - from local devices, like most USB cameras (using video4linux)
   - from remote devices, like most IP cameras
-  - with suported encodings: H264, MJPG, Raw (YUYV)
+  - with supported encodings: H264, MJPG, Raw (YUYV)
 - REST API for full control over streams and easy integrations
   - With Swagger UI always available for easy development <sup>([What is this?](https://swagger.io/tools/swagger-ui/))</sup>
 - Configure video4linux camera controls, like brightness, saturation, etc.
@@ -44,7 +44,7 @@
   - [2. Installing](#2-installing)
   - [3. Running](#3-running)
 - [Quick test guide](#quick-test-guide)
-  - [Receiving a stream from a MAVLink ground control stations like QGroundControl](#receiving-a-stream-from-a-mavlink-ground-control-stations-like-qgroundcontrol)
+  - [Receiving a stream from a MAVLink ground control station like QGroundControl](#receiving-a-stream-from-a-mavlink-ground-control-stations-like-qgroundcontrol)
   - [Receiving a stream from a GStreamer pipeline](#receiving-a-stream-from-a-gstreamer-pipeline)
 - [How to build it](#how-to-build-it)
 - [License](#license)
@@ -58,7 +58,7 @@ Download the mavlink-camera-manager binary for your architecture from our [relea
 
 ### 2. Installing
 
-- First, install the required runtime dependencies (assuming a ubuntu-based distro):
+- First, install the required runtime dependencies (assuming a Ubuntu-based distro):
 
 ```Bash
 sudo apt update -y && \
@@ -69,14 +69,14 @@ sudo apt install -y --no-install-recommends \
    libgstrtspserver-1.0-0
 ```
 
-_note: GSTreamer needs to be at least version `1.16.0`. You can check it by running `gst-launch-1.0 --version`._
+_note: GStreamer needs to be at least version `1.16.0`. You can check it by running `gst-launch-1.0 --version`._
 
 - Extract the zip
 - optionally, put the folder to your Linux PATH
 
 ### 3. Running
 
-After [the installion](#2-installing), the binary can be run by calling it from the terminal, as simple as:
+After [the installation](#2-installing), the binary can be run by calling it from the terminal, as simple as:
 
 ```Bash
 mavlink-camera-manager --mavlink=tcpout:0.0.0.0:14000 --verbose
@@ -100,7 +100,7 @@ The short clip below shows how an H264 UDP stream can be configured using the ma
 
 <!-- TODO: #### Receiving a stream from a video player like VLC -->
 
-#### Receiving a stream from a MAVLink ground control stations like QGroundControl
+#### Receiving a stream from a MAVLink ground control station like QGroundControl
 
 The video should automatically popup if you are using any modern GCS, like QGroundControl, that has support for MAVLink camera messages.
 
@@ -135,6 +135,8 @@ gstreamer-launch-1.0 udpsrc port=$PORT \
 
 ## How to build it
 
+_This section assumes a Ubuntu 22.04, adaptation will be necessary for other distros._
+
 1. Install the development dependencies:
 
 ```Bash
@@ -144,6 +146,11 @@ sudo apt install -y --no-install-recommends \
    libclang-dev \
    libssl-dev \
    pkg-config \
+   build-essential \
+   curl \
+   gnupg \
+   ca-certificates \
+   git \
    libmount-dev \
    libsepol-dev \
    libselinux1-dev \
@@ -156,18 +163,18 @@ sudo apt install -y --no-install-recommends \
    libgstrtspserver-1.0-dev
 ```
 
-2. Install cargo if not available <sup>([click here to see how](https://rustup.rs/))</sup>
+2. Install cargo if not available <sup>([official instructions here](https://rustup.rs/))</sup>
 
-3. Install NodeJS greatar or equal than 19, and the latest Yarn:
+3. Install NodeJS greater or equal to 19  <sup>([official instructions here](https://github.com/nodesource/distributions#installation-instructions))</sup>, and the latest Yarn <sup>([official instructions here](https://classic.yarnpkg.com/lang/en/docs/install/#debian-stable))</sup>, as shown below:
 ```Bash
-curl -fsSL https://deb.nodesource.com/setup_19.x \
-  | sudo -E bash -
-curl -sL https://dl.yarnpkg.com/debian/pubkey.gpg \
-  | gpg --dearmor \
-  | sudo tee /usr/share/keyrings/yarnkey.gpg \
-  >/dev/null
+curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+  | sudo gpg --dearmor -o /usr/share/keyrings/nodesource.gpg &&\
+echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+  | sudo tee /etc/apt/sources.list.d/nodesource.list &&\
+curl -fsSL https://dl.yarnpkg.com/debian/pubkey.gpg \
+  | sudo gpg --dearmor -o /usr/share/keyrings/yarnkey.gpg &&\
 echo "deb [signed-by=/usr/share/keyrings/yarnkey.gpg] https://dl.yarnpkg.com/debian stable main" \
-  | sudo tee /etc/apt/sources.list.d/yarn.list
+  | sudo tee /etc/apt/sources.list.d/yarn.list &&\
 sudo apt-get update -y &&\
   sudo apt-get install -y --no-install-recommends \
   nodejs \
@@ -184,10 +191,11 @@ cd mavlink-camera-manager
 5. Build it with cargo:
 
 ```Bash
-cargo build
+cargo build --release
+
 ```
 
-_note: If the compilation is failing to find one of this packages, make sure that they are visible for `pkg-config`, may be necessary to set `PKG_CONFIG_PATH` environment variable._
+_note: If the compilation fails to find one of these packages, make sure that they are visible for `pkg-config`, which may be necessary to set `PKG_CONFIG_PATH` environment variable._
 
 ## License
 
