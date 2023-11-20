@@ -104,10 +104,13 @@ pub fn init(file_name: Option<&str>) {
 
 fn fallback_settings_with_backup_file(file_name: &str) -> SettingsStruct {
     let backup_file_name = format!("{file_name}.bak");
-    info!("The settings file {file_name:?} will be backed-up as {backup_file_name:?}, and a new (empty) settings file will be created in its place.");
 
-    if let Err(error) = std::fs::copy(file_name, backup_file_name.as_str()) {
-        error!("Failed to create backup file {backup_file_name:?}. Reason: {error:#?}");
+    if std::fs::metadata(file_name).is_ok() {
+        info!("The settings file {file_name:?} will be backed-up as {backup_file_name:?}, and a new (empty) settings file will be created in its place.");
+
+        if let Err(error) = std::fs::copy(file_name, backup_file_name.as_str()) {
+            error!("Failed to create backup file {backup_file_name:?}. Reason: {error:#?}");
+        }
     }
 
     SettingsStruct::default()
