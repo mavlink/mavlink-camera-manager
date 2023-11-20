@@ -184,7 +184,7 @@ sudo apt-get update -y &&\
 4. Clone this repository and enter it
 
 ```Bash
-git clone git@github.com:mavlink/mavlink-camera-manager.git &&\
+git clone https://github.com/mavlink/mavlink-camera-manager.git &&\
 cd mavlink-camera-manager
 ```
 
