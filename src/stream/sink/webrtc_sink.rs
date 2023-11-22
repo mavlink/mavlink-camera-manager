@@ -293,9 +293,13 @@ impl SinkInterface for WebRTCSink {
 
     #[instrument(level = "debug", skip(self))]
     fn eos(&self) {
-        if let Err(error) = self.webrtcbin.post_message(gst::message::Eos::new()) {
-            error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
-        }
+        let webrtcbin_weak = self.webrtcbin.downgrade();
+        std::thread::spawn(move || {
+            let webrtcbin = webrtcbin_weak.upgrade().unwrap();
+            if let Err(error) = webrtcbin.post_message(gst::message::Eos::new()) {
+                error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
+            }
+        });
     }
 }
 
