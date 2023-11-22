@@ -287,9 +287,13 @@ impl Drop for StreamState {
         let pipeline_state = self.pipeline.inner_state_as_ref();
         let pipeline = &pipeline_state.pipeline;
 
-        if let Err(error) = pipeline.post_message(::gst::message::Eos::new()) {
-            error!("Failed posting Eos message into Pipeline bus. Reason: {error:?}");
-        }
+        let pipeline_weak = pipeline.downgrade();
+        std::thread::spawn(move || {
+            let pipeline = pipeline_weak.upgrade().unwrap();
+            if let Err(error) = pipeline.post_message(::gst::message::Eos::new()) {
+                error!("Failed posting Eos message into Pipeline bus. Reason: {error:?}");
+            }
+        });
 
         if let Err(error) = pipeline.set_state(::gst::State::Null) {
             error!("Failed setting Pipeline state to Null. Reason: {error:?}");
