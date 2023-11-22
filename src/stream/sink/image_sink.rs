@@ -284,9 +284,13 @@ impl SinkInterface for ImageSink {
 
     #[instrument(level = "debug", skip(self))]
     fn eos(&self) {
-        if let Err(error) = self.pipeline.post_message(gst::message::Eos::new()) {
-            error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
-        }
+        let pipeline_weak = self.pipeline.downgrade();
+        std::thread::spawn(move || {
+            let pipeline = pipeline_weak.upgrade().unwrap();
+            if let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
+                error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
+            }
+        });
     }
 }
 
