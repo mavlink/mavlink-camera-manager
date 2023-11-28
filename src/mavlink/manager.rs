@@ -75,39 +75,48 @@ impl Manager {
     #[instrument(level = "debug", skip(inner))]
     fn receiver_loop(inner: Arc<RwLock<Connection>>) {
         loop {
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(10));
 
-            // Receive from the Mavlink network
-            let (header, message) = match inner.read().unwrap().connection.recv() {
-                Ok(message) => message,
-                Err(error) => {
-                    trace!("Failed receiving from mavlink: {error:?}");
+                // Receive from the Mavlink network
+                let (header, message) = match inner.read().unwrap().connection.recv() {
+                    Ok(message) => message,
+                    Err(error) => {
+                        trace!("Failed receiving from mavlink: {error:?}");
 
-                    // The mavlink connection is handled by the sender_loop, so we can just silently skip the WouldBlocks
-                    if let mavlink::error::MessageReadError::Io(io_error) = &error {
-                        if io_error.kind() == std::io::ErrorKind::WouldBlock {
-                            continue;
+                        // The mavlink connection is handled by the sender_loop, so we can just silently skip the WouldBlocks
+                        if let mavlink::error::MessageReadError::Io(io_error) = &error {
+                            if io_error.kind() == std::io::ErrorKind::WouldBlock {
+                                continue;
+                            }
                         }
-                    }
 
-                    // Okay, this is probably an untreated error, so we log it
-                    error!("Failed receiving message from Mavlink Connection: {error:?}");
+                        error!("Failed receiving message from Mavlink Connection: {error:?}");
+                        break; // Break to trigger reconnection
+                    }
+                };
+
+                trace!("Message received: {header:?}, {message:?}");
+
+                // Send the received message to the cameras
+                if let Err(error) = inner
+                    .read()
+                    .unwrap()
+                    .sender
+                    .send(Message::Received((header, message)))
+                {
+                    error!("Failed handling message: {error:?}");
                     continue;
                 }
-            };
-
-            trace!("Message received: {header:?}, {message:?}");
-
-            // Send the received message to the cameras
-            if let Err(error) = inner
-                .read()
-                .unwrap()
-                .sender
-                .send(Message::Received((header, message)))
-            {
-                error!("Failed handling message: {error:?}");
-                continue;
             }
+
+            // Reconnects
+            {
+                let mut inner = inner.write().unwrap();
+                inner.connection = Connection::connect(&inner.address);
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(500));
         }
     }
 
