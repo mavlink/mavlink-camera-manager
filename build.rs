@@ -85,7 +85,7 @@ fn generate_typescript_bindings() {
 fn build_with_yarn() {
     // Note that as we are not waching all files, sometimes we'd need to force this build
     println!("cargo:rerun-if-changed=./src/stream/webrtc/frontend/index.html");
-    println!("cargo:rerun-if-changed=./src/stream/webrtc/frontend/yarn.json");
+    println!("cargo:rerun-if-changed=./src/stream/webrtc/frontend/package.json");
     println!("cargo:rerun-if-changed=./src/stream/webrtc/frontend/src");
     // Build with YARN
     let frontend_dir = Path::new("./src/stream/webrtc/frontend");
