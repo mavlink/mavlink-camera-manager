@@ -48,7 +48,7 @@ impl MavlinkCameraHandle {
                 let id = ATOMIC_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 format!("MavlinkCamera-{id}")
             })
-            .worker_threads(2)
+            .worker_threads(1)
             .enable_all()
             .build()
             .expect("Failed building a new tokio runtime");
