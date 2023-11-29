@@ -190,14 +190,15 @@ impl MavlinkCamera {
                 break;
             }
 
-            let (header, message) = match receiver.recv().await {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            let (header, message) = match receiver.try_recv() {
                 Ok(Message::Received(message)) => message,
-                Err(broadcast::error::RecvError::Closed) => {
+                Err(broadcast::error::TryRecvError::Closed) => {
                     unreachable!(
                         "Closed channel: This should never happen, this channel is static!"
                     );
                 }
-                Ok(Message::ToBeSent(_)) | Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Ok(Message::ToBeSent(_)) | Err(_) => continue,
             };
 
             trace!("Message received: {header:?}, {message:?}");
