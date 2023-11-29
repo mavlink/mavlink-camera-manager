@@ -1,3 +1,4 @@
+use sysinfo::{DiskExt, System, SystemExt};
 use tracing::*;
 
 #[derive(Debug)]
@@ -14,24 +15,25 @@ pub fn sys_info() -> SysInfo {
     let mut local_total_capacity = 0;
     let mut local_available_capacity = 0;
 
-    match sys_info::disk_info() {
-        Ok(disk_info) => {
-            local_available_capacity = disk_info.free;
-            local_total_capacity = disk_info.total;
+    let mut system = System::new_all();
+    system.refresh_disks();
+
+    let main_disk = system
+        .disks()
+        .iter()
+        .find(|disk| disk.mount_point().as_os_str() == "/");
+    match main_disk {
+        Some(disk_info) => {
+            local_available_capacity = disk_info.available_space();
+            local_total_capacity = disk_info.total_space();
         }
 
-        Err(error) => {
-            warn!("Failed to fetch disk info: {error:#?}.");
+        None => {
+            warn!("Failed to fetch main disk info.");
         }
     }
 
-    let boottime_ms = match sys_info::boottime() {
-        Ok(bootime) => bootime.tv_usec / 1000,
-        Err(error) => {
-            warn!("Failed to fetch boottime info: {error:#?}.");
-            0
-        }
-    };
+    let boottime_ms = system.boot_time() * 1000;
 
     SysInfo {
         time_boot_ms: boottime_ms as u32,
