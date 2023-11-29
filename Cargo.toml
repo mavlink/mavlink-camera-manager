@@ -37,7 +37,7 @@ serde_json = "1.0"
 validator = { version = "0.16", features = ["derive"] }
 
 ## FINAL
-sys-info = "0.9.1"
+sysinfo = "0.29"
 chrono = "0.4.31"
 lazy_static = "1.4.0"
 include_dir = "0.7.3"

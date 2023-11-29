@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate lazy_static;
 extern crate paperclip;
-extern crate sys_info;
 extern crate tracing;
 
 #[macro_use]
