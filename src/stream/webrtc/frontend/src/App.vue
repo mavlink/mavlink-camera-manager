@@ -41,10 +41,18 @@ const manager = reactive(new Manager(ip, 6021, rtc_configuration));
       <p>Consumers: {{ manager.consumers.size }}</p>
     </div>
     <div>
-      <button type="button" v-on:click="manager.addConsumer()">
+      <button
+        id="add-consumer"
+        type="button"
+        v-on:click="manager.addConsumer()"
+      >
         Add consumer
       </button>
-      <button type="button" v-on:click="manager.removeAllConsumers()">
+      <button
+        id="remove-all-consumers"
+        type="button"
+        v-on:click="manager.removeAllConsumers()"
+      >
         Remove all consumers
       </button>
     </div>
@@ -96,6 +104,7 @@ const manager = reactive(new Manager(ip, 6021, rtc_configuration));
             {{ stream.encode }}
           </p>
           <button
+            id="add-session"
             type="button"
             v-on:click="manager.addSession(consumer.id, stream.id)"
           >
