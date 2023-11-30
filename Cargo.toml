@@ -49,6 +49,7 @@ v4l = "0.14.0"
 directories = "5.0.1"
 pnet = { version = "0.34.0", features = ["std"] }
 semver = "1.0"
+thirtyfour = "0.31"
 tracing = { version = "0.1.37", features = ["log", "async-await"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 tracing-log = "0.1.3"
