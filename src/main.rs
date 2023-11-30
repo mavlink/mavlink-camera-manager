@@ -38,6 +38,10 @@ async fn main() -> Result<(), std::io::Error> {
         helper::threads::start_thread_counter_thread();
     }
 
+    if cli::manager::enable_webrtc_task_test().is_some() {
+        helper::develop::start_check_tasks_on_webrtc_reconnects();
+    }
+
     stream::webrtc::signalling_server::SignallingServer::default();
 
     if let Err(error) = stream::manager::start_default() {

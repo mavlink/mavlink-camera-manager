@@ -97,6 +97,14 @@ pub fn enable_thread_counter() -> bool {
         .is_present("enable-thread-counter");
 }
 
+pub fn enable_webrtc_task_test() -> Option<u32> {
+    return MANAGER
+        .as_ref()
+        .clap_matches
+        .value_of("enable-webrtc-task-test")
+        .and_then(|value| value.parse::<u32>().ok());
+}
+
 // Return the command line used to start this application
 pub fn command_line_string() -> String {
     std::env::args().collect::<Vec<String>>().join(" ")
@@ -230,6 +238,14 @@ fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
                 .long("enable-thread-counter")
                 .help("Enable a thread that prints the number of children processes.")
                 .takes_value(false),
+        )
+        .arg(
+            clap::Arg::with_name("enable-webrtc-task-test")
+                .long("enable-webrtc-task-test")
+                .help("Enable webrtc thread test with limit of child tasks (can use port for webdriver as parameter).")
+                .value_name("PORT")
+                .default_value("9515")
+                .empty_values(true)
         );
 
     matches.get_matches()
