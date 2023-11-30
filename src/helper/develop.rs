@@ -1,0 +1,56 @@
+use crate::cli;
+use crate::helper;
+use anyhow::Result;
+use core::time::Duration;
+use std::thread;
+use thirtyfour::prelude::*;
+use tokio::runtime::Runtime;
+use tracing::*;
+
+async fn task(mut counter: i32) -> Result<()> {
+    info!("Started webrtc test..");
+
+    let mut caps = DesiredCapabilities::chrome();
+    let _ = caps.set_headless();
+
+    let port = cli::manager::enable_webrtc_task_test().unwrap();
+    let driver = WebDriver::new(&format!("http://localhost:{}", port), caps)
+        .await
+        .expect("Failed to create web driver.");
+
+    driver
+        .goto("http://0.0.0.0:6020/webrtc/index.html")
+        .await
+        .expect("Failed to connect to local webrtc page.");
+
+    loop {
+        for button in ["add-consumer", "add-session", "remove-all-consumers"] {
+            thread::sleep(Duration::from_secs(3));
+            driver.find(By::Id(button)).await?.click().await?;
+        }
+
+        counter += 1;
+
+        info!("Restarted webrtc {} times", counter);
+        if helper::threads::process_task_counter() > 100 {
+            error!("Thead leak detected!");
+            std::process::exit(-1);
+        }
+    }
+}
+
+pub fn start_check_tasks_on_webrtc_reconnects() {
+    let counter = 0;
+    thread::spawn(move || {
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async move {
+            loop {
+                if let Err(error) = task(counter).await {
+                    error!("WebRTC Checker Task failed: {error:#?}");
+                }
+            }
+        });
+        error!("Webrtc test failed internally.");
+        std::process::exit(-1);
+    });
+}
