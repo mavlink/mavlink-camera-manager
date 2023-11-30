@@ -27,9 +27,8 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
         App::new()
             // Add debug call for API access
             .wrap_fn(|req, srv| {
-                trace!("{:#?}", &req);
-                let fut = srv.call(req);
-                async { fut.await }
+                trace!("{req:#?}");
+                srv.call(req)
             })
             .wrap(TracingLogger::default())
             .wrap(actix_web::middleware::Logger::default())
@@ -68,25 +67,26 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
             )
             .route("/xml", web::get().to(pages::xml))
             .route("/sdp", web::get().to(pages::sdp))
-            .service(
-                web::scope("/thumbnail")
-                    // Add a rate limitter to prevent flood
-                    .wrap(
-                        RateLimiter::builder(
-                            InMemoryBackend::builder().build(),
-                            SimpleInputFunctionBuilder::new(std::time::Duration::from_secs(1), 4)
-                                .real_ip_key()
-                                .build(),
-                        )
-                        .add_headers()
-                        .build(),
-                    )
-                    .route("", web::get().to(pages::thumbnail)),
-            )
+            // .service(
+            //     web::scope("/thumbnail")
+            //         // Add a rate limitter to prevent flood
+            //         .wrap(
+            //             RateLimiter::builder(
+            //                 InMemoryBackend::builder().build(),
+            //                 SimpleInputFunctionBuilder::new(std::time::Duration::from_secs(1), 4)
+            //                     .real_ip_key()
+            //                     .build(),
+            //             )
+            //             .add_headers()
+            //             .build(),
+            //         )
+            //         .route("", web::get().to(pages::thumbnail)),
+            // )
             .build()
     })
     .bind(server_address)
     .expect("Failed starting web API")
+    .workers(1)
     .run()
     .await
 }

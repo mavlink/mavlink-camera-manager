@@ -18,7 +18,6 @@ use super::utils::*;
 #[derive(Debug)]
 pub struct MavlinkCameraHandle {
     inner: Arc<MavlinkCamera>,
-    _runtime: tokio::runtime::Runtime,
     heartbeat_handle: tokio::task::JoinHandle<()>,
     messages_handle: tokio::task::JoinHandle<()>,
 }
@@ -34,33 +33,18 @@ struct MavlinkCamera {
 
 impl MavlinkCameraHandle {
     #[instrument(level = "debug")]
-    pub fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
+    pub async fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
         let inner = Arc::new(MavlinkCamera::try_new(video_and_stream_information)?);
 
         let sender = crate::mavlink::manager::Manager::get_sender();
 
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .on_thread_start(|| debug!("Thread started"))
-            .on_thread_stop(|| debug!("Thread stopped"))
-            .thread_name_fn(|| {
-                static ATOMIC_ID: std::sync::atomic::AtomicUsize =
-                    std::sync::atomic::AtomicUsize::new(0);
-                let id = ATOMIC_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                format!("MavlinkCamera-{id}")
-            })
-            .worker_threads(2)
-            .enable_all()
-            .build()
-            .expect("Failed building a new tokio runtime");
-
         let heartbeat_handle =
-            runtime.spawn(MavlinkCamera::heartbeat_loop(inner.clone(), sender.clone()));
+            tokio::spawn(MavlinkCamera::heartbeat_loop(inner.clone(), sender.clone()));
         let messages_handle =
-            runtime.spawn(MavlinkCamera::messages_loop(inner.clone(), sender.clone()));
+            tokio::spawn(MavlinkCamera::messages_loop(inner.clone(), sender.clone()));
 
         Ok(Self {
             inner,
-            _runtime: runtime,
             heartbeat_handle,
             messages_handle,
         })
@@ -165,14 +149,16 @@ impl MavlinkCamera {
         let mut receiver = sender.subscribe();
 
         loop {
-            let (header, message) = match receiver.recv().await {
+            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+            // Note: we can't block this task awaiting for recv, otherwise it might not die. This is why we use try_recv here
+            let (header, message) = match receiver.try_recv() {
                 Ok(Message::Received(message)) => message,
-                Err(broadcast::error::RecvError::Closed) => {
+                Err(broadcast::error::TryRecvError::Closed) => {
                     unreachable!(
                         "Closed channel: This should never happen, this channel is static!"
                     );
                 }
-                Ok(Message::ToBeSent(_)) | Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Ok(Message::ToBeSent(_)) | Err(_) => continue,
             };
 
             trace!("Message received: {header:?}, {message:?}");

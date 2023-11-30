@@ -6,7 +6,7 @@ pub mod sink;
 pub mod types;
 pub mod webrtc;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use crate::mavlink::mavlink_camera::MavlinkCameraHandle;
 use crate::video::types::{VideoEncodeType, VideoSourceType};
@@ -20,7 +20,7 @@ use types::*;
 use webrtc::signalling_protocol::PeerId;
 use webrtc::signalling_server::StreamManagementInterface;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 
 use tracing::*;
 
@@ -32,9 +32,9 @@ use ::gst::prelude::*;
 
 #[derive(Debug)]
 pub struct Stream {
-    state: Arc<Mutex<StreamState>>,
-    terminated: Arc<Mutex<bool>>,
-    _watcher_thread_handle: std::thread::JoinHandle<()>,
+    state: Arc<RwLock<StreamState>>,
+    terminated: Arc<RwLock<bool>>,
+    _watcher_handle: tokio::task::JoinHandle<()>,
 }
 
 #[derive(Debug)]
@@ -47,46 +47,41 @@ pub struct StreamState {
 
 impl Stream {
     #[instrument(level = "debug")]
-    pub fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
+    pub async fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
         let pipeline_id = Manager::generate_uuid();
 
-        let state = Arc::new(Mutex::new(StreamState::try_new(
-            video_and_stream_information,
-            &pipeline_id,
-        )?));
+        let state = Arc::new(RwLock::new(
+            StreamState::try_new(video_and_stream_information, &pipeline_id).await?,
+        ));
 
-        let terminated = Arc::new(Mutex::new(false));
+        let terminated = Arc::new(RwLock::new(false));
         let terminated_cloned = terminated.clone();
 
         let video_and_stream_information_cloned = video_and_stream_information.clone();
         let state_cloned = state.clone();
-        let _watcher_thread_handle = std::thread::Builder::new()
-            .name(format!("Stream-{pipeline_id}"))
-            .spawn(move || {
-                Self::watcher(
-                    video_and_stream_information_cloned,
-                    pipeline_id,
-                    state_cloned,
-                    terminated_cloned,
-                )
-            })
-            .context(format!(
-                "Failed when spawing PipelineRunner thread for Pipeline {pipeline_id:#?}"
-            ))?;
+        let _watcher_handle = tokio::spawn(async move {
+            Self::watcher(
+                video_and_stream_information_cloned,
+                pipeline_id,
+                state_cloned,
+                terminated_cloned,
+            )
+            .await
+        });
 
         Ok(Self {
             state,
             terminated,
-            _watcher_thread_handle,
+            _watcher_handle,
         })
     }
 
     #[instrument(level = "debug")]
-    fn watcher(
+    async fn watcher(
         video_and_stream_information: VideoAndStreamInformation,
         pipeline_id: uuid::Uuid,
-        state: Arc<Mutex<StreamState>>,
-        terminated: Arc<Mutex<bool>>,
+        state: Arc<RwLock<StreamState>>,
+        terminated: Arc<RwLock<bool>>,
     ) {
         // To reduce log size, each report we raise the report interval geometrically until a maximum value is reached:
         let report_interval_mult = 2;
@@ -97,16 +92,23 @@ impl Stream {
         let mut video_and_stream_information = video_and_stream_information;
 
         loop {
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
             if !state
-                .lock()
+                .read()
                 .unwrap()
                 .pipeline
                 .inner_state_as_ref()
                 .pipeline_runner
                 .is_running()
             {
+                // First, finish the MAVLink tasks
+                {
+                    if let Some(mavlink) = state.write().unwrap().mavlink_camera.take() {
+                        drop(mavlink);
+                    }
+                }
+
                 // If it's a camera, try to update the device
                 if let VideoSourceType::Local(_) = video_and_stream_information.video_source {
                     let mut streams = vec![video_and_stream_information.clone()];
@@ -154,27 +156,33 @@ impl Stream {
                                 }
                             }
 
-                            std::thread::sleep(std::time::Duration::from_secs(1));
+                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                             continue;
                         }
                     }
                 }
 
+                let new_state = match StreamState::try_new(
+                    &video_and_stream_information,
+                    &pipeline_id,
+                )
+                .await
+                {
+                    Ok(state) => state,
+                    Err(error) => {
+                        error!("Failed to recreate the stream {pipeline_id:?}: {error:#?}. Trying again in one second...");
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        continue;
+                    }
+                };
+
                 // Try to recreate the stream
-                if let Ok(mut state) = state.lock() {
-                    *state = match StreamState::try_new(&video_and_stream_information, &pipeline_id)
-                    {
-                        Ok(state) => state,
-                        Err(error) => {
-                            error!("Failed to recreate the stream {pipeline_id:?}: {error:#?}. Trying again in one second...");
-                            std::thread::sleep(std::time::Duration::from_secs(1));
-                            continue;
-                        }
-                    };
+                if let Ok(mut state) = state.write() {
+                    *state = new_state
                 }
             }
 
-            if *terminated.lock().unwrap() {
+            if *terminated.read().unwrap() {
                 debug!("Ending stream {pipeline_id:?}.");
                 break;
             }
@@ -184,13 +192,13 @@ impl Stream {
 
 impl Drop for Stream {
     fn drop(&mut self) {
-        *self.terminated.lock().unwrap() = true;
+        *self.terminated.write().unwrap() = true;
     }
 }
 
 impl StreamState {
     #[instrument(level = "debug")]
-    pub fn try_new(
+    pub async fn try_new(
         video_and_stream_information: &VideoAndStreamInformation,
         pipeline_id: &uuid::Uuid,
     ) -> Result<Self> {
@@ -200,82 +208,86 @@ impl StreamState {
 
         let pipeline = Pipeline::try_new(video_and_stream_information, pipeline_id)?;
 
-        // Only create the Mavlink Handle when mavlink is not disabled
-        let mavlink_camera = match video_and_stream_information
-            .stream_information
-            .extended_configuration
-        {
-            Some(ExtendedConfiguration {
-                thermal: _,
-                disable_mavlink: true,
-            }) => None,
-            _ => MavlinkCameraHandle::try_new(video_and_stream_information).ok(),
-        };
-
         let mut stream = StreamState {
             pipeline_id: *pipeline_id,
             pipeline,
             video_and_stream_information: video_and_stream_information.clone(),
-            mavlink_camera,
+            mavlink_camera: None,
         };
 
-        match &video_and_stream_information.video_source {
-            VideoSourceType::Redirect(_) => return Ok(stream), // Do not add any Sink if it's a redirect Pipeline
-            VideoSourceType::Gst(_) | VideoSourceType::Local(_) => (),
-        }
+        // Do not add any Sink if it's a redirect Pipeline
+        if !matches!(
+            &video_and_stream_information.video_source,
+            VideoSourceType::Redirect(_)
+        ) {
+            let endpoints = &video_and_stream_information.stream_information.endpoints;
 
-        let endpoints = &video_and_stream_information.stream_information.endpoints;
+            // Disable concurrent RTSP and UDP sinks creation, as it is failing.
+            if endpoints.iter().any(|endpoint| endpoint.scheme() == "udp")
+                && endpoints.iter().any(|endpoint| endpoint.scheme() == "rtsp")
+            {
+                return Err(anyhow!(
+                    "UDP endpoints won't work together with RTSP endpoints. You need to choose one. This is a (temporary) software limitation, if this is a feature you need, please, contact us."
+                ));
+            }
 
-        // Disable concurrent RTSP and UDP sinks creation, as it is failing.
-        if endpoints.iter().any(|endpoint| endpoint.scheme() == "udp")
-            && endpoints.iter().any(|endpoint| endpoint.scheme() == "rtsp")
-        {
-            return Err(anyhow!(
-                "UDP endpoints won't work together with RTSP endpoints. You need to choose one. This is a (temporary) software limitation, if this is a feature you need, please, contact us."
-            ));
-        }
+            if endpoints.iter().any(|endpoint| endpoint.scheme() == "udp") {
+                if let Err(reason) =
+                    create_udp_sink(Manager::generate_uuid(), video_and_stream_information)
+                        .and_then(|sink| stream.pipeline.add_sink(sink))
+                {
+                    return Err(anyhow!(
+                        "Failed to add Sink of type UDP to the Pipeline. Reason: {reason}"
+                    ));
+                }
+            }
 
-        if endpoints.iter().any(|endpoint| endpoint.scheme() == "udp") {
+            if endpoints.iter().any(|endpoint| endpoint.scheme() == "rtsp") {
+                if let Err(reason) =
+                    create_rtsp_sink(Manager::generate_uuid(), video_and_stream_information)
+                        .and_then(|sink| stream.pipeline.add_sink(sink))
+                {
+                    return Err(anyhow!(
+                        "Failed to add Sink of type RTSP to the Pipeline. Reason: {reason}"
+                    ));
+                }
+            }
+
             if let Err(reason) =
-                create_udp_sink(Manager::generate_uuid(), video_and_stream_information)
+                create_image_sink(Manager::generate_uuid(), video_and_stream_information)
                     .and_then(|sink| stream.pipeline.add_sink(sink))
             {
                 return Err(anyhow!(
-                    "Failed to add Sink of type UDP to the Pipeline. Reason: {reason}"
+                    "Failed to add Sink of type Image to the Pipeline. Reason: {reason}"
                 ));
+            }
+
+            // Start the pipeline. This will automatically start sinks with linked proxy-isolated pipelines
+            stream
+                .pipeline
+                .inner_state_as_ref()
+                .pipeline_runner
+                .start()?;
+
+            // Start all the sinks
+            for sink in stream.pipeline.inner_state_mut().sinks.values() {
+                sink.start()?
             }
         }
 
-        if endpoints.iter().any(|endpoint| endpoint.scheme() == "rtsp") {
-            if let Err(reason) =
-                create_rtsp_sink(Manager::generate_uuid(), video_and_stream_information)
-                    .and_then(|sink| stream.pipeline.add_sink(sink))
-            {
-                return Err(anyhow!(
-                    "Failed to add Sink of type RTSP to the Pipeline. Reason: {reason}"
-                ));
-            }
-        }
-
-        if let Err(reason) =
-            create_image_sink(Manager::generate_uuid(), video_and_stream_information)
-                .and_then(|sink| stream.pipeline.add_sink(sink))
-        {
-            return Err(anyhow!(
-                "Failed to add Sink of type Image to the Pipeline. Reason: {reason}"
-            ));
-        }
-
-        // Start the pipeline. This will automatically start sinks with linked proxy-isolated pipelines
-        stream
-            .pipeline
-            .inner_state_as_ref()
-            .pipeline_runner
-            .start()?;
-
-        // Start all the sinks
-        for sink in stream.pipeline.inner_state_mut().sinks.values() {
-            sink.start()?
+        // Only create the Mavlink Handle when mavlink is not disabled
+        if matches!(
+            video_and_stream_information
+                .stream_information
+                .extended_configuration,
+            Some(ExtendedConfiguration {
+                thermal: _,
+                disable_mavlink: false,
+            })
+        ) {
+            stream.mavlink_camera = MavlinkCameraHandle::try_new(video_and_stream_information)
+                .await
+                .ok();
         }
 
         Ok(stream)
@@ -287,13 +299,17 @@ impl Drop for StreamState {
         let pipeline_state = self.pipeline.inner_state_as_ref();
         let pipeline = &pipeline_state.pipeline;
 
+        let barrier = Arc::new(std::sync::Barrier::new(1));
+        let barrier_cloned = Arc::clone(&barrier);
         let pipeline_weak = pipeline.downgrade();
         std::thread::spawn(move || {
             let pipeline = pipeline_weak.upgrade().unwrap();
             if let Err(error) = pipeline.post_message(::gst::message::Eos::new()) {
                 error!("Failed posting Eos message into Pipeline bus. Reason: {error:?}");
             }
+            barrier_cloned.wait();
         });
+        barrier.wait();
 
         if let Err(error) = pipeline.set_state(::gst::State::Null) {
             error!("Failed setting Pipeline state to Null. Reason: {error:?}");
