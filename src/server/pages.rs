@@ -1,3 +1,4 @@
+use crate::helper;
 use crate::settings;
 use crate::stream::{manager as stream_manager, types::StreamInformation};
 use crate::video::{
@@ -12,7 +13,8 @@ use actix_web::{
     web::{self, Json},
     HttpRequest, HttpResponse,
 };
-use paperclip::actix::{api_v2_operation, Apiv2Schema};
+
+use paperclip::actix::{api_v2_operation, Apiv2Schema, CreatedJson};
 use serde::{Deserialize, Serialize};
 use tracing::*;
 use validator::Validate;
@@ -77,6 +79,41 @@ pub struct ThumbnailFileRequest {
     target_height: Option<u16>,
 }
 
+#[derive(Apiv2Schema, Serialize, Debug)]
+pub struct Development {
+    number_of_tasks: usize,
+}
+
+#[derive(Apiv2Schema, Serialize, Debug)]
+pub struct Info {
+    /// Name of the program
+    name: String,
+    /// Version/tag
+    version: String,
+    /// Git SHA
+    sha: String,
+    build_date: String,
+    /// Authors name
+    authors: String,
+    /// Unstable field for custom development
+    development: Development,
+}
+
+impl Info {
+    pub fn new() -> Self {
+        Self {
+            name: env!("CARGO_PKG_NAME").into(),
+            version: env!("VERGEN_GIT_SEMVER").into(),
+            sha: env!("VERGEN_GIT_SHA_SHORT").into(),
+            build_date: env!("VERGEN_BUILD_DATE").into(),
+            authors: env!("CARGO_PKG_AUTHORS").into(),
+            development: Development {
+                number_of_tasks: helper::threads::process_task_counter(),
+            },
+        }
+    }
+}
+
 use std::{ffi::OsStr, path::Path};
 
 use include_dir::{include_dir, Dir};
@@ -134,6 +171,13 @@ pub fn root(req: HttpRequest) -> HttpResponse {
     let mime = actix_files::file_extension_to_mime(extension).to_string();
 
     HttpResponse::Ok().content_type(mime).body(content)
+}
+
+#[api_v2_operation]
+/// Provide information about the running service
+/// There is no stable API guarantee for the development field
+pub async fn info() -> CreatedJson<Info> {
+    CreatedJson(Info::new())
 }
 
 //TODO: change endpoint name to sources
