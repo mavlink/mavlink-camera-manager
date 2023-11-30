@@ -34,6 +34,10 @@ async fn main() -> Result<(), std::io::Error> {
         settings::manager::set_mavlink_endpoint(endpoint);
     }
 
+    if cli::manager::enable_thread_counter() {
+        helper::threads::start_thread_counter_thread();
+    }
+
     stream::webrtc::signalling_server::SignallingServer::default();
 
     if let Err(error) = stream::manager::start_default() {
