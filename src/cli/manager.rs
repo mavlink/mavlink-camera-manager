@@ -90,6 +90,13 @@ pub fn default_settings() -> Option<&'static str> {
     return MANAGER.as_ref().clap_matches.value_of("default-settings");
 }
 
+pub fn enable_thread_counter() -> bool {
+    return MANAGER
+        .as_ref()
+        .clap_matches
+        .is_present("enable-thread-counter");
+}
+
 // Return the command line used to start this application
 pub fn command_line_string() -> String {
     std::env::args().collect::<Vec<String>>().join(" ")
@@ -216,6 +223,12 @@ fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
             clap::Arg::with_name("enable-tracy")
                 .long("enable-tracy")
                 .help("Turns on the Tracy tool integration. Learn more: https://github.com/wolfpld/tracy")
+                .takes_value(false),
+        )
+        .arg(
+            clap::Arg::with_name("enable-thread-counter")
+                .long("enable-thread-counter")
+                .help("Enable a thread that prints the number of children processes.")
                 .takes_value(false),
         );
 
