@@ -31,7 +31,7 @@ async fn main() -> Result<(), std::io::Error> {
 
     stream::manager::init();
     if let Some(endpoint) = cli::manager::mavlink_connection_string() {
-        settings::manager::set_mavlink_endpoint(endpoint);
+        settings::manager::set_mavlink_endpoint(&endpoint);
     }
 
     if cli::manager::enable_thread_counter() {
@@ -48,5 +48,5 @@ async fn main() -> Result<(), std::io::Error> {
         error!("Failed to start default streams. Reason: {error:?}")
     }
 
-    server::manager::run(cli::manager::server_address()).await
+    server::manager::run(&cli::manager::server_address()).await
 }
