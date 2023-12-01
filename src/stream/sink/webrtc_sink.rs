@@ -311,7 +311,7 @@ impl WebRTCSink {
         let webrtcbin = {
             let (tx, rx) = std::sync::mpsc::sync_channel(1);
             std::thread::Builder::new()
-                .name("WebRTCBin".to_string())
+                .name(format!("webrtcbin-{}", bind.session_id))
                 .spawn(move || {
                     let webrtcbin = gst::ElementFactory::make("webrtcbin")
                         .property_from_str(
