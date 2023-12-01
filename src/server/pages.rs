@@ -232,7 +232,7 @@ pub fn v4l_post(json: web::Json<V4lControl>) -> HttpResponse {
 pub async fn reset_settings(query: web::Query<ResetSettings>) -> HttpResponse {
     if query.all.unwrap_or_default() {
         settings::manager::reset();
-        if let Err(error) = stream_manager::start_default() {
+        if let Err(error) = stream_manager::start_default().await {
             return HttpResponse::InternalServerError()
                 .content_type("text/plain")
                 .body(format!("{error:#?}"));
@@ -269,7 +269,7 @@ pub async fn streams() -> HttpResponse {
 
 #[api_v2_operation]
 /// Create a video stream
-pub fn streams_post(json: web::Json<PostStream>) -> HttpResponse {
+pub async fn streams_post(json: web::Json<PostStream>) -> HttpResponse {
     let json = json.into_inner();
 
     let video_source = match video_source::get_video_source(&json.source) {
@@ -285,7 +285,9 @@ pub fn streams_post(json: web::Json<PostStream>) -> HttpResponse {
         name: json.name,
         stream_information: json.stream_information,
         video_source,
-    }) {
+    })
+    .await
+    {
         return HttpResponse::NotAcceptable()
             .content_type("text/plain")
             .body(format!("{error:#?}"));
@@ -424,41 +426,41 @@ pub fn sdp(sdp_file_request: web::Query<SdpFileRequest>) -> HttpResponse {
     }
 }
 
-#[api_v2_operation]
-/// Provides a thumbnail file of the given source
-pub async fn thumbnail(thumbnail_file_request: web::Query<ThumbnailFileRequest>) -> HttpResponse {
-    // Ideally, we should be using `actix_web_validator::Query` instead of `web::Query`,
-    // but because paperclip (at least until 0.8) is using `actix-web-validator 3.x`,
-    // and `validator 0.14`, the newest api needed to use it along #[api_v2_operation]
-    // wasn't implemented yet, it doesn't compile.
-    // To workaround this, we are manually calling the validator here, using actix to
-    // automatically handle the validation error for us as it normally would.
-    // TODO: update this function to use `actix_web_validator::Query` directly and get
-    // rid of this workaround.
-    if let Err(errors) = thumbnail_file_request.validate() {
-        warn!("Failed validating ThumbnailFileRequest. Reason: {errors:?}");
-        return actix_web::ResponseError::error_response(&actix_web_validator::Error::from(errors));
-    }
+// #[api_v2_operation]
+// /// Provides a thumbnail file of the given source
+// pub async fn thumbnail(thumbnail_file_request: web::Query<ThumbnailFileRequest>) -> HttpResponse {
+//     Ideally, we should be using `actix_web_validator::Query` instead of `web::Query`,
+//     but because paperclip (at least until 0.8) is using `actix-web-validator 3.x`,
+//     and `validator 0.14`, the newest api needed to use it along #[api_v2_operation]
+//     wasn't implemented yet, it doesn't compile.
+//     To workaround this, we are manually calling the validator here, using actix to
+//     automatically handle the validation error for us as it normally would.
+//     TODO: update this function to use `actix_web_validator::Query` directly and get
+//     rid of this workaround.
+//     if let Err(errors) = thumbnail_file_request.validate() {
+//         warn!("Failed validating ThumbnailFileRequest. Reason: {errors:?}");
+//         return actix_web::ResponseError::error_response(&actix_web_validator::Error::from(errors));
+//     }
 
-    let source = thumbnail_file_request.source.clone();
-    let quality = thumbnail_file_request.quality.unwrap_or(70u8);
-    let target_height = thumbnail_file_request.target_height.map(|v| v as u32);
+//     let source = thumbnail_file_request.source.clone();
+//     let quality = thumbnail_file_request.quality.unwrap_or(70u8);
+//     let target_height = thumbnail_file_request.target_height.map(|v| v as u32);
 
-    match stream_manager::get_jpeg_thumbnail_from_source(source, quality, target_height).await {
-        Some(Ok(image)) => HttpResponse::Ok().content_type("image/jpeg").body(image),
-        None => HttpResponse::NotFound()
-            .content_type("text/plain")
-            .body(format!(
-                "Thumbnail not found for source {:?}.",
-                thumbnail_file_request.source
-        )),
-        Some(Err(error)) => HttpResponse::ServiceUnavailable()
-            .reason("Thumbnail temporarily unavailable")
-            .insert_header((header::RETRY_AFTER, 10))
-            .content_type("text/plain")
-            .body(format!(
-            "Thumbnail for source {:?} is temporarily unavailable. Try again later. Details: {error:?}",
-            thumbnail_file_request.source
-        )),
-    }
-}
+//     match stream_manager::get_jpeg_thumbnail_from_source(source, quality, target_height).await {
+//         Some(Ok(image)) => HttpResponse::Ok().content_type("image/jpeg").body(image),
+//         None => HttpResponse::NotFound()
+//             .content_type("text/plain")
+//             .body(format!(
+//                 "Thumbnail not found for source {:?}.",
+//                 thumbnail_file_request.source
+//         )),
+//         Some(Err(error)) => HttpResponse::ServiceUnavailable()
+//             .reason("Thumbnail temporarily unavailable")
+//             .insert_header((header::RETRY_AFTER, 10))
+//             .content_type("text/plain")
+//             .body(format!(
+//             "Thumbnail for source {:?} is temporarily unavailable. Try again later. Details: {error:?}",
+//             thumbnail_file_request.source
+//         )),
+//     }
+// }
