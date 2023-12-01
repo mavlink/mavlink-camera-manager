@@ -5,13 +5,67 @@ use tracing::error;
 
 use crate::{custom, stream::gst::utils::PluginRankConfig};
 
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(version = env!("CARGO_PKG_VERSION"), author = env!("CARGO_PKG_AUTHORS"), about = env!("CARGO_PKG_DESCRIPTION"))]
+struct Args {
+    /// Sets the mavlink connection string
+    #[arg(long, value_name = "TYPE>:<IP/SERIAL>:<PORT/BAUDRATE")]
+    mavlink: Option<String>,
+
+    /// Default settings to be used for different vehicles or environments.
+    #[arg(long, value_name = "NAME")]
+    default_settings: Option<custom::CustomEnvironment>,
+
+    /// Deletes settings file before starting.
+    #[arg(long)]
+    reset: bool,
+
+    /// Sets the address for the REST API server
+    #[arg(long, value_name = "IP>:<PORT", default_value = "0.0.0.0:6020")]
+    rest_server: String,
+
+    /// Turns all log categories up to Debug, for more information check RUST_LOG env variable.
+    #[arg(short, long)]
+    verbose: bool,
+
+    /// Sets the Rank for the given Gst features.
+    #[clap(long, value_name = "GST_PLUGIN_NAME>=<GST_RANK_INT_VALUE", value_delimiter = ',', value_parser = gst_feature_rank_validator)]
+    gst_feature_rank: Vec<String>,
+
+    /// Specifies the path in witch the logs will be stored.
+    #[arg(long, default_value = "./logs")]
+    log_path: Option<String>,
+
+    /// Turns all log categories up to Trace to the log file, for more information check RUST_LOG env variable.
+    #[arg(long)]
+    enable_tracing_level_log_file: bool,
+
+    /// Specifies the Dynamic DNS to use as vehicle IP when advertising streams via mavlink.
+    #[arg(long)]
+    vehicle_ddns: Option<String>,
+
+    /// Turns on the Tracy tool integration.
+    #[arg(long)]
+    enable_tracy: bool,
+
+    /// Enable a thread that prints the number of children processes.
+    #[arg(long)]
+    enable_thread_counter: bool,
+
+    /// Enable webrtc thread test with limit of child tasks (can use port for webdriver as parameter).
+    #[arg(long, value_name = "PORT", num_args = 0..=1, default_missing_value = "9515")]
+    enable_webrtc_task_test: Option<u16>,
+}
+
 #[derive(Debug)]
-struct Manager<'a> {
-    clap_matches: clap::ArgMatches<'a>,
+struct Manager {
+    clap_matches: Args,
 }
 
 lazy_static! {
-    static ref MANAGER: Arc<Manager<'static>> = Arc::new(Manager::new());
+    static ref MANAGER: Arc<Manager> = Arc::new(Manager::new());
     static ref CURRENT_EXECUTION_WWW_PATH: String = format!(
         "{}/www",
         std::env::current_exe()
@@ -25,10 +79,10 @@ lazy_static! {
     );
 }
 
-impl Manager<'_> {
+impl Manager {
     fn new() -> Self {
         Self {
-            clap_matches: get_clap_matches(),
+            clap_matches: Args::parse(),
         }
     }
 }
@@ -40,73 +94,54 @@ pub fn init() {
 
 // Check if the verbosity parameter was used
 pub fn is_verbose() -> bool {
-    return MANAGER.as_ref().clap_matches.is_present("verbose");
+    MANAGER.clap_matches.verbose
 }
 
 pub fn is_tracing() -> bool {
-    return MANAGER
-        .as_ref()
-        .clap_matches
-        .is_present("enable-tracing-level-log-file");
+    MANAGER.clap_matches.enable_tracing_level_log_file
 }
 
 pub fn is_reset() -> bool {
-    return MANAGER.as_ref().clap_matches.is_present("reset");
+    MANAGER.clap_matches.reset
 }
 
 pub fn is_tracy() -> bool {
-    return MANAGER.as_ref().clap_matches.is_present("enable-tracy");
+    MANAGER.clap_matches.enable_tracy
 }
 
 #[allow(dead_code)]
 // Return the mavlink connection string
-pub fn mavlink_connection_string() -> Option<&'static str> {
-    return MANAGER.as_ref().clap_matches.value_of("mavlink");
+pub fn mavlink_connection_string() -> Option<String> {
+    MANAGER.clap_matches.mavlink.clone()
 }
 
 pub fn log_path() -> String {
     MANAGER
-        .as_ref()
         .clap_matches
-        .value_of("log-path")
+        .log_path
+        .clone()
         .expect("Clap arg \"log-path\" should always be \"Some(_)\" because of the default value.")
-        .to_string()
 }
 
 // Return the desired address for the REST API
-pub fn server_address() -> &'static str {
-    return MANAGER
-        .as_ref()
-        .clap_matches
-        .value_of("rest-server")
-        .unwrap();
+pub fn server_address() -> String {
+    MANAGER.clap_matches.rest_server.clone()
 }
 
-pub fn vehicle_ddns() -> Option<&'static str> {
-    MANAGER.as_ref().clap_matches.value_of("vehicle-ddns")
+pub fn vehicle_ddns() -> Option<String> {
+    MANAGER.clap_matches.vehicle_ddns.clone()
 }
 
-pub fn default_settings() -> Option<&'static str> {
-    return MANAGER.as_ref().clap_matches.value_of("default-settings");
+pub fn default_settings() -> Option<custom::CustomEnvironment> {
+    MANAGER.clap_matches.default_settings.clone()
 }
 
 pub fn enable_thread_counter() -> bool {
-    return MANAGER
-        .as_ref()
-        .clap_matches
-        .is_present("enable-thread-counter");
+    MANAGER.clap_matches.enable_thread_counter
 }
 
-pub fn enable_webrtc_task_test() -> Option<u32> {
-    let matches = &MANAGER.as_ref().clap_matches;
-
-    if !matches.is_present("enable-webrtc-task-test") {
-        return None;
-    }
-
-    matches
-        .value_of("enable-webrtc-task-test")
-        .and_then(|value| value.parse::<u32>().ok())
+pub fn enable_webrtc_task_test() -> Option<u16> {
+    MANAGER.clap_matches.enable_webrtc_task_test
 }
 
 // Return the command line used to start this application
@@ -114,20 +149,15 @@ pub fn command_line_string() -> String {
     std::env::args().collect::<Vec<String>>().join(" ")
 }
 
-// Return clap::ArgMatches struct
-pub fn matches<'a>() -> clap::ArgMatches<'a> {
-    return MANAGER.as_ref().clap_matches.clone();
+// Return a clone of current Args struct
+pub fn command_line() -> String {
+    format!("{:#?}", MANAGER.clap_matches)
 }
 
 pub fn gst_feature_rank() -> Vec<PluginRankConfig> {
-    let values = MANAGER
-        .clap_matches
-        .values_of("gst-feature-rank")
-        .unwrap_or_default()
-        .collect::<Vec<&str>>();
-    values
+    MANAGER.clap_matches.gst_feature_rank
         .iter()
-        .filter_map(|&val| {
+        .filter_map(|val| {
             if let Some((key, value_str)) = val.split_once('=') {
                 let value = match value_str.parse::<i32>() {
                     Ok(value) => value,
@@ -153,109 +183,7 @@ pub fn gst_feature_rank() -> Vec<PluginRankConfig> {
         .collect()
 }
 
-fn get_clap_matches<'a>() -> clap::ArgMatches<'a> {
-    let version = format!(
-        "{}-{} ({})",
-        env!("CARGO_PKG_VERSION"),
-        env!("VERGEN_GIT_SHA_SHORT"),
-        env!("VERGEN_BUILD_DATE")
-    );
-
-    let matches = clap::App::new(env!("CARGO_PKG_NAME"))
-        .version(version.as_str())
-        .about(env!("CARGO_PKG_DESCRIPTION"))
-        .author(env!("CARGO_PKG_AUTHORS"))
-        .arg(
-            clap::Arg::with_name("mavlink")
-                .long("mavlink")
-                .value_name("TYPE>:<IP/SERIAL>:<PORT/BAUDRATE")
-                .help("Sets the mavlink connection string")
-                .takes_value(true)
-        )
-        .arg(
-            clap::Arg::with_name("default-settings")
-                .long("default-settings")
-                .value_name("NAME")
-                .possible_values(&custom::CustomEnvironment::variants())
-                .help("Default settings to be used for different vehicles or environments.")
-                .takes_value(true)
-        )
-        .arg(
-            clap::Arg::with_name("reset")
-                .long("reset")
-                .help("Deletes settings file before starting.")
-                .takes_value(false),
-        )
-        .arg(
-            clap::Arg::with_name("rest-server")
-                .long("rest-server")
-                .value_name("IP>:<PORT")
-                .help("Sets the address for the REST API server")
-                .takes_value(true)
-                .default_value("0.0.0.0:6020"),
-        )
-        .arg(
-            clap::Arg::with_name("verbose")
-                .short("v")
-                .long("verbose")
-                .help("Turns all log categories up to Debug, for more information check RUST_LOG env variable.")
-                .takes_value(false),
-        )
-        .arg(
-            clap::Arg::with_name("gst-feature-rank")
-            .long("gst-feature-rank")
-            .help("Sets the Rank for the given Gst features. GST_PLUGIN_NAME is a string, and GST_RANK_INT_VALUE a valid 32 bits signed integer. A comma-separated list is also accepted. Example: \"omxh264enc=264,v4l2h264enc=0,x264enc=263\" (without quotes)")
-            .value_name("GST_PLUGIN_NAME>=<GST_RANK_INT_VALUE")
-            .value_delimiter(",")
-            .multiple(true)
-            .empty_values(false)
-            .case_insensitive(true)
-            .validator(gst_feature_rank_validator)
-        )
-        .arg(
-            clap::Arg::with_name("log-path")
-                .long("log-path")
-                .help("Specifies the path in witch the logs will be stored.")
-                .default_value("./logs")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("enable-tracing-level-log-file")
-                .long("enable-tracing-level-log-file")
-                .help("Turns all log categories up to Trace to the log file, for more information check RUST_LOG env variable.")
-                .takes_value(false),
-        )
-        .arg(
-            clap::Arg::with_name("vehicle-ddns")
-                .long("vehicle-ddns")
-                .help("Specifies the Dynamic DNS to use as vehicle IP when advertising streams via mavlink.")
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("enable-tracy")
-                .long("enable-tracy")
-                .help("Turns on the Tracy tool integration. Learn more: https://github.com/wolfpld/tracy")
-                .takes_value(false),
-        )
-        .arg(
-            clap::Arg::with_name("enable-thread-counter")
-                .long("enable-thread-counter")
-                .help("Enable a thread that prints the number of children processes.")
-                .takes_value(false),
-        )
-        .arg(
-            clap::Arg::with_name("enable-webrtc-task-test")
-                .long("enable-webrtc-task-test")
-                .help("Enable webrtc thread test with limit of child tasks (can use port for webdriver as parameter).")
-                .value_name("PORT")
-                .default_value("9515")
-                .empty_values(true)
-        );
-
-    matches.get_matches()
-}
-
-fn gst_feature_rank_validator(val: String) -> Result<(), String> {
+fn gst_feature_rank_validator(val: &str) -> Result<String, String> {
     if let Some((_key, value_str)) = val.split_once('=') {
         if value_str.parse::<i32>().is_err() {
             return Err("GST_RANK_INT_VALUE should be a valid 32 bits signed integer, like \"-1\", \"0\" or \"256\" (without quotes).".to_string());
@@ -263,7 +191,7 @@ fn gst_feature_rank_validator(val: String) -> Result<(), String> {
     } else {
         return Err("Unexpected format, it should be <GST_PLUGIN_NAME>=<GST_RANK_INT_VALUE>, where GST_PLUGIN_NAME is a string, and GST_RANK_INT_VALUE a valid 32 bits signed integer. Example: \"omxh264enc=264\" (without quotes).".to_string());
     }
-    Ok(())
+    Ok(val.into())
 }
 
 #[cfg(test)]
