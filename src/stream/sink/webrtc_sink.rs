@@ -175,7 +175,6 @@ impl SinkInterface for WebRTCSink {
         // Reasoning: because we are not receiving the Disconnected | Failed | Closed of WebRTCPeerConnectionState,
         // we are directly connecting to webrtcbin->transceiver->transport->connect_state_notify:
         // When the bug is solved, we should remove this code and use WebRTCPeerConnectionState instead.
-        let webrtcbin_clone = self.webrtcbin.downgrade();
         let bind_clone = self.bind.clone();
         let rtp_sender = transceiver
             .sender()
@@ -184,7 +183,6 @@ impl SinkInterface for WebRTCSink {
             let transport = rtp_sender.property::<gst_webrtc::WebRTCDTLSTransport>("transport");
 
             let bind = bind_clone.clone();
-            let webrtcbin_clone = webrtcbin_clone.clone();
             transport.connect_state_notify(move |transport| {
                 use gst_webrtc::WebRTCDTLSTransportState::*;
 
@@ -192,26 +190,20 @@ impl SinkInterface for WebRTCSink {
                 let state = transport.state();
                 debug!("DTLS Transport Connection changed to {state:#?}");
                 match state {
-                    Failed | Closed => {
-                        if let Some(webrtcbin) = webrtcbin_clone.upgrade() {
-                            if webrtcbin.current_state() == gst::State::Playing {
-                                // Closing the channel from the same thread can cause a deadlock, so we are calling it from another one:
-                                std::thread::Builder::new()
-                                    .name("DTLSKiller".to_string())
-                                    .spawn(move || {
-                                        let bind = &bind.clone();
-                                        if let Err(error) = Manager::remove_session(
-                                            bind,
-                                            format!(
-                                                "DTLS Transport connection closed with: {state:?}"
-                                            ),
-                                        ) {
-                                            error!("Failed removing session {bind:#?}: {error}");
-                                        }
-                                    })
-                                    .expect("Failed spawing DTLSKiller thread");
-                            }
-                        }
+                    Failed | Closed | __Unknown(_) => {
+                        // Closing the channel from the same thread can cause a deadlock, so we are calling it from another one:
+                        std::thread::Builder::new()
+                            .name("DTLSKiller".to_string())
+                            .spawn(move || {
+                                let bind = &bind.clone();
+                                if let Err(error) = Manager::remove_session(
+                                    bind,
+                                    format!("DTLS Transport connection closed with: {state:?}"),
+                                ) {
+                                    error!("Failed removing session {bind:#?}: {error}");
+                                }
+                            })
+                            .expect("Failed spawing DTLSKiller thread");
                     }
                     _ => (),
                 }
