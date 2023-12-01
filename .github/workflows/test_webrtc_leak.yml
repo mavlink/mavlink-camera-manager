@@ -1,0 +1,35 @@
+name: Test webrtc thread leak
+
+on: [push, pull_request]
+
+jobs:
+  test-webrtc-thread-leak:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Setup Chromedriver
+      uses: nanasess/setup-chromedriver@v2
+
+    - name: Install libraries
+      run: |
+        sudo apt install -y --no-install-recommends ca-certificates gnupg
+        sudo apt update
+        sudo apt install -y chromium-chromedriver
+        sudo apt install -y libunwind-dev
+        sudo apt install -y --no-install-recommends libclang-dev libssl-dev pkg-config libmount-dev libsepol-dev libselinux1-dev libglib2.0-dev libgudev-1.0-dev \
+          libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-good1.0-dev libgstreamer-plugins-bad1.0-dev libgstrtspserver-1.0-dev \
+          libgstreamer-plugins-base1.0-0 libgstreamer-plugins-good1.0-0 libgstreamer-plugins-bad1.0-0 \
+          gstreamer1.0-x gstreamer1.0-nice gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+          gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
+        gst-inspect-1.0 # Update database
+        chromedriver --port=6666& # Start webdriver for test
+
+    - name: Run test
+      run: |
+        export DISPLAY=:99
+        chromedriver --url-base=/wd/hub &
+        cargo build
+        RUST_BACKTRACE=1 timeout 300 cargo run --verbose -- \
+          --mavlink udpin:0.0.0.0:6666 --verbose --default-settings WebRTCTest --enable-thread-counter --enable-webrtc-task-test 6666 || echo "Test failed" && exit 1
