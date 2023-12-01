@@ -53,6 +53,7 @@ pub fn start_check_tasks_on_webrtc_reconnects() {
             loop {
                 if let Err(error) = task(counter).await {
                     error!("WebRTC Checker Task failed: {error:#?}");
+                    std::process::exit(-1);
                 }
             }
         });
