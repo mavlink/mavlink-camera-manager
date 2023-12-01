@@ -10,13 +10,17 @@ pub fn init() {
     LogTracer::init_with_filter(tracing::log::LevelFilter::Trace).expect("Failed to set logger");
 
     // Configure the console log
-    let console_env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        if cli::manager::is_verbose() {
-            EnvFilter::new(LevelFilter::DEBUG.to_string())
-        } else {
-            EnvFilter::new(LevelFilter::INFO.to_string())
-        }
-    });
+    let console_env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| {
+            if cli::manager::is_verbose() {
+                EnvFilter::new(LevelFilter::DEBUG.to_string())
+            } else {
+                EnvFilter::new(LevelFilter::INFO.to_string())
+            }
+        })
+        // Hyper is used for http request by our thread leak test
+        // And it's pretty verbose when it's on
+        .add_directive("hyper=off".parse().unwrap());
     let console_layer = fmt::Layer::new()
         .with_writer(std::io::stdout)
         .with_ansi(true)
