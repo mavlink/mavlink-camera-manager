@@ -96,7 +96,7 @@ pub fn init() {
     );
     debug!("Command line call: {}", cli::manager::command_line_string());
     debug!(
-        "Command line input struct call: {:#?}",
-        cli::manager::matches().args
+        "Command line input struct call: {}",
+        cli::manager::command_line()
     );
 }
