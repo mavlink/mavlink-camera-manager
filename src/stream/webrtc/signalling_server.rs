@@ -190,9 +190,7 @@ impl SignallingServer {
             }
         }
 
-        sender
-            .await
-            .context("Signalling sender task ended with an error")?;
+        sender.await?;
 
         debug!("Connection terminated");
 
