@@ -143,7 +143,20 @@ impl SinkInterface for WebRTCSink {
         }
 
         // Syncronize added and linked elements
-        if let Err(sync_err) = pipeline.sync_children_states() {
+        // Workaround to have a better name for the threads created by our WebRTC Sink
+        let pipeline_weak = pipeline.downgrade();
+        let bind_cloned = self.bind.clone();
+        if let Err(sync_err) = {
+            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            std::thread::Builder::new()
+                .name(format!("webrtcsink-{}", bind_cloned.session_id))
+                .spawn(move || {
+                    let pipeline = pipeline_weak.upgrade().unwrap();
+                    tx.send(pipeline.sync_children_states()).unwrap();
+                })
+                .expect("Failed spawning webrtcsink thread");
+            rx.recv()?
+        } {
             let msg = format!("Failed to synchronize children states: {sync_err:?}");
             error!(msg);
 
