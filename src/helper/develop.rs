@@ -25,8 +25,13 @@ async fn task(mut counter: i32) -> Result<()> {
 
     loop {
         for button in ["add-consumer", "add-session", "remove-all-consumers"] {
-            thread::sleep(Duration::from_secs(3));
-            driver.find(By::Id(button)).await?.click().await?;
+            driver
+                .query(By::Id(button))
+                .wait(Duration::from_secs(10), Duration::from_millis(100))
+                .first()
+                .await?
+                .click()
+                .await?;
         }
 
         counter += 1;
