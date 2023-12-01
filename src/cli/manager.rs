@@ -98,11 +98,15 @@ pub fn enable_thread_counter() -> bool {
 }
 
 pub fn enable_webrtc_task_test() -> Option<u32> {
-    return MANAGER
-        .as_ref()
-        .clap_matches
+    let matches = &MANAGER.as_ref().clap_matches;
+
+    if !matches.is_present("enable-webrtc-task-test") {
+        return None;
+    }
+
+    matches
         .value_of("enable-webrtc-task-test")
-        .and_then(|value| value.parse::<u32>().ok());
+        .and_then(|value| value.parse::<u32>().ok())
 }
 
 // Return the command line used to start this application
