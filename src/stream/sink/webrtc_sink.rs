@@ -255,6 +255,19 @@ impl SinkInterface for WebRTCSink {
         }
         drop(queue_sink_pad);
 
+        // Unlink Queue's src pad with WebRTCBin's sink pad
+        let queue_src_pad = self
+            .queue
+            .static_pad("src")
+            .expect("No src pad found on Queue");
+        if let Err(unlink_err) = queue_src_pad.unlink(&self.webrtcbin_sink_pad) {
+            warn!("Failed to unlink Queue's src pad from WebRTCBin's sink pad: {unlink_err:?}");
+        }
+        drop(queue_src_pad);
+
+        // Release WebRTC's sink pad
+        self.webrtcbin.release_request_pad(&self.webrtcbin_sink_pad);
+
         // Release Tee's src pad
         if let Some(parent) = tee_src_pad.parent_element() {
             parent.release_request_pad(tee_src_pad)
