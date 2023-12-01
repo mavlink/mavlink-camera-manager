@@ -37,8 +37,9 @@ async fn task(mut counter: i32) -> Result<()> {
         counter += 1;
 
         info!("Restarted webrtc {} times", counter);
-        if helper::threads::process_task_counter() > 100 {
-            error!("Thead leak detected!");
+        let number_of_tasks = helper::threads::process_task_counter();
+        if number_of_tasks > 100 {
+            error!("Thead leak detected: {number_of_tasks}");
             std::process::exit(-1);
         }
     }
