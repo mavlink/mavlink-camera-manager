@@ -95,8 +95,6 @@ impl SignallingServer {
             let peer = stream
                 .peer_addr()
                 .context("connected streams should have a peer address")?;
-            debug!("Peer address: {peer:?}");
-
             tokio::spawn(Self::accept_connection(peer, stream));
         }
 
@@ -122,7 +120,7 @@ impl SignallingServer {
 
     #[instrument(level = "debug", skip(stream))]
     async fn handle_connection(peer: SocketAddr, stream: WebSocketStream<TcpStream>) -> Result<()> {
-        info!("New WebSocket connection: {peer:?}");
+        info!("New WebSocket connection");
 
         let (mut ws_sender, mut ws_receiver) = stream.split();
 
@@ -196,7 +194,7 @@ impl SignallingServer {
             .await
             .context("Signalling sender task ended with an error")?;
 
-        debug!("Connection terminated: {peer:?}");
+        debug!("Connection terminated");
 
         Ok(())
     }
