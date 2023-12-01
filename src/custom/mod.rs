@@ -1,24 +1,21 @@
-use std::str::FromStr;
-
-use clap::arg_enum;
+use clap::ValueEnum;
 
 use crate::cli;
 use crate::video_stream::types::VideoAndStreamInformation;
 
 mod bluerov;
 
-arg_enum! {
-    #[derive(PartialEq, Debug)]
-    pub enum CustomEnvironment {
-        BlueROVUDP,
-        BlueROVRTSP,
-    }
+#[derive(ValueEnum, PartialEq, Debug, Clone)]
+#[clap(rename_all = "verbatim")]
+pub enum CustomEnvironment {
+    BlueROVUDP,
+    BlueROVRTSP,
 }
 
 pub fn create_default_streams() -> Vec<VideoAndStreamInformation> {
-    match cli::manager::default_settings().map(CustomEnvironment::from_str) {
-        Some(Ok(CustomEnvironment::BlueROVUDP)) => bluerov::udp(),
-        Some(Ok(CustomEnvironment::BlueROVRTSP)) => bluerov::rtsp(),
+    match cli::manager::default_settings() {
+        Some(CustomEnvironment::BlueROVUDP) => bluerov::udp(),
+        Some(CustomEnvironment::BlueROVRTSP) => bluerov::rtsp(),
         _ => vec![],
     }
 }
