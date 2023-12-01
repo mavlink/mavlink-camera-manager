@@ -117,9 +117,8 @@ impl MavlinkCamera {
         // and the time MAVLink connection is negotiated with the other MAVLink
         // systems.
         let visible_qgc_ip_address = get_visible_qgc_address();
-        let server_port = cli::manager::server_address()
-            .split(':')
-            .collect::<Vec<&str>>()[1];
+        let address = cli::manager::server_address();
+        let server_port = address.split(':').collect::<Vec<&str>>()[1];
         let video_source_path = self.video_source_type.inner().source_string();
         Url::parse(&format!(
             "http://{visible_qgc_ip_address}:{server_port}/xml?file={video_source_path}"
