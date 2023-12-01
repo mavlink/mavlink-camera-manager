@@ -172,7 +172,7 @@ pub fn save() {
 #[allow(dead_code)]
 pub fn header() -> HeaderSettingsFile {
     let manager = MANAGER.lock().unwrap();
-    return manager.content.as_ref().unwrap().config.header.clone();
+    manager.content.as_ref().unwrap().config.header.clone()
 }
 
 pub fn mavlink_endpoint() -> Option<String> {
