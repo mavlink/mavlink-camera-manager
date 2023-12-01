@@ -183,8 +183,6 @@ impl SinkInterface for WebRTCSink {
         rtp_sender.connect_notify(Some("transport"), move |rtp_sender, _pspec| {
             let transport = rtp_sender.property::<gst_webrtc::WebRTCDTLSTransport>("transport");
 
-            debug!("DTLS Transport: {transport:#?}");
-
             let bind = bind_clone.clone();
             let webrtcbin_clone = webrtcbin_clone.clone();
             transport.connect_state_notify(move |transport| {
@@ -377,7 +375,7 @@ impl WebRTCSink {
                 if let Err(error) =
                     weak_proxy.on_ice_candidate(&element, &sdp_m_line_index, &candidate)
                 {
-                    debug!("Failed to send ICE candidate: {error:#?}");
+                    debug!("Failed to send ICE candidate: {error}");
                 }
 
                 None
@@ -474,7 +472,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
 
             if let Some(webrtcbin) = webrtcbin_weak.upgrade() {
                 if let Err(error) = this.on_offer_created(&webrtcbin, &offer) {
-                    error!("Failed to send SDP offer: {error:?}");
+                    error!("Failed to send SDP offer: {error}");
                 }
             }
         });
@@ -514,8 +512,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         self.sender
             .upgrade()
             .context("Failed accessing MPSC Sender")?
-            .send(Ok(message))
-            .context("Failed to send SDP offer")?;
+            .send(Ok(message))?;
 
         Ok(())
     }
@@ -577,8 +574,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         self.sender
             .upgrade()
             .context("Failed accessing MPSC Sender")?
-            .send(Ok(message))
-            .context("Failed to send ICE candidate")?;
+            .send(Ok(message))?;
 
         debug!("ICE candidate created!");
 
