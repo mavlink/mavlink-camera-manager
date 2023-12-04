@@ -24,6 +24,25 @@ async fn main() -> Result<(), std::io::Error> {
     cli::manager::init();
     // Logger should start before everything else to register any log information
     logger::manager::init();
+
+    video::gst_device_monitor::init().unwrap();
+    // just for debug
+    {
+        use gst_app::prelude::DeviceExt;
+
+        dbg!(video::gst_device_monitor::providers().unwrap());
+
+        let devices = video::gst_device_monitor::devices().unwrap();
+        dbg!(&devices);
+        devices.iter().for_each(|device| {
+            device.properties().iter().for_each(|property| {
+                dbg!(&property);
+            });
+
+            dbg!(&device.caps());
+        });
+    }
+
     // Settings should start before everybody else to ensure that the CLI are stored
     settings::manager::init(None);
 

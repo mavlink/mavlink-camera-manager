@@ -12,7 +12,9 @@ pub enum VideoSourceType {
     Redirect(VideoSourceRedirect),
 }
 
-#[derive(Apiv2Schema, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(
+    Apiv2Schema, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Hash,
+)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum VideoEncodeType {
     Unknown(String),
@@ -28,14 +30,18 @@ pub struct Format {
     pub sizes: Vec<Size>,
 }
 
-#[derive(Apiv2Schema, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(
+    Apiv2Schema, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Hash,
+)]
 pub struct Size {
     pub width: u32,
     pub height: u32,
     pub intervals: Vec<FrameInterval>,
 }
 
-#[derive(Apiv2Schema, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(
+    Apiv2Schema, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Hash,
+)]
 pub struct FrameInterval {
     pub numerator: u32,
     pub denominator: u32,
@@ -108,7 +114,7 @@ impl VideoEncodeType {
         match fourcc.as_str() {
             "H264" => VideoEncodeType::H264,
             "MJPG" => VideoEncodeType::Mjpg,
-            "YUYV" => VideoEncodeType::Yuyv,
+            "YUYV" | "YUY2" => VideoEncodeType::Yuyv,
             _ => VideoEncodeType::Unknown(fourcc),
         }
     }

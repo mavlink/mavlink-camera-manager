@@ -1,8 +1,9 @@
 use std::cmp::max;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use crate::stream::types::VideoCaptureConfiguration;
+use crate::video::gst_device_monitor;
 
 use super::types::*;
 use super::video_source::{VideoSource, VideoSourceAvailable};
@@ -12,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use v4l::prelude::*;
 use v4l::video::Capture;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 
 use tracing::*;
 
@@ -235,31 +236,20 @@ fn convert_v4l_intervals(v4l_intervals: &[v4l::FrameInterval]) -> Vec<FrameInter
                     denominator: fraction.denominator,
                 })
             }
-            v4l::frameinterval::FrameIntervalEnum::Stepwise(stepwise) => {
-                // To avoid a having a huge number of numerator/denominators, we
-                // arbitrarely set a minimum step of 5 units
-                let min_step = 5;
-                let numerator_step = max(stepwise.step.numerator, min_step);
-                let denominator_step = max(stepwise.step.denominator, min_step);
-
-                let numerators = (0..=stepwise.min.numerator)
-                    .step_by(numerator_step as usize)
-                    .chain(vec![stepwise.max.numerator])
-                    .collect::<Vec<u32>>();
-                let denominators = (0..=stepwise.min.denominator)
-                    .step_by(denominator_step as usize)
-                    .chain(vec![stepwise.max.denominator])
-                    .collect::<Vec<u32>>();
-
-                for numerator in &numerators {
-                    for denominator in &denominators {
-                        intervals.push(FrameInterval {
-                            numerator: max(1, *numerator),
-                            denominator: max(1, *denominator),
-                        });
-                    }
-                }
-            }
+            v4l::frameinterval::FrameIntervalEnum::Stepwise(stepwise) => intervals.append(
+                compute_intervals_from_range(
+                    FrameInterval {
+                        numerator: stepwise.min.numerator,
+                        denominator: stepwise.min.denominator,
+                    },
+                    FrameInterval {
+                        numerator: stepwise.max.numerator,
+                        denominator: stepwise.max.denominator,
+                    },
+                    max(stepwise.step.numerator, stepwise.step.denominator) as usize,
+                )
+                .as_mut(),
+            ),
         });
 
     intervals.sort();
@@ -269,27 +259,200 @@ fn convert_v4l_intervals(v4l_intervals: &[v4l::FrameInterval]) -> Vec<FrameInter
     intervals
 }
 
-fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Format> {
-    if let Some(formats) = VIDEO_FORMATS.lock().unwrap().get(&device_path.to_string()) {
-        return formats.clone();
+fn compute_intervals_from_range(
+    interval_start: FrameInterval,
+    interval_end: FrameInterval,
+    step: usize,
+) -> Vec<FrameInterval> {
+    let mut intervals = Vec::with_capacity(20);
+
+    // To avoid having a huge number of numerator/denominators, we
+    // arbitrarily set a minimum step of 5 units
+    let step = step.max(5);
+
+    let numerator_end = interval_end.numerator.min(30);
+    let denominator_end = interval_end.denominator.min(30);
+
+    let min_numerator = max(1, interval_start.numerator);
+    let min_denominator = max(1, interval_start.denominator);
+
+    for numerator in (0..=numerator_end).step_by(step) {
+        for denominator in (0..=denominator_end).step_by(step) {
+            intervals.push(FrameInterval {
+                numerator: numerator.max(min_numerator),
+                denominator: denominator.max(min_denominator),
+            });
+        }
     }
 
-    let mut formats = vec![];
-    let device = match Device::with_path(device_path) {
-        Ok(device) => device,
-        Err(error) => {
-            error!("Faield to get device {device_path:?}: {error:?}");
-            return formats;
-        }
-    };
+    intervals
+}
 
-    let v4l_formats = device.enum_formats().unwrap_or_default();
+impl From<gst::Fraction> for FrameInterval {
+    fn from(value: gst::Fraction) -> Self {
+        FrameInterval {
+            // Yes, our nominator is GST's denominator.
+            numerator: value.denom() as u32,
+            denominator: value.numer() as u32,
+        }
+    }
+}
+
+fn get_device_formats_using_gstreamer(
+    device_path: &str,
+    _typ: &VideoSourceLocalType,
+) -> Result<Vec<Format>> {
+    let device = gst_device_monitor::device_with_path(device_path)?;
+
+    let caps = gst_device_monitor::device_caps(&device)?;
+
+    let mut sizes_by_encode: HashMap<VideoEncodeType, HashSet<Size>> = HashMap::new();
+
+    caps.iter().for_each(|structure| {
+        let encode = match structure.name().as_str() {
+            "video/x-raw" => {
+                let fourcc = structure.get::<String>("format").unwrap();
+                VideoEncodeType::from_str(&fourcc)
+            }
+            "image/jpeg" => VideoEncodeType::Mjpg,
+            "video/x-h264" => VideoEncodeType::H264,
+            _ => return,
+        };
+
+        let heights = match structure.value("height") {
+            Ok(sendvalue) => match sendvalue.type_().name() {
+                "gint" => vec![sendvalue.get::<i32>().unwrap() as u32],
+                "GstIntRange" => {
+                    let range = sendvalue.get::<gst::IntRange<i32>>().unwrap();
+
+                    let start = range.min() as u32;
+                    let end = range.max() as u32;
+                    let step = range.step() as u32;
+
+                    STANDARD_SIZES
+                        .iter()
+                        .filter_map(|(_, height)| {
+                            if height >= &start && height <= &end && (height % step == 0) {
+                                return Some(*height);
+                            }
+                            None
+                        })
+                        .collect::<Vec<u32>>()
+                }
+                unsupported_type => {
+                    debug!("Height with unsupported type: {unsupported_type:?}, {structure:#?}");
+                    return;
+                }
+            },
+            Err(error) => {
+                debug!("No height: {structure:#?}: {error:?}");
+                return;
+            }
+        };
+
+        let widths = match structure.value("width") {
+            Ok(sendvalue) => match sendvalue.type_().name() {
+                "gint" => vec![sendvalue.get::<i32>().unwrap() as u32],
+                "GstIntRange" => {
+                    let range = sendvalue.get::<gst::IntRange<i32>>().unwrap();
+
+                    let start = range.min() as u32;
+                    let end = range.max() as u32;
+                    let step = range.step() as u32;
+
+                    STANDARD_SIZES
+                        .iter()
+                        .filter_map(|(width, _)| {
+                            if width >= &start && width <= &end && (width % step == 0) {
+                                return Some(*width);
+                            }
+                            None
+                        })
+                        .collect::<Vec<u32>>()
+                }
+                unsupported_type => {
+                    debug!("Width with unsupported type: {unsupported_type:?}, {structure:#?}");
+                    return;
+                }
+            },
+            Err(error) => {
+                debug!("No width: {structure:#?}: {error:?}");
+                return;
+            }
+        };
+
+        let intervals = match structure.value("framerate") {
+            Ok(sendvalue) => match sendvalue.type_().name() {
+                "GstFraction" => {
+                    vec![sendvalue.get::<gst::Fraction>().unwrap().into()]
+                }
+                "GstFractionRange" => {
+                    let range = sendvalue.get::<gst::FractionRange>().unwrap();
+
+                    compute_intervals_from_range(range.min().into(), range.max().into(), 1)
+                }
+                "GstValueList" => sendvalue
+                    .get::<gst::List>()
+                    .unwrap()
+                    .iter()
+                    .map(|sendvalue| sendvalue.get::<gst::Fraction>().unwrap().into())
+                    .collect::<Vec<_>>(),
+                unsupported_type => {
+                    debug!("Framerate with unsupported type: {unsupported_type:?}, {structure:#?}");
+                    return;
+                }
+            },
+            Err(error) => {
+                debug!("No framerate: {structure:#?}: {error:?}");
+                return;
+            }
+        };
+
+        widths.into_iter().zip(heights).for_each(|(width, height)| {
+            let size = Size {
+                width,
+                height,
+                intervals: intervals.clone(),
+            };
+
+            if let Some(size_set) = sizes_by_encode.get_mut(&encode) {
+                size_set.insert(size);
+                return;
+            }
+
+            sizes_by_encode.insert(encode.clone(), HashSet::from([size]));
+        });
+    });
+
+    let mut formats = Vec::with_capacity(sizes_by_encode.len());
+
+    sizes_by_encode.into_iter().for_each(|(encode, sizes)| {
+        let mut sizes = sizes.into_iter().collect::<Vec<Size>>();
+        sizes.sort();
+        // sizes.dedup();
+        sizes.reverse();
+
+        formats.push(Format { encode, sizes })
+    });
+
+    Ok(formats)
+}
+
+fn get_device_formats_using_v4l(
+    device_path: &str,
+    typ: &VideoSourceLocalType,
+) -> Result<Vec<Format>> {
+    let v4l_device = Device::with_path(device_path)?;
+
+    let mut formats = vec![];
+
+    let v4l_formats = v4l_device.enum_formats().unwrap_or_default();
     trace!("Checking resolutions for camera {device_path:?}");
     for v4l_format in v4l_formats {
         let mut sizes = vec![];
         let mut errors: Vec<String> = vec![];
 
-        let v4l_framesizes = match device.enum_framesizes(v4l_format.fourcc) {
+        let v4l_framesizes = match v4l_device.enum_framesizes(v4l_format.fourcc) {
             Ok(v4l_framesizes) => v4l_framesizes,
             Err(error) => {
                 warn!(
@@ -302,7 +465,7 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
         for v4l_framesize in v4l_framesizes {
             match v4l_framesize.size {
                 v4l::framesize::FrameSizeEnum::Discrete(v4l_size) => {
-                    match &device.enum_frameintervals(
+                    match &v4l_device.enum_frameintervals(
                         v4l_framesize.fourcc,
                         v4l_size.width,
                         v4l_size.height,
@@ -328,7 +491,8 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
                     std_sizes.push((v4l_size.max_width, v4l_size.max_height));
 
                     std_sizes.iter().for_each(|(width, height)| {
-                        match &device.enum_frameintervals(v4l_framesize.fourcc, *width, *height) {
+                        match &v4l_device.enum_frameintervals(v4l_framesize.fourcc, *width, *height)
+                        {
                             Ok(enum_frameintervals) => {
                                 let intervals = convert_v4l_intervals(enum_frameintervals);
                                 sizes.push(Size {
@@ -371,6 +535,7 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
             ),
         }
     }
+
     // V4l2 reports unsupported sizes for Raspberry Pi
     // Cameras in Legacy Mode, showing the following:
     // > mmal: mmal_vc_port_enable: failed to enable port vc.ril.video_encode:in:0(OPQV): EINVAL
@@ -404,14 +569,49 @@ fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Vec<Form
             format.sizes.dedup();
         });
     }
+
+    if formats.is_empty() {
+        return Err(anyhow!("No formats found"));
+    }
+
+    Ok(formats)
+}
+
+fn get_device_formats(device_path: &str, typ: &VideoSourceLocalType) -> Result<Vec<Format>> {
+    // Strategy 1: From cache
+    if let Some(formats) = VIDEO_FORMATS.lock().unwrap().get(&device_path.to_string()) {
+        return Ok(formats.clone());
+    }
+
+    // Strategy: From v4l api
+    let mut formats = None;
+    for strategy in [
+        get_device_formats_using_v4l,
+        get_device_formats_using_gstreamer,
+    ] {
+        match strategy(device_path, typ) {
+            Ok(f) => {
+                debug!("Successifully got video formats using method {strategy:?}");
+                formats.replace(f);
+                break;
+            }
+            Err(error) => {
+                warn!("Failed to get video formats using method {strategy:?}: {error:?}. Switching to GStreamer method");
+            }
+        };
+    }
+    let mut formats = formats.context("Failed to get formats")?;
+
     formats.sort();
     formats.dedup();
 
+    // Save to cache
     VIDEO_FORMATS
         .lock()
         .unwrap()
         .insert(device_path.to_string(), formats.clone());
-    formats
+
+    Ok(formats)
 }
 
 fn validate_control(control: &Control, value: i64) -> Result<(), String> {
@@ -466,7 +666,7 @@ impl VideoSource for VideoSourceLocal {
     }
 
     fn formats(&self) -> Vec<Format> {
-        get_device_formats(&self.device_path, &self.typ)
+        get_device_formats(&self.device_path, &self.typ).unwrap_or_default()
     }
 
     fn set_control_by_name(&self, control_name: &str, value: i64) -> std::io::Result<()> {
@@ -756,6 +956,55 @@ mod tests {
         for description in descriptions {
             assert_eq!(description.0, VideoSourceLocalType::from_str(description.1));
         }
+    }
+
+    #[test]
+    fn test_compute_intervals() {
+        let intervals = compute_intervals_from_range(
+            FrameInterval {
+                numerator: 1,
+                denominator: 1,
+            },
+            FrameInterval {
+                numerator: 1,
+                denominator: 90,
+            },
+            1,
+        );
+
+        assert_eq!(
+            intervals,
+            vec![
+                FrameInterval {
+                    numerator: 1,
+                    denominator: 1,
+                },
+                FrameInterval {
+                    numerator: 1,
+                    denominator: 5,
+                },
+                FrameInterval {
+                    numerator: 1,
+                    denominator: 10,
+                },
+                FrameInterval {
+                    numerator: 1,
+                    denominator: 15,
+                },
+                FrameInterval {
+                    numerator: 1,
+                    denominator: 20,
+                },
+                FrameInterval {
+                    numerator: 1,
+                    denominator: 25,
+                },
+                FrameInterval {
+                    numerator: 1,
+                    denominator: 30,
+                },
+            ]
+        )
     }
 }
 
