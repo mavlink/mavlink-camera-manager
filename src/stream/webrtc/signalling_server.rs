@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-use std::thread;
 
 use anyhow::{anyhow, Context, Result};
 use futures::{SinkExt, StreamExt};
@@ -38,44 +37,22 @@ pub trait StreamManagementInterface<T> {
 
 #[derive(Debug)]
 pub struct SignallingServer {
-    _server_thread_handle: std::thread::JoinHandle<()>,
+    _handler: tokio::task::JoinHandle<Result<()>>,
 }
 
 impl Default for SignallingServer {
-    #[instrument(level = "trace")]
+    #[instrument(level = "debug", fields(endpoint))]
     fn default() -> Self {
+        let endpoint = url::Url::parse(DEFAULT_SIGNALLING_ENDPOINT)
+            .expect("Wrong default signalling endpoint");
+
         Self {
-            _server_thread_handle: thread::Builder::new()
-                .name("SignallingServer".to_string())
-                .spawn(SignallingServer::run_main_loop)
-                .expect("Failed spawing SignallingServer thread"),
+            _handler: tokio::task::spawn(SignallingServer::runner(endpoint)),
         }
     }
 }
 
 impl SignallingServer {
-    #[instrument(level = "debug", fields(endpoint))]
-    fn run_main_loop() {
-        let endpoint = url::Url::parse(DEFAULT_SIGNALLING_ENDPOINT)
-            .expect("Wrong default signalling endpoint");
-
-        tokio::runtime::Builder::new_multi_thread()
-            .on_thread_start(|| debug!("Thread started"))
-            .on_thread_stop(|| debug!("Thread stopped"))
-            .thread_name_fn(|| {
-                static ATOMIC_ID: std::sync::atomic::AtomicUsize =
-                    std::sync::atomic::AtomicUsize::new(0);
-                let id = ATOMIC_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                format!("Signaller-{id}")
-            })
-            .worker_threads(1)
-            .enable_all()
-            .build()
-            .expect("Failed building a new tokio runtime")
-            .block_on(SignallingServer::runner(endpoint))
-            .expect("Error starting Signalling server");
-    }
-
     #[instrument(level = "debug")]
     async fn runner(endpoint: url::Url) -> Result<()> {
         let host = endpoint
