@@ -13,15 +13,15 @@ use crate::stream::gst::utils::wait_for_element_state;
 pub struct PipelineRunner {
     pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
     start: Arc<Mutex<bool>>,
-    watcher_thread_handle: std::thread::JoinHandle<()>,
+    watcher_handle: tokio::task::JoinHandle<()>,
 }
 
 impl Drop for PipelineRunner {
     fn drop(&mut self) {
         debug!("Dropping PipelineRunner...");
 
-        if !self.watcher_thread_handle.is_finished() {
-            // self.watcher_thread_handle.abort();
+        if !self.watcher_handle.is_finished() {
+            self.watcher_handle.abort();
             debug!("THREAD LEAK!!!!!!!!!!!!!");
         } else {
             debug!("PieplineRunner nicely finished!");
@@ -48,20 +48,15 @@ impl PipelineRunner {
         Ok(Self {
             pipeline_weak: pipeline_weak.clone(),
             start: start.clone(),
-            watcher_thread_handle: std::thread::Builder::new()
-                .name(format!("PipelineRunner-{pipeline_id}"))
-                .spawn(move || {
-                    if let Err(error) =
-                        PipelineRunner::runner(pipeline_weak, &pipeline_id, start, allow_block)
-                    {
-                        error!("PipelineRunner ended with error: {error}");
-                    } else {
-                        debug!("PipelineRunner ended normally.");
-                    }
-                })
-                .context(format!(
-                    "Failed when spawing PipelineRunner thread for Pipeline {pipeline_id:#?}"
-                ))?,
+            watcher_handle: tokio::task::spawn_blocking(move || {
+                if let Err(error) =
+                    PipelineRunner::runner(pipeline_weak, &pipeline_id, start, allow_block)
+                {
+                    error!("PipelineRunner ended with error: {error}");
+                } else {
+                    debug!("PipelineRunner ended normally.");
+                }
+            }),
         })
     }
 
@@ -73,7 +68,7 @@ impl PipelineRunner {
 
     #[instrument(level = "debug", skip(self))]
     pub fn is_running(&self) -> bool {
-        !self.watcher_thread_handle.is_finished()
+        !self.watcher_handle.is_finished()
     }
 
     #[instrument(level = "debug")]
