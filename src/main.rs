@@ -18,7 +18,7 @@ mod stream;
 mod video;
 mod video_stream;
 
-#[actix_web::main]
+#[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
     // CLI should be started before logger to allow control over verbosity
     cli::manager::init();
@@ -48,5 +48,7 @@ async fn main() -> Result<(), std::io::Error> {
         error!("Failed to start default streams. Reason: {error:?}")
     }
 
-    server::manager::run(&cli::manager::server_address()).await
+    server::manager::run(&cli::manager::server_address()).await?;
+
+    Ok(())
 }
