@@ -1,3 +1,5 @@
+use std::sync::{Arc, RwLock};
+
 use anyhow::{anyhow, Context, Result};
 use tokio::sync::mpsc::{self, WeakUnboundedSender};
 use tracing::*;
@@ -277,6 +279,19 @@ impl SinkInterface for WebRTCSink {
                 error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
             }
         });
+    }
+}
+
+impl Drop for WebRTCSink {
+    fn drop(&mut self) {
+        info!("Dropping WebRTCSink...");
+
+        while let Some(handler_id) = self.signal_handlers.pop() {
+            info!("Disconnecting signal handler {handler_id:?} from WebRTCBin");
+            self.webrtcbin.disconnect(handler_id);
+        }
+
+        info!("WebRTCSink dropped!");
     }
 }
 
