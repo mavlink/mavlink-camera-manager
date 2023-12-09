@@ -31,6 +31,7 @@ pub struct WebRTCSink {
     /// MPSC channel's sender to send messages to the respective Websocket from Signaller server. Err can be used to end the WebSocket.
     pub sender: mpsc::UnboundedSender<Result<Message>>,
     pub end_reason: Option<String>,
+    signal_handlers: Vec<gst::glib::SignalHandlerId>,
 }
 impl SinkInterface for WebRTCSink {
     #[instrument(level = "debug", skip(self))]
@@ -321,7 +322,7 @@ impl WebRTCSink {
 
         sender.send(Ok(Message::from(Answer::StartSession(bind.clone()))))?;
 
-        let this = WebRTCSink {
+        let mut this = WebRTCSink {
             queue,
             webrtcbin,
             webrtcbin_sink_pad,
@@ -329,12 +330,15 @@ impl WebRTCSink {
             bind,
             sender,
             end_reason: None,
+            signal_handlers: vec![],
         };
 
         // Connect to on-negotiation-needed to handle sending an Offer
         let weak_proxy = this.downgrade();
-        this.webrtcbin
-            .connect("on-negotiation-needed", false, move |values| {
+        this.signal_handlers.push(this.webrtcbin.connect(
+            "on-negotiation-needed",
+            false,
+            move |values| {
                 let element = values[0].get::<gst::Element>().expect("Invalid argument");
 
                 if let Err(error) = weak_proxy.on_negotiation_needed(&element) {
@@ -342,12 +346,15 @@ impl WebRTCSink {
                 }
 
                 None
-            });
+            },
+        ));
 
         // Whenever there is a new ICE candidate, send it to the peer
         let weak_proxy = this.downgrade();
-        this.webrtcbin
-            .connect("on-ice-candidate", false, move |values| {
+        this.signal_handlers.push(this.webrtcbin.connect(
+            "on-ice-candidate",
+            false,
+            move |values| {
                 let element = values[0].get::<gst::Element>().expect("Invalid argument");
                 let sdp_m_line_index = values[1].get::<u32>().expect("Invalid argument");
                 let candidate = values[2].get::<String>().expect("Invalid argument");
@@ -359,40 +366,47 @@ impl WebRTCSink {
                 }
 
                 None
-            });
+            },
+        ));
 
         let weak_proxy = this.downgrade();
-        this.webrtcbin
-            .connect_notify(Some("connection-state"), move |webrtcbin, _pspec| {
+        this.signal_handlers.push(this.webrtcbin.connect_notify(
+            Some("connection-state"),
+            move |webrtcbin, _pspec| {
                 let state =
                     webrtcbin.property::<gst_webrtc::WebRTCPeerConnectionState>("connection-state");
 
                 if let Err(error) = weak_proxy.on_connection_state_change(webrtcbin, &state) {
                     error!("Failed to processing connection-state: {error:?}");
                 }
-            });
+            },
+        ));
 
         let weak_proxy = this.downgrade();
-        this.webrtcbin
-            .connect_notify(Some("ice-connection-state"), move |webrtcbin, _pspec| {
+        this.signal_handlers.push(this.webrtcbin.connect_notify(
+            Some("ice-connection-state"),
+            move |webrtcbin, _pspec| {
                 let state = webrtcbin
                     .property::<gst_webrtc::WebRTCICEConnectionState>("ice-connection-state");
 
                 if let Err(error) = weak_proxy.on_ice_connection_state_change(webrtcbin, &state) {
                     error!("Failed to processing ice-connection-state: {error:?}");
                 }
-            });
+            },
+        ));
 
         let weak_proxy = this.downgrade();
-        this.webrtcbin
-            .connect_notify(Some("ice-gathering-state"), move |webrtcbin, _pspec| {
+        this.signal_handlers.push(this.webrtcbin.connect_notify(
+            Some("ice-gathering-state"),
+            move |webrtcbin, _pspec| {
                 let state = webrtcbin
                     .property::<gst_webrtc::WebRTCICEGatheringState>("ice-gathering-state");
 
                 if let Err(error) = weak_proxy.on_ice_gathering_state_change(webrtcbin, &state) {
                     error!("Failed to processing ice-gathering-state: {error:?}");
                 }
-            });
+            },
+        ));
 
         Ok(this)
     }
