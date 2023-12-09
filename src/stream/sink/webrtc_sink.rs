@@ -144,41 +144,43 @@ impl SinkInterface for WebRTCSink {
 
         // Syncronize added and linked elements
         // Workaround to have a better name for the threads created by our WebRTC Sink
-        let pipeline_weak = pipeline.downgrade();
-        let bind_cloned = self.bind.clone();
-        if let Err(sync_err) = {
-            let (tx, rx) = std::sync::mpsc::sync_channel(1);
-            std::thread::Builder::new()
-                .name(format!("webrtcsink-{}", bind_cloned.session_id))
-                .spawn(move || {
-                    let pipeline = pipeline_weak.upgrade().unwrap();
-                    tx.send(pipeline.sync_children_states()).unwrap();
-                })
-                .expect("Failed spawning webrtcsink thread");
-            rx.recv()?
-        } {
-            let msg = format!("Failed to synchronize children states: {sync_err:?}");
-            error!(msg);
+        {
+            let pipeline_weak = pipeline.downgrade();
+            let bind_cloned = self.bind.clone();
+            if let Err(sync_err) = {
+                let (tx, rx) = std::sync::mpsc::sync_channel(1);
+                std::thread::Builder::new()
+                    .name(format!("webrtcsink-{}", bind_cloned.session_id))
+                    .spawn(move || {
+                        tx.send(pipeline_weak.upgrade().unwrap().sync_children_states())
+                            .unwrap();
+                    })
+                    .expect("Failed spawning webrtcsink thread");
+                rx.recv()?
+            } {
+                let msg = format!("Failed to synchronize children states: {sync_err:?}");
+                error!(msg);
 
-            if let Err(unlink_err) = queue_src_pad.unlink(&self.webrtcbin_sink_pad) {
-                error!(
+                if let Err(unlink_err) = queue_src_pad.unlink(&self.webrtcbin_sink_pad) {
+                    error!(
                     "Failed to unlink Queue's src pad from WebRTCBin's sink pad: {unlink_err:?}"
                 );
-            }
+                }
 
-            if let Err(unlink_err) = tee_src_pad.unlink(queue_sink_pad) {
-                error!("Failed to unlink Tee's src pad from Queue's sink pad: {unlink_err:?}");
-            }
+                if let Err(unlink_err) = tee_src_pad.unlink(queue_sink_pad) {
+                    error!("Failed to unlink Tee's src pad from Queue's sink pad: {unlink_err:?}");
+                }
 
-            if let Some(parent) = tee_src_pad.parent_element() {
-                parent.release_request_pad(tee_src_pad)
-            }
+                if let Some(parent) = tee_src_pad.parent_element() {
+                    parent.release_request_pad(tee_src_pad)
+                }
 
-            if let Err(remove_err) = pipeline.remove_many(elements) {
-                error!("Failed to remove elements from pipeline: {remove_err:?}");
-            }
+                if let Err(remove_err) = pipeline.remove_many(elements) {
+                    error!("Failed to remove elements from pipeline: {remove_err:?}");
+                }
 
-            return Err(anyhow!(msg));
+                return Err(anyhow!(msg));
+            }
         }
 
         // Unblock data to go through this added Tee src pad
@@ -306,6 +308,9 @@ impl WebRTCSink {
             .property("flush-on-eos", true)
             .property("max-size-buffers", 0u32) // Disable buffers
             .build()?;
+        queue.add_weak_ref_notify(|| {
+            info!("WebRTCSink's Queue GStreamer element disposed!");
+        });
 
         // Workaround to have a better name for the threads created by the WebRTCBin element
         let webrtcbin = {
@@ -330,6 +335,9 @@ impl WebRTCSink {
                 .expect("Failed spawning leak_inside_webrtcbin thread");
             rx.recv()??
         };
+        webrtcbin.add_weak_ref_notify(|| {
+            info!("WebRTCSink's WebRTCBin GStreamer element disposed!");
+        });
 
         let webrtcbin_sink_pad = webrtcbin
             .request_pad_simple("sink_%u")
@@ -347,6 +355,24 @@ impl WebRTCSink {
             end_reason: None,
             signal_handlers: vec![],
         };
+
+        // Connect to on-new-transceiver to configure the transceiver
+        let weak_proxy = this.downgrade();
+        this.signal_handlers.push(this.webrtcbin.connect(
+            "on-new-transceiver",
+            false,
+            move |values| {
+                let transceiver = values[1]
+                    .get::<gst_webrtc::WebRTCRTPTransceiver>()
+                    .expect("Invalid argument");
+
+                if let Err(error) = configure_transceiver(&transceiver, weak_proxy.bind.clone()) {
+                    error!("Failed to configure new WebRTC RTP Transceiver: {error:?}");
+                }
+
+                None
+            },
+        ));
 
         // Connect to on-negotiation-needed to handle sending an Offer
         let weak_proxy = this.downgrade();

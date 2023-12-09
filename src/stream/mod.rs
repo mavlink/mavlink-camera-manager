@@ -59,15 +59,12 @@ impl Stream {
 
         let video_and_stream_information_cloned = video_and_stream_information.clone();
         let state_cloned = state.clone();
-        let _watcher_handle = tokio::spawn(async move {
-            Self::watcher(
-                video_and_stream_information_cloned,
-                pipeline_id,
-                state_cloned,
-                terminated_cloned,
-            )
-            .await
-        });
+        let _watcher_handle = tokio::spawn(Self::watcher(
+            video_and_stream_information_cloned,
+            pipeline_id,
+            state_cloned,
+            terminated_cloned,
+        ));
 
         Ok(Self {
             state,

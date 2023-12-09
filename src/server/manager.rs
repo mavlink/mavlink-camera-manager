@@ -86,7 +86,7 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
     })
     .bind(server_address)
     .expect("Failed starting web API")
-    .workers(1)
+    // .workers(1)
     .run()
     .await
 }

@@ -206,7 +206,7 @@ impl PipelineState {
         // added.
         if !matches!(&sink, Sink::Image(..)) {
             if let Err(error) = pipeline.sync_children_states() {
-                error!("Failed to syncronize children states. Reason: {:?}", error);
+                error!("Failed to syncronize children states. Reason: {error:?}");
             }
         }
 
