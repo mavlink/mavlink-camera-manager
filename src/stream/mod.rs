@@ -91,6 +91,8 @@ impl Stream {
 
         let mut video_and_stream_information = video_and_stream_information;
 
+        debug!("Starting a PipelineWatcher...");
+
         loop {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
@@ -187,6 +189,8 @@ impl Stream {
                 break;
             }
         }
+
+        debug!("PipelineWatcher Terminated!");
     }
 }
 
