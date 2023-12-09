@@ -119,6 +119,11 @@ impl PipelineState {
             }
         }?;
 
+        let clock = gst::SystemClock::obtain();
+        if let Err(error) = pipeline.set_clock(Some(&clock)) {
+            error!("Failed setting clock to Pipeline: {error:#?}");
+        }
+
         let sink_tee = pipeline
             .by_name(&format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"))
             .context(format!("no element named {PIPELINE_SINK_TEE_NAME:#?}"))?;
