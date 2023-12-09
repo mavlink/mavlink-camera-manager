@@ -40,16 +40,13 @@ impl SinkInterface for WebRTCSink {
         pipeline_id: &uuid::Uuid,
         tee_src_pad: gst::Pad,
     ) -> Result<()> {
-        // Configure transceiver https://gstreamer.freedesktop.org/documentation/webrtclib/gstwebrtc-transceiver.html?gi-language=c
-        let webrtcbin_sink_pad = &self.webrtcbin_sink_pad;
-        let transceiver =
-            webrtcbin_sink_pad.property::<gst_webrtc::WebRTCRTPTransceiver>("transceiver");
-        transceiver.set_property(
-            "direction",
-            gst_webrtc::WebRTCRTPTransceiverDirection::Sendonly,
-        );
-        transceiver.set_property("do-nack", false);
-        transceiver.set_property("fec-type", gst_webrtc::WebRTCFECType::None);
+        // Configure transceiver
+        configure_transceiver(
+            &self
+                .webrtcbin_sink_pad
+                .property::<gst_webrtc::WebRTCRTPTransceiver>("transceiver"),
+            self.bind.clone(),
+        )?;
 
         // Link
         let sink_id = &self.get_id();
@@ -183,45 +180,6 @@ impl SinkInterface for WebRTCSink {
 
         // Unblock data to go through this added Tee src pad
         tee_src_pad.remove_probe(tee_src_pad_data_blocker);
-
-        // TODO: Workaround for bug: https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad/-/issues/1539
-        // Reasoning: because we are not receiving the Disconnected | Failed | Closed of WebRTCPeerConnectionState,
-        // we are directly connecting to webrtcbin->transceiver->transport->connect_state_notify:
-        // When the bug is solved, we should remove this code and use WebRTCPeerConnectionState instead.
-        let bind_clone = self.bind.clone();
-        let rtp_sender = transceiver
-            .sender()
-            .context("Failed getting transceiver's RTP sender element")?;
-        rtp_sender.connect_notify(Some("transport"), move |rtp_sender, _pspec| {
-            let transport = rtp_sender.property::<gst_webrtc::WebRTCDTLSTransport>("transport");
-
-            let bind = bind_clone.clone();
-            transport.connect_state_notify(move |transport| {
-                use gst_webrtc::WebRTCDTLSTransportState::*;
-
-                let bind = bind.clone();
-                let state = transport.state();
-                debug!("DTLS Transport Connection changed to {state:#?}");
-                match state {
-                    Failed | Closed | __Unknown(_) => {
-                        // Closing the channel from the same thread can cause a deadlock, so we are calling it from another one:
-                        std::thread::Builder::new()
-                            .name("DTLSKiller".to_string())
-                            .spawn(move || {
-                                let bind = &bind.clone();
-                                if let Err(error) = Manager::remove_session(
-                                    bind,
-                                    format!("DTLS Transport connection closed with: {state:?}"),
-                                ) {
-                                    error!("Failed removing session {bind:#?}: {error}");
-                                }
-                            })
-                            .expect("Failed spawing DTLSKiller thread");
-                    }
-                    _ => (),
-                }
-            });
-        });
 
         Ok(())
     }
@@ -457,6 +415,105 @@ impl WebRTCSink {
         self.downgrade()
             .handle_ice(&self.webrtcbin, sdp_m_line_index, candidate)
     }
+}
+
+/// Configure the transceiver: https://gstreamer.freedesktop.org/documentation/webrtclib/gstwebrtc-transceiver.html?gi-language=c
+fn configure_transceiver(
+    transceiver: &gst_webrtc::WebRTCRTPTransceiver,
+    bind: BindAnswer,
+) -> Result<()> {
+    transceiver.set_property(
+        "direction",
+        gst_webrtc::WebRTCRTPTransceiverDirection::Sendonly,
+    );
+    transceiver.set_property("do-nack", false);
+    transceiver.set_property("fec-type", gst_webrtc::WebRTCFECType::None);
+
+    transceiver.add_weak_ref_notify(|| {
+        info!("Transceriver disposed!");
+    });
+
+    // TODO: Workaround for bug: https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad/-/issues/1539
+    // Reasoning: because we are not receiving the Disconnected | Failed | Closed of WebRTCPeerConnectionState,
+    // we are directly connecting to webrtcbin->transceiver->transport->connect_state_notify:
+    // When the bug is solved, we should remove this code and use WebRTCPeerConnectionState instead.
+    let handler_transceiver_id: Arc<RwLock<Option<gst::glib::SignalHandlerId>>> =
+        Arc::new(RwLock::new(None));
+    let handler_id_connection_changed: Arc<RwLock<Option<gst::glib::SignalHandlerId>>> =
+        Arc::new(RwLock::new(None));
+
+    // let transceiver_weak = transceiver.downgrade();
+    let bind_clone = bind.clone();
+    // let handler_transceiver_id_cloned = handler_transceiver_id.clone();
+    let handler_id_connection_changed_cloned = handler_id_connection_changed.clone();
+
+    handler_transceiver_id.write().unwrap().replace(
+        transceiver
+            .sender()
+            .context("Failed getting transceiver's RTP sender element")?
+            .connect_notify(Some("transport"), move |rtp_sender, _pspec| {
+                let transport = rtp_sender.property::<gst_webrtc::WebRTCDTLSTransport>("transport");
+
+                transport.add_weak_ref_notify(|| {
+                    info!("Transport disposed!");
+                });
+
+                let bind = bind_clone.clone();
+                let handler_id_connection_changed_cloned =
+                    handler_id_connection_changed_cloned.clone();
+                // let transceiver_weak = transceiver_weak.clone();
+                // let handler_transceiver_id_cloned = handler_transceiver_id_cloned.clone();
+
+                handler_id_connection_changed.write().unwrap().replace(
+                    transport.connect_state_notify(move |transport| {
+                        use gst_webrtc::WebRTCDTLSTransportState as State;
+
+                        let bind = bind.clone();
+                        let state = transport.state();
+                        debug!("DTLS Transport Connection changed to {state:#?}");
+                        match state {
+                            State::Failed | State::Closed | State::__Unknown(_) => {
+                                // Closing the channel from the same thread can cause a deadlock, so we are calling it from another one:
+                                std::thread::Builder::new()
+                                    .name("DTLSKiller".to_string())
+                                    .spawn(move || {
+                                        let bind = bind.clone();
+                                        if let Err(error) = Manager::remove_session(
+                                            &bind,
+                                            format!(
+                                                "DTLS Transport connection closed with: {state:?}"
+                                            ),
+                                        ) {
+                                            error!("Failed removing session {bind:#?}: {error}");
+                                        }
+                                    })
+                                    .expect("Failed spawning DTLSKiller thread");
+
+                                if let Some(handler_id_connection_changed) =
+                                    handler_id_connection_changed_cloned.write().unwrap().take()
+                                {
+                                    info!("Disconnecting handler_id_connection_changed");
+                                    transport.disconnect(handler_id_connection_changed);
+                                }
+                            }
+                            _ => (),
+                        }
+                    }),
+                );
+
+                // (mavlink-camera-manager:2690261): GLib-GObject-CRITICAL **: 20:51:34.640: ../glib/gobject/gsignal.c:2777: instance '0x7fa6040072a0' has no handler with id '27'
+                // if let Some(transceiver) = transceiver_weak.upgrade() {
+                //     if let Some(handler_transceiver_id) =
+                //         handler_transceiver_id_cloned.write().unwrap().take()
+                //     {
+                //         info!("Disconnecting handler_transceiver_id");
+                //         transceiver.disconnect(handler_transceiver_id);
+                //     }
+                // }
+            }),
+    );
+
+    Ok(())
 }
 
 impl WebRTCBinInterface for WebRTCSinkWeakProxy {
