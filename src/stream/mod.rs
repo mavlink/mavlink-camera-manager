@@ -295,13 +295,17 @@ impl StreamState {
 }
 
 impl Drop for StreamState {
+    #[instrument(level = "debug")]
     fn drop(&mut self) {
+        debug!("Dropping StreamState...");
         let pipeline_state = self.pipeline.inner_state_as_ref();
         let pipeline = &pipeline_state.pipeline;
 
         let barrier = Arc::new(std::sync::Barrier::new(1));
         let barrier_cloned = Arc::clone(&barrier);
         let pipeline_weak = pipeline.downgrade();
+
+        debug!("Posting EOS...");
         std::thread::spawn(move || {
             let pipeline = pipeline_weak.upgrade().unwrap();
             if let Err(error) = pipeline.post_message(::gst::message::Eos::new()) {
@@ -310,7 +314,9 @@ impl Drop for StreamState {
             barrier_cloned.wait();
         });
         barrier.wait();
+        debug!("EOS posted!");
 
+        debug!("Setting Pipeline State to NULL...");
         if let Err(error) = pipeline.set_state(::gst::State::Null) {
             error!("Failed setting Pipeline state to Null. Reason: {error:?}");
         }
@@ -323,8 +329,10 @@ impl Drop for StreamState {
             let _ = pipeline.set_state(::gst::State::Null);
             error!("Failed setting Pipeline state to Null. Reason: {error:?}");
         }
+        debug!("Pipeline State set to NULL!");
 
         // Remove all Sinks
+        debug!("Removing all Sinks...");
         let pipeline_state = self.pipeline.inner_state_mut();
         let sink_ids = &pipeline_state
             .sinks
@@ -336,6 +344,9 @@ impl Drop for StreamState {
                 warn!("Failed unlinking Sink {sink_id:?} from Pipeline. Reason: {error:?}");
             }
         }
+        debug!("All Sinks Removed!");
+
+        debug!("StreamState Dropped!");
     }
 }
 
