@@ -192,7 +192,18 @@ impl Stream {
 
 impl Drop for Stream {
     fn drop(&mut self) {
+        debug!("Dropping Stream...");
+
         *self.terminated.write().unwrap() = true;
+
+        if !self._watcher_handle.is_finished() {
+            self._watcher_handle.abort();
+            debug!("PieplineWatcher aborted!");
+        } else {
+            debug!("PieplineWatcher nicely finished!");
+        }
+
+        debug!("Stream Dropped!");
     }
 }
 
