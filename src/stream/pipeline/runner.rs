@@ -16,6 +16,21 @@ pub struct PipelineRunner {
     watcher_thread_handle: std::thread::JoinHandle<()>,
 }
 
+impl Drop for PipelineRunner {
+    fn drop(&mut self) {
+        debug!("Dropping PipelineRunner...");
+
+        if !self.watcher_thread_handle.is_finished() {
+            // self.watcher_thread_handle.abort();
+            debug!("THREAD LEAK!!!!!!!!!!!!!");
+        } else {
+            debug!("PieplineRunner nicely finished!");
+        }
+
+        debug!("PipelineRunner Dropped!");
+    }
+}
+
 impl PipelineRunner {
     #[instrument(level = "debug")]
     pub fn try_new(
