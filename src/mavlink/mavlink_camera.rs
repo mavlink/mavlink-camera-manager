@@ -599,8 +599,12 @@ impl MavlinkCamera {
 
 impl Drop for MavlinkCameraHandle {
     fn drop(&mut self) {
+        debug!("Dropping MavlinkCameraHandle...");
+
         self.heartbeat_handle.abort();
         self.messages_handle.abort();
-        super::manager::Manager::drop_id(self.inner.component.component_id)
+        super::manager::Manager::drop_id(self.inner.component.component_id);
+
+        debug!("MavlinkCameraHandle Dropped!");
     }
 }
