@@ -43,6 +43,8 @@ impl PipelineRunner {
 
         let start = Arc::new(Mutex::new(false));
 
+        debug!("Starting PipelineRunner...");
+
         Ok(Self {
             pipeline_weak: pipeline_weak.clone(),
             start: start.clone(),
@@ -52,9 +54,9 @@ impl PipelineRunner {
                     if let Err(error) =
                         PipelineRunner::runner(pipeline_weak, &pipeline_id, start, allow_block)
                     {
-                        error!("PipelineWatcher ended with error: {error}");
+                        error!("PipelineRunner ended with error: {error}");
                     } else {
-                        info!("PipelineWatcher ended normally.");
+                        debug!("PipelineRunner ended normally.");
                     }
                 })
                 .context(format!(
