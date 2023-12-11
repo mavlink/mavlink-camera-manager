@@ -143,21 +143,8 @@ impl SinkInterface for WebRTCSink {
         }
 
         // Syncronize added and linked elements
-        // Workaround to have a better name for the threads created by our WebRTC Sink
         {
-            let pipeline_weak = pipeline.downgrade();
-            let bind_cloned = self.bind.clone();
-            if let Err(sync_err) = {
-                let (tx, rx) = std::sync::mpsc::sync_channel(1);
-                std::thread::Builder::new()
-                    .name(format!("webrtcsink-{}", bind_cloned.session_id))
-                    .spawn(move || {
-                        tx.send(pipeline_weak.upgrade().unwrap().sync_children_states())
-                            .unwrap();
-                    })
-                    .expect("Failed spawning webrtcsink thread");
-                rx.recv()?
-            } {
+            if let Err(sync_err) = { pipeline.sync_children_states() } {
                 let msg = format!("Failed to synchronize children states: {sync_err:?}");
                 error!(msg);
 
@@ -312,29 +299,15 @@ impl WebRTCSink {
             info!("WebRTCSink's Queue GStreamer element disposed!");
         });
 
-        // Workaround to have a better name for the threads created by the WebRTCBin element
-        let webrtcbin = {
-            let (tx, rx) = std::sync::mpsc::sync_channel(1);
-            std::thread::Builder::new()
-                .name(format!("webrtcbin-{}", bind.session_id))
-                .spawn(move || {
-                    let webrtcbin = gst::ElementFactory::make("webrtcbin")
-                        .property_from_str(
-                            "name",
-                            format!("webrtcbin-{}", bind.session_id).as_str(),
-                        )
-                        .property("async-handling", true)
-                        .property("bundle-policy", gst_webrtc::WebRTCBundlePolicy::MaxBundle) // https://webrtcstandards.info/sdp-bundle/
-                        .property("latency", 0u32)
-                        .property_from_str("stun-server", DEFAULT_STUN_ENDPOINT)
-                        .property_from_str("turn-server", DEFAULT_TURN_ENDPOINT)
-                        .build();
+        let webrtcbin = gst::ElementFactory::make("webrtcbin")
+            .property_from_str("name", format!("webrtcbin-{}", bind.session_id).as_str())
+            // .property("async-handling", true)
+            .property("bundle-policy", gst_webrtc::WebRTCBundlePolicy::MaxBundle) // https://webrtcstandards.info/sdp-bundle/
+            .property("latency", 0u32)
+            .property_from_str("stun-server", DEFAULT_STUN_ENDPOINT)
+            .property_from_str("turn-server", DEFAULT_TURN_ENDPOINT)
+            .build()?;
 
-                    tx.send(webrtcbin).unwrap();
-                })
-                .expect("Failed spawning leak_inside_webrtcbin thread");
-            rx.recv()??
-        };
         webrtcbin.add_weak_ref_notify(|| {
             info!("WebRTCSink's WebRTCBin GStreamer element disposed!");
         });
