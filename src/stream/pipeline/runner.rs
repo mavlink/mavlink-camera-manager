@@ -7,7 +7,7 @@ use crate::stream::gst::utils::wait_for_element_state_async;
 #[derive(Debug)]
 pub struct PipelineRunner {
     start: tokio::sync::mpsc::Sender<()>,
-    watcher_handle: Option<tokio::task::JoinHandle<()>>,
+    handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Drop for PipelineRunner {
@@ -15,7 +15,7 @@ impl Drop for PipelineRunner {
     fn drop(&mut self) {
         debug!("Dropping PipelineRunner...");
 
-        if let Some(handle) = self.watcher_handle.take() {
+        if let Some(handle) = self.handle.take() {
             if !handle.is_finished() {
                 handle.abort();
                 tokio::task::spawn(async move {
@@ -43,14 +43,15 @@ impl PipelineRunner {
 
         let (start_tx, start_rx) = tokio::sync::mpsc::channel(1);
 
-        debug!("Starting PipelineRunner...");
+        debug!("Starting PipelineRunner task...");
 
         Ok(Self {
             start: start_tx,
-            watcher_handle: Some(tokio::spawn(async move {
+            handle: Some(tokio::spawn(async move {
+                debug!("PipelineRunner task started!");
                 match Self::runner(pipeline_weak, pipeline_id, start_rx, allow_block).await {
-                    Ok(_) => debug!("PipelineRunner eneded with no eerrors"),
-                    Err(error) => warn!("Runner ended with error: {error:#?}"),
+                    Ok(_) => debug!("PipelineRunner task eneded with no errors"),
+                    Err(error) => warn!("PipelineRunner task ended with error: {error:#?}"),
                 };
             })),
         })
@@ -70,7 +71,7 @@ impl PipelineRunner {
 
     #[instrument(level = "debug", skip(self))]
     pub fn is_running(&self) -> bool {
-        self.watcher_handle
+        self.handle
             .as_ref()
             .map(|handle| !handle.is_finished())
             .unwrap_or(false)
@@ -174,9 +175,9 @@ impl PipelineRunner {
                 _ = start.recv() => {
                     debug!("PipelineRunner received start command");
 
-                    let Some(pipeline) = pipeline_weak.upgrade() else {
-                        continue;
-                    };
+                    let pipeline = pipeline_weak
+                        .upgrade()
+                        .context("Unable to access the Pipeline from its weak reference")?;
 
                     if pipeline.current_state() != gst::State::Playing {
                         if let Err(error) = pipeline.set_state(gst::State::Playing) {
@@ -222,9 +223,9 @@ impl PipelineRunner {
             if !allow_block {
                 // Restart pipeline if pipeline position do not change,
                 // occur if usb connection is lost and gst do not detect it
-                let Some(pipeline) = pipeline_weak.upgrade() else {
-                    return Err(anyhow!("Failed to access Pipeline"));
-                };
+                let pipeline = pipeline_weak
+                    .upgrade()
+                    .context("Unable to access the Pipeline from its weak reference")?;
 
                 if let Some(position) = pipeline.query_position::<gst::ClockTime>() {
                     previous_position = match previous_position {
