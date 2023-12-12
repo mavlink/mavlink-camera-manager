@@ -37,18 +37,46 @@ pub trait StreamManagementInterface<T> {
 
 #[derive(Debug)]
 pub struct SignallingServer {
-    _handler: tokio::task::JoinHandle<Result<()>>,
+    handle: Option<tokio::task::JoinHandle<()>>,
 }
 
+impl Drop for SignallingServer {
+    #[instrument(level = "debug", skip(self))]
+    fn drop(&mut self) {
+        debug!("Dropping SignallingServer...");
+
+        if let Some(handle) = self.handle.take() {
+            if !handle.is_finished() {
+                handle.abort();
+                tokio::spawn(async move {
+                    let _ = handle.await;
+                    debug!("SignallingServer task aborted");
+                });
+            } else {
+                debug!("SignallingServer task nicely finished!");
+            }
+        }
+
+        debug!("SignallingServer Dropped!");
+    }
+}
 impl Default for SignallingServer {
     #[instrument(level = "debug", fields(endpoint))]
     fn default() -> Self {
         let endpoint = url::Url::parse(DEFAULT_SIGNALLING_ENDPOINT)
             .expect("Wrong default signalling endpoint");
 
-        Self {
-            _handler: tokio::task::spawn(SignallingServer::runner(endpoint)),
-        }
+        debug!("Starting SignallingServer task...");
+
+        let handle = Some(tokio::spawn(async move {
+            debug!("SignallingServer task started!");
+            match SignallingServer::runner(endpoint).await {
+                Ok(()) => debug!("SignallingServer task eneded with no errors"),
+                Err(error) => warn!("SignallingServer task ended with error: {error:#?}"),
+            }
+        }));
+
+        Self { handle }
     }
 }
 
