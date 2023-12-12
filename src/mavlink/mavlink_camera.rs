@@ -16,14 +16,14 @@ use super::manager::Message;
 use super::utils::*;
 
 #[derive(Debug)]
-pub struct MavlinkCameraHandle {
-    inner: Arc<MavlinkCamera>,
+pub struct MavlinkCamera {
+    inner: Arc<MavlinkCameraInner>,
     heartbeat_handle: Option<tokio::task::JoinHandle<()>>,
     messages_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 #[derive(Debug, Clone)]
-struct MavlinkCamera {
+struct MavlinkCameraInner {
     component: MavlinkCameraComponent,
     mavlink_stream_type: mavlink::common::VideoStreamType,
     video_stream_uri: Url,
@@ -31,11 +31,10 @@ struct MavlinkCamera {
     video_source_type: VideoSourceType,
 }
 
-impl MavlinkCameraHandle {
+impl MavlinkCamera {
     #[instrument(level = "debug")]
     pub async fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
-        let inner = Arc::new(MavlinkCamera::try_new(video_and_stream_information)?);
-
+        let inner = Arc::new(MavlinkCameraInner::try_new(video_and_stream_information)?);
         let sender = crate::mavlink::manager::Manager::get_sender();
 
         let heartbeat_handle = Some(tokio::spawn(MavlinkCamera::heartbeat_loop(
@@ -55,7 +54,7 @@ impl MavlinkCameraHandle {
     }
 }
 
-impl MavlinkCamera {
+impl MavlinkCameraInner {
     #[instrument(level = "debug")]
     pub fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
         let video_stream_uri = video_and_stream_information
@@ -116,7 +115,10 @@ impl MavlinkCamera {
 
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip_all, fields(component_id = camera.component.component_id))]
-    pub async fn heartbeat_loop(camera: Arc<MavlinkCamera>, sender: broadcast::Sender<Message>) {
+    pub async fn heartbeat_loop(
+        camera: Arc<MavlinkCameraInner>,
+        sender: broadcast::Sender<Message>,
+    ) {
         let component_id = camera.component.component_id;
         let system_id = camera.component.system_id;
 
@@ -149,7 +151,10 @@ impl MavlinkCamera {
 
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip_all, fields(component_id = camera.component.component_id))]
-    pub async fn messages_loop(camera: Arc<MavlinkCamera>, sender: broadcast::Sender<Message>) {
+    pub async fn messages_loop(
+        camera: Arc<MavlinkCameraInner>,
+        sender: broadcast::Sender<Message>,
+    ) {
         let mut receiver = sender.subscribe();
 
         loop {
@@ -179,7 +184,7 @@ impl MavlinkCamera {
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip(sender, camera), fields(component_id = camera.component.component_id))]
     async fn handle_message(
-        camera: Arc<MavlinkCamera>,
+        camera: Arc<MavlinkCameraInner>,
         sender: broadcast::Sender<Message>,
         header: MavHeader,
         message: MavMessage,
@@ -215,7 +220,7 @@ impl MavlinkCamera {
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip(sender, camera), fields(component_id = camera.component.component_id))]
     async fn handle_command_long(
-        camera: &MavlinkCamera,
+        camera: &MavlinkCameraInner,
         sender: broadcast::Sender<Message>,
         their_header: &MavHeader,
         data: &mavlink::common::COMMAND_LONG_DATA,
@@ -439,7 +444,7 @@ impl MavlinkCamera {
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip(sender, camera), fields(component_id = camera.component.component_id))]
     async fn handle_param_ext_set(
-        camera: &MavlinkCamera,
+        camera: &MavlinkCameraInner,
         sender: broadcast::Sender<Message>,
         header: &MavHeader,
         data: &mavlink::common::PARAM_EXT_SET_DATA,
@@ -500,7 +505,7 @@ impl MavlinkCamera {
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip(sender, camera), fields(component_id = camera.component.component_id))]
     async fn handle_param_ext_request_read(
-        camera: &MavlinkCamera,
+        camera: &MavlinkCameraInner,
         sender: broadcast::Sender<Message>,
         header: &MavHeader,
         data: &mavlink::common::PARAM_EXT_REQUEST_READ_DATA,
@@ -551,7 +556,7 @@ impl MavlinkCamera {
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip(sender, camera), fields(component_id = camera.component.component_id))]
     async fn handle_param_ext_request_list(
-        camera: &MavlinkCamera,
+        camera: &MavlinkCameraInner,
         sender: broadcast::Sender<Message>,
         header: &MavHeader,
         data: &mavlink::common::PARAM_EXT_REQUEST_LIST_DATA,
@@ -601,7 +606,7 @@ impl MavlinkCamera {
     }
 }
 
-impl Drop for MavlinkCameraHandle {
+impl Drop for MavlinkCamera {
     #[instrument(level = "debug", skip(self))]
     fn drop(&mut self) {
         debug!("Dropping MavlinkCameraHandle...");

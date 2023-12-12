@@ -42,7 +42,7 @@ pub struct StreamState {
     pub pipeline_id: PeerId,
     pub pipeline: Pipeline,
     pub video_and_stream_information: VideoAndStreamInformation,
-    pub mavlink_camera: Option<MavlinkCameraHandle>,
+    pub mavlink_camera: Option<MavlinkCamera>,
 }
 
 impl Stream {
@@ -303,7 +303,7 @@ impl StreamState {
                 disable_mavlink: false,
             })
         ) {
-            stream.mavlink_camera = MavlinkCameraHandle::try_new(video_and_stream_information)
+            stream.mavlink_camera = MavlinkCamera::try_new(video_and_stream_information)
                 .await
                 .ok();
         }
