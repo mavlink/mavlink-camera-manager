@@ -8,7 +8,7 @@ pub mod webrtc;
 
 use std::sync::{Arc, RwLock};
 
-use crate::mavlink::mavlink_camera::MavlinkCameraHandle;
+use crate::mavlink::mavlink_camera::MavlinkCamera;
 use crate::video::types::{VideoEncodeType, VideoSourceType};
 use crate::video::video_source::cameras_available;
 use crate::video_stream::types::VideoAndStreamInformation;
@@ -57,14 +57,24 @@ impl Stream {
         let terminated = Arc::new(RwLock::new(false));
         let terminated_cloned = terminated.clone();
 
+        debug!("Starting StreamWatcher task...");
+
         let video_and_stream_information_cloned = video_and_stream_information.clone();
         let state_cloned = state.clone();
-        let watcher_handle = Some(tokio::spawn(Self::watcher(
-            video_and_stream_information_cloned,
-            pipeline_id,
-            state_cloned,
-            terminated_cloned,
-        )));
+        let watcher_handle = Some(tokio::spawn(async move {
+            debug!("StreamWatcher task started!");
+            match Self::watcher(
+                video_and_stream_information_cloned,
+                pipeline_id,
+                state_cloned,
+                terminated_cloned,
+            )
+            .await
+            {
+                Ok(_) => debug!("StreamWatcher task eneded with no errors"),
+                Err(error) => warn!("StreamWatcher task ended with error: {error:#?}"),
+            };
+        }));
 
         Ok(Self {
             state,
@@ -79,7 +89,7 @@ impl Stream {
         pipeline_id: uuid::Uuid,
         state: Arc<RwLock<StreamState>>,
         terminated: Arc<RwLock<bool>>,
-    ) {
+    ) -> Result<()> {
         // To reduce log size, each report we raise the report interval geometrically until a maximum value is reached:
         let report_interval_mult = 2;
         let report_interval_max = 60;
@@ -87,8 +97,6 @@ impl Stream {
         let mut last_report_time = std::time::Instant::now();
 
         let mut video_and_stream_information = video_and_stream_information;
-
-        debug!("Starting a PipelineWatcher...");
 
         loop {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -187,7 +195,7 @@ impl Stream {
             }
         }
 
-        debug!("PipelineWatcher Terminated!");
+        Ok(())
     }
 }
 
