@@ -173,13 +173,15 @@ impl MavlinkCameraInner {
         let mut receiver = sender.subscribe();
         use crate::mavlink::mavlink_camera::Message::Received;
 
-        while let Ok(Received((header, message))) = receiver.recv().await {
-            trace!("Message received: {header:?}, {message:?}");
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-            Self::handle_message(camera.clone(), sender.clone(), header, message).await;
+            if let Ok(Received((header, message))) = receiver.recv().await {
+                trace!("Message received: {header:?}, {message:?}");
+
+                Self::handle_message(camera.clone(), sender.clone(), header, message).await;
+            }
         }
-
-        Ok(())
     }
 
     #[instrument(level = "trace", skip(sender))]
