@@ -342,15 +342,15 @@ impl UdpSink {
 
         // Add Sink elements to the Sink's Pipeline
         let elements = [&_proxysrc, &_udpsink];
-        if let Err(add_err) = pipeline.add_many(&elements) {
+        if let Err(add_err) = pipeline.add_many(elements) {
             return Err(anyhow!(
                 "Failed adding UdpSink's elements to Sink Pipeline: {add_err:?}"
             ));
         }
 
         // Link Sink's elements
-        if let Err(link_err) = gst::Element::link_many(&elements) {
-            if let Err(remove_err) = pipeline.remove_many(&elements) {
+        if let Err(link_err) = gst::Element::link_many(elements) {
+            if let Err(remove_err) = pipeline.remove_many(elements) {
                 warn!("Failed removing elements from UdpSink Pipeline: {remove_err:?}")
             };
             return Err(anyhow!("Failed linking UdpSink's elements: {link_err:?}"));
