@@ -34,7 +34,7 @@ use ::gst::prelude::*;
 pub struct Stream {
     state: Arc<RwLock<StreamState>>,
     terminated: Arc<RwLock<bool>>,
-    _watcher_handle: tokio::task::JoinHandle<()>,
+    watcher_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 #[derive(Debug)]
@@ -59,17 +59,17 @@ impl Stream {
 
         let video_and_stream_information_cloned = video_and_stream_information.clone();
         let state_cloned = state.clone();
-        let _watcher_handle = tokio::spawn(Self::watcher(
+        let watcher_handle = Some(tokio::spawn(Self::watcher(
             video_and_stream_information_cloned,
             pipeline_id,
             state_cloned,
             terminated_cloned,
-        ));
+        )));
 
         Ok(Self {
             state,
             terminated,
-            _watcher_handle,
+            watcher_handle,
         })
     }
 
@@ -192,16 +192,22 @@ impl Stream {
 }
 
 impl Drop for Stream {
+    #[instrument(level = "debug", skip(self))]
     fn drop(&mut self) {
         debug!("Dropping Stream...");
 
         *self.terminated.write().unwrap() = true;
 
-        if !self._watcher_handle.is_finished() {
-            self._watcher_handle.abort();
-            debug!("PieplineWatcher aborted!");
-        } else {
-            debug!("PieplineWatcher nicely finished!");
+        if let Some(handle) = self.watcher_handle.take() {
+            if !handle.is_finished() {
+                handle.abort();
+                tokio::spawn(async move {
+                    let _ = handle.await;
+                    debug!("PipelineWatcher task aborted");
+                });
+            } else {
+                debug!("PipelineWatcher task nicely finished!");
+            }
         }
 
         debug!("Stream Dropped!");
@@ -307,7 +313,7 @@ impl StreamState {
 }
 
 impl Drop for StreamState {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(self))]
     fn drop(&mut self) {
         debug!("Dropping StreamState...");
         let pipeline_state = self.pipeline.inner_state_as_ref();
