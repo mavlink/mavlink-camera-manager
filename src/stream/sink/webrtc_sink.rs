@@ -272,6 +272,7 @@ impl SinkInterface for WebRTCSink {
 }
 
 impl Drop for WebRTCSink {
+    #[instrument(level = "debug", skip(self))]
     fn drop(&mut self) {
         info!("Dropping WebRTCSink...");
 
