@@ -41,15 +41,24 @@ pub fn set_plugin_rank(plugin_name: &str, rank: gst::Rank) -> Result<()> {
 }
 
 pub fn wait_for_element_state(
-    element: &gst::Element,
+    element_weak: gst::glib::WeakRef<gst::Pipeline>,
     state: gst::State,
     polling_time_millis: u64,
     timeout_time_secs: u64,
 ) -> Result<()> {
     let mut trials = 1000 * timeout_time_secs / polling_time_millis;
 
-    while element.current_state() != state {
+    loop {
         std::thread::sleep(std::time::Duration::from_millis(polling_time_millis));
+
+        let Some(element) = element_weak.upgrade() else {
+            return Err(anyhow!("Cannot access Element"));
+        };
+
+        if element.current_state() == state {
+            break;
+        }
+
         trials -= 1;
         if trials == 0 {
             return Err(anyhow!(

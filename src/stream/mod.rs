@@ -338,12 +338,9 @@ impl Drop for StreamState {
         if let Err(error) = pipeline.set_state(::gst::State::Null) {
             error!("Failed setting Pipeline state to Null. Reason: {error:?}");
         }
-        if let Err(error) = wait_for_element_state(
-            pipeline.upcast_ref::<::gst::Element>(),
-            ::gst::State::Null,
-            100,
-            10,
-        ) {
+        if let Err(error) =
+            wait_for_element_state(pipeline.downgrade(), ::gst::State::Null, 100, 10)
+        {
             let _ = pipeline.set_state(::gst::State::Null);
             error!("Failed setting Pipeline state to Null. Reason: {error:?}");
         }

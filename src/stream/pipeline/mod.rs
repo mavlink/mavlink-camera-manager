@@ -170,12 +170,9 @@ impl PipelineState {
             }
         }
 
-        if let Err(error) = wait_for_element_state(
-            pipeline.upcast_ref::<gst::Element>(),
-            gst::State::Playing,
-            100,
-            2,
-        ) {
+        if let Err(error) =
+            wait_for_element_state(pipeline.downgrade(), gst::State::Playing, 100, 2)
+        {
             let _ = pipeline.set_state(gst::State::Null);
             sink.unlink(pipeline, pipeline_id)?;
             return Err(anyhow!(
