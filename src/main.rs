@@ -42,7 +42,7 @@ async fn main() -> Result<(), std::io::Error> {
         helper::develop::start_check_tasks_on_webrtc_reconnects();
     }
 
-    stream::webrtc::signalling_server::SignallingServer::default();
+    let _signalling_server = stream::webrtc::signalling_server::SignallingServer::default();
 
     if let Err(error) = stream::manager::start_default().await {
         error!("Failed to start default streams. Reason: {error:?}")
