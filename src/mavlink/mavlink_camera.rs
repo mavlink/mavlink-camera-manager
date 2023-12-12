@@ -37,14 +37,29 @@ impl MavlinkCamera {
         let inner = Arc::new(MavlinkCameraInner::try_new(video_and_stream_information)?);
         let sender = crate::mavlink::manager::Manager::get_sender();
 
-        let heartbeat_handle = Some(tokio::spawn(MavlinkCamera::heartbeat_loop(
-            inner.clone(),
-            sender.clone(),
-        )));
-        let messages_handle = Some(tokio::spawn(MavlinkCamera::messages_loop(
-            inner.clone(),
-            sender.clone(),
-        )));
+        debug!("Starting MAVLink HeartBeat task...");
+
+        let inner_cloned = inner.clone();
+        let sender_cloned = sender.clone();
+        let heartbeat_handle = Some(tokio::spawn(async move {
+            debug!("MAVLink HeartBeat task started!");
+            match MavlinkCameraInner::heartbeat_loop(inner_cloned, sender_cloned).await {
+                Ok(_) => debug!("MAVLink HeartBeat task eneded with no errors"),
+                Err(error) => warn!("MAVLink HeartBeat task ended with error: {error:#?}"),
+            };
+        }));
+
+        debug!("Starting MAVLink Message task...");
+
+        let inner_cloned = inner.clone();
+        let sender_cloned = sender.clone();
+        let messages_handle = Some(tokio::spawn(async move {
+            debug!("MAVLink Message task started!");
+            match MavlinkCameraInner::messages_loop(inner_cloned, sender_cloned).await {
+                Ok(_) => debug!("MAVLink Message task eneded with no errors"),
+                Err(error) => warn!("MAVLink Message task ended with error: {error:#?}"),
+            };
+        }));
 
         Ok(Self {
             inner,
@@ -118,7 +133,7 @@ impl MavlinkCameraInner {
     pub async fn heartbeat_loop(
         camera: Arc<MavlinkCameraInner>,
         sender: broadcast::Sender<Message>,
-    ) {
+    ) -> Result<()> {
         let component_id = camera.component.component_id;
         let system_id = camera.component.system_id;
 
@@ -154,31 +169,17 @@ impl MavlinkCameraInner {
     pub async fn messages_loop(
         camera: Arc<MavlinkCameraInner>,
         sender: broadcast::Sender<Message>,
-    ) {
+    ) -> Result<()> {
         let mut receiver = sender.subscribe();
+        use crate::mavlink::mavlink_camera::Message::Received;
 
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-            // Note: we can't block this task awaiting for recv, otherwise it might not die. This is why we use try_recv here
-            let (header, message) = match receiver.try_recv() {
-                Ok(Message::Received(message)) => message,
-                Err(broadcast::error::TryRecvError::Closed) => {
-                    unreachable!(
-                        "Closed channel: This should never happen, this channel is static!"
-                    );
-                }
-                Ok(Message::ToBeSent(_)) | Err(_) => continue,
-            };
-
+        while let Ok(Received((header, message))) = receiver.recv().await {
             trace!("Message received: {header:?}, {message:?}");
 
-            tokio::spawn(Self::handle_message(
-                camera.clone(),
-                sender.clone(),
-                header,
-                message,
-            ));
+            Self::handle_message(camera.clone(), sender.clone(), header, message).await;
         }
+
+        Ok(())
     }
 
     #[instrument(level = "trace", skip(sender))]
