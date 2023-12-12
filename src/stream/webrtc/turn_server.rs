@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::thread;
 
 use anyhow::{Context, Result};
 use tokio::net::UdpSocket;
@@ -20,7 +19,7 @@ pub const DEFAULT_STUN_ENDPOINT: &str = "stun://0.0.0.0:3478";
 
 #[derive(Debug)]
 pub struct TurnServer {
-    _handle: std::thread::JoinHandle<()>,
+    handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 struct MyAuthHandler {
@@ -49,54 +48,49 @@ impl AuthHandler for MyAuthHandler {
     }
 }
 
+impl Drop for TurnServer {
+    #[instrument(level = "debug", skip(self))]
+    fn drop(&mut self) {
+        debug!("Dropping TurnServer...");
+
+        if let Some(handle) = self.handle.take() {
+            if !handle.is_finished() {
+                handle.abort();
+                tokio::spawn(async move {
+                    let _ = handle.await;
+                    debug!("TurnServer task aborted");
+                });
+            } else {
+                debug!("TurnServer task nicely finished!");
+            }
+        }
+
+        debug!("TurnServer Dropped!");
+    }
+}
+
 impl Default for TurnServer {
     #[instrument(level = "trace")]
     fn default() -> Self {
-        Self {
-            _handle: thread::Builder::new()
-                .name("TurnServer".to_string())
-                .spawn(TurnServer::run_main_loop)
-                .expect("Failed spawning TurnServer thread"),
-        }
+        let endpoint = url::Url::parse(DEFAULT_TURN_ENDPOINT).expect("Failed parsing endpoint");
+        let realm = "some".into();
+
+        debug!("Starting TurnServer task...");
+
+        let handle = Some(tokio::spawn(async move {
+            debug!("TurnServer task Started!");
+            match TurnServer::runner(endpoint.clone(), realm).await {
+                Ok(_) => debug!("TurnServer task eneded with no errors"),
+                Err(error) => warn!("TurnServer task ended with error: {error:#?}"),
+            };
+            debug!("TurnServer task ended");
+        }));
+
+        Self { handle }
     }
 }
 
 impl TurnServer {
-    #[instrument(level = "debug")]
-    fn run_main_loop() {
-        let endpoint =
-            match url::Url::parse(DEFAULT_TURN_ENDPOINT).context("Failed parsing endpoint") {
-                Ok(endpoint) => endpoint,
-                Err(error) => {
-                    error!("Failed parsing TurnServer url {DEFAULT_TURN_ENDPOINT:?}: {error:?}");
-                    return;
-                }
-            };
-        let realm = "some".into();
-
-        debug!("Starting TURN server on {endpoint:?}...");
-
-        tokio::runtime::Builder::new_multi_thread()
-            .on_thread_start(|| debug!("Thread started"))
-            .on_thread_stop(|| debug!("Thread stopped"))
-            .thread_name_fn(|| {
-                static ATOMIC_ID: std::sync::atomic::AtomicUsize =
-                    std::sync::atomic::AtomicUsize::new(0);
-                let id = ATOMIC_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                format!("TurnServer-{id}")
-            })
-            .worker_threads(1)
-            .enable_all()
-            .build()
-            .expect("Failed building a new tokio runtime")
-            .block_on(async move {
-                match TurnServer::runner(endpoint.clone(), realm).await {
-                    Ok(_) => debug!("TURN server successively Started!"),
-                    Err(error) => error!("Error Starting TURN server on {endpoint:?}: {error:?}"),
-                };
-            });
-    }
-
     #[instrument(level = "debug")]
     async fn runner(
         endpoint: url::Url,
