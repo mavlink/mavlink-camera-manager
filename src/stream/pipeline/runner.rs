@@ -1,30 +1,30 @@
-use std::sync::{Arc, Mutex};
-
-use gst::prelude::*;
-
 use anyhow::{anyhow, Context, Result};
-
+use gst::prelude::*;
 use tracing::*;
 
-use crate::stream::gst::utils::wait_for_element_state;
+use crate::stream::gst::utils::wait_for_element_state_async;
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct PipelineRunner {
-    pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
-    start: Arc<Mutex<bool>>,
-    watcher_handle: tokio::task::JoinHandle<()>,
+    start: tokio::sync::mpsc::Sender<()>,
+    watcher_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Drop for PipelineRunner {
+    #[instrument(level = "debug", skip(self))]
     fn drop(&mut self) {
         debug!("Dropping PipelineRunner...");
 
-        if !self.watcher_handle.is_finished() {
-            self.watcher_handle.abort();
-            debug!("THREAD LEAK!!!!!!!!!!!!!");
-        } else {
-            debug!("PieplineRunner nicely finished!");
+        if let Some(handle) = self.watcher_handle.take() {
+            if !handle.is_finished() {
+                handle.abort();
+                tokio::task::spawn(async move {
+                    let _ = handle.await;
+                    debug!("PipelineRunner task aborted");
+                });
+            } else {
+                debug!("PipelineRunner task nicely finished!");
+            }
         }
 
         debug!("PipelineRunner Dropped!");
@@ -41,50 +41,168 @@ impl PipelineRunner {
         let pipeline_weak = pipeline.downgrade();
         let pipeline_id = *pipeline_id;
 
-        let start = Arc::new(Mutex::new(false));
+        let (start_tx, start_rx) = tokio::sync::mpsc::channel(1);
 
         debug!("Starting PipelineRunner...");
 
         Ok(Self {
-            pipeline_weak: pipeline_weak.clone(),
-            start: start.clone(),
-            watcher_handle: tokio::task::spawn_blocking(move || {
-                if let Err(error) =
-                    PipelineRunner::runner(pipeline_weak, &pipeline_id, start, allow_block)
-                {
-                    error!("PipelineRunner ended with error: {error}");
-                } else {
-                    debug!("PipelineRunner ended normally.");
-                }
-            }),
+            start: start_tx,
+            watcher_handle: Some(tokio::spawn(async move {
+                match Self::runner(pipeline_weak, pipeline_id, start_rx, allow_block).await {
+                    Ok(_) => debug!("PipelineRunner eneded with no eerrors"),
+                    Err(error) => warn!("Runner ended with error: {error:#?}"),
+                };
+            })),
         })
     }
 
     #[instrument(level = "debug", skip(self))]
     pub fn start(&self) -> Result<()> {
-        *self.start.lock().unwrap() = true;
+        let start = self.start.clone();
+        tokio::spawn(async move {
+            if let Err(error) = start.send(()).await {
+                error!("Failed to send start command: {error:#?}");
+            }
+        });
+
         Ok(())
     }
 
     #[instrument(level = "debug", skip(self))]
     pub fn is_running(&self) -> bool {
-        !self.watcher_handle.is_finished()
+        self.watcher_handle
+            .as_ref()
+            .map(|handle| !handle.is_finished())
+            .unwrap_or(false)
     }
 
-    #[instrument(level = "debug")]
-    fn runner(
+    #[instrument(level = "debug", skip(pipeline_weak, pipeline_id, start))]
+    async fn runner(
         pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
-        pipeline_id: &uuid::Uuid,
-        start: Arc<Mutex<bool>>,
+        pipeline_id: uuid::Uuid,
+        mut start: tokio::sync::mpsc::Receiver<()>,
         allow_block: bool,
     ) -> Result<()> {
-        let pipeline = pipeline_weak
-            .upgrade()
-            .context("Unable to access the Pipeline from its weak reference")?;
+        let (finsh_tx, mut finish) = tokio::sync::mpsc::channel(1);
+        let _bus_watcher = {
+            let pipeline = pipeline_weak
+                .upgrade()
+                .context("Unable to access the Pipeline from its weak reference")?;
 
-        let bus = pipeline
-            .bus()
-            .context("Unable to access the pipeline bus")?;
+            let bus = pipeline
+                .bus()
+                .context("Unable to access the pipeline bus")?;
+
+            /* Iterate messages on the bus until an error or EOS occurs,
+             * although in this example the only error we'll hopefully
+             * get is if the user closes the output window */
+            let pipeline_weak = pipeline_weak.clone();
+            bus.add_watch(move |_bus, message| {
+                use gst::MessageView;
+
+                let Some(pipeline) = pipeline_weak.upgrade() else {
+                    return gst::glib::ControlFlow::Break;
+                };
+
+                match message.view() {
+                    MessageView::Eos(eos) => {
+                        pipeline.debug_to_dot_file_with_ts(
+                            gst::DebugGraphDetails::all(),
+                            format!("pipeline-{pipeline_id}-eos"),
+                        );
+                        let msg = format!("Received EndOfStream: {eos:?}");
+                        let _ = finsh_tx.blocking_send(msg);
+                        return gst::glib::ControlFlow::Break;
+                    }
+                    MessageView::Error(error) => {
+                        let msg = format!(
+                            "Error from {:?}: {} ({:?})",
+                            error.src().map(|s| s.path_string()),
+                            error.error(),
+                            error.debug()
+                        );
+                        pipeline.debug_to_dot_file_with_ts(
+                            gst::DebugGraphDetails::all(),
+                            format!("pipeline-{pipeline_id}-error"),
+                        );
+                        let _ = finsh_tx.blocking_send(msg);
+                        return gst::glib::ControlFlow::Break;
+                    }
+                    MessageView::StateChanged(state) => {
+                        pipeline.debug_to_dot_file_with_ts(
+                            gst::DebugGraphDetails::all(),
+                            format!(
+                                "pipeline-{pipeline_id}-{:?}-to-{:?}",
+                                state.old(),
+                                state.current()
+                            ),
+                        );
+
+                        trace!(
+                            "State changed from {:?}: {:?} to {:?} ({:?})",
+                            state.src().map(|s| s.path_string()),
+                            state.old(),
+                            state.current(),
+                            state.pending()
+                        );
+                    }
+                    MessageView::Latency(latency) => {
+                        let current_latency = pipeline.latency();
+                        trace!("Latency message: {latency:?}. Current latency: {latency:?}",);
+                        if let Err(error) = pipeline.recalculate_latency() {
+                            warn!("Failed to recalculate latency: {error:?}");
+                        }
+                        let new_latency = pipeline.latency();
+                        if current_latency != new_latency {
+                            debug!("New latency: {new_latency:?}");
+                        }
+                    }
+                    other_message => trace!("{other_message:#?}"),
+                }
+
+                gst::glib::ControlFlow::Continue
+            })?
+        };
+
+        // Wait until start receive the signal
+        debug!("PipelineRunner waiting for start command...");
+        loop {
+            tokio::select! {
+                reason = finish.recv() => {
+                    return Err(anyhow!("{reason:?}"));
+                }
+                _ = start.recv() => {
+                    debug!("PipelineRunner received start command");
+
+                    let Some(pipeline) = pipeline_weak.upgrade() else {
+                        continue;
+                    };
+
+                    if pipeline.current_state() != gst::State::Playing {
+                        if let Err(error) = pipeline.set_state(gst::State::Playing) {
+                            error!(
+                                "Failed setting Pipeline {} to Playing state. Reason: {:?}",
+                                pipeline_id, error
+                            );
+                            continue;
+                        }
+                    }
+
+                    if let Err(error) = wait_for_element_state_async(
+                        pipeline_weak.clone(),
+                        gst::State::Playing,
+                        100,
+                        5,
+                    ).await {
+                        return Err(anyhow!("{error:?}"));
+                    }
+
+                    break;
+                }
+            };
+        }
+
+        debug!("PipelineRunner started!");
 
         // Check if we need to break external loop.
         // Some cameras have a duplicated timestamp when starting.
@@ -94,120 +212,44 @@ impl PipelineRunner {
         let mut lost_timestamps: usize = 0;
         let max_lost_timestamps: usize = 30;
 
-        'outer: loop {
-            std::thread::sleep(std::time::Duration::from_millis(100));
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-            // Wait the signal to start
-            if *start.lock().unwrap() && pipeline.current_state() != gst::State::Playing {
-                if let Err(error) = pipeline.set_state(gst::State::Playing) {
-                    return Err(anyhow!(
-                        "Failed setting Pipeline {pipeline_id} to Playing state. Reason: {error:?}"
-                    ));
-                }
-                if let Err(error) = wait_for_element_state(
-                    pipeline.upcast_ref::<gst::Element>(),
-                    gst::State::Playing,
-                    100,
-                    5,
-                ) {
-                    return Err(anyhow!(
-                        "Failed setting Pipeline {pipeline_id} to Playing state. Reason: {error:?}"
-                    ));
-                }
+            if let Some(reason) = finish.recv().await {
+                return Err(anyhow!("{reason:?}"));
             }
 
-            'inner: loop {
+            if !allow_block {
                 // Restart pipeline if pipeline position do not change,
                 // occur if usb connection is lost and gst do not detect it
-                if !allow_block {
-                    if let Some(position) = pipeline.query_position::<gst::ClockTime>() {
-                        previous_position = match previous_position {
-                            Some(current_previous_position) => {
-                                if current_previous_position.nseconds() != 0
-                                    && current_previous_position == position
-                                {
-                                    lost_timestamps += 1;
-                                } else if lost_timestamps > 0 {
-                                    // We are back in track, erase lost timestamps
-                                    warn!("Position normalized, but didn't changed for {lost_timestamps} timestamps");
-                                    lost_timestamps = 0;
-                                }
-                                if lost_timestamps == 1 {
-                                    warn!("Position did not change for {lost_timestamps}, silently tracking until {max_lost_timestamps}, then the stream will be recreated");
-                                } else if lost_timestamps > max_lost_timestamps {
-                                    return Err(anyhow!("Pipeline lost too many timestamps (max. was {max_lost_timestamps})"));
-                                }
+                let Some(pipeline) = pipeline_weak.upgrade() else {
+                    return Err(anyhow!("Failed to access Pipeline"));
+                };
 
-                                Some(position)
+                if let Some(position) = pipeline.query_position::<gst::ClockTime>() {
+                    previous_position = match previous_position {
+                        Some(current_previous_position) => {
+                            if current_previous_position.nseconds() != 0
+                                && current_previous_position == position
+                            {
+                                lost_timestamps += 1;
+                            } else if lost_timestamps > 0 {
+                                // We are back in track, erase lost timestamps
+                                warn!("Position normalized, but didn't changed for {lost_timestamps} timestamps");
+                                lost_timestamps = 0;
                             }
-                            None => Some(position),
+                            if lost_timestamps == 1 {
+                                warn!("Position did not change for {lost_timestamps}, silently tracking until {max_lost_timestamps}, then the stream will be recreated");
+                            } else if lost_timestamps > max_lost_timestamps {
+                                return Err(anyhow!("Pipeline lost too many timestamps (max. was {max_lost_timestamps})"));
+                            }
+
+                            Some(position)
                         }
+                        None => Some(position),
                     }
-                }
-
-                /* Iterate messages on the bus until an error or EOS occurs,
-                 * although in this example the only error we'll hopefully
-                 * get is if the user closes the output window */
-                while let Some(msg) = bus.timed_pop(gst::ClockTime::from_mseconds(100)) {
-                    use gst::MessageView;
-
-                    match msg.view() {
-                        MessageView::Eos(eos) => {
-                            debug!("Received EndOfStream: {eos:?}");
-                            pipeline.debug_to_dot_file_with_ts(
-                                gst::DebugGraphDetails::all(),
-                                format!("pipeline-{pipeline_id}-eos"),
-                            );
-                            break 'outer;
-                        }
-                        MessageView::Error(error) => {
-                            error!(
-                                "Error from {:?}: {} ({:?})",
-                                error.src().map(|s| s.path_string()),
-                                error.error(),
-                                error.debug()
-                            );
-                            pipeline.debug_to_dot_file_with_ts(
-                                gst::DebugGraphDetails::all(),
-                                format!("pipeline-{pipeline_id}-error"),
-                            );
-                            break 'inner;
-                        }
-                        MessageView::StateChanged(state) => {
-                            pipeline.debug_to_dot_file_with_ts(
-                                gst::DebugGraphDetails::all(),
-                                format!(
-                                    "pipeline-{pipeline_id}-{:?}-to-{:?}",
-                                    state.old(),
-                                    state.current()
-                                ),
-                            );
-
-                            trace!(
-                                "State changed from {:?}: {:?} to {:?} ({:?})",
-                                state.src().map(|s| s.path_string()),
-                                state.old(),
-                                state.current(),
-                                state.pending()
-                            );
-                        }
-                        MessageView::Latency(latency) => {
-                            let current_latency = pipeline.latency();
-                            trace!("Latency message: {latency:?}. Current latency: {latency:?}",);
-                            if let Err(error) = pipeline.recalculate_latency() {
-                                warn!("Failed to recalculate latency: {error:?}");
-                            }
-                            let new_latency = pipeline.latency();
-                            if current_latency != new_latency {
-                                debug!("New latency: {new_latency:?}");
-                            }
-                        }
-                        other_message => trace!("{other_message:#?}"),
-                    };
                 }
             }
         }
-
-        Ok(())
     }
 }
