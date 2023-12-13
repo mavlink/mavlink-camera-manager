@@ -264,9 +264,13 @@ impl SinkInterface for UdpSink {
 
     #[instrument(level = "debug", skip(self))]
     fn eos(&self) {
-        if let Err(error) = self.pipeline.post_message(gst::message::Eos::new()) {
-            error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
-        }
+        let pipeline_weak = self.pipeline.downgrade();
+        std::thread::spawn(move || {
+            let pipeline = pipeline_weak.upgrade().unwrap();
+            if let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
+                error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
+            }
+        });
     }
 }
 
@@ -338,15 +342,15 @@ impl UdpSink {
 
         // Add Sink elements to the Sink's Pipeline
         let elements = [&_proxysrc, &_udpsink];
-        if let Err(add_err) = pipeline.add_many(&elements) {
+        if let Err(add_err) = pipeline.add_many(elements) {
             return Err(anyhow!(
                 "Failed adding UdpSink's elements to Sink Pipeline: {add_err:?}"
             ));
         }
 
         // Link Sink's elements
-        if let Err(link_err) = gst::Element::link_many(&elements) {
-            if let Err(remove_err) = pipeline.remove_many(&elements) {
+        if let Err(link_err) = gst::Element::link_many(elements) {
+            if let Err(remove_err) = pipeline.remove_many(elements) {
                 warn!("Failed removing elements from UdpSink Pipeline: {remove_err:?}")
             };
             return Err(anyhow!("Failed linking UdpSink's elements: {link_err:?}"));

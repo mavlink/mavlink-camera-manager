@@ -1,3 +1,6 @@
 /src/html/vue.js
 /target
 **/*.rs.bk
+logs
+.vscode
+dots

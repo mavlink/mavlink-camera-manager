@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, RwLock, TryLockError},
 };
 
 use crate::{
@@ -18,7 +18,6 @@ use anyhow::{anyhow, Context, Error, Result};
 
 type ClonableResult<T> = Result<T, Arc<Error>>;
 
-use async_std::stream::StreamExt;
 use cached::proc_macro::cached;
 use tracing::*;
 
@@ -39,7 +38,7 @@ pub struct Manager {
 }
 
 lazy_static! {
-    static ref MANAGER: Arc<Mutex<Manager>> = Default::default();
+    static ref MANAGER: Arc<RwLock<Manager>> = Default::default();
 }
 
 impl Manager {
@@ -48,7 +47,7 @@ impl Manager {
         let video_and_stream_informations = self
             .streams
             .values()
-            .filter_map(|stream| match stream.state.lock() {
+            .filter_map(|stream| match stream.state.read() {
                 Ok(guard) => Some(guard.video_and_stream_information.clone()),
                 Err(error) => {
                     error!("Failed locking a Mutex. Reason: {error}");
@@ -92,7 +91,7 @@ pub fn remove_all_streams() -> Result<()> {
     let keys = {
         let mut ids = vec![];
 
-        match MANAGER.lock() {
+        match MANAGER.read() {
             Ok(guard) => guard,
             Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
         }
@@ -115,7 +114,7 @@ pub fn remove_all_streams() -> Result<()> {
 }
 
 #[instrument(level = "debug")]
-pub fn start_default() -> Result<()> {
+pub async fn start_default() -> Result<()> {
     // Get streams from default settings, this needs to be done first because
     // remove_all_streams will modify the settings as its using the stream manager
     // to remove the streams, and the stream manager will save the state after
@@ -138,9 +137,9 @@ pub fn start_default() -> Result<()> {
     debug!("Streams: {streams:#?}");
 
     for stream in streams {
-        add_stream_and_start(stream).unwrap_or_else(|error| {
+        if let Err(error) = add_stream_and_start(stream).await {
             error!("Not possible to start stream: {error:?}");
-        });
+        };
     }
 
     Ok(())
@@ -202,13 +201,13 @@ pub fn streams() -> Result<Vec<StreamStatus>> {
 #[instrument(level = "debug")]
 #[cached(time = 1)]
 pub fn get_first_sdp_from_source(source: String) -> ClonableResult<gst_sdp::SDPMessage> {
-    let manager = match MANAGER.lock() {
+    let manager = match MANAGER.read() {
         Ok(guard) => guard,
         Err(error) => return Err(Arc::new(anyhow!("Failed locking a Mutex. Reason: {error}"))),
     };
 
     let Some(result) = manager.streams.values().find_map(|stream| {
-        let state = match stream.state.lock() {
+        let state = match stream.state.read() {
             Ok(guard) => guard,
             Err(error) => {
                 error!("Failed locking a Mutex. Reason: {error}");
@@ -247,126 +246,94 @@ pub async fn get_jpeg_thumbnail_from_source(
     quality: u8,
     target_height: Option<u32>,
 ) -> Option<ClonableResult<Vec<u8>>> {
-    // Tokio runtime create workers within OS threads. These workers receive tasks to run.
-    // Tokio runtime uses a non-preemptive task manager, so it can only switch tasks when
-    // they yield, which might happen in the .await parts of the code, or when the task
-    // finishes.
-    // When a blocking task is running, all other tasks in the same pool will also block.
-    // If one of the other tasks happens to have acquired a Mutex (like here, most of our
-    // endpoints asks for something that depends on the MANAGER, which sits behind a
-    // Mutex), then all subsequent tasks waiting for that Mutex to be available will
-    // be blocked until that blocking task finishes. This is not the case here, but by
-    // chance it can also be the case of that blocking task be waiting for that same
-    // MANAGER Mutex, and then it will be a deadlock. Another deadlock could happen if
-    // the blocking task never finishes. To solve this, a naive approach would be to
-    // use a timeout, but this timeout could be running in the same blocked pool, and
-    // therefore, also be blocked.
-    // A reliable solution is to spawn a new OS thread for each blocking task, and
-    // if we need async, we just create another single-threaded tokio runtime.
-    // Differently from using Tokio's spawn_blocking (plus block_on to use async), this
-    // method will garantee that every request will not interfer with other running tasks,
-    // as those dealing with Mutexes, or other requests of the same nature. The drawnback
-    // is to have the overhead of a new OS thread plus a new Tokio runtime for each request
-    // of this kind.
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    std::thread::spawn(move || {
-        tokio::runtime::Builder::new_current_thread()
-            .on_thread_start(|| debug!("Thread started"))
-            .on_thread_stop(|| debug!("Thread stopped"))
-            .thread_name_fn(|| {
-                static ATOMIC_ID: std::sync::atomic::AtomicUsize =
-                    std::sync::atomic::AtomicUsize::new(0);
-                let id = ATOMIC_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                format!("Thumbnailer-{id}")
-            })
-            .enable_time()
-            .build()
-            .expect("Failed building a new tokio runtime")
-            .block_on(async move {
-                let res = async move {
-                    let manager = match MANAGER.lock() {
-                        Ok(guard) => guard,
-                        Err(error) => {
-                            return Some(Err(Arc::new(anyhow!(
-                                "Failed locking a Mutex. Reason: {error}"
-                            ))))
-                        }
-                    };
-                    let Some(stream) = manager.streams.values().find(|stream| {
-                        let state = match stream.state.lock() {
-                            Ok(guard) => guard,
-                            Err(error) => {
-                                error!("Failed locking a Mutex. Reason: {error}");
-                                return false;
-                            }
-                        };
+    // TODO: Fix this: both `manager` and `state` are locked during the `make_jpeg_thumbnail_from_last_frame`'s await
+    let manager = loop {
+        match MANAGER.try_read() {
+            Ok(guard) => break guard,
+            Err(TryLockError::WouldBlock) => {
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                continue;
+            }
+            _ => {
+                error!("Failed accessing MANAGER");
+                return None;
+            }
+        }
+    };
 
-                        state
-                            .video_and_stream_information
-                            .video_source
-                            .inner()
-                            .source_string()
-                            == source
-                    }) else {
+    let mut streams = manager.streams.values();
+    let state = loop {
+        if let Some(stream) = streams.next() {
+            let state = loop {
+                match stream.state.try_read() {
+                    Ok(guard) => break guard,
+                    Err(TryLockError::WouldBlock) => {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        continue;
+                    }
+                    _ => {
+                        error!("Failed accessing stream state");
                         return None;
-                    };
-
-                    let state = match stream.state.lock() {
-                        Ok(guard) => guard,
-                        Err(error) => {
-                            error!("Failed locking a Mutex. Reason: {error}");
-                            return None;
-                        }
-                    };
-
-                    let mut sinks =
-                        futures::stream::iter(state.pipeline.inner_state_as_ref().sinks.values());
-                    let Some(Sink::Image(image_sink)) =
-                        sinks.find(|sink| matches!(sink, Sink::Image(_))).await
-                    else {
-                        return None;
-                    };
-
-                    Some(
-                        image_sink
-                            .make_jpeg_thumbnail_from_last_frame(quality, target_height)
-                            .await
-                            .map_err(Arc::new),
-                    )
+                    }
                 }
-                .await;
+            };
 
-                let _ = tx.send(res);
-            });
-    });
+            if state
+                .video_and_stream_information
+                .video_source
+                .inner()
+                .source_string()
+                == source
+            {
+                break state;
+            }
+        } else {
+            return None;
+        }
+    };
 
-    match rx.await {
-        Ok(res) => res,
-        Err(error) => Some(Err(Arc::new(anyhow!(error.to_string())))),
-    }
+    let Some(Sink::Image(image_sink)) = state
+        .pipeline
+        .inner_state_as_ref()
+        .sinks
+        .values()
+        .find(|sink| matches!(sink, Sink::Image(_)))
+    else {
+        return None;
+    };
+
+    Some(
+        image_sink
+            .make_jpeg_thumbnail_from_last_frame(quality, target_height)
+            .await
+            .map_err(Arc::new),
+    )
 }
 
 #[instrument(level = "debug")]
-pub fn add_stream_and_start(video_and_stream_information: VideoAndStreamInformation) -> Result<()> {
-    let manager = match MANAGER.lock() {
-        Ok(guard) => guard,
-        Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-    };
-    for stream in manager.streams.values() {
-        let state = match stream.state.lock() {
+pub async fn add_stream_and_start(
+    video_and_stream_information: VideoAndStreamInformation,
+) -> Result<()> {
+    {
+        let manager = match MANAGER.read() {
             Ok(guard) => guard,
-            Err(error) => {
-                return Err(anyhow!("Failed locking a Mutex. Reason: {error}"));
-            }
+            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
         };
+        for stream in manager.streams.values() {
+            let state = match stream.state.read() {
+                Ok(guard) => guard,
+                Err(error) => {
+                    return Err(anyhow!("Failed locking a Mutex. Reason: {error}"));
+                }
+            };
 
-        state
-            .video_and_stream_information
-            .conflicts_with(&video_and_stream_information)?;
+            state
+                .video_and_stream_information
+                .conflicts_with(&video_and_stream_information)?;
+        }
     }
-    drop(manager);
 
-    let stream = Stream::try_new(&video_and_stream_information)?;
+    let stream = Stream::try_new(&video_and_stream_information).await?;
     Manager::add_stream(stream)?;
 
     Ok(())
@@ -374,12 +341,12 @@ pub fn add_stream_and_start(video_and_stream_information: VideoAndStreamInformat
 
 #[instrument(level = "debug")]
 pub fn remove_stream_by_name(stream_name: &str) -> Result<()> {
-    let manager = match MANAGER.lock() {
+    let manager = match MANAGER.read() {
         Ok(guard) => guard,
         Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
     };
     if let Some(stream_id) = &manager.streams.iter().find_map(|(id, stream)| {
-        let state = match stream.state.lock() {
+        let state = match stream.state.read() {
             Ok(guard) => guard,
             Err(error) => {
                 error!("Failed locking a Mutex. Reason: {error}");
@@ -406,7 +373,7 @@ impl WebRTCSessionManagementInterface for Manager {
         bind: &webrtc::signalling_protocol::BindOffer,
         sender: tokio::sync::mpsc::UnboundedSender<Result<webrtc::signalling_protocol::Message>>,
     ) -> Result<webrtc::signalling_protocol::SessionId> {
-        let mut manager = match MANAGER.lock() {
+        let mut manager = match MANAGER.write() {
             Ok(guard) => guard,
             Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
         };
@@ -426,7 +393,7 @@ impl WebRTCSessionManagementInterface for Manager {
         };
 
         let sink = Sink::WebRTC(WebRTCSink::try_new(bind, sender)?);
-        stream.state.lock().unwrap().pipeline.add_sink(sink)?;
+        stream.state.write().unwrap().pipeline.add_sink(sink)?;
         debug!("WebRTC session created: {session_id:?}");
 
         Ok(session_id)
@@ -437,7 +404,7 @@ impl WebRTCSessionManagementInterface for Manager {
         bind: &webrtc::signalling_protocol::BindAnswer,
         _reason: String,
     ) -> Result<()> {
-        let mut manager = match MANAGER.lock() {
+        let mut manager = match MANAGER.write() {
             Ok(guard) => guard,
             Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
         };
@@ -447,14 +414,13 @@ impl WebRTCSessionManagementInterface for Manager {
             .get_mut(&bind.producer_id)
             .context(format!("Producer {:?} not found", bind.producer_id))?;
 
-        let mut state = match stream.state.lock() {
+        let mut state = match stream.state.write() {
             Ok(guard) => guard,
             Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
         };
 
         state
             .pipeline
-            .inner_state_mut()
             .remove_sink(&bind.session_id)
             .context(format!("Cannot remove session {:?}", bind.session_id))?;
 
@@ -468,7 +434,7 @@ impl WebRTCSessionManagementInterface for Manager {
         bind: &webrtc::signalling_protocol::BindAnswer,
         sdp: &webrtc::signalling_protocol::RTCSessionDescription,
     ) -> Result<()> {
-        let manager = match MANAGER.lock() {
+        let manager = match MANAGER.read() {
             Ok(guard) => guard,
             Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
         };
@@ -478,7 +444,7 @@ impl WebRTCSessionManagementInterface for Manager {
             .get(&bind.producer_id)
             .context(format!("Producer {:?} not found", bind.producer_id))?
             .state
-            .lock()
+            .read()
         {
             Ok(guard) => guard,
             Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
@@ -519,7 +485,7 @@ impl WebRTCSessionManagementInterface for Manager {
         sdp_m_line_index: u32,
         candidate: &str,
     ) -> Result<()> {
-        let manager = match MANAGER.lock() {
+        let manager = match MANAGER.read() {
             Ok(guard) => guard,
             Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
         };
@@ -529,7 +495,7 @@ impl WebRTCSessionManagementInterface for Manager {
             .get(&bind.producer_id)
             .context(format!("Producer {:?} not found", bind.producer_id))?
             .state
-            .lock()
+            .read()
         {
             Ok(guard) => guard,
             Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
@@ -557,12 +523,12 @@ impl WebRTCSessionManagementInterface for Manager {
 impl StreamManagementInterface<StreamStatus> for Manager {
     #[instrument(level = "debug")]
     fn add_stream(stream: Stream) -> Result<()> {
-        let mut manager = match MANAGER.lock() {
+        let mut manager = match MANAGER.write() {
             Ok(guard) => guard,
             Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
         };
 
-        let stream_id = match stream.state.lock() {
+        let stream_id = match stream.state.read() {
             Ok(guard) => guard.pipeline_id,
             Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
         };
@@ -570,14 +536,14 @@ impl StreamManagementInterface<StreamStatus> for Manager {
         if manager.streams.insert(stream_id, stream).is_some() {
             return Err(anyhow!("Failed adding stream {stream_id:?}"));
         }
-        manager.update_settings();
+        // manager.update_settings();
 
         Ok(())
     }
 
     #[instrument(level = "debug")]
     fn remove_stream(stream_id: &webrtc::signalling_protocol::PeerId) -> Result<()> {
-        let mut manager = match MANAGER.lock() {
+        let mut manager = match MANAGER.write() {
             Ok(guard) => guard,
             Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
         };
@@ -600,7 +566,7 @@ impl StreamManagementInterface<StreamStatus> for Manager {
 
     #[instrument(level = "debug")]
     fn streams_information() -> Result<Vec<StreamStatus>> {
-        let manager = match MANAGER.lock() {
+        let manager = match MANAGER.read() {
             Ok(guard) => guard,
             Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
         };
@@ -609,7 +575,7 @@ impl StreamManagementInterface<StreamStatus> for Manager {
             .streams
             .values()
             .filter_map(|stream| {
-                let state = match stream.state.lock() {
+                let state = match stream.state.read() {
                     Ok(guard) => guard,
                     Err(error) => {
                         error!("Failed locking a Mutex. Reason: {error}");

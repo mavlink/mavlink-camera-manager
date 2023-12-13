@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-use std::thread;
 
 use anyhow::{anyhow, Context, Result};
 use futures::{SinkExt, StreamExt};
@@ -38,44 +37,50 @@ pub trait StreamManagementInterface<T> {
 
 #[derive(Debug)]
 pub struct SignallingServer {
-    _server_thread_handle: std::thread::JoinHandle<()>,
+    handle: Option<tokio::task::JoinHandle<()>>,
 }
 
-impl Default for SignallingServer {
-    #[instrument(level = "trace")]
-    fn default() -> Self {
-        Self {
-            _server_thread_handle: thread::Builder::new()
-                .name("SignallingServer".to_string())
-                .spawn(SignallingServer::run_main_loop)
-                .expect("Failed spawing SignallingServer thread"),
+impl Drop for SignallingServer {
+    #[instrument(level = "debug", skip(self))]
+    fn drop(&mut self) {
+        debug!("Dropping SignallingServer...");
+
+        if let Some(handle) = self.handle.take() {
+            if !handle.is_finished() {
+                handle.abort();
+                tokio::spawn(async move {
+                    let _ = handle.await;
+                    debug!("SignallingServer task aborted");
+                });
+            } else {
+                debug!("SignallingServer task nicely finished!");
+            }
         }
+
+        debug!("SignallingServer Dropped!");
+    }
+}
+impl Default for SignallingServer {
+    #[instrument(level = "debug", fields(endpoint))]
+    fn default() -> Self {
+        let endpoint = url::Url::parse(DEFAULT_SIGNALLING_ENDPOINT)
+            .expect("Wrong default signalling endpoint");
+
+        debug!("Starting SignallingServer task...");
+
+        let handle = Some(tokio::spawn(async move {
+            debug!("SignallingServer task started!");
+            match SignallingServer::runner(endpoint).await {
+                Ok(()) => debug!("SignallingServer task eneded with no errors"),
+                Err(error) => warn!("SignallingServer task ended with error: {error:#?}"),
+            }
+        }));
+
+        Self { handle }
     }
 }
 
 impl SignallingServer {
-    #[instrument(level = "debug", fields(endpoint))]
-    fn run_main_loop() {
-        let endpoint = url::Url::parse(DEFAULT_SIGNALLING_ENDPOINT)
-            .expect("Wrong default signalling endpoint");
-
-        tokio::runtime::Builder::new_multi_thread()
-            .on_thread_start(|| debug!("Thread started"))
-            .on_thread_stop(|| debug!("Thread stopped"))
-            .thread_name_fn(|| {
-                static ATOMIC_ID: std::sync::atomic::AtomicUsize =
-                    std::sync::atomic::AtomicUsize::new(0);
-                let id = ATOMIC_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                format!("Signaller-{id}")
-            })
-            .worker_threads(2)
-            .enable_all()
-            .build()
-            .expect("Failed building a new tokio runtime")
-            .block_on(SignallingServer::runner(endpoint))
-            .expect("Error starting Signalling server");
-    }
-
     #[instrument(level = "debug")]
     async fn runner(endpoint: url::Url) -> Result<()> {
         let host = endpoint
@@ -190,9 +195,7 @@ impl SignallingServer {
             }
         }
 
-        sender
-            .await
-            .context("Signalling sender task ended with an error")?;
+        sender.await?;
 
         debug!("Connection terminated");
 

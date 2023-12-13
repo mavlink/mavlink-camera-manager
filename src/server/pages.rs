@@ -232,7 +232,7 @@ pub fn v4l_post(json: web::Json<V4lControl>) -> HttpResponse {
 pub async fn reset_settings(query: web::Query<ResetSettings>) -> HttpResponse {
     if query.all.unwrap_or_default() {
         settings::manager::reset();
-        if let Err(error) = stream_manager::start_default() {
+        if let Err(error) = stream_manager::start_default().await {
             return HttpResponse::InternalServerError()
                 .content_type("text/plain")
                 .body(format!("{error:#?}"));
@@ -269,7 +269,7 @@ pub async fn streams() -> HttpResponse {
 
 #[api_v2_operation]
 /// Create a video stream
-pub fn streams_post(json: web::Json<PostStream>) -> HttpResponse {
+pub async fn streams_post(json: web::Json<PostStream>) -> HttpResponse {
     let json = json.into_inner();
 
     let video_source = match video_source::get_video_source(&json.source) {
@@ -285,7 +285,9 @@ pub fn streams_post(json: web::Json<PostStream>) -> HttpResponse {
         name: json.name,
         stream_information: json.stream_information,
         video_source,
-    }) {
+    })
+    .await
+    {
         return HttpResponse::NotAcceptable()
             .content_type("text/plain")
             .body(format!("{error:#?}"));

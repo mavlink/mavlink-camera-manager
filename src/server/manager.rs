@@ -27,9 +27,8 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
         App::new()
             // Add debug call for API access
             .wrap_fn(|req, srv| {
-                trace!("{:#?}", &req);
-                let fut = srv.call(req);
-                async { fut.await }
+                trace!("{req:#?}");
+                srv.call(req)
             })
             .wrap(TracingLogger::default())
             .wrap(actix_web::middleware::Logger::default())
@@ -87,6 +86,7 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
     })
     .bind(server_address)
     .expect("Failed starting web API")
+    .workers(1)
     .run()
     .await
 }

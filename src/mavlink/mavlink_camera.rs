@@ -16,15 +16,14 @@ use super::manager::Message;
 use super::utils::*;
 
 #[derive(Debug)]
-pub struct MavlinkCameraHandle {
-    inner: Arc<MavlinkCamera>,
-    _runtime: tokio::runtime::Runtime,
-    heartbeat_handle: tokio::task::JoinHandle<()>,
-    messages_handle: tokio::task::JoinHandle<()>,
+pub struct MavlinkCamera {
+    inner: Arc<MavlinkCameraInner>,
+    heartbeat_handle: Option<tokio::task::JoinHandle<()>>,
+    messages_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 #[derive(Debug, Clone)]
-struct MavlinkCamera {
+struct MavlinkCameraInner {
     component: MavlinkCameraComponent,
     mavlink_stream_type: mavlink::common::VideoStreamType,
     video_stream_uri: Url,
@@ -32,42 +31,45 @@ struct MavlinkCamera {
     video_source_type: VideoSourceType,
 }
 
-impl MavlinkCameraHandle {
+impl MavlinkCamera {
     #[instrument(level = "debug")]
-    pub fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
-        let inner = Arc::new(MavlinkCamera::try_new(video_and_stream_information)?);
-
+    pub async fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
+        let inner = Arc::new(MavlinkCameraInner::try_new(video_and_stream_information)?);
         let sender = crate::mavlink::manager::Manager::get_sender();
 
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .on_thread_start(|| debug!("Thread started"))
-            .on_thread_stop(|| debug!("Thread stopped"))
-            .thread_name_fn(|| {
-                static ATOMIC_ID: std::sync::atomic::AtomicUsize =
-                    std::sync::atomic::AtomicUsize::new(0);
-                let id = ATOMIC_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                format!("MavlinkCamera-{id}")
-            })
-            .worker_threads(2)
-            .enable_all()
-            .build()
-            .expect("Failed building a new tokio runtime");
+        debug!("Starting MAVLink HeartBeat task...");
 
-        let heartbeat_handle =
-            runtime.spawn(MavlinkCamera::heartbeat_loop(inner.clone(), sender.clone()));
-        let messages_handle =
-            runtime.spawn(MavlinkCamera::messages_loop(inner.clone(), sender.clone()));
+        let inner_cloned = inner.clone();
+        let sender_cloned = sender.clone();
+        let heartbeat_handle = Some(tokio::spawn(async move {
+            debug!("MAVLink HeartBeat task started!");
+            match MavlinkCameraInner::heartbeat_loop(inner_cloned, sender_cloned).await {
+                Ok(_) => debug!("MAVLink HeartBeat task eneded with no errors"),
+                Err(error) => warn!("MAVLink HeartBeat task ended with error: {error:#?}"),
+            };
+        }));
+
+        debug!("Starting MAVLink Message task...");
+
+        let inner_cloned = inner.clone();
+        let sender_cloned = sender.clone();
+        let messages_handle = Some(tokio::spawn(async move {
+            debug!("MAVLink Message task started!");
+            match MavlinkCameraInner::messages_loop(inner_cloned, sender_cloned).await {
+                Ok(_) => debug!("MAVLink Message task eneded with no errors"),
+                Err(error) => warn!("MAVLink Message task ended with error: {error:#?}"),
+            };
+        }));
 
         Ok(Self {
             inner,
-            _runtime: runtime,
             heartbeat_handle,
             messages_handle,
         })
     }
 }
 
-impl MavlinkCamera {
+impl MavlinkCameraInner {
     #[instrument(level = "debug")]
     pub fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
         let video_stream_uri = video_and_stream_information
@@ -128,7 +130,10 @@ impl MavlinkCamera {
 
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip_all, fields(component_id = camera.component.component_id))]
-    pub async fn heartbeat_loop(camera: Arc<MavlinkCamera>, sender: broadcast::Sender<Message>) {
+    pub async fn heartbeat_loop(
+        camera: Arc<MavlinkCameraInner>,
+        sender: broadcast::Sender<Message>,
+    ) -> Result<()> {
         let component_id = camera.component.component_id;
         let system_id = camera.component.system_id;
 
@@ -161,35 +166,28 @@ impl MavlinkCamera {
 
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip_all, fields(component_id = camera.component.component_id))]
-    pub async fn messages_loop(camera: Arc<MavlinkCamera>, sender: broadcast::Sender<Message>) {
+    pub async fn messages_loop(
+        camera: Arc<MavlinkCameraInner>,
+        sender: broadcast::Sender<Message>,
+    ) -> Result<()> {
         let mut receiver = sender.subscribe();
+        use crate::mavlink::mavlink_camera::Message::Received;
 
         loop {
-            let (header, message) = match receiver.recv().await {
-                Ok(Message::Received(message)) => message,
-                Err(broadcast::error::RecvError::Closed) => {
-                    unreachable!(
-                        "Closed channel: This should never happen, this channel is static!"
-                    );
-                }
-                Ok(Message::ToBeSent(_)) | Err(broadcast::error::RecvError::Lagged(_)) => continue,
-            };
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-            trace!("Message received: {header:?}, {message:?}");
+            if let Ok(Received((header, message))) = receiver.recv().await {
+                trace!("Message received: {header:?}, {message:?}");
 
-            tokio::spawn(Self::handle_message(
-                camera.clone(),
-                sender.clone(),
-                header,
-                message,
-            ));
+                Self::handle_message(camera.clone(), sender.clone(), header, message).await;
+            }
         }
     }
 
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip(sender, camera), fields(component_id = camera.component.component_id))]
     async fn handle_message(
-        camera: Arc<MavlinkCamera>,
+        camera: Arc<MavlinkCameraInner>,
         sender: broadcast::Sender<Message>,
         header: MavHeader,
         message: MavMessage,
@@ -225,7 +223,7 @@ impl MavlinkCamera {
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip(sender, camera), fields(component_id = camera.component.component_id))]
     async fn handle_command_long(
-        camera: &MavlinkCamera,
+        camera: &MavlinkCameraInner,
         sender: broadcast::Sender<Message>,
         their_header: &MavHeader,
         data: &mavlink::common::COMMAND_LONG_DATA,
@@ -449,7 +447,7 @@ impl MavlinkCamera {
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip(sender, camera), fields(component_id = camera.component.component_id))]
     async fn handle_param_ext_set(
-        camera: &MavlinkCamera,
+        camera: &MavlinkCameraInner,
         sender: broadcast::Sender<Message>,
         header: &MavHeader,
         data: &mavlink::common::PARAM_EXT_SET_DATA,
@@ -510,7 +508,7 @@ impl MavlinkCamera {
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip(sender, camera), fields(component_id = camera.component.component_id))]
     async fn handle_param_ext_request_read(
-        camera: &MavlinkCamera,
+        camera: &MavlinkCameraInner,
         sender: broadcast::Sender<Message>,
         header: &MavHeader,
         data: &mavlink::common::PARAM_EXT_REQUEST_READ_DATA,
@@ -561,7 +559,7 @@ impl MavlinkCamera {
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip(sender, camera), fields(component_id = camera.component.component_id))]
     async fn handle_param_ext_request_list(
-        camera: &MavlinkCamera,
+        camera: &MavlinkCameraInner,
         sender: broadcast::Sender<Message>,
         header: &MavHeader,
         data: &mavlink::common::PARAM_EXT_REQUEST_LIST_DATA,
@@ -611,10 +609,37 @@ impl MavlinkCamera {
     }
 }
 
-impl Drop for MavlinkCameraHandle {
+impl Drop for MavlinkCamera {
+    #[instrument(level = "debug", skip(self))]
     fn drop(&mut self) {
-        self.heartbeat_handle.abort();
-        self.messages_handle.abort();
-        super::manager::Manager::drop_id(self.inner.component.component_id)
+        debug!("Dropping MavlinkCameraHandle...");
+
+        if let Some(handle) = self.heartbeat_handle.take() {
+            if !handle.is_finished() {
+                handle.abort();
+                tokio::spawn(async move {
+                    let _ = handle.await;
+                    debug!("Mavlink Heartbeat task aborted");
+                });
+            } else {
+                debug!("Mavlink Heartbeat task nicely finished!");
+            }
+        }
+
+        if let Some(handle) = self.messages_handle.take() {
+            if !handle.is_finished() {
+                handle.abort();
+                tokio::spawn(async move {
+                    let _ = handle.await;
+                    debug!("Mavlink Message task aborted");
+                });
+            } else {
+                debug!("Mavlink Message task nicely finished!");
+            }
+        }
+
+        super::manager::Manager::drop_id(self.inner.component.component_id);
+
+        debug!("MavlinkCameraHandle Dropped!");
     }
 }

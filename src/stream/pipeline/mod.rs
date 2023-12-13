@@ -119,6 +119,11 @@ impl PipelineState {
             }
         }?;
 
+        let clock = gst::SystemClock::obtain();
+        if let Err(error) = pipeline.set_clock(Some(&clock)) {
+            error!("Failed setting clock to Pipeline: {error:#?}");
+        }
+
         let sink_tee = pipeline
             .by_name(&format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"))
             .context(format!("no element named {PIPELINE_SINK_TEE_NAME:#?}"))?;
@@ -165,12 +170,9 @@ impl PipelineState {
             }
         }
 
-        if let Err(error) = wait_for_element_state(
-            pipeline.upcast_ref::<gst::Element>(),
-            gst::State::Playing,
-            100,
-            2,
-        ) {
+        if let Err(error) =
+            wait_for_element_state(pipeline.downgrade(), gst::State::Playing, 100, 2)
+        {
             let _ = pipeline.set_state(gst::State::Null);
             sink.unlink(pipeline, pipeline_id)?;
             return Err(anyhow!(
@@ -201,7 +203,7 @@ impl PipelineState {
         // added.
         if !matches!(&sink, Sink::Image(..)) {
             if let Err(error) = pipeline.sync_children_states() {
-                error!("Failed to syncronize children states. Reason: {:?}", error);
+                error!("Failed to syncronize children states. Reason: {error:?}");
             }
         }
 

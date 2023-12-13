@@ -1,3 +1,5 @@
+use std::sync::{Arc, RwLock};
+
 use anyhow::{anyhow, Context, Result};
 use tokio::sync::mpsc::{self, WeakUnboundedSender};
 use tracing::*;
@@ -31,6 +33,7 @@ pub struct WebRTCSink {
     /// MPSC channel's sender to send messages to the respective Websocket from Signaller server. Err can be used to end the WebSocket.
     pub sender: mpsc::UnboundedSender<Result<Message>>,
     pub end_reason: Option<String>,
+    signal_handlers: Vec<gst::glib::SignalHandlerId>,
 }
 impl SinkInterface for WebRTCSink {
     #[instrument(level = "debug", skip(self))]
@@ -40,16 +43,13 @@ impl SinkInterface for WebRTCSink {
         pipeline_id: &uuid::Uuid,
         tee_src_pad: gst::Pad,
     ) -> Result<()> {
-        // Configure transceiver https://gstreamer.freedesktop.org/documentation/webrtclib/gstwebrtc-transceiver.html?gi-language=c
-        let webrtcbin_sink_pad = &self.webrtcbin_sink_pad;
-        let transceiver =
-            webrtcbin_sink_pad.property::<gst_webrtc::WebRTCRTPTransceiver>("transceiver");
-        transceiver.set_property(
-            "direction",
-            gst_webrtc::WebRTCRTPTransceiverDirection::Sendonly,
-        );
-        transceiver.set_property("do-nack", false);
-        transceiver.set_property("fec-type", gst_webrtc::WebRTCFECType::None);
+        // Configure transceiver
+        configure_transceiver(
+            &self
+                .webrtcbin_sink_pad
+                .property::<gst_webrtc::WebRTCRTPTransceiver>("transceiver"),
+            self.bind.clone(),
+        )?;
 
         // Link
         let sink_id = &self.get_id();
@@ -143,80 +143,35 @@ impl SinkInterface for WebRTCSink {
         }
 
         // Syncronize added and linked elements
-        if let Err(sync_err) = pipeline.sync_children_states() {
-            let msg = format!("Failed to synchronize children states: {sync_err:?}");
-            error!(msg);
+        {
+            if let Err(sync_err) = { pipeline.sync_children_states() } {
+                let msg = format!("Failed to synchronize children states: {sync_err:?}");
+                error!(msg);
 
-            if let Err(unlink_err) = queue_src_pad.unlink(&self.webrtcbin_sink_pad) {
-                error!(
+                if let Err(unlink_err) = queue_src_pad.unlink(&self.webrtcbin_sink_pad) {
+                    error!(
                     "Failed to unlink Queue's src pad from WebRTCBin's sink pad: {unlink_err:?}"
                 );
-            }
+                }
 
-            if let Err(unlink_err) = tee_src_pad.unlink(queue_sink_pad) {
-                error!("Failed to unlink Tee's src pad from Queue's sink pad: {unlink_err:?}");
-            }
+                if let Err(unlink_err) = tee_src_pad.unlink(queue_sink_pad) {
+                    error!("Failed to unlink Tee's src pad from Queue's sink pad: {unlink_err:?}");
+                }
 
-            if let Some(parent) = tee_src_pad.parent_element() {
-                parent.release_request_pad(tee_src_pad)
-            }
+                if let Some(parent) = tee_src_pad.parent_element() {
+                    parent.release_request_pad(tee_src_pad)
+                }
 
-            if let Err(remove_err) = pipeline.remove_many(elements) {
-                error!("Failed to remove elements from pipeline: {remove_err:?}");
-            }
+                if let Err(remove_err) = pipeline.remove_many(elements) {
+                    error!("Failed to remove elements from pipeline: {remove_err:?}");
+                }
 
-            return Err(anyhow!(msg));
+                return Err(anyhow!(msg));
+            }
         }
 
         // Unblock data to go through this added Tee src pad
         tee_src_pad.remove_probe(tee_src_pad_data_blocker);
-
-        // TODO: Workaround for bug: https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad/-/issues/1539
-        // Reasoning: because we are not receiving the Disconnected | Failed | Closed of WebRTCPeerConnectionState,
-        // we are directly connecting to webrtcbin->transceiver->transport->connect_state_notify:
-        // When the bug is solved, we should remove this code and use WebRTCPeerConnectionState instead.
-        let webrtcbin_clone = self.webrtcbin.downgrade();
-        let bind_clone = self.bind.clone();
-        let rtp_sender = transceiver
-            .sender()
-            .context("Failed getting transceiver's RTP sender element")?;
-        rtp_sender.connect_notify(Some("transport"), move |rtp_sender, _pspec| {
-            let transport = rtp_sender.property::<gst_webrtc::WebRTCDTLSTransport>("transport");
-
-            let bind = bind_clone.clone();
-            let webrtcbin_clone = webrtcbin_clone.clone();
-            transport.connect_state_notify(move |transport| {
-                use gst_webrtc::WebRTCDTLSTransportState::*;
-
-                let bind = bind.clone();
-                let state = transport.state();
-                debug!("DTLS Transport Connection changed to {state:#?}");
-                match state {
-                    Failed | Closed => {
-                        if let Some(webrtcbin) = webrtcbin_clone.upgrade() {
-                            if webrtcbin.current_state() == gst::State::Playing {
-                                // Closing the channel from the same thread can cause a deadlock, so we are calling it from another one:
-                                std::thread::Builder::new()
-                                    .name("DTLSKiller".to_string())
-                                    .spawn(move || {
-                                        let bind = &bind.clone();
-                                        if let Err(error) = Manager::remove_session(
-                                            bind,
-                                            format!(
-                                                "DTLS Transport connection closed with: {state:?}"
-                                            ),
-                                        ) {
-                                            error!("Failed removing session {bind:#?}: {error}");
-                                        }
-                                    })
-                                    .expect("Failed spawing DTLSKiller thread");
-                            }
-                        }
-                    }
-                    _ => (),
-                }
-            });
-        });
 
         Ok(())
     }
@@ -249,6 +204,19 @@ impl SinkInterface for WebRTCSink {
             warn!("Failed unlinking WebRTC's Queue element from Tee's src pad: {unlink_err:?}");
         }
         drop(queue_sink_pad);
+
+        // Unlink Queue's src pad with WebRTCBin's sink pad
+        let queue_src_pad = self
+            .queue
+            .static_pad("src")
+            .expect("No src pad found on Queue");
+        if let Err(unlink_err) = queue_src_pad.unlink(&self.webrtcbin_sink_pad) {
+            warn!("Failed to unlink Queue's src pad from WebRTCBin's sink pad: {unlink_err:?}");
+        }
+        drop(queue_src_pad);
+
+        // Release WebRTC's sink pad
+        self.webrtcbin.release_request_pad(&self.webrtcbin_sink_pad);
 
         // Release Tee's src pad
         if let Some(parent) = tee_src_pad.parent_element() {
@@ -293,9 +261,27 @@ impl SinkInterface for WebRTCSink {
 
     #[instrument(level = "debug", skip(self))]
     fn eos(&self) {
-        if let Err(error) = self.webrtcbin.post_message(gst::message::Eos::new()) {
-            error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
+        let webrtcbin_weak = self.webrtcbin.downgrade();
+        std::thread::spawn(move || {
+            let webrtcbin = webrtcbin_weak.upgrade().unwrap();
+            if let Err(error) = webrtcbin.post_message(gst::message::Eos::new()) {
+                error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
+            }
+        });
+    }
+}
+
+impl Drop for WebRTCSink {
+    #[instrument(level = "debug", skip(self))]
+    fn drop(&mut self) {
+        info!("Dropping WebRTCSink...");
+
+        while let Some(handler_id) = self.signal_handlers.pop() {
+            info!("Disconnecting signal handler {handler_id:?} from WebRTCBin");
+            self.webrtcbin.disconnect(handler_id);
         }
+
+        info!("WebRTCSink dropped!");
     }
 }
 
@@ -310,30 +296,22 @@ impl WebRTCSink {
             .property("flush-on-eos", true)
             .property("max-size-buffers", 0u32) // Disable buffers
             .build()?;
+        queue.add_weak_ref_notify(|| {
+            info!("WebRTCSink's Queue GStreamer element disposed!");
+        });
 
-        // Workaround to have a better name for the threads created by the WebRTCBin element
-        let webrtcbin = {
-            let (tx, rx) = std::sync::mpsc::sync_channel(1);
-            std::thread::Builder::new()
-                .name("WebRTCBin".to_string())
-                .spawn(move || {
-                    let webrtcbin = gst::ElementFactory::make("webrtcbin")
-                        .property_from_str(
-                            "name",
-                            format!("webrtcbin-{}", bind.session_id).as_str(),
-                        )
-                        .property("async-handling", true)
-                        .property("bundle-policy", gst_webrtc::WebRTCBundlePolicy::MaxBundle) // https://webrtcstandards.info/sdp-bundle/
-                        .property("latency", 0u32)
-                        .property_from_str("stun-server", DEFAULT_STUN_ENDPOINT)
-                        .property_from_str("turn-server", DEFAULT_TURN_ENDPOINT)
-                        .build();
+        let webrtcbin = gst::ElementFactory::make("webrtcbin")
+            .property_from_str("name", format!("webrtcbin-{}", bind.session_id).as_str())
+            // .property("async-handling", true)
+            .property("bundle-policy", gst_webrtc::WebRTCBundlePolicy::MaxBundle) // https://webrtcstandards.info/sdp-bundle/
+            .property("latency", 0u32)
+            .property_from_str("stun-server", DEFAULT_STUN_ENDPOINT)
+            .property_from_str("turn-server", DEFAULT_TURN_ENDPOINT)
+            .build()?;
 
-                    tx.send(webrtcbin).unwrap();
-                })
-                .expect("Failed spawning leak_inside_webrtcbin thread");
-            rx.recv()??
-        };
+        webrtcbin.add_weak_ref_notify(|| {
+            info!("WebRTCSink's WebRTCBin GStreamer element disposed!");
+        });
 
         let webrtcbin_sink_pad = webrtcbin
             .request_pad_simple("sink_%u")
@@ -341,7 +319,7 @@ impl WebRTCSink {
 
         sender.send(Ok(Message::from(Answer::StartSession(bind.clone()))))?;
 
-        let this = WebRTCSink {
+        let mut this = WebRTCSink {
             queue,
             webrtcbin,
             webrtcbin_sink_pad,
@@ -349,12 +327,33 @@ impl WebRTCSink {
             bind,
             sender,
             end_reason: None,
+            signal_handlers: vec![],
         };
+
+        // Connect to on-new-transceiver to configure the transceiver
+        let weak_proxy = this.downgrade();
+        this.signal_handlers.push(this.webrtcbin.connect(
+            "on-new-transceiver",
+            false,
+            move |values| {
+                let transceiver = values[1]
+                    .get::<gst_webrtc::WebRTCRTPTransceiver>()
+                    .expect("Invalid argument");
+
+                if let Err(error) = configure_transceiver(&transceiver, weak_proxy.bind.clone()) {
+                    error!("Failed to configure new WebRTC RTP Transceiver: {error:?}");
+                }
+
+                None
+            },
+        ));
 
         // Connect to on-negotiation-needed to handle sending an Offer
         let weak_proxy = this.downgrade();
-        this.webrtcbin
-            .connect("on-negotiation-needed", false, move |values| {
+        this.signal_handlers.push(this.webrtcbin.connect(
+            "on-negotiation-needed",
+            false,
+            move |values| {
                 let element = values[0].get::<gst::Element>().expect("Invalid argument");
 
                 if let Err(error) = weak_proxy.on_negotiation_needed(&element) {
@@ -362,12 +361,15 @@ impl WebRTCSink {
                 }
 
                 None
-            });
+            },
+        ));
 
         // Whenever there is a new ICE candidate, send it to the peer
         let weak_proxy = this.downgrade();
-        this.webrtcbin
-            .connect("on-ice-candidate", false, move |values| {
+        this.signal_handlers.push(this.webrtcbin.connect(
+            "on-ice-candidate",
+            false,
+            move |values| {
                 let element = values[0].get::<gst::Element>().expect("Invalid argument");
                 let sdp_m_line_index = values[1].get::<u32>().expect("Invalid argument");
                 let candidate = values[2].get::<String>().expect("Invalid argument");
@@ -379,40 +381,47 @@ impl WebRTCSink {
                 }
 
                 None
-            });
+            },
+        ));
 
         let weak_proxy = this.downgrade();
-        this.webrtcbin
-            .connect_notify(Some("connection-state"), move |webrtcbin, _pspec| {
+        this.signal_handlers.push(this.webrtcbin.connect_notify(
+            Some("connection-state"),
+            move |webrtcbin, _pspec| {
                 let state =
                     webrtcbin.property::<gst_webrtc::WebRTCPeerConnectionState>("connection-state");
 
                 if let Err(error) = weak_proxy.on_connection_state_change(webrtcbin, &state) {
                     error!("Failed to processing connection-state: {error:?}");
                 }
-            });
+            },
+        ));
 
         let weak_proxy = this.downgrade();
-        this.webrtcbin
-            .connect_notify(Some("ice-connection-state"), move |webrtcbin, _pspec| {
+        this.signal_handlers.push(this.webrtcbin.connect_notify(
+            Some("ice-connection-state"),
+            move |webrtcbin, _pspec| {
                 let state = webrtcbin
                     .property::<gst_webrtc::WebRTCICEConnectionState>("ice-connection-state");
 
                 if let Err(error) = weak_proxy.on_ice_connection_state_change(webrtcbin, &state) {
                     error!("Failed to processing ice-connection-state: {error:?}");
                 }
-            });
+            },
+        ));
 
         let weak_proxy = this.downgrade();
-        this.webrtcbin
-            .connect_notify(Some("ice-gathering-state"), move |webrtcbin, _pspec| {
+        this.signal_handlers.push(this.webrtcbin.connect_notify(
+            Some("ice-gathering-state"),
+            move |webrtcbin, _pspec| {
                 let state = webrtcbin
                     .property::<gst_webrtc::WebRTCICEGatheringState>("ice-gathering-state");
 
                 if let Err(error) = weak_proxy.on_ice_gathering_state_change(webrtcbin, &state) {
                     error!("Failed to processing ice-gathering-state: {error:?}");
                 }
-            });
+            },
+        ));
 
         Ok(this)
     }
@@ -435,6 +444,105 @@ impl WebRTCSink {
         self.downgrade()
             .handle_ice(&self.webrtcbin, sdp_m_line_index, candidate)
     }
+}
+
+/// Configure the transceiver: https://gstreamer.freedesktop.org/documentation/webrtclib/gstwebrtc-transceiver.html?gi-language=c
+fn configure_transceiver(
+    transceiver: &gst_webrtc::WebRTCRTPTransceiver,
+    bind: BindAnswer,
+) -> Result<()> {
+    transceiver.set_property(
+        "direction",
+        gst_webrtc::WebRTCRTPTransceiverDirection::Sendonly,
+    );
+    transceiver.set_property("do-nack", false);
+    transceiver.set_property("fec-type", gst_webrtc::WebRTCFECType::None);
+
+    transceiver.add_weak_ref_notify(|| {
+        info!("Transceriver disposed!");
+    });
+
+    // TODO: Workaround for bug: https://gitlab.freedesktop.org/gstreamer/gst-plugins-bad/-/issues/1539
+    // Reasoning: because we are not receiving the Disconnected | Failed | Closed of WebRTCPeerConnectionState,
+    // we are directly connecting to webrtcbin->transceiver->transport->connect_state_notify:
+    // When the bug is solved, we should remove this code and use WebRTCPeerConnectionState instead.
+    let handler_transceiver_id: Arc<RwLock<Option<gst::glib::SignalHandlerId>>> =
+        Arc::new(RwLock::new(None));
+    let handler_id_connection_changed: Arc<RwLock<Option<gst::glib::SignalHandlerId>>> =
+        Arc::new(RwLock::new(None));
+
+    // let transceiver_weak = transceiver.downgrade();
+    let bind_clone = bind.clone();
+    // let handler_transceiver_id_cloned = handler_transceiver_id.clone();
+    let handler_id_connection_changed_cloned = handler_id_connection_changed.clone();
+
+    handler_transceiver_id.write().unwrap().replace(
+        transceiver
+            .sender()
+            .context("Failed getting transceiver's RTP sender element")?
+            .connect_notify(Some("transport"), move |rtp_sender, _pspec| {
+                let transport = rtp_sender.property::<gst_webrtc::WebRTCDTLSTransport>("transport");
+
+                transport.add_weak_ref_notify(|| {
+                    info!("Transport disposed!");
+                });
+
+                let bind = bind_clone.clone();
+                let handler_id_connection_changed_cloned =
+                    handler_id_connection_changed_cloned.clone();
+                // let transceiver_weak = transceiver_weak.clone();
+                // let handler_transceiver_id_cloned = handler_transceiver_id_cloned.clone();
+
+                handler_id_connection_changed.write().unwrap().replace(
+                    transport.connect_state_notify(move |transport| {
+                        use gst_webrtc::WebRTCDTLSTransportState as State;
+
+                        let bind = bind.clone();
+                        let state = transport.state();
+                        debug!("DTLS Transport Connection changed to {state:#?}");
+                        match state {
+                            State::Failed | State::Closed | State::__Unknown(_) => {
+                                // Closing the channel from the same thread can cause a deadlock, so we are calling it from another one:
+                                std::thread::Builder::new()
+                                    .name("DTLSKiller".to_string())
+                                    .spawn(move || {
+                                        let bind = bind.clone();
+                                        if let Err(error) = Manager::remove_session(
+                                            &bind,
+                                            format!(
+                                                "DTLS Transport connection closed with: {state:?}"
+                                            ),
+                                        ) {
+                                            error!("Failed removing session {bind:#?}: {error}");
+                                        }
+                                    })
+                                    .expect("Failed spawning DTLSKiller thread");
+
+                                if let Some(handler_id_connection_changed) =
+                                    handler_id_connection_changed_cloned.write().unwrap().take()
+                                {
+                                    info!("Disconnecting handler_id_connection_changed");
+                                    transport.disconnect(handler_id_connection_changed);
+                                }
+                            }
+                            _ => (),
+                        }
+                    }),
+                );
+
+                // (mavlink-camera-manager:2690261): GLib-GObject-CRITICAL **: 20:51:34.640: ../glib/gobject/gsignal.c:2777: instance '0x7fa6040072a0' has no handler with id '27'
+                // if let Some(transceiver) = transceiver_weak.upgrade() {
+                //     if let Some(handler_transceiver_id) =
+                //         handler_transceiver_id_cloned.write().unwrap().take()
+                //     {
+                //         info!("Disconnecting handler_transceiver_id");
+                //         transceiver.disconnect(handler_transceiver_id);
+                //     }
+                // }
+            }),
+    );
+
+    Ok(())
 }
 
 impl WebRTCBinInterface for WebRTCSinkWeakProxy {
