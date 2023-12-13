@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock, TryLockError},
 };
 
 use anyhow::{anyhow, Context, Error, Result};
@@ -70,7 +70,7 @@ pub struct ImageSink {
     flat_samples_sender: tokio::sync::broadcast::Sender<ClonableResult<FlatSamples<Vec<u8>>>>,
     pad_blocker: Arc<Mutex<Option<gst::PadProbeId>>>,
     pipeline_runner: PipelineRunner,
-    thumbnails: Arc<Mutex<CachedThumbnails>>,
+    thumbnails: Arc<RwLock<CachedThumbnails>>,
 }
 impl SinkInterface for ImageSink {
     #[instrument(level = "debug", skip(self))]
@@ -571,7 +571,8 @@ impl ImageSink {
     ) -> Result<Vec<u8>> {
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<u8>>>();
         let (quality, target_height) = (settings.quality, settings.target_height);
-        tokio::task::spawn(async move {
+
+        std::thread::spawn(move || {
             // Calculate a target width/height that keeps the display aspect ratio while having
             // a height of the given target_height (eg 240 pixels)
             let display_aspect_ratio = (flat_sample.layout.width as f64
@@ -605,9 +606,15 @@ impl ImageSink {
         let thumbnail = tokio::time::timeout(tokio::time::Duration::from_secs(2), rx).await???;
 
         {
-            let mut thumbnails = match self.thumbnails.lock() {
-                Ok(guard) => guard,
-                Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+            let mut thumbnails = loop {
+                match self.thumbnails.try_write() {
+                    Ok(guard) => break guard,
+                    Err(TryLockError::WouldBlock) => {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        continue;
+                    }
+                    error => return Err(anyhow!("Failed accessing thumbnail: {error:?}")),
+                }
             };
 
             if let Err(error) = thumbnails.try_set(&settings, thumbnail.clone()) {
@@ -631,9 +638,15 @@ impl ImageSink {
 
         // Try to get from cache
         {
-            let thumbnails = match self.thumbnails.lock() {
-                Ok(guard) => guard,
-                Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
+            let thumbnails = loop {
+                match self.thumbnails.try_read() {
+                    Ok(guard) => break guard,
+                    Err(TryLockError::WouldBlock) => {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        continue;
+                    }
+                    error => return Err(anyhow!("Failed accessing thumbnail: {error:?}")),
+                }
             };
 
             if let Some(thumbnail) = thumbnails.try_get(&settings)? {
