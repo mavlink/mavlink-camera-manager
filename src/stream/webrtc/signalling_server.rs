@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 use std::thread;
 
+use crate::cli;
 use anyhow::{anyhow, Context, Result};
 use futures::{SinkExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -12,8 +13,6 @@ use tracing::*;
 use crate::stream::manager::Manager;
 
 use super::signalling_protocol::{self, *};
-
-pub const DEFAULT_SIGNALLING_ENDPOINT: &str = "ws://0.0.0.0:6021";
 
 /// Interface between the session manager and the WebRTC Signalling Server, which should be implemented by both sides to retain all coupling.
 pub trait WebRTCSessionManagementInterface {
@@ -56,7 +55,7 @@ impl Default for SignallingServer {
 impl SignallingServer {
     #[instrument(level = "debug", fields(endpoint))]
     fn run_main_loop() {
-        let endpoint = url::Url::parse(DEFAULT_SIGNALLING_ENDPOINT)
+        let endpoint = url::Url::parse(cli::manager::signalling_server_address().as_str())
             .expect("Wrong default signalling endpoint");
 
         tokio::runtime::Builder::new_multi_thread()
