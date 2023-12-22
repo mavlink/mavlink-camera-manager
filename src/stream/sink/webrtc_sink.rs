@@ -1,8 +1,8 @@
+use crate::cli;
 use anyhow::{anyhow, Context, Result};
+use gst::prelude::*;
 use tokio::sync::mpsc::{self, WeakUnboundedSender};
 use tracing::*;
-
-use gst::prelude::*;
 
 use super::SinkInterface;
 use crate::stream::manager::Manager;
@@ -11,7 +11,6 @@ use crate::stream::webrtc::signalling_protocol::{
     RTCSessionDescription, Sdp,
 };
 use crate::stream::webrtc::signalling_server::WebRTCSessionManagementInterface;
-use crate::stream::webrtc::turn_server::DEFAULT_STUN_ENDPOINT;
 use crate::stream::webrtc::turn_server::DEFAULT_TURN_ENDPOINT;
 use crate::stream::webrtc::webrtcbin_interface::WebRTCBinInterface;
 
@@ -325,7 +324,10 @@ impl WebRTCSink {
                         .property("async-handling", true)
                         .property("bundle-policy", gst_webrtc::WebRTCBundlePolicy::MaxBundle) // https://webrtcstandards.info/sdp-bundle/
                         .property("latency", 0u32)
-                        .property_from_str("stun-server", DEFAULT_STUN_ENDPOINT)
+                        .property_from_str(
+                            "stun-server",
+                            cli::manager::stun_server_address().as_str(),
+                        )
                         .property_from_str("turn-server", DEFAULT_TURN_ENDPOINT)
                         .build();
 
