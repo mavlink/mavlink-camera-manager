@@ -109,6 +109,13 @@ impl Stream {
                 .pipeline_runner
                 .is_running()
             {
+                // First, finish the MAVLink tasks
+                {
+                    if let Some(mavlink) = state.write().unwrap().mavlink_camera.take() {
+                        drop(mavlink);
+                    }
+                }
+
                 // If it's a camera, try to update the device
                 if let VideoSourceType::Local(_) = video_and_stream_information.video_source {
                     let mut streams = vec![video_and_stream_information.clone()];
