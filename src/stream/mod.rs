@@ -188,8 +188,25 @@ impl Stream {
 }
 
 impl Drop for Stream {
+    #[instrument(level = "debug", skip(self))]
     fn drop(&mut self) {
+        debug!("Dropping Stream...");
+
         *self.terminated.write().unwrap() = true;
+
+        if let Some(handle) = self.watcher_handle.take() {
+            if !handle.is_finished() {
+                handle.abort();
+                tokio::spawn(async move {
+                    let _ = handle.await;
+                    debug!("PipelineWatcher task aborted");
+                });
+            } else {
+                debug!("PipelineWatcher task nicely finished!");
+            }
+        }
+
+        debug!("Stream Dropped!");
     }
 }
 
