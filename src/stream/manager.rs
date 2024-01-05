@@ -115,7 +115,7 @@ pub fn remove_all_streams() -> Result<()> {
 }
 
 #[instrument(level = "debug")]
-pub fn start_default() -> Result<()> {
+pub async fn start_default() -> Result<()> {
     // Get streams from default settings, this needs to be done first because
     // remove_all_streams will modify the settings as its using the stream manager
     // to remove the streams, and the stream manager will save the state after
@@ -138,9 +138,9 @@ pub fn start_default() -> Result<()> {
     debug!("Streams: {streams:#?}");
 
     for stream in streams {
-        add_stream_and_start(stream).unwrap_or_else(|error| {
+        if let Err(error) = add_stream_and_start(stream).await {
             error!("Not possible to start stream: {error:?}");
-        });
+        };
     }
 
     Ok(())
@@ -347,26 +347,29 @@ pub async fn get_jpeg_thumbnail_from_source(
 }
 
 #[instrument(level = "debug")]
-pub fn add_stream_and_start(video_and_stream_information: VideoAndStreamInformation) -> Result<()> {
-    let manager = match MANAGER.lock() {
-        Ok(guard) => guard,
-        Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-    };
-    for stream in manager.streams.values() {
-        let state = match stream.state.lock() {
+pub async fn add_stream_and_start(
+    video_and_stream_information: VideoAndStreamInformation,
+) -> Result<()> {
+    {
+        let manager = match MANAGER.read() {
             Ok(guard) => guard,
-            Err(error) => {
-                return Err(anyhow!("Failed locking a Mutex. Reason: {error}"));
-            }
+            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
         };
+        for stream in manager.streams.values() {
+            let state = match stream.state.read() {
+                Ok(guard) => guard,
+                Err(error) => {
+                    return Err(anyhow!("Failed locking a Mutex. Reason: {error}"));
+                }
+            };
 
-        state
-            .video_and_stream_information
-            .conflicts_with(&video_and_stream_information)?;
+            state
+                .video_and_stream_information
+                .conflicts_with(&video_and_stream_information)?;
+        }
     }
-    drop(manager);
 
-    let stream = Stream::try_new(&video_and_stream_information)?;
+    let stream = Stream::try_new(&video_and_stream_information).await?;
     Manager::add_stream(stream)?;
 
     Ok(())
