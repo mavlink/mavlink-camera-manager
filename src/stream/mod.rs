@@ -6,7 +6,7 @@ pub mod sink;
 pub mod types;
 pub mod webrtc;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use crate::mavlink::mavlink_camera::MavlinkCamera;
 use crate::video::types::{VideoEncodeType, VideoSourceType};
@@ -32,8 +32,8 @@ use ::gst::prelude::*;
 
 #[derive(Debug)]
 pub struct Stream {
-    state: Arc<Mutex<StreamState>>,
-    terminated: Arc<Mutex<bool>>,
+    state: Arc<RwLock<StreamState>>,
+    terminated: Arc<RwLock<bool>>,
     _watcher_thread_handle: std::thread::JoinHandle<()>,
 }
 
@@ -50,12 +50,11 @@ impl Stream {
     pub fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
         let pipeline_id = Manager::generate_uuid();
 
-        let state = Arc::new(Mutex::new(StreamState::try_new(
-            video_and_stream_information,
-            &pipeline_id,
-        )?));
+        let state = Arc::new(RwLock::new(
+            StreamState::try_new(video_and_stream_information, &pipeline_id).await?,
+        ));
 
-        let terminated = Arc::new(Mutex::new(false));
+        let terminated = Arc::new(RwLock::new(false));
         let terminated_cloned = terminated.clone();
 
         let video_and_stream_information_cloned = video_and_stream_information.clone();
@@ -85,8 +84,8 @@ impl Stream {
     fn watcher(
         video_and_stream_information: VideoAndStreamInformation,
         pipeline_id: uuid::Uuid,
-        state: Arc<Mutex<StreamState>>,
-        terminated: Arc<Mutex<bool>>,
+        state: Arc<RwLock<StreamState>>,
+        terminated: Arc<RwLock<bool>>,
     ) {
         // To reduce log size, each report we raise the report interval geometrically until a maximum value is reached:
         let report_interval_mult = 2;
@@ -100,8 +99,8 @@ impl Stream {
             std::thread::sleep(std::time::Duration::from_millis(100));
 
             if !state
-                .lock()
-                .unwrap()
+                .read()
+                .map_err(|e| anyhow::Error::msg(e.to_string()))?
                 .pipeline
                 .inner_state_as_ref()
                 .pipeline_runner
@@ -161,7 +160,7 @@ impl Stream {
                 }
 
                 // Try to recreate the stream
-                if let Ok(mut state) = state.lock() {
+                if let Ok(mut state) = state.write() {
                     *state = match StreamState::try_new(&video_and_stream_information, &pipeline_id)
                     {
                         Ok(state) => state,
@@ -174,7 +173,7 @@ impl Stream {
                 }
             }
 
-            if *terminated.lock().unwrap() {
+            if *terminated.read().unwrap() {
                 debug!("Ending stream {pipeline_id:?}.");
                 break;
             }
@@ -184,7 +183,7 @@ impl Stream {
 
 impl Drop for Stream {
     fn drop(&mut self) {
-        *self.terminated.lock().unwrap() = true;
+        *self.terminated.write().unwrap() = true;
     }
 }
 
