@@ -20,7 +20,7 @@ use types::*;
 use webrtc::signalling_protocol::PeerId;
 use webrtc::signalling_server::StreamManagementInterface;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 
 use tracing::*;
 
@@ -34,7 +34,7 @@ use ::gst::prelude::*;
 pub struct Stream {
     state: Arc<RwLock<StreamState>>,
     terminated: Arc<RwLock<bool>>,
-    _watcher_thread_handle: std::thread::JoinHandle<()>,
+    watcher_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 #[derive(Debug)]
@@ -47,7 +47,7 @@ pub struct StreamState {
 
 impl Stream {
     #[instrument(level = "debug")]
-    pub fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
+    pub async fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
         let pipeline_id = Manager::generate_uuid();
 
         let state = Arc::new(RwLock::new(
@@ -57,36 +57,39 @@ impl Stream {
         let terminated = Arc::new(RwLock::new(false));
         let terminated_cloned = terminated.clone();
 
+        debug!("Starting StreamWatcher task...");
+
         let video_and_stream_information_cloned = video_and_stream_information.clone();
         let state_cloned = state.clone();
-        let _watcher_thread_handle = std::thread::Builder::new()
-            .name(format!("Stream-{pipeline_id}"))
-            .spawn(move || {
-                Self::watcher(
-                    video_and_stream_information_cloned,
-                    pipeline_id,
-                    state_cloned,
-                    terminated_cloned,
-                )
-            })
-            .context(format!(
-                "Failed when spawing PipelineRunner thread for Pipeline {pipeline_id:#?}"
-            ))?;
+        let watcher_handle = Some(tokio::spawn(async move {
+            debug!("StreamWatcher task started!");
+            match Self::watcher(
+                video_and_stream_information_cloned,
+                pipeline_id,
+                state_cloned,
+                terminated_cloned,
+            )
+            .await
+            {
+                Ok(_) => debug!("StreamWatcher task eneded with no errors"),
+                Err(error) => warn!("StreamWatcher task ended with error: {error:#?}"),
+            };
+        }));
 
         Ok(Self {
             state,
             terminated,
-            _watcher_thread_handle,
+            watcher_handle,
         })
     }
 
     #[instrument(level = "debug")]
-    fn watcher(
+    async fn watcher(
         video_and_stream_information: VideoAndStreamInformation,
         pipeline_id: uuid::Uuid,
         state: Arc<RwLock<StreamState>>,
         terminated: Arc<RwLock<bool>>,
-    ) {
+    ) -> Result<()> {
         // To reduce log size, each report we raise the report interval geometrically until a maximum value is reached:
         let report_interval_mult = 2;
         let report_interval_max = 60;
@@ -96,7 +99,7 @@ impl Stream {
         let mut video_and_stream_information = video_and_stream_information;
 
         loop {
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
             if !state
                 .read()
@@ -153,7 +156,7 @@ impl Stream {
                                 }
                             }
 
-                            std::thread::sleep(std::time::Duration::from_secs(1));
+                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                             continue;
                         }
                     }
@@ -162,11 +165,12 @@ impl Stream {
                 // Try to recreate the stream
                 if let Ok(mut state) = state.write() {
                     *state = match StreamState::try_new(&video_and_stream_information, &pipeline_id)
+                        .await
                     {
                         Ok(state) => state,
                         Err(error) => {
                             error!("Failed to recreate the stream {pipeline_id:?}: {error:#?}. Trying again in one second...");
-                            std::thread::sleep(std::time::Duration::from_secs(1));
+                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                             continue;
                         }
                     };
@@ -178,6 +182,8 @@ impl Stream {
                 break;
             }
         }
+
+        Ok(())
     }
 }
 
@@ -189,7 +195,7 @@ impl Drop for Stream {
 
 impl StreamState {
     #[instrument(level = "debug")]
-    pub fn try_new(
+    pub async fn try_new(
         video_and_stream_information: &VideoAndStreamInformation,
         pipeline_id: &uuid::Uuid,
     ) -> Result<Self> {
@@ -208,7 +214,9 @@ impl StreamState {
                 thermal: _,
                 disable_mavlink: true,
             }) => None,
-            _ => MavlinkCameraHandle::try_new(video_and_stream_information).ok(),
+            _ => MavlinkCamera::try_new(video_and_stream_information)
+                .await
+                .ok(),
         };
 
         let mut stream = StreamState {
