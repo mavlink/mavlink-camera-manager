@@ -20,7 +20,7 @@ pub struct Manager {
 
 struct Connection {
     address: String,
-    connection: Box<dyn MavConnection<MavMessage> + Sync + Send>,
+    connection: Option<Box<dyn MavConnection<MavMessage> + Sync + Send>>,
     sender: broadcast::Sender<Message>,
 }
 
@@ -36,14 +36,12 @@ impl Default for Manager {
         let address =
             settings::manager::mavlink_endpoint().expect("No configured mavlink endpoint");
 
-        let connection = Connection::connect(&address);
-
         let (sender, _receiver) = broadcast::channel(100);
 
         let this = Self {
             connection: Arc::new(RwLock::new(Connection {
                 address,
-                connection,
+                connection: None,
                 sender,
             })),
             ids: Arc::new(RwLock::new(vec![])),
@@ -78,8 +76,15 @@ impl Manager {
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(10));
 
+                let Ok(inner_guard) = inner.read() else {
+                    break; // Break to trigger reconnection
+                };
+                let Some(mavlink) = inner_guard.connection.as_deref() else {
+                    break; // Break to trigger reconnection
+                };
+
                 // Receive from the Mavlink network
-                let (header, message) = match inner.read().unwrap().connection.recv() {
+                let (header, message) = match mavlink.recv() {
                     Ok(message) => message,
                     Err(error) => {
                         trace!("Failed receiving from mavlink: {error:?}");
@@ -99,9 +104,7 @@ impl Manager {
                 trace!("Message received: {header:?}, {message:?}");
 
                 // Send the received message to the cameras
-                if let Err(error) = inner
-                    .read()
-                    .unwrap()
+                if let Err(error) = inner_guard
                     .sender
                     .send(Message::Received((header, message)))
                 {
@@ -113,7 +116,8 @@ impl Manager {
             // Reconnects
             {
                 let mut inner = inner.write().unwrap();
-                inner.connection = Connection::connect(&inner.address);
+                let address = inner.address.clone();
+                inner.connection.replace(Connection::connect(&address));
             }
 
             std::thread::sleep(std::time::Duration::from_millis(500));
@@ -141,20 +145,28 @@ impl Manager {
                     _ => continue,
                 };
 
+                let Ok(inner_guard) = inner.read() else {
+                    break; // Break to trigger reconnection
+                };
+                let Some(mavlink) = inner_guard.connection.as_deref() else {
+                    break; // Break to trigger reconnection
+                };
+
                 // Send the response from the cameras to the Mavlink network
-                if let Err(error) = inner.read().unwrap().connection.send(&header, &message) {
+                if let Err(error) = mavlink.send(&header, &message) {
                     error!("Failed sending message to Mavlink Connection: {error:?}");
 
                     break; // Break to trigger reconnection
                 }
 
-                trace!("Message sent: {header:?}, {message:?}");
+                debug!("Message sent: {header:?}, {message:?}");
             }
 
             // Reconnects
             {
                 let mut inner = inner.write().unwrap();
-                inner.connection = Connection::connect(&inner.address);
+                let address = inner.address.clone();
+                inner.connection.replace(Connection::connect(&address));
             }
 
             std::thread::sleep(std::time::Duration::from_millis(500));
@@ -213,7 +225,7 @@ impl Connection {
                     return connection;
                 }
                 Err(error) => {
-                    error!("Failed to connect, trying again in one second. Reason: {error:#?}.");
+                    error!("Failed to connect, trying again in one second. Reason: {error:?}.");
                 }
             }
         }
