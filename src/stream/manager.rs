@@ -571,6 +571,8 @@ impl StreamManagementInterface<StreamStatus> for Manager {
         }
         manager.update_settings();
 
+        info!("Stream {stream_id} successfully added!");
+
         Ok(())
     }
 
