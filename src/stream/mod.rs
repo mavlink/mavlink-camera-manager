@@ -162,18 +162,23 @@ impl Stream {
                     }
                 }
 
+                let new_state = match StreamState::try_new(
+                    &video_and_stream_information,
+                    &pipeline_id,
+                )
+                .await
+                {
+                    Ok(state) => state,
+                    Err(error) => {
+                        error!("Failed to recreate the stream {pipeline_id:?}: {error:#?}. Trying again in one second...");
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        continue;
+                    }
+                };
+
                 // Try to recreate the stream
                 if let Ok(mut state) = state.write() {
-                    *state = match StreamState::try_new(&video_and_stream_information, &pipeline_id)
-                        .await
-                    {
-                        Ok(state) => state,
-                        Err(error) => {
-                            error!("Failed to recreate the stream {pipeline_id:?}: {error:#?}. Trying again in one second...");
-                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                            continue;
-                        }
-                    };
+                    *state = new_state
                 }
             }
 
