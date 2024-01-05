@@ -69,3 +69,33 @@ pub fn wait_for_element_state(
 
     Ok(())
 }
+
+pub async fn wait_for_element_state_async(
+    element_weak: gst::glib::WeakRef<gst::Pipeline>,
+    state: gst::State,
+    polling_time_millis: u64,
+    timeout_time_secs: u64,
+) -> Result<()> {
+    let mut trials = 1000 * timeout_time_secs / polling_time_millis;
+
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_millis(polling_time_millis)).await;
+
+        let Some(element) = element_weak.upgrade() else {
+            return Err(anyhow!("Cannot access Element"));
+        };
+
+        if element.current_state() == state {
+            break;
+        }
+
+        trials -= 1;
+        if trials == 0 {
+            return Err(anyhow!(
+                "set state timed-out ({timeout_time_secs:?} seconds)"
+            ));
+        }
+    }
+
+    Ok(())
+}
