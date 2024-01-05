@@ -144,11 +144,6 @@ impl SinkInterface for UdpSink {
             return Err(anyhow!(msg));
         }
 
-        // Syncronize SinkPipeline
-        if let Err(sync_err) = self.pipeline.sync_children_states() {
-            error!("Failed to syncronize children states: {sync_err:?}");
-        }
-
         // Unblock data to go through this added Tee src pad
         tee_src_pad.remove_probe(tee_src_pad_data_blocker);
 
