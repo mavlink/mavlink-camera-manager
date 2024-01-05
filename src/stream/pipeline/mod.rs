@@ -213,15 +213,16 @@ impl PipelineState {
     #[instrument(level = "info", skip(self))]
     pub fn remove_sink(&mut self, sink_id: &uuid::Uuid) -> Result<()> {
         let pipeline_id = &self.pipeline_id;
-        let sink = self.sinks.remove(sink_id).context(format!(
-            "Failed to remove sink {sink_id} from Sinks of the Pipeline {pipeline_id}"
-        ))?;
 
         let pipeline = &self.pipeline;
         pipeline.debug_to_dot_file_with_ts(
             gst::DebugGraphDetails::all(),
             format!("pipeline-{pipeline_id}-sink-{sink_id}-before-removing"),
         );
+
+        let sink = self.sinks.remove(sink_id).context(format!(
+            "Failed to remove sink {sink_id} from Sinks of the Pipeline {pipeline_id}"
+        ))?;
 
         // Terminate the Sink
         sink.eos();
