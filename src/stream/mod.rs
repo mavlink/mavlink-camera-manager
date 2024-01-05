@@ -8,7 +8,7 @@ pub mod webrtc;
 
 use std::sync::{Arc, Mutex};
 
-use crate::mavlink::mavlink_camera::MavlinkCameraHandle;
+use crate::mavlink::mavlink_camera::MavlinkCamera;
 use crate::video::types::{VideoEncodeType, VideoSourceType};
 use crate::video::video_source::cameras_available;
 use crate::video_stream::types::VideoAndStreamInformation;
@@ -42,7 +42,7 @@ pub struct StreamState {
     pub pipeline_id: PeerId,
     pub pipeline: Pipeline,
     pub video_and_stream_information: VideoAndStreamInformation,
-    pub mavlink_camera: Option<MavlinkCameraHandle>,
+    pub mavlink_camera: Option<MavlinkCamera>,
 }
 
 impl Stream {
