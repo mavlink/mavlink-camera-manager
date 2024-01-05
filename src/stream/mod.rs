@@ -243,63 +243,65 @@ impl StreamState {
             mavlink_camera,
         };
 
-        match &video_and_stream_information.video_source {
-            VideoSourceType::Redirect(_) => return Ok(stream), // Do not add any Sink if it's a redirect Pipeline
-            VideoSourceType::Gst(_) | VideoSourceType::Local(_) => (),
-        }
+        // Do not add any Sink if it's a redirect Pipeline
+        if !matches!(
+            &video_and_stream_information.video_source,
+            VideoSourceType::Redirect(_)
+        ) {
+            let endpoints = &video_and_stream_information.stream_information.endpoints;
 
-        let endpoints = &video_and_stream_information.stream_information.endpoints;
+            // Disable concurrent RTSP and UDP sinks creation, as it is failing.
+            if endpoints.iter().any(|endpoint| endpoint.scheme() == "udp")
+                && endpoints.iter().any(|endpoint| endpoint.scheme() == "rtsp")
+            {
+                return Err(anyhow!(
+                    "UDP endpoints won't work together with RTSP endpoints. You need to choose one. This is a (temporary) software limitation, if this is a feature you need, please, contact us."
+                ));
+            }
 
-        // Disable concurrent RTSP and UDP sinks creation, as it is failing.
-        if endpoints.iter().any(|endpoint| endpoint.scheme() == "udp")
-            && endpoints.iter().any(|endpoint| endpoint.scheme() == "rtsp")
-        {
-            return Err(anyhow!(
-                "UDP endpoints won't work together with RTSP endpoints. You need to choose one. This is a (temporary) software limitation, if this is a feature you need, please, contact us."
-            ));
-        }
+            if endpoints.iter().any(|endpoint| endpoint.scheme() == "udp") {
+                if let Err(reason) =
+                    create_udp_sink(Manager::generate_uuid(), video_and_stream_information)
+                        .and_then(|sink| stream.pipeline.add_sink(sink))
+                {
+                    return Err(anyhow!(
+                        "Failed to add Sink of type UDP to the Pipeline. Reason: {reason}"
+                    ));
+                }
+            }
 
-        if endpoints.iter().any(|endpoint| endpoint.scheme() == "udp") {
+            if endpoints.iter().any(|endpoint| endpoint.scheme() == "rtsp") {
+                if let Err(reason) =
+                    create_rtsp_sink(Manager::generate_uuid(), video_and_stream_information)
+                        .and_then(|sink| stream.pipeline.add_sink(sink))
+                {
+                    return Err(anyhow!(
+                        "Failed to add Sink of type RTSP to the Pipeline. Reason: {reason}"
+                    ));
+                }
+            }
+
             if let Err(reason) =
-                create_udp_sink(Manager::generate_uuid(), video_and_stream_information)
+                create_image_sink(Manager::generate_uuid(), video_and_stream_information)
                     .and_then(|sink| stream.pipeline.add_sink(sink))
             {
                 return Err(anyhow!(
-                    "Failed to add Sink of type UDP to the Pipeline. Reason: {reason}"
+                    "Failed to add Sink of type Image to the Pipeline. Reason: {reason}"
                 ));
             }
-        }
 
-        if endpoints.iter().any(|endpoint| endpoint.scheme() == "rtsp") {
-            if let Err(reason) =
-                create_rtsp_sink(Manager::generate_uuid(), video_and_stream_information)
-                    .and_then(|sink| stream.pipeline.add_sink(sink))
-            {
-                return Err(anyhow!(
-                    "Failed to add Sink of type RTSP to the Pipeline. Reason: {reason}"
-                ));
+            // Start the pipeline. This will automatically start sinks with linked proxy-isolated pipelines
+            stream
+                .pipeline
+                .inner_state_as_ref()
+                .pipeline_runner
+                .start()?;
+
+            // Start all the sinks
+            for sink in stream.pipeline.inner_state_mut().sinks.values() {
+                sink.start()?
             }
         }
-
-        if let Err(reason) =
-            create_image_sink(Manager::generate_uuid(), video_and_stream_information)
-                .and_then(|sink| stream.pipeline.add_sink(sink))
-        {
-            return Err(anyhow!(
-                "Failed to add Sink of type Image to the Pipeline. Reason: {reason}"
-            ));
-        }
-
-        // Start the pipeline. This will automatically start sinks with linked proxy-isolated pipelines
-        stream
-            .pipeline
-            .inner_state_as_ref()
-            .pipeline_runner
-            .start()?;
-
-        // Start all the sinks
-        for sink in stream.pipeline.inner_state_mut().sinks.values() {
-            sink.start()?
         }
 
         Ok(stream)
