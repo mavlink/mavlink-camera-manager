@@ -3,7 +3,7 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use tracing::*;
 
 use crate::cli;
@@ -34,7 +34,7 @@ struct Manager {
 }
 
 lazy_static! {
-    static ref MANAGER: Arc<Mutex<Manager>> = Arc::new(Mutex::new(Manager { content: None }));
+    static ref MANAGER: Arc<RwLock<Manager>> = Arc::new(RwLock::new(Manager { content: None }));
 }
 
 impl Default for SettingsStruct {
@@ -101,7 +101,7 @@ impl Manager {
 // Init settings manager with the desired settings file,
 // will be created if does not exist
 pub fn init(file_name: Option<&str>) {
-    let mut manager = MANAGER.lock().unwrap();
+    let mut manager = MANAGER.write().unwrap();
     let file_name = file_name.unwrap_or("settings.json");
     manager.content = Some(Manager::with(file_name));
 }
@@ -153,7 +153,7 @@ fn save_settings_to_file(file_name: &str, content: &SettingsStruct) -> Result<()
 
 // Save the latest state of the settings
 pub fn save() {
-    let manager = MANAGER.lock().unwrap();
+    let manager = MANAGER.read().unwrap();
     //TODO: deal com save problems here
     if let Some(content) = &manager.content {
         if let Err(error) = save_settings_to_file(&content.file_name, &content.config) {
@@ -171,12 +171,12 @@ pub fn save() {
 
 #[allow(dead_code)]
 pub fn header() -> HeaderSettingsFile {
-    let manager = MANAGER.lock().unwrap();
+    let manager = MANAGER.read().unwrap();
     manager.content.as_ref().unwrap().config.header.clone()
 }
 
 pub fn mavlink_endpoint() -> Option<String> {
-    let manager = MANAGER.lock().unwrap();
+    let manager = MANAGER.read().unwrap();
     return manager
         .content
         .as_ref()
@@ -189,7 +189,7 @@ pub fn mavlink_endpoint() -> Option<String> {
 pub fn set_mavlink_endpoint(endpoint: &str) {
     //TODO: make content more easy to access
     {
-        let mut manager = MANAGER.lock().unwrap();
+        let mut manager = MANAGER.write().unwrap();
         let mut content = manager.content.as_mut();
         content.as_mut().unwrap().config.mavlink_endpoint = Some(endpoint.into());
     }
@@ -197,15 +197,15 @@ pub fn set_mavlink_endpoint(endpoint: &str) {
 }
 
 pub fn streams() -> Vec<VideoAndStreamInformation> {
-    let manager = MANAGER.lock().unwrap();
+    let manager = MANAGER.read().unwrap();
     let content = manager.content.as_ref();
     content.unwrap().config.streams.clone()
 }
 
 pub fn set_streams(streams: &[VideoAndStreamInformation]) {
-    // Take care of scope mutex
+    // Take care of scope RwLock
     {
-        let mut manager = MANAGER.lock().unwrap();
+        let mut manager = MANAGER.write().unwrap();
         let mut content = manager.content.as_mut();
         content.as_mut().unwrap().config.streams.clear();
         content
@@ -219,9 +219,9 @@ pub fn set_streams(streams: &[VideoAndStreamInformation]) {
 }
 
 pub fn reset() {
-    // Take care of scope mutex
+    // Take care of scope RwLock
     {
-        let mut manager = MANAGER.lock().unwrap();
+        let mut manager = MANAGER.write().unwrap();
         manager.content.as_mut().unwrap().config = SettingsStruct::default();
     }
     save();
@@ -254,7 +254,7 @@ mod tests {
     #[test]
     fn test_no_aboslute_path() {
         init(None);
-        let manager = MANAGER.lock().unwrap();
+        let manager = MANAGER.read().unwrap();
         let file_name = &manager.content.as_ref().unwrap().file_name;
         assert!(
             std::path::Path::new(&file_name).exists(),
