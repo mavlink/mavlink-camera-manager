@@ -609,9 +609,36 @@ impl MavlinkCameraInner {
 }
 
 impl Drop for MavlinkCamera {
+    #[instrument(level = "debug", skip(self))]
     fn drop(&mut self) {
-        self.heartbeat_handle.abort();
-        self.messages_handle.abort();
-        super::manager::Manager::drop_id(self.inner.component.component_id)
+        debug!("Dropping MavlinkCameraHandle...");
+
+        if let Some(handle) = self.heartbeat_handle.take() {
+            if !handle.is_finished() {
+                handle.abort();
+                tokio::spawn(async move {
+                    let _ = handle.await;
+                    debug!("Mavlink Heartbeat task aborted");
+                });
+            } else {
+                debug!("Mavlink Heartbeat task nicely finished!");
+            }
+        }
+
+        if let Some(handle) = self.messages_handle.take() {
+            if !handle.is_finished() {
+                handle.abort();
+                tokio::spawn(async move {
+                    let _ = handle.await;
+                    debug!("Mavlink Message task aborted");
+                });
+            } else {
+                debug!("Mavlink Message task nicely finished!");
+            }
+        }
+
+        super::manager::Manager::drop_id(self.inner.component.component_id);
+
+        debug!("MavlinkCameraHandle Dropped!");
     }
 }
