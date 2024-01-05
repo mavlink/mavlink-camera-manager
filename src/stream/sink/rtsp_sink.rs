@@ -60,7 +60,7 @@ impl SinkInterface for RtspSink {
         // Add the Sink elements to the Pipeline
         let elements = &[&self.queue, &self.sink];
         if let Err(add_err) = pipeline.add_many(elements) {
-            let msg = format!("Failed to add WebRTCSink's elements to the Pipeline: {add_err:?}");
+            let msg = format!("Failed to add RTSP's elements to the Pipeline: {add_err:?}");
             error!(msg);
 
             if let Some(parent) = tee_src_pad.parent_element() {

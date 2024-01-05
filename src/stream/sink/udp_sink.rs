@@ -82,7 +82,7 @@ impl SinkInterface for UdpSink {
             .expect("No sink pad found on ProxySink");
         if let Err(link_err) = queue_src_pad.link(proxysink_sink_pad) {
             let msg =
-                format!("Failed to link Queue's src pad with WebRTCBin's sink pad: {link_err:?}");
+                format!("Failed to link Queue's src pad with ProxySink's sink pad: {link_err:?}");
             error!(msg);
 
             if let Some(parent) = tee_src_pad.parent_element() {
@@ -337,15 +337,15 @@ impl UdpSink {
 
         // Add Sink elements to the Sink's Pipeline
         let elements = [&_proxysrc, &_udpsink];
-        if let Err(add_err) = pipeline.add_many(&elements) {
+        if let Err(add_err) = pipeline.add_many(elements) {
             return Err(anyhow!(
                 "Failed adding UdpSink's elements to Sink Pipeline: {add_err:?}"
             ));
         }
 
         // Link Sink's elements
-        if let Err(link_err) = gst::Element::link_many(&elements) {
-            if let Err(remove_err) = pipeline.remove_many(&elements) {
+        if let Err(link_err) = gst::Element::link_many(elements) {
+            if let Err(remove_err) = pipeline.remove_many(elements) {
                 warn!("Failed removing elements from UdpSink Pipeline: {remove_err:?}")
             };
             return Err(anyhow!("Failed linking UdpSink's elements: {link_err:?}"));
