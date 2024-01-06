@@ -234,25 +234,11 @@ impl StreamState {
 
         let pipeline = Pipeline::try_new(video_and_stream_information, pipeline_id)?;
 
-        // Only create the Mavlink Handle when mavlink is not disabled
-        let mavlink_camera = match video_and_stream_information
-            .stream_information
-            .extended_configuration
-        {
-            Some(ExtendedConfiguration {
-                thermal: _,
-                disable_mavlink: true,
-            }) => None,
-            _ => MavlinkCamera::try_new(video_and_stream_information)
-                .await
-                .ok(),
-        };
-
         let mut stream = StreamState {
             pipeline_id: *pipeline_id,
             pipeline,
             video_and_stream_information: video_and_stream_information.clone(),
-            mavlink_camera,
+            mavlink_camera: None,
         };
 
         // Do not add any Sink if it's a redirect Pipeline
@@ -314,6 +300,20 @@ impl StreamState {
                 sink.start()?
             }
         }
+
+        // Only create the MavlinkCamera when MAVLink is not disabled
+        if matches!(
+            video_and_stream_information
+                .stream_information
+                .extended_configuration,
+            Some(ExtendedConfiguration {
+                thermal: _,
+                disable_mavlink: false,
+            })
+        ) {
+            stream.mavlink_camera = MavlinkCamera::try_new(video_and_stream_information)
+                .await
+                .ok();
         }
 
         Ok(stream)
