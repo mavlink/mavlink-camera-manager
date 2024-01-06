@@ -18,7 +18,7 @@ mod stream;
 mod video;
 mod video_stream;
 
-#[actix_web::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() -> Result<(), std::io::Error> {
     // CLI should be started before logger to allow control over verbosity
     cli::manager::init();
@@ -42,11 +42,13 @@ async fn main() -> Result<(), std::io::Error> {
         helper::develop::start_check_tasks_on_webrtc_reconnects();
     }
 
-    stream::webrtc::signalling_server::SignallingServer::default();
+    let _signalling_server = stream::webrtc::signalling_server::SignallingServer::default();
 
     if let Err(error) = stream::manager::start_default().await {
         error!("Failed to start default streams. Reason: {error:?}")
     }
 
-    server::manager::run(&cli::manager::server_address()).await
+    server::manager::run(&cli::manager::server_address()).await?;
+
+    Ok(())
 }
