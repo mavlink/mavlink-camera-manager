@@ -332,8 +332,6 @@ impl ImageSink {
         let mut _transcoding_elements: Vec<gst::Element> = Default::default();
         match encoding {
             VideoEncodeType::H264 => {
-                let depayloader = gst::ElementFactory::make("rtph264depay").build()?;
-                let parser = gst::ElementFactory::make("h264parse").build()?;
                 // For h264, we need to filter-out unwanted non-key frames here, before decoding it.
                 let filter = gst::ElementFactory::make("identity")
                     .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
@@ -343,24 +341,15 @@ impl ImageSink {
                     .property_from_str("lowres", "2") // (0) is 'full'; (1) is '1/2-size'; (2) is '1/4-size'
                     .build()?;
                 decoder.has_property("discard-corrupted-frames", None).then(|| decoder.set_property("discard-corrupted-frames", true));
-                _transcoding_elements.push(depayloader);
-                _transcoding_elements.push(parser);
                 _transcoding_elements.push(filter);
                 _transcoding_elements.push(decoder);
             }
             VideoEncodeType::Mjpg => {
-                let depayloader = gst::ElementFactory::make("rtpjpegdepay").build()?;
-                let parser = gst::ElementFactory::make("jpegparse").build()?;
                 let decoder = gst::ElementFactory::make("jpegdec").build()?;
                 decoder.has_property("discard-corrupted-frames", None).then(|| decoder.set_property("discard-corrupted-frames", true));
-                _transcoding_elements.push(depayloader);
-                _transcoding_elements.push(parser);
                 _transcoding_elements.push(decoder);
             }
-            VideoEncodeType::Yuyv => {
-                let depayloader = gst::ElementFactory::make("rtpvrawdepay").build()?;
-                _transcoding_elements.push(depayloader);
-            }
+            VideoEncodeType::Yuyv => {}
             _ => return Err(anyhow!("Unsupported video encoding for ImageSink: {encoding:?}. The supported are: H264, MJPG and YUYV")),
         };
 
