@@ -3,7 +3,7 @@ use crate::{
     video_stream::types::VideoAndStreamInformation,
 };
 
-use super::{PipelineGstreamerInterface, PipelineState, PIPELINE_SINK_TEE_NAME};
+use super::{PipelineGstreamerInterface, PipelineState, PIPELINE_RTP_TEE_NAME};
 
 use anyhow::{anyhow, Context, Result};
 
@@ -57,7 +57,7 @@ impl RedirectPipeline {
             .first()
             .context("Failed to access the fisrt endpoint")?;
 
-        let sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}");
+        let sink_tee_name = format!("{PIPELINE_RTP_TEE_NAME}-{pipeline_id}");
 
         let description = match url.scheme() {
             "rtsp" => {

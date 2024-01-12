@@ -5,7 +5,8 @@ use crate::{
 };
 
 use super::{
-    PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_SINK_TEE_NAME,
+    PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_RTP_TEE_NAME,
+    PIPELINE_VIDEO_TEE_NAME,
 };
 
 use anyhow::{anyhow, Result};
@@ -48,7 +49,8 @@ impl V4lPipeline {
         let interval_numerator = configuration.frame_interval.numerator;
         let interval_denominator = configuration.frame_interval.denominator;
         let filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}");
-        let sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}");
+        let video_tee_name = format!("{PIPELINE_VIDEO_TEE_NAME}-{pipeline_id}");
+        let rtp_tee_name = format!("{PIPELINE_RTP_TEE_NAME}-{pipeline_id}");
 
         let description = match &configuration.encode {
             VideoEncodeType::H264 => {
@@ -57,8 +59,9 @@ impl V4lPipeline {
                         "v4l2src device={device} do-timestamp=false",
                         " ! h264parse",  // Here we need the parse to help the stream-format and alignment part, which is being fixed here because avc/au seems to reduce the CPU usage in the RTP payloading part.
                         " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtph264pay aggregate-mode=zero-latency config-interval=10 pt=96",
-                        " ! tee name={sink_tee_name} allow-not-linked=true"
+                        " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     device = device,
                     width = width,
@@ -66,7 +69,8 @@ impl V4lPipeline {
                     interval_denominator = interval_denominator,
                     interval_numerator = interval_numerator,
                     filter_name = filter_name,
-                    sink_tee_name = sink_tee_name,
+                    video_tee_name = video_tee_name,
+                    rtp_tee_name = rtp_tee_name,
                 )
             }
             VideoEncodeType::Yuyv => {
@@ -75,8 +79,9 @@ impl V4lPipeline {
                         "v4l2src device={device} do-timestamp=false",
                         " ! videoconvert",
                         " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtpvrawpay pt=96",
-                        " ! tee name={sink_tee_name} allow-not-linked=true"
+                        " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     device = device,
                     width = width,
@@ -84,7 +89,8 @@ impl V4lPipeline {
                     interval_denominator = interval_denominator,
                     interval_numerator = interval_numerator,
                     filter_name = filter_name,
-                    sink_tee_name = sink_tee_name
+                    video_tee_name = video_tee_name,
+                    rtp_tee_name = rtp_tee_name,
                 )
             }
             VideoEncodeType::Mjpg => {
@@ -93,8 +99,9 @@ impl V4lPipeline {
                         "v4l2src device={device} do-timestamp=false",
                         // We don't need a jpegparse, as it leads to incompatible caps, spoiling the negotiation.
                         " ! capsfilter name={filter_name} caps=image/jpeg,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtpjpegpay pt=96",
-                        " ! tee name={sink_tee_name} allow-not-linked=true"
+                        " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     device = device,
                     width = width,
@@ -102,7 +109,8 @@ impl V4lPipeline {
                     interval_denominator = interval_denominator,
                     interval_numerator = interval_numerator,
                     filter_name = filter_name,
-                    sink_tee_name = sink_tee_name
+                    video_tee_name = video_tee_name,
+                    rtp_tee_name = rtp_tee_name,
                 )
             }
             unsupported => {
