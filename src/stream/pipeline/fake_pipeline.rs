@@ -8,7 +8,8 @@ use crate::{
 };
 
 use super::{
-    PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_SINK_TEE_NAME,
+    PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_RTP_TEE_NAME,
+    PIPELINE_VIDEO_TEE_NAME,
 };
 
 use anyhow::{anyhow, Result};
@@ -57,7 +58,8 @@ impl FakePipeline {
         };
 
         let filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}");
-        let sink_tee_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}");
+        let video_tee_name = format!("{PIPELINE_VIDEO_TEE_NAME}-{pipeline_id}");
+        let rtp_tee_name = format!("{PIPELINE_RTP_TEE_NAME}-{pipeline_id}");
 
         // Fakes (videotestsrc) are only "video/x-raw" or "video/x-bayer",
         // and to be able to encode it, we need to define an available
@@ -74,8 +76,9 @@ impl FakePipeline {
                         " ! x264enc tune=zerolatency speed-preset=ultrafast bitrate=5000",
                         " ! h264parse",
                         " ! capsfilter name={filter_name} caps=video/x-h264,profile={profile},stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtph264pay aggregate-mode=zero-latency config-interval=10 pt=96",
-                        " ! tee name={sink_tee_name} allow-not-linked=true"
+                        " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     pattern = pattern,
                     profile = "constrained-baseline",
@@ -84,7 +87,8 @@ impl FakePipeline {
                     interval_denominator = configuration.frame_interval.denominator,
                     interval_numerator = configuration.frame_interval.numerator,
                     filter_name = filter_name,
-                    sink_tee_name = sink_tee_name,
+                    video_tee_name = video_tee_name,
+                    rtp_tee_name = rtp_tee_name,
                 )
             }
             VideoEncodeType::Yuyv => {
@@ -97,8 +101,9 @@ impl FakePipeline {
                         " ! timeoverlay",
                         " ! video/x-raw,format=I420",
                         " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtpvrawpay pt=96",
-                        " ! tee name={sink_tee_name} allow-not-linked=true",
+                        " ! tee name={rtp_tee_name} allow-not-linked=true",
                     ),
                     pattern = pattern,
                     width = configuration.width,
@@ -106,7 +111,8 @@ impl FakePipeline {
                     interval_denominator = configuration.frame_interval.denominator,
                     interval_numerator = configuration.frame_interval.numerator,
                     filter_name = filter_name,
-                    sink_tee_name = sink_tee_name,
+                    video_tee_name = video_tee_name,
+                    rtp_tee_name = rtp_tee_name,
                 )
             }
             VideoEncodeType::Mjpg => {
@@ -117,8 +123,9 @@ impl FakePipeline {
                         " ! video/x-raw,format=I420",
                         " ! jpegenc quality=85 idct-method=1",
                         " ! capsfilter name={filter_name} caps=image/jpeg,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtpjpegpay pt=96",
-                        " ! tee name={sink_tee_name} allow-not-linked=true",
+                        " ! tee name={rtp_tee_name} allow-not-linked=true",
                     ),
                     pattern = pattern,
                     width = configuration.width,
@@ -126,7 +133,8 @@ impl FakePipeline {
                     interval_denominator = configuration.frame_interval.denominator,
                     interval_numerator = configuration.frame_interval.numerator,
                     filter_name = filter_name,
-                    sink_tee_name = sink_tee_name,
+                    video_tee_name = video_tee_name,
+                    rtp_tee_name = rtp_tee_name,
                 )
             }
             unsupported => {

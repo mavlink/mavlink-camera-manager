@@ -93,12 +93,14 @@ impl Pipeline {
 pub struct PipelineState {
     pub pipeline_id: uuid::Uuid,
     pub pipeline: gst::Pipeline,
-    pub sink_tee: gst::Element,
+    pub video_tee: Option<gst::Element>,
+    pub rtp_tee: Option<gst::Element>,
     pub sinks: HashMap<uuid::Uuid, Sink>,
     pub pipeline_runner: PipelineRunner,
 }
 
-pub const PIPELINE_SINK_TEE_NAME: &str = "SinkTee";
+pub const PIPELINE_RTP_TEE_NAME: &str = "RTPTee";
+pub const PIPELINE_VIDEO_TEE_NAME: &str = "VideoTee";
 pub const PIPELINE_FILTER_NAME: &str = "Filter";
 
 impl PipelineState {
@@ -119,9 +121,9 @@ impl PipelineState {
             }
         }?;
 
-        let sink_tee = pipeline
-            .by_name(&format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}"))
-            .context(format!("no element named {PIPELINE_SINK_TEE_NAME:#?}"))?;
+        let video_tee = pipeline.by_name(&format!("{PIPELINE_VIDEO_TEE_NAME}-{pipeline_id}"));
+
+        let rtp_tee = pipeline.by_name(&format!("{PIPELINE_RTP_TEE_NAME}-{pipeline_id}"));
 
         let pipeline_runner = PipelineRunner::try_new(&pipeline, pipeline_id, false)?;
 
@@ -133,7 +135,8 @@ impl PipelineState {
         Ok(Self {
             pipeline_id: *pipeline_id,
             pipeline,
-            sink_tee,
+            video_tee,
+            rtp_tee,
             sinks: Default::default(),
             pipeline_runner,
         })
@@ -144,8 +147,18 @@ impl PipelineState {
     pub fn add_sink(&mut self, mut sink: Sink) -> Result<()> {
         let pipeline_id = &self.pipeline_id;
 
-        // Request a new src pad for the Tee
-        let tee_src_pad = self.sink_tee.request_pad_simple("src_%u").context(format!(
+        // Request a new src pad for the used Tee
+        // Note: Here we choose if the sink will receive a Video or RTP packages
+        let tee = match sink {
+            Sink::Image(_) => &self.video_tee,
+            Sink::Udp(_) | Sink::Rtsp(_) | Sink::WebRTC(_) => &self.rtp_tee,
+        };
+
+        let Some(tee) = tee else {
+            return Err(anyhow!("No Tee for this kind of Pipeline"));
+        };
+
+        let tee_src_pad = tee.request_pad_simple("src_%u").context(format!(
             "Failed requesting src pad for Tee of the pipeline {pipeline_id}"
         ))?;
         debug!("Got tee's src pad {:#?}", tee_src_pad.name());
@@ -165,9 +178,12 @@ impl PipelineState {
             }
         }
 
-        if let Err(error) =
-            wait_for_element_state(pipeline.downgrade(), gst::State::Playing, 100, 2)
-        {
+        if let Err(error) = wait_for_element_state(
+            gst::prelude::ObjectExt::downgrade(pipeline),
+            gst::State::Playing,
+            100,
+            2,
+        ) {
             let _ = pipeline.set_state(gst::State::Null);
             sink.unlink(pipeline, pipeline_id)?;
             return Err(anyhow!(
@@ -176,21 +192,22 @@ impl PipelineState {
         }
 
         if let Sink::Rtsp(sink) = &sink {
-            let caps = &self
-                .sink_tee
-                .static_pad("sink")
-                .expect("No static sink pad found on capsfilter")
-                .current_caps()
-                .context("Failed to get caps from capsfilter sink pad")?;
+            if let Some(rtp_tee) = &self.rtp_tee {
+                let caps = &rtp_tee
+                    .static_pad("sink")
+                    .expect("No static sink pad found on capsfilter")
+                    .current_caps()
+                    .context("Failed to get caps from capsfilter sink pad")?;
 
-            debug!("caps: {:#?}", caps.to_string());
+                debug!("caps: {:#?}", caps.to_string());
 
-            // In case it exisits, try to remove it first, but skip the result
-            let _ = RTSPServer::stop_pipeline(&sink.path());
+                // In case it exisits, try to remove it first, but skip the result
+                let _ = RTSPServer::stop_pipeline(&sink.path());
 
-            RTSPServer::add_pipeline(&sink.path(), &sink.socket_path(), caps)?;
+                RTSPServer::add_pipeline(&sink.path(), &sink.socket_path(), caps)?;
 
-            RTSPServer::start_pipeline(&sink.path())?;
+                RTSPServer::start_pipeline(&sink.path())?;
+            }
         }
 
         // Skipping ImageSink syncronization because it goes to some wrong state,
@@ -239,15 +256,13 @@ impl PipelineState {
             .iter()
             .any(|child| child.name().starts_with("rtspsrc"))
         {
-            let sink_name = format!("{PIPELINE_SINK_TEE_NAME}-{pipeline_id}");
-            let tee = pipeline
-                .by_name(&sink_name)
-                .context(format!("no element named {sink_name:#?}"))?;
-            if tee.src_pads().is_empty() {
-                if let Err(error) = pipeline.set_state(gst::State::Null) {
-                    return Err(anyhow!(
-                        "Failed to change state of Pipeline {pipeline_id} to NULL. Reason: {error}"
-                    ));
+            if let Some(rtp_tee) = &self.rtp_tee {
+                if rtp_tee.src_pads().is_empty() {
+                    if let Err(error) = pipeline.set_state(gst::State::Null) {
+                        return Err(anyhow!(
+                            "Failed to change state of Pipeline {pipeline_id} to NULL. Reason: {error}"
+                        ));
+                    }
                 }
             }
         }
