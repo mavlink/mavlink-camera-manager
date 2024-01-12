@@ -242,9 +242,10 @@ impl RtspSink {
         let socket_path = format!("/tmp/{id}");
         let sink = gst::ElementFactory::make("shmsink")
             .property_from_str("socket-path", &socket_path)
-            .property("sync", true)
-            .property("wait-for-connection", false)
+            .property("sync", false)
+            .property("wait-for-connection", true)
             .property("shm-size", 10_000_000u32)
+            .property("enable-last-sample", false)
             .build()?;
 
         let sink_sink_pad = sink.static_pad("sink").context("Failed to get Sink Pad")?;
