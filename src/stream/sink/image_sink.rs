@@ -294,6 +294,7 @@ impl ImageSink {
     pub fn try_new(sink_id: uuid::Uuid, encoding: VideoEncodeType) -> Result<Self> {
         let queue = gst::ElementFactory::make("queue")
             .property_from_str("leaky", "downstream") // Throw away any data
+            .property("silent", true)
             .property("flush-on-eos", true)
             .property("max-size-buffers", 0u32) // Disable buffers
             .build()?;
@@ -315,6 +316,7 @@ impl ImageSink {
                 {
                     Some(element) => {
                         element.set_property_from_str("leaky", "downstream"); // Throw away any data
+                        element.set_property("silent", true);
                         element.set_property("flush-on-eos", true);
                         element.set_property("max-size-buffers", 0u32); // Disable buffers
                     }
