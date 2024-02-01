@@ -621,11 +621,19 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
                 }
             }
             Failed | Closed | Disconnected => {
-                if let Err(error) =
-                    Manager::remove_session(&self.bind, format!("ICE closed with: {state:?}"))
-                {
-                    error!("Failed removing session {:#?}: {error}", self.bind);
-                }
+                let bind = self.bind.clone();
+                let state = *state;
+                // Closing the channel from the same thread can cause a deadlock, so we are calling it from another one:
+                std::thread::Builder::new()
+                    .name("ICEKiller".to_string())
+                    .spawn(move || {
+                        if let Err(error) =
+                            Manager::remove_session(&bind, format!("ICE closed with: {state:?}"))
+                        {
+                            error!("Failed removing session {bind:#?}: {error}");
+                        }
+                    })
+                    .expect("Failed spawing ICEKiller thread");
             }
             _ => (),
         };
