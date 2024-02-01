@@ -3,3 +3,6 @@ image = "joaoantoniocardoso/cross-rs:x86_64-unknown-linux-gnu-bullseye-slim-with
 
 [target.armv7-unknown-linux-gnueabihf]
 image = "joaoantoniocardoso/cross-rs:armv7-unknown-linux-gnueabihf-bullseye-slim-with-gstreamer"
+
+[target.aarch64-unknown-linux-gnu]
+image = "joaoantoniocardoso/cross-rs:aarch64-unknown-linux-gnu-bullseye-slim-with-gstreamer"
