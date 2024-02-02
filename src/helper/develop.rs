@@ -16,7 +16,10 @@ async fn task(mut counter: i32) -> Result<()> {
     let port = cli::manager::enable_webrtc_task_test().unwrap();
     let driver = WebDriver::new(&format!("http://localhost:{}", port), caps)
         .await
-        .expect("Failed to create web driver.");
+        .unwrap_or_else(|_| {
+            error!("Failed to connect with WebDriver.");
+            std::process::exit(-1)
+        });
 
     driver
         .goto("http://0.0.0.0:6020/webrtc/index.html")
