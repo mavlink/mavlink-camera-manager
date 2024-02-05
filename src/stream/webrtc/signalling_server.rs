@@ -37,7 +37,28 @@ pub trait StreamManagementInterface<T> {
 
 #[derive(Debug)]
 pub struct SignallingServer {
-    _server_thread_handle: std::thread::JoinHandle<()>,
+    handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl Drop for SignallingServer {
+    #[instrument(level = "debug", skip(self))]
+    fn drop(&mut self) {
+        debug!("Dropping SignallingServer...");
+
+        if let Some(handle) = self.handle.take() {
+            if !handle.is_finished() {
+                handle.abort();
+                tokio::spawn(async move {
+                    let _ = handle.await;
+                    debug!("SignallingServer task aborted");
+                });
+            } else {
+                debug!("SignallingServer task nicely finished!");
+            }
+        }
+
+        debug!("SignallingServer Dropped!");
+    }
 }
 
 impl Default for SignallingServer {
