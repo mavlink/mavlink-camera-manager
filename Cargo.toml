@@ -38,12 +38,12 @@ validator = { version = "0.16", features = ["derive"] }
 
 ## FINAL
 sysinfo = "0.29"
-chrono = "0.4.31"
+chrono = "0.4.33"
 lazy_static = "1.4.0"
 include_dir = "0.7.3"
 paperclip = { version = "0.8", features = ["paperclip-actix", "actix4",  "swagger-ui", "url", "uuid"] }
 #TODO: Replace it with yaserde
-quick-xml = { version = "0.30.0", features = ["serialize"] }
+quick-xml = { version = "0.31.0", features = ["serialize"] }
 url = { version = "2.4.1", features = ["serde"] }
 v4l = "0.14.0"
 directories = "5.0.1"
