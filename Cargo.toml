@@ -64,7 +64,7 @@ tracing-appender = { git = "https://github.com/joaoantoniocardoso/tracing", bran
 anyhow = "1"
 tokio = { version = "1.36", features = ["full"] }
 enum_dispatch = "0.3.12"
-uuid = { version = "0.8", features = ["v4", "serde"] }
+uuid = { version = "1.7", features = ["v4", "serde"] }
 ts-rs = "7.0"
 cached = { version = "0.48", features = ["serde", "serde_json", "async_tokio_rt_multi_thread"] }
 
@@ -100,6 +100,6 @@ tracing-test = "0.2"
 reqwest = { version = "0.11.20", features = ["blocking"] }
 vergen = { version = "7.5", default-features = false, features = ["build", "git"] }
 ts-rs = "7.0"
-uuid = { version = "0.8", features = ["v4", "serde"] }  # 0.8 because paperclip's "uuid" feature requires this vesion
+uuid = { version = "1.7", features = ["v4", "serde"] }
 serde = { version = "1.0", features = ["derive"] }
 regex = "1"
