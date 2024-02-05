@@ -54,7 +54,7 @@ pub fn init() {
     // Configure the default subscriber
     match cli::manager::is_tracy() {
         true => {
-            let tracy_layer = tracing_tracy::TracyLayer::new();
+            let tracy_layer = tracing_tracy::TracyLayer::default();
             let subscriber = tracing_subscriber::registry()
                 .with(console_layer)
                 .with(file_layer)
