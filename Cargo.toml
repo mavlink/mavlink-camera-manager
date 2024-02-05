@@ -66,7 +66,7 @@ tokio = { version = "1.36", features = ["full"] }
 enum_dispatch = "0.3.12"
 uuid = { version = "0.8", features = ["v4", "serde"] }
 ts-rs = "7.0"
-cached = { version = "0.45", features = ["serde", "serde_json", "async_tokio_rt_multi_thread"] }
+cached = { version = "0.48", features = ["serde", "serde_json", "async_tokio_rt_multi_thread"] }
 
 ## Mavlink
 mavlink = { version = "0.10.6", features = ["default", "emit-extensions"] }
