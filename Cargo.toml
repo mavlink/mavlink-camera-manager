@@ -89,7 +89,7 @@ gst-webrtc = { package = "gstreamer-webrtc", version = "0.21", features = ["v1_1
 gst-rtsp = { package = "gstreamer-rtsp", version = "0.21", features = ["v1_16"] }
 gst-rtsp-server = { package = "gstreamer-rtsp-server", version = "0.21", features = ["v1_16"] }
 gst-video = { package = "gstreamer-video", version = "0.21", features = ["v1_16"] }
-webrtc-sdp = "0.3.10"
+webrtc-sdp = "0.3.11"
 
 [dev-dependencies]
 rand = "0.8.5"
