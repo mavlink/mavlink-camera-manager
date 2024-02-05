@@ -72,7 +72,7 @@ cached = { version = "0.48", features = ["serde", "serde_json", "async_tokio_rt_
 mavlink = { version = "0.10.6", features = ["default", "emit-extensions"] }
 
 ## WebRTC
-tokio-tungstenite = { version = "0.20" }
+async-tungstenite = { version = "0.24", features = ["tokio-runtime", "tokio-native-tls"] }
 async-std = { version = "1.12", features =  ["tokio1"] }
 futures = "0.3"
 webrtc-util = { version = "0.8", default-features = false, features = ["vnet"] }
