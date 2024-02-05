@@ -1,12 +1,12 @@
 use std::net::SocketAddr;
-use std::thread;
 
 use crate::cli;
 use anyhow::{anyhow, Context, Result};
+use async_tungstenite::tokio::TokioAdapter;
+use async_tungstenite::{tungstenite, WebSocketStream};
 use futures::{SinkExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedSender};
-use tokio_tungstenite::{tungstenite, WebSocketStream};
 
 use tracing::*;
 
@@ -97,124 +97,120 @@ impl SignallingServer {
         let listener = TcpListener::bind(&addr).await?;
         debug!("Signalling server: listening on: {addr:?}");
 
-        while let Ok((stream, _)) = listener.accept().await {
-            let peer = stream
-                .peer_addr()
-                .context("connected streams should have a peer address")?;
-            tokio::spawn(Self::accept_connection(peer, stream));
+        while let Ok((stream, address)) = listener.accept().await {
+            info!("Accepting connection from {address:?}");
+
+            tokio::spawn(Self::accept_connection(stream));
         }
 
         Ok(())
     }
 
     #[instrument(level = "debug", skip(stream))]
-    async fn accept_connection(peer: SocketAddr, stream: TcpStream) {
+    async fn accept_connection(stream: TcpStream) {
         debug!("Accepting connection...");
 
-        let stream = match tokio_tungstenite::accept_async(stream).await {
+        let stream = match async_tungstenite::tokio::accept_async(stream).await {
             Ok(stream) => stream,
             Err(error) => {
-                error!("Failed to accept websocket connection. Reason: {error:?}");
+                error!("Failed to accept websocket connection: {error:?}");
                 return;
             }
         };
 
-        if let Err(error) = Self::handle_connection(peer, stream).await {
-            error!("Error processing connection: {error:?}");
+        if let Err(error) = Self::handle_connection(stream).await {
+            error!("Error processing connection: {error}");
         }
     }
 
     #[instrument(level = "debug", skip(stream))]
-    async fn handle_connection(peer: SocketAddr, stream: WebSocketStream<TcpStream>) -> Result<()> {
-        info!("New WebSocket connection");
+    async fn handle_connection(stream: WebSocketStream<TokioAdapter<TcpStream>>) -> Result<()> {
+        info!("New Signalling connection");
 
-        let (mut ws_sender, mut ws_receiver) = stream.split();
+        let (mut ws_sink, mut ws_stream) = stream.split();
 
         // This MPSC channel is used to transmit messages to websocket from Session
         let (mpsc_sender, mut mpsc_receiver) = mpsc::unbounded_channel::<Result<Message>>();
 
         // Create a sender task, which receives from the mpsc channel
-        let sender = tokio::spawn(async move {
-            while let Some(result) = mpsc_receiver.recv().await {
-                // Close the channel if receives an error
-                let message = match result {
-                    Ok(message) => message,
-                    Err(reason) => {
-                        debug!("Closing MPSC channel. Reason: {reason:?}");
-                        mpsc_receiver.close();
-                        break;
+        let sender_task_handle = tokio::spawn(async move {
+            loop {
+                match tokio::time::timeout(std::time::Duration::from_secs(30), mpsc_receiver.recv())
+                    .await
+                {
+                    Ok(Some(Ok(message))) => {
+                        let message = serde_json::to_string(&message)?;
+                        ws_sink.send(tungstenite::Message::Text(message)).await?
                     }
+                    Ok(Some(Err(_))) | Ok(None) => break,
+                    Err(_elapsed) => ws_sink.send(tungstenite::Message::Ping(vec![])).await?,
                 };
-
-                let protocol = Protocol::from(message);
-                trace!("Sending..: {protocol:#?}");
-
-                // Transform our Protocol into a tungstenite's Message
-                let message: tungstenite::Message = match protocol.try_into() {
-                    Ok(message) => message,
-                    Err(error) => {
-                        error!("Failed transforming Protocol into Tungstenite' message: {error:?}");
-                        break;
-                    }
-                };
-
-                if let Err(error) = ws_sender.send(message).await {
-                    error!("Failed repassing message from the MPSC to the WebSocket. Reason: {error:?}");
-                    break;
-                }
             }
 
-            if let Err(error) = ws_sender.close().await {
-                error!("Failed closing WebSocket channel: {error}");
-            }
+            info!("Closing WebSocket connection...");
 
-            info!("WebSocket connection closed: {peer:?}");
+            if let Err(error) = ws_sink.send(tungstenite::Message::Close(None)).await {
+                warn!("Failed sending Close message: {error}");
+            }
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            ws_sink.close().await?;
+
+            info!("WebSocket connection closed");
+
+            anyhow::Ok(())
         });
 
-        while let Some(msg) = ws_receiver.next().await {
-            let msg = match msg {
-                Ok(msg) => match msg {
-                    msg @ tungstenite::Message::Text(_) => msg,
-                    tungstenite::Message::Close(_) => break,
-                    _ => continue,
-                },
-                Err(error) => {
-                    error!("Failed receiving message from WebSocket: {error:?}.");
+        let receiver_task_handle = tokio::spawn(async move {
+            while let Some(msg) = ws_stream.next().await {
+                let msg = match msg {
+                    Ok(tungstenite::Message::Text(msg)) => msg,
+                    Ok(tungstenite::Message::Close(_)) => break,
+                    Ok(tungstenite::Message::Pong(_)) => continue,
+                    msg @ Ok(_) => {
+                        warn!("Unsupported message type: {msg:?}");
+                        continue;
+                    }
+                    Err(error) => {
+                        error!("Failed receiving message from WebSocket: {error:?}.");
+                        break;
+                    }
+                };
+
+                if let Err(error) = Self::handle_message(msg.clone(), &mpsc_sender).await {
+                    error!("Failed handling message: {error:?}.");
                     break;
                 }
-            };
-
-            if let Err(error) = Self::handle_message(msg.clone(), &mpsc_sender).await {
-                error!("Failed handling message: {error:?}.");
-                break;
             }
-        }
 
-        if !mpsc_sender.is_closed() {
-            if let Err(error) = mpsc_sender.send(Err(anyhow!("Websocket closed"))) {
-                error!("Failed sending message to mpsc: {error:?}")
+            debug!("Finishing Signalling connecntion...");
+
+            if !mpsc_sender.is_closed() {
+                if let Err(error) = mpsc_sender.send(Err(anyhow!("Websocket closed"))) {
+                    error!("Failed sending message to mpsc: {error:?}")
+                }
+                mpsc_sender.closed().await;
             }
-        }
 
-        sender
-            .await
-            .context("Signalling sender task ended with an error")?;
+            anyhow::Ok(())
+        });
 
-        debug!("Connection terminated");
+        let _ = tokio::join!(sender_task_handle, receiver_task_handle);
+
+        debug!("Signalling connection terminated");
 
         Ok(())
     }
 
     #[instrument(level = "debug")]
     async fn handle_message(
-        msg: tungstenite::Message,
+        msg: String,
         sender: &mpsc::UnboundedSender<Result<Message>>,
     ) -> Result<()> {
-        let protocol = match Protocol::try_from(msg) {
+        let protocol = match serde_json::from_str::<Protocol>(&msg) {
             Ok(protocol) => protocol,
             Err(error) => {
                 // Parsing errors should not be propagated, otherwise it will close the WebSocket.
-                warn!("Ignoring received message. Reason: {error:#?}");
+                warn!("Ignoring received message {msg:?}. Reason: {error:#?}");
                 return Ok(());
             }
         };
@@ -281,6 +277,10 @@ impl SignallingServer {
             },
         };
 
+        if sender.is_closed() {
+            warn!("Failed sending message to mpsc. Channel is closed.");
+            return Ok(());
+        }
         if let Some(answer) = answer {
             if let Err(reason) = sender.send(Ok(Message::from(answer))) {
                 return Err(anyhow!(
