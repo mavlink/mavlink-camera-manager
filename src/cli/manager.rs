@@ -73,6 +73,10 @@ struct Args {
     /// Enable webrtc thread test with limit of child tasks (can use port for webdriver as parameter).
     #[arg(long, value_name = "PORT", num_args = 0..=1, default_missing_value = "9515")]
     enable_webrtc_task_test: Option<u16>,
+
+    /// Sets the MAVLink System ID.
+    #[arg(long, value_name = "SYSTEM_ID", default_value = "1")]
+    mavlink_system_id: u8,
 }
 
 #[derive(Debug)]
@@ -168,6 +172,10 @@ pub fn enable_thread_counter() -> bool {
 
 pub fn enable_webrtc_task_test() -> Option<u16> {
     MANAGER.clap_matches.enable_webrtc_task_test
+}
+
+pub fn mavlink_system_id() -> u8 {
+    MANAGER.clap_matches.mavlink_system_id
 }
 
 // Return the command line used to start this application
