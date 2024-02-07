@@ -48,7 +48,7 @@ impl MavlinkCameraComponent {
             .thermal;
 
         Ok(Self {
-            system_id: 1,
+            system_id: crate::cli::manager::mavlink_system_id(),
             component_id,
             stream_id: 1, // Starts at 1, 0 is for broadcast.
 
