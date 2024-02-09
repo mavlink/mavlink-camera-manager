@@ -201,7 +201,7 @@ impl SignallingServer {
         Ok(())
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(sender))]
     async fn handle_message(
         msg: String,
         sender: &mpsc::UnboundedSender<Result<Message>>,

@@ -21,7 +21,7 @@ pub struct UdpSink {
     pipeline_runner: PipelineRunner,
 }
 impl SinkInterface for UdpSink {
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, pipeline))]
     fn link(
         &mut self,
         pipeline: &gst::Pipeline,
@@ -150,7 +150,7 @@ impl SinkInterface for UdpSink {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, pipeline))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
         let Some(tee_src_pad) = &self.tee_src_pad else {
             warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");

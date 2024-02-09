@@ -8,10 +8,11 @@ use crate::stream::gst::utils::wait_for_element_state_async;
 pub struct PipelineRunner {
     start: tokio::sync::mpsc::Sender<()>,
     handle: Option<tokio::task::JoinHandle<()>>,
+    pipeline_id: uuid::Uuid,
 }
 
 impl Drop for PipelineRunner {
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self), fields(pipeline_id = self.pipeline_id.to_string()))]
     fn drop(&mut self) {
         debug!("Dropping PipelineRunner...");
 
@@ -32,7 +33,7 @@ impl Drop for PipelineRunner {
 }
 
 impl PipelineRunner {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(pipeline))]
     pub fn try_new(
         pipeline: &gst::Pipeline,
         pipeline_id: &uuid::Uuid,
@@ -54,10 +55,11 @@ impl PipelineRunner {
                     Err(error) => warn!("PipelineRunner task ended with error: {error:#?}"),
                 };
             })),
+            pipeline_id,
         })
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self), fields(pipeline_id = self.pipeline_id.to_string()))]
     pub fn start(&self) -> Result<()> {
         let start = self.start.clone();
         tokio::spawn(async move {
@@ -79,7 +81,7 @@ impl PipelineRunner {
             .unwrap_or(false)
     }
 
-    #[instrument(level = "debug", skip(pipeline_weak, pipeline_id, start))]
+    #[instrument(level = "debug", skip(pipeline_weak, start))]
     async fn runner(
         pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
         pipeline_id: uuid::Uuid,

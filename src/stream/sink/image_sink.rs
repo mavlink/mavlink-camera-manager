@@ -73,7 +73,7 @@ pub struct ImageSink {
     thumbnails: Arc<Mutex<CachedThumbnails>>,
 }
 impl SinkInterface for ImageSink {
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, pipeline))]
     fn link(
         &mut self,
         pipeline: &gst::Pipeline,
@@ -202,7 +202,7 @@ impl SinkInterface for ImageSink {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, pipeline))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
         let Some(tee_src_pad) = &self.tee_src_pad else {
             warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
