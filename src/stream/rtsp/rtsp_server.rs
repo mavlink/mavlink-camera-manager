@@ -62,7 +62,7 @@ impl RTSPServer {
         RTSP_SERVER.as_ref().lock().unwrap().run
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(channel))]
     fn run_main_loop(channel: std::sync::mpsc::Sender<String>) {
         if let Err(error) = gst::init() {
             let _ = channel.send(format!("Failed to init GStreamer: {error:?}"));

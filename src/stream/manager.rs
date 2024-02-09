@@ -404,7 +404,7 @@ pub fn remove_stream_by_name(stream_name: &str) -> Result<()> {
 }
 
 impl WebRTCSessionManagementInterface for Manager {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(sender))]
     fn add_session(
         bind: &webrtc::signalling_protocol::BindOffer,
         sender: tokio::sync::mpsc::UnboundedSender<Result<webrtc::signalling_protocol::Message>>,

@@ -17,7 +17,7 @@ pub struct RtspSink {
     socket_path: String,
 }
 impl SinkInterface for RtspSink {
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, pipeline))]
     fn link(
         &mut self,
         pipeline: &gst::Pipeline,
@@ -144,7 +144,7 @@ impl SinkInterface for RtspSink {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, pipeline))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
         if let Err(error) = std::fs::remove_file(&self.socket_path) {
             warn!("Failed removing the RTSP Sink socket file. Reason: {error:?}");

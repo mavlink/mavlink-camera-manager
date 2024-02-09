@@ -32,7 +32,7 @@ pub struct WebRTCSink {
     pub end_reason: Option<String>,
 }
 impl SinkInterface for WebRTCSink {
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, pipeline))]
     fn link(
         self: &mut WebRTCSink,
         pipeline: &gst::Pipeline,
@@ -220,7 +220,7 @@ impl SinkInterface for WebRTCSink {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, pipeline))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
         let Some(tee_src_pad) = &self.tee_src_pad else {
             warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
@@ -303,7 +303,7 @@ impl SinkInterface for WebRTCSink {
 }
 
 impl WebRTCSink {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(sender))]
     pub fn try_new(
         bind: BindAnswer,
         sender: mpsc::UnboundedSender<Result<Message>>,
@@ -448,7 +448,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
     // Whenever webrtcbin tells us that (re-)negotiation is needed, simply ask
     // for a new offer SDP from webrtcbin without any customization and then
     // asynchronously send it to the peer via the WebSocket connection
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, webrtcbin))]
     fn on_negotiation_needed(&self, webrtcbin: &gst::Element) -> Result<()> {
         let this = self.clone();
         let webrtcbin_weak = webrtcbin.downgrade();
@@ -491,7 +491,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
 
     // Once webrtcbin has create the offer SDP for us, handle it by sending it to the peer via the
     // WebSocket connection
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, webrtcbin))]
     fn on_offer_created(
         &self,
         webrtcbin: &gst::Element,
@@ -526,7 +526,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
 
     // Once webrtcbin has create the answer SDP for us, handle it by sending it to the peer via the
     // WebSocket connection
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, _webrtcbin))]
     fn on_answer_created(
         &self,
         _webrtcbin: &gst::Element,
@@ -560,7 +560,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, _webrtcbin))]
     fn on_ice_candidate(
         &self,
         _webrtcbin: &gst::Element,
@@ -588,7 +588,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, _webrtcbin))]
     fn on_ice_gathering_state_change(
         &self,
         _webrtcbin: &gst::Element,
@@ -601,7 +601,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, webrtcbin))]
     fn on_ice_connection_state_change(
         &self,
         webrtcbin: &gst::Element,
@@ -642,7 +642,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, _webrtcbin))]
     fn on_connection_state_change(
         &self,
         _webrtcbin: &gst::Element,
@@ -663,7 +663,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, webrtcbin))]
     fn handle_sdp(
         &self,
         webrtcbin: &gst::Element,
@@ -673,7 +673,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, webrtcbin))]
     fn handle_ice(
         &self,
         webrtcbin: &gst::Element,
@@ -687,6 +687,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
 
 /// Because GSTreamer's WebRTCBin often crashes when receiving an invalid SDP,
 /// we use Mozzila's SDP parser to manipulate the SDP Message before giving it to GStreamer
+#[instrument(level = "debug")]
 fn customize_sdp(sdp: &gst_sdp::SDPMessage) -> Result<gst_sdp::SDPMessage> {
     let mut sdp = webrtc_sdp::parse_sdp(sdp.as_text()?.as_str(), false)?;
 

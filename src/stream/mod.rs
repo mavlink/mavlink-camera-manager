@@ -83,7 +83,7 @@ impl Stream {
         })
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(video_and_stream_information, state, terminated))]
     async fn watcher(
         video_and_stream_information: VideoAndStreamInformation,
         pipeline_id: uuid::Uuid,
@@ -200,7 +200,7 @@ impl Stream {
 }
 
 impl Drop for Stream {
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self), fields(pipeline_id = self.state.read().unwrap().pipeline_id.clone().to_string()))]
     fn drop(&mut self) {
         debug!("Dropping Stream...");
 
@@ -321,6 +321,7 @@ impl StreamState {
 }
 
 impl Drop for StreamState {
+    #[instrument(level = "debug", skip(self), fields(pipeline_id = self.pipeline_id.to_string()))]
     fn drop(&mut self) {
         let pipeline_state = self.pipeline.inner_state_as_ref();
         let pipeline = &pipeline_state.pipeline;
