@@ -86,7 +86,7 @@ impl PipelineRunner {
         mut start: tokio::sync::mpsc::Receiver<()>,
         allow_block: bool,
     ) -> Result<()> {
-        let (finsh_tx, mut finish) = tokio::sync::mpsc::channel(1);
+        let (finish_tx, mut finish) = tokio::sync::mpsc::channel(1);
         let pipeline = pipeline_weak
             .upgrade()
             .context("Unable to access the Pipeline from its weak reference")?;
@@ -97,7 +97,7 @@ impl PipelineRunner {
 
         // Send our bus messages via a futures channel to be handled asynchronously
         let pipeline_weak_cloned = pipeline_weak.clone();
-        let (bus_tx, mut bus_rx) = tokio::sync::mpsc::unbounded_channel::<gst::Message>();
+        let (bus_tx, bus_rx) = tokio::sync::mpsc::unbounded_channel::<gst::Message>();
         let bus_tx = std::sync::Mutex::new(bus_tx);
         bus.set_sync_handler(move |_, msg| {
             let _ = bus_tx.lock().unwrap().send(msg.to_owned());
@@ -108,76 +108,12 @@ impl PipelineRunner {
          * although in this example the only error we'll hopefully
          * get is if the user closes the output window */
         debug!("Starting BusWatcher task...");
-        tokio::spawn(async move {
-            debug!("BusWatcher task started!");
-            while let Some(message) = bus_rx.recv().await {
-                use gst::MessageView;
-
-                let Some(pipeline) = pipeline_weak_cloned.upgrade() else {
-                    break;
-                };
-
-                match message.view() {
-                    MessageView::Eos(eos) => {
-                        pipeline.debug_to_dot_file_with_ts(
-                            gst::DebugGraphDetails::all(),
-                            format!("pipeline-{pipeline_id}-eos"),
-                        );
-                        let msg = format!("Received EndOfStream: {eos:?}");
-                        trace!(msg);
-                        let _ = finsh_tx.send(msg).await;
-                        break;
-                    }
-                    MessageView::Error(error) => {
-                        let msg = format!(
-                            "Error from {:?}: {} ({:?})",
-                            error.src().map(|s| s.path_string()),
-                            error.error(),
-                            error.debug()
-                        );
-                        pipeline.debug_to_dot_file_with_ts(
-                            gst::DebugGraphDetails::all(),
-                            format!("pipeline-{pipeline_id}-error"),
-                        );
-                        trace!(msg);
-                        let _ = finsh_tx.send(msg).await;
-                        break;
-                    }
-                    MessageView::StateChanged(state) => {
-                        pipeline.debug_to_dot_file_with_ts(
-                            gst::DebugGraphDetails::all(),
-                            format!(
-                                "pipeline-{pipeline_id}-{:?}-to-{:?}",
-                                state.old(),
-                                state.current()
-                            ),
-                        );
-
-                        trace!(
-                            "State changed from {:?}: {:?} to {:?} ({:?})",
-                            state.src().map(|s| s.path_string()),
-                            state.old(),
-                            state.current(),
-                            state.pending()
-                        );
-                    }
-                    MessageView::Latency(latency) => {
-                        let current_latency = pipeline.latency();
-                        trace!("Latency message: {latency:?}. Current latency: {latency:?}",);
-                        if let Err(error) = pipeline.recalculate_latency() {
-                            warn!("Failed to recalculate latency: {error:?}");
-                        }
-                        let new_latency = pipeline.latency();
-                        if current_latency != new_latency {
-                            debug!("New latency: {new_latency:?}");
-                        }
-                    }
-                    other_message => trace!("{other_message:#?}"),
-                }
-            }
-
-            debug!("BusWatcher task ended!");
-        });
+        tokio::spawn(bus_watcher_task(
+            pipeline_weak_cloned,
+            pipeline_id,
+            bus_rx,
+            finish_tx,
+        ));
 
         // Wait until start receive the signal
         debug!("PipelineRunner waiting for start command...");
@@ -268,4 +204,82 @@ impl PipelineRunner {
             }
         }
     }
+}
+
+#[instrument(level = "debug", skip(pipeline_weak, bus_rx, finish_tx))]
+async fn bus_watcher_task(
+    pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
+    pipeline_id: uuid::Uuid,
+    mut bus_rx: tokio::sync::mpsc::UnboundedReceiver<gst::Message>,
+    finish_tx: tokio::sync::mpsc::Sender<String>,
+) {
+    debug!("BusWatcher task started!");
+
+    while let Some(message) = bus_rx.recv().await {
+        use gst::MessageView;
+
+        let Some(pipeline) = pipeline_weak.upgrade() else {
+            break;
+        };
+
+        match message.view() {
+            MessageView::Eos(eos) => {
+                pipeline.debug_to_dot_file_with_ts(
+                    gst::DebugGraphDetails::all(),
+                    format!("pipeline-{pipeline_id}-eos"),
+                );
+                let msg = format!("Received EndOfStream: {eos:?}");
+                trace!(msg);
+                let _ = finish_tx.send(msg).await;
+                break;
+            }
+            MessageView::Error(error) => {
+                let msg = format!(
+                    "Error from {:?}: {} ({:?})",
+                    error.src().map(|s| s.path_string()),
+                    error.error(),
+                    error.debug()
+                );
+                pipeline.debug_to_dot_file_with_ts(
+                    gst::DebugGraphDetails::all(),
+                    format!("pipeline-{pipeline_id}-error"),
+                );
+                trace!(msg);
+                let _ = finish_tx.send(msg).await;
+                break;
+            }
+            MessageView::StateChanged(state) => {
+                pipeline.debug_to_dot_file_with_ts(
+                    gst::DebugGraphDetails::all(),
+                    format!(
+                        "pipeline-{pipeline_id}-{:?}-to-{:?}",
+                        state.old(),
+                        state.current()
+                    ),
+                );
+
+                trace!(
+                    "State changed from {:?}: {:?} to {:?} ({:?})",
+                    state.src().map(|s| s.path_string()),
+                    state.old(),
+                    state.current(),
+                    state.pending()
+                );
+            }
+            MessageView::Latency(latency) => {
+                let current_latency = pipeline.latency();
+                trace!("Latency message: {latency:?}. Current latency: {latency:?}",);
+                if let Err(error) = pipeline.recalculate_latency() {
+                    warn!("Failed to recalculate latency: {error:?}");
+                }
+                let new_latency = pipeline.latency();
+                if current_latency != new_latency {
+                    debug!("New latency: {new_latency:?}");
+                }
+            }
+            other_message => trace!("{other_message:#?}"),
+        }
+    }
+
+    debug!("BusWatcher task ended!");
 }
