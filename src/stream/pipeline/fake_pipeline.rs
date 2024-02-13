@@ -144,7 +144,7 @@ impl FakePipeline {
             }
         };
 
-        let pipeline = gst::parse_launch(&description)?;
+        let pipeline = gst::parse::launch(&description)?;
 
         let pipeline = pipeline
             .downcast::<gst::Pipeline>()
