@@ -122,7 +122,7 @@ impl V4lPipeline {
 
         debug!("pipeline_description: {description:#?}");
 
-        let pipeline = gst::parse_launch(&description)?;
+        let pipeline = gst::parse::launch(&description)?;
 
         let pipeline = pipeline
             .downcast::<gst::Pipeline>()

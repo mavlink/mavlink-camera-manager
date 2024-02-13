@@ -325,7 +325,7 @@ impl UdpSink {
             .join(",");
         let description = format!("multiudpsink sync=false clients={clients}");
         let _udpsink =
-            gst::parse_launch(&description).context("Failed parsing pipeline description")?;
+            gst::parse::launch(&description).context("Failed parsing pipeline description")?;
 
         let udpsink_sink_pad = _udpsink
             .static_pad("sink")

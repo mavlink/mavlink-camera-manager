@@ -205,7 +205,7 @@ pub fn gst_feature_rank() -> Vec<PluginRankConfig> {
 
                 let config = PluginRankConfig {
                     name: key.to_string(),
-                    rank: gst::Rank::__Unknown(value),
+                    rank: gst::Rank::from(value),
                 };
                 return Some(config);
             }

@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::{anyhow, Context, Error, Result};
 
+use gst_video::VideoFrameExt;
 use tracing::*;
 
 use image::FlatSamples;
