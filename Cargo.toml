@@ -38,7 +38,7 @@ validator = { version = "0.16", features = ["derive"] }
 
 ## FINAL
 sysinfo = "0.29"
-chrono = "0.4.33"
+chrono = "0.4"
 lazy_static = "1.4.0"
 include_dir = "0.7.3"
 paperclip = { version = "0.8", features = ["paperclip-actix", "actix4",  "swagger-ui", "url", "uuid"] }
@@ -54,7 +54,7 @@ tracing = { version = "0.1.40", features = ["log", "async-await"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing-log = "0.2.0"
 tracing-actix-web = "0.7.9"
-tracing-gstreamer = "0.6.0"
+tracing-gstreamer = "0.7.0"
 tracing-tracy = { version = "0.11.0", features = ["ondemand", "broadcast"] } # Note that these features defines the tracy client behavior.
 
 # This is a custom revision adding file name suffix on top of tracing-appender-0.2.2" "0.2.2", but compatible with the current tracing version.
@@ -72,7 +72,7 @@ cached = { version = "0.48", features = ["serde", "serde_json", "async_tokio_rt_
 mavlink = { version = "0.10.6", features = ["default", "emit-extensions"] }
 
 ## WebRTC
-async-tungstenite = { version = "0.24", features = ["tokio-runtime", "tokio-native-tls"] }
+async-tungstenite = { version = "0.25", features = ["tokio-runtime", "tokio-native-tls"] }
 async-std = { version = "1.12", features =  ["tokio1"] }
 futures = "0.3"
 webrtc-util = { version = "0.8", default-features = false, features = ["vnet"] }
@@ -82,13 +82,13 @@ turn = "0.7"
 image = "0.24"
 
 ## GSTREAMER
-gst = { package = "gstreamer", version = "0.21", features = ["v1_16"] }
-gst-app = { package = "gstreamer-app", version = "0.21", features = ["v1_16"] }
-gst-sdp = { package = "gstreamer-sdp", version = "0.21", features=["v1_16"] }
-gst-webrtc = { package = "gstreamer-webrtc", version = "0.21", features = ["v1_16"] }
-gst-rtsp = { package = "gstreamer-rtsp", version = "0.21", features = ["v1_16"] }
-gst-rtsp-server = { package = "gstreamer-rtsp-server", version = "0.21", features = ["v1_16"] }
-gst-video = { package = "gstreamer-video", version = "0.21", features = ["v1_16"] }
+gst = { package = "gstreamer", version = "0.22", features = ["v1_16"] }
+gst-app = { package = "gstreamer-app", version = "0.22", features = ["v1_16"] }
+gst-sdp = { package = "gstreamer-sdp", version = "0.22", features=["v1_16"] }
+gst-webrtc = { package = "gstreamer-webrtc", version = "0.22", features = ["v1_16"] }
+gst-rtsp = { package = "gstreamer-rtsp", version = "0.22", features = ["v1_16"] }
+gst-rtsp-server = { package = "gstreamer-rtsp-server", version = "0.22", features = ["v1_16"] }
+gst-video = { package = "gstreamer-video", version = "0.22", features = ["v1_16"] }
 webrtc-sdp = "0.3.11"
 
 [dev-dependencies]
@@ -97,9 +97,9 @@ serial_test = "0.10"
 tracing-test = "0.2"
 
 [build-dependencies]
-reqwest = { version = "0.11.20", features = ["blocking"] }
+reqwest = { version = "0.11", features = ["blocking"] }
 vergen = { version = "7.5", default-features = false, features = ["build", "git"] }
-ts-rs = "7.0"
+ts-rs = "7.1"
 uuid = { version = "1.7", features = ["v4", "serde"] }
 serde = { version = "1.0", features = ["derive"] }
 regex = "1"
