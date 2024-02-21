@@ -89,10 +89,13 @@ impl Manager {
                     Err(error) => {
                         trace!("Failed receiving from mavlink: {error:?}");
 
-                        // The mavlink connection is handled by the sender_loop, so we can just silently skip the WouldBlocks
-                        if let mavlink::error::MessageReadError::Io(io_error) = &error {
-                            if io_error.kind() == std::io::ErrorKind::WouldBlock {
-                                continue;
+                        match &error {
+                            mavlink::error::MessageReadError::Parse(_) => continue,
+                            mavlink::error::MessageReadError::Io(io_error) => {
+                                // The mavlink connection is handled by the sender_loop, so we can just silently skip the WouldBlocks
+                                if io_error.kind() == std::io::ErrorKind::WouldBlock {
+                                    continue;
+                                }
                             }
                         }
 
