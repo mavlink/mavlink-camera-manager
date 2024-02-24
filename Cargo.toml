@@ -55,7 +55,7 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing-log = "0.2.0"
 tracing-actix-web = "0.7.9"
 tracing-gstreamer = "0.7.0"
-tracing-tracy = { version = "0.11.0", features = ["ondemand", "broadcast"] } # Note that these features defines the tracy client behavior.
+tracing-tracy = { version = "0.10.5", features = ["ondemand", "broadcast"] } # Note that these features defines the tracy client behavior.
 
 # This is a custom revision adding file name suffix on top of tracing-appender-0.2.2" "0.2.2", but compatible with the current tracing version.
 # Reference: https://github.com/tokio-rs/tracing/issues/2441
