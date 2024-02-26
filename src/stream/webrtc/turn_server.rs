@@ -16,7 +16,6 @@ use turn::Error;
 use tracing::*;
 
 pub const DEFAULT_TURN_ENDPOINT: &str = "turn://user:pwd@0.0.0.0:3478";
-pub const DEFAULT_STUN_ENDPOINT: &str = "stun://0.0.0.0:3478";
 
 #[derive(Debug)]
 pub struct TurnServer {
