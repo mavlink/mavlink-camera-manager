@@ -30,7 +30,7 @@ struct Args {
     #[arg(
         long,
         value_name = "stun://IP>:<PORT",
-        default_value = "ws://0.0.0.0:6021"
+        default_value = "stun://0.0.0.0:3478"
     )]
     stun_server: String,
 
