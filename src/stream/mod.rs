@@ -6,7 +6,10 @@ pub mod sink;
 pub mod types;
 pub mod webrtc;
 
-use std::sync::{Arc, RwLock};
+#[cfg(feature = "debug_sync")]
+use crate::helper::debug_sync::{DebugArc as Arc, DebugMutex as Mutex, DebugRwLock as RwLock};
+#[cfg(not(feature = "debug_sync"))]
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::mavlink::mavlink_camera::MavlinkCamera;
 use crate::video::types::{VideoEncodeType, VideoSourceType};

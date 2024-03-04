@@ -367,14 +367,14 @@ impl WebRTCSink {
             .spawn(move || {
                 debug!("Waiting for peer to be connected within 10 seconds...");
 
-                std::thread::sleep(std::time::Duration::from_secs(9));
+                // std::thread::sleep(std::time::Duration::from_secs(9));
 
-                if peer_connected_rx.recv_timeout(std::time::Duration::from_secs(1)).is_ok() {
-                    debug!("Peer connected. Disabling FailSafeKiller");
-                    return;
-                }
+                // if peer_connected_rx.recv_timeout(std::time::Duration::from_secs(1)).is_ok() {
+                //     debug!("Peer connected. Disabling FailSafeKiller");
+                //     return;
+                // }
 
-                error!("WebRTCBin failed to negotiate under 10 seconds. Session will be killed immediatly to safe resources");
+                warn!("WebRTCBin failed to negotiate under 10 seconds. Session will be killed immediatly to save resources");
 
                 let bind = weak_proxy.bind;
 

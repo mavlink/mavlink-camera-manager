@@ -103,3 +103,6 @@ ts-rs = "7.1"
 uuid = { version = "1.7", features = ["v4", "serde"] }
 serde = { version = "1.0", features = ["derive"] }
 regex = "1"
+
+[features]
+debug_sync = []
