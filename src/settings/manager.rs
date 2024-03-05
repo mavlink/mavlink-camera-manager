@@ -3,7 +3,12 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::io::prelude::*;
 use std::path::Path;
-use std::sync::{Arc, RwLock};
+
+#[cfg(feature = "debug_sync")]
+use crate::helper::debug_sync::{DebugArc as Arc, DebugMutex as Mutex, DebugRwLock as RwLock};
+#[cfg(not(feature = "debug_sync"))]
+use std::sync::{Arc, Mutex, RwLock};
+
 use tracing::*;
 
 use crate::cli;

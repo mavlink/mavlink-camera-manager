@@ -1,7 +1,9 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+use std::collections::HashMap;
+
+#[cfg(feature = "debug_sync")]
+use crate::helper::debug_sync::{DebugArc as Arc, DebugMutex as Mutex, DebugRwLock as RwLock};
+#[cfg(not(feature = "debug_sync"))]
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::{
     settings,
