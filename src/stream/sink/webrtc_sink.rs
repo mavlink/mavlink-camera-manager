@@ -342,6 +342,20 @@ impl WebRTCSink {
             rx.recv()??
         };
 
+        // Configure RTP
+        let webrtcbin = webrtcbin.downcast::<gst::Bin>().unwrap();
+        webrtcbin
+            .iterate_elements()
+            .filter(|e| e.name().starts_with("rtpbin"))
+            .into_iter()
+            .for_each(|res| {
+                let Ok(rtp_bin) = res else { return };
+
+                // Use the pipeline clock time. This will ensure that the timestamps from the source are correct.
+                rtp_bin.set_property_from_str("ntp-time-source", "clock-time");
+            });
+        let webrtcbin = webrtcbin.upcast::<gst::Element>();
+
         let webrtcbin_sink_pad = webrtcbin
             .request_pad_simple("sink_%u")
             .context("Failed requesting sink pad for webrtcsink")?;
