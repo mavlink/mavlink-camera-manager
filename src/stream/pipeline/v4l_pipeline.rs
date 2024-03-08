@@ -56,7 +56,7 @@ impl V4lPipeline {
             VideoEncodeType::H264 => {
                 format!(
                     concat!(
-                        "v4l2src device={device} do-timestamp=false",
+                        "v4l2src device={device} do-timestamp=true",
                         " ! h264parse",  // Here we need the parse to help the stream-format and alignment part, which is being fixed here because avc/au seems to reduce the CPU usage in the RTP payloading part.
                         " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
@@ -76,7 +76,7 @@ impl V4lPipeline {
             VideoEncodeType::Yuyv => {
                 format!(
                     concat!(
-                        "v4l2src device={device} do-timestamp=false",
+                        "v4l2src device={device} do-timestamp=true",
                         " ! videoconvert",
                         " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
@@ -96,7 +96,7 @@ impl V4lPipeline {
             VideoEncodeType::Mjpg => {
                 format!(
                     concat!(
-                        "v4l2src device={device} do-timestamp=false",
+                        "v4l2src device={device} do-timestamp=true",
                         // We don't need a jpegparse, as it leads to incompatible caps, spoiling the negotiation.
                         " ! capsfilter name={filter_name} caps=image/jpeg,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
