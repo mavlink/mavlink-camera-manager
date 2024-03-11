@@ -138,7 +138,7 @@ impl RTSPServer {
             "H264" => {
                 format!(
                     concat!(
-                        "shmsrc socket-path={socket_path} is-live=true",
+                        "shmsrc socket-path={socket_path} do-timestamp=true is-live=true",
                         " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0",
                         " ! capsfilter caps={rtp_caps:?}",
                         " ! rtph264depay",
@@ -151,7 +151,7 @@ impl RTSPServer {
             "RAW" => {
                 format!(
                     concat!(
-                        "shmsrc socket-path={socket_path} is-live=true",
+                        "shmsrc socket-path={socket_path} do-timestamp=true is-live=true",
                         " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0",
                         " ! capsfilter caps={rtp_caps:?}",
                         " ! rtpvrawdepay",
@@ -164,7 +164,7 @@ impl RTSPServer {
             "JPEG" => {
                 format!(
                     concat!(
-                        "shmsrc socket-path={socket_path} is-live=true",
+                        "shmsrc socket-path={socket_path} do-timestamp=true is-live=true",
                         " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=10",
                         " ! capsfilter caps={rtp_caps:?}",
                         " ! rtpjpegdepay",
