@@ -74,7 +74,7 @@ impl Manager {
     fn receiver_loop(inner: Arc<RwLock<Connection>>) {
         loop {
             loop {
-                std::thread::sleep(std::time::Duration::from_millis(10));
+                std::thread::sleep(std::time::Duration::from_millis(1));
 
                 let Ok(inner_guard) = inner.read() else {
                     break; // Break to trigger reconnection
