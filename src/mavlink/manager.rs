@@ -36,7 +36,7 @@ impl Default for Manager {
         let address =
             settings::manager::mavlink_endpoint().expect("No configured mavlink endpoint");
 
-        let (sender, _receiver) = broadcast::channel(100);
+        let (sender, _receiver) = broadcast::channel(4000);
 
         let this = Self {
             connection: Arc::new(RwLock::new(Connection {
