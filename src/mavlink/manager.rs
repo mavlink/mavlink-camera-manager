@@ -74,8 +74,6 @@ impl Manager {
     fn receiver_loop(inner: Arc<RwLock<Connection>>) {
         loop {
             loop {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-
                 let Ok(inner_guard) = inner.read() else {
                     break; // Break to trigger reconnection
                 };
@@ -133,19 +131,19 @@ impl Manager {
 
         loop {
             loop {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-
                 // Receive answer from the cameras
-                let (header, message) = match receiver.try_recv() {
+                let (header, message) = match receiver.blocking_recv() {
                     Ok(Message::ToBeSent(message)) => message,
-                    Err(broadcast::error::TryRecvError::Closed) => {
+                    Ok(Message::Received(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => {
                         unreachable!(
                             "Closed channel: This should never happen, this channel is static!"
                         );
                     }
-                    // Since we are sharing a singel channel to both send and receive, and we don't care
-                    // when the channel is empty or lagged, we can safely ignore anything else here.
-                    _ => continue,
+                    Err(broadcast::error::RecvError::Lagged(samples)) => {
+                        warn!("Channel is lagged behind by {samples} messages. Expect degraded performance on the mavlink responsiviness.");
+                        continue;
+                    }
                 };
 
                 let Ok(inner_guard) = inner.read() else {
