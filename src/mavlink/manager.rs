@@ -104,6 +104,19 @@ impl Manager {
 
                 trace!("Message received: {header:?}, {message:?}");
 
+                // Early filter non-GCS messages to avoid passing unwanted ones to the camera componenets.
+                let allowed_component_ids = [
+                    mavlink::common::MavComponent::MAV_COMP_ID_ALL as u8,
+                    mavlink::common::MavComponent::MAV_COMP_ID_SYSTEM_CONTROL as u8,
+                    mavlink::common::MavComponent::MAV_COMP_ID_MISSIONPLANNER as u8,
+                ];
+                if !allowed_component_ids.contains(&header.component_id) {
+                    trace!("Message dropped: {header:?}, {message:?}");
+                    continue;
+                }
+
+                debug!("Message accepted: {header:?}, {message:?}");
+
                 // Send the received message to the cameras
                 if let Err(error) = inner_guard
                     .sender
