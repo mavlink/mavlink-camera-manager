@@ -32,7 +32,7 @@ use ::gst::prelude::*;
 
 #[derive(Debug)]
 pub struct Stream {
-    state: Arc<RwLock<StreamState>>,
+    state: Arc<RwLock<Option<StreamState>>>,
     terminated: Arc<RwLock<bool>>,
     watcher_handle: Option<tokio::task::JoinHandle<()>>,
 }
@@ -50,9 +50,9 @@ impl Stream {
     pub async fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
         let pipeline_id = Manager::generate_uuid();
 
-        let state = Arc::new(RwLock::new(
+        let state = Arc::new(RwLock::new(Some(
             StreamState::try_new(video_and_stream_information, &pipeline_id).await?,
-        ));
+        )));
 
         let terminated = Arc::new(RwLock::new(false));
         let terminated_cloned = terminated.clone();
@@ -87,7 +87,7 @@ impl Stream {
     async fn watcher(
         video_and_stream_information: VideoAndStreamInformation,
         pipeline_id: uuid::Uuid,
-        state: Arc<RwLock<StreamState>>,
+        state: Arc<RwLock<Option<StreamState>>>,
         terminated: Arc<RwLock<bool>>,
     ) -> Result<()> {
         // To reduce log size, each report we raise the report interval geometrically until a maximum value is reached:
@@ -104,16 +104,18 @@ impl Stream {
             if !state
                 .read()
                 .map_err(|e| anyhow::Error::msg(e.to_string()))?
-                .pipeline
-                .inner_state_as_ref()
-                .pipeline_runner
-                .is_running()
+                .as_ref()
+                .is_some_and(|state| {
+                    state
+                        .pipeline
+                        .inner_state_as_ref()
+                        .pipeline_runner
+                        .is_running()
+                })
             {
-                // First, finish the MAVLink tasks
-                {
-                    if let Some(mavlink) = state.write().unwrap().mavlink_camera.take() {
-                        drop(mavlink);
-                    }
+                // First, drop the current state
+                if let Some(state) = state.write().unwrap().take() {
+                    drop(state);
                 }
 
                 // If it's a camera, try to update the device
@@ -184,9 +186,7 @@ impl Stream {
                 };
 
                 // Try to recreate the stream
-                if let Ok(mut state) = state.write() {
-                    *state = new_state
-                }
+                state.write().unwrap().replace(new_state);
             }
 
             if *terminated.read().unwrap() {
@@ -200,7 +200,7 @@ impl Stream {
 }
 
 impl Drop for Stream {
-    #[instrument(level = "debug", skip(self), fields(pipeline_id = self.state.read().unwrap().pipeline_id.clone().to_string()))]
+    #[instrument(level = "debug", skip(self), fields(pipeline_id = self.state.read().unwrap().as_ref().map(|state| state.pipeline_id.clone().to_string())))]
     fn drop(&mut self) {
         debug!("Dropping Stream...");
 
