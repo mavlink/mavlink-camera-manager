@@ -138,8 +138,9 @@ impl MavlinkCameraInner {
         let component_id = camera.component.component_id;
         let system_id = camera.component.system_id;
 
+        let mut period = tokio::time::interval(tokio::time::Duration::from_secs(1));
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            period.tick().await;
 
             let header = mavlink::MavHeader {
                 system_id,
