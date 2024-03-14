@@ -98,8 +98,9 @@ impl Stream {
 
         let mut video_and_stream_information = video_and_stream_information;
 
+        let mut period = tokio::time::interval(tokio::time::Duration::from_millis(100));
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            period.tick().await;
 
             if !state
                 .read()

@@ -78,8 +78,10 @@ pub async fn wait_for_element_state_async(
 ) -> Result<()> {
     let mut trials = 1000 * timeout_time_secs / polling_time_millis;
 
+    let mut period = tokio::time::interval(tokio::time::Duration::from_millis(polling_time_millis));
+
     loop {
-        tokio::time::sleep(tokio::time::Duration::from_millis(polling_time_millis)).await;
+        period.tick().await;
 
         let Some(element) = element_weak.upgrade() else {
             return Err(anyhow!("Cannot access Element"));
