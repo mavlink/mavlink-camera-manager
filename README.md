@@ -1,3 +1,4 @@
+
 <!-- TODO: Place a logo below -->
 <!-- <p align="center">[ A LOGO HERE ]</p> -->
 <h1 align="center">
@@ -211,3 +212,4 @@ The Mavlink Camera Manager project originated as a personal experiment by [@patr
 Over time, the project gained recognition and was officially embraced by [**Blue Robotics**](https://github.com/bluerobotics) as a core development effort. It became an integral part of their operating system, BlueOS, and was widely distributed worldwide. The adoption of the Mavlink Camera Manager by Blue Robotics served as a testament to its capabilities and value.
 
 Due to increasing interest from other developers and integrators, the project was transferred to the [**MAVLink organization**](https://github.com/mavlink) on May 25, 2023.
+
