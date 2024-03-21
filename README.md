@@ -28,7 +28,7 @@
 - MAVLink protocol using [rust-mavlink](https://github.com/mavlink/rust-mavlink):
   - Work with multiple cameras
   - Interface video4linux camera controls
-- WebRTC-ready, for modern control stations
+- WebRTC-ready, for modern control stations, available from any H264 source.
 - Remember configured streams
 - Rotated logs with configurable path and verbosity level
 - Generate thumbnails/snapshots for streams from local devices
