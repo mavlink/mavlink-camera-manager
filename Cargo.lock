@@ -2395,9 +2395,9 @@ dependencies = [
 
 [[package]]
 name = "mavlink"
-version = "0.10.6"
+version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25c0885d2ff5393752980be397e3f6ce3ca97c92445c62263a9127061bcfaf42"
+checksum = "17a33c99ebbba3b0b2a3d47dd05b42339602a4d0c0a877ed0e95ef57e6b80529"
 dependencies = [
  "bitflags 1.3.2",
  "byteorder",

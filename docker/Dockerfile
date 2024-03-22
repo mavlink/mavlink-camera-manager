@@ -1,4 +1,4 @@
-from ubuntu:22.04
+FROM ubuntu:22.04
 
 RUN apt update -y && \
     apt install -y --no-install-recommends \
@@ -15,10 +15,10 @@ RUN apt update -y && \
 
 # We need libssl.so.1.1
 # Note: if the link breaks, find it here: http://nz2.archive.ubuntu.com/ubuntu/pool/main/o/openssl/?C=M;O=D
-RUN wget http://nz2.archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.21_amd64.deb && \
-    dpkg -i libssl1.1_1.1.1f-1ubuntu2.21_amd64.deb ; \
-    rm -rf libssl1.1_1.1.1f-1ubuntu2.21_amd64.deb
+RUN wget http://nz2.archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.22_amd64.deb && \
+    dpkg -i libssl1.1_1.1.1f-1ubuntu2.22_amd64.deb ; \
+    rm -rf libssl1.1_1.1.1f-1ubuntu2.22_amd64.deb
 
 COPY ./target/x86_64-unknown-linux-gnu/release/mavlink-camera-manager /
 
-ENTRYPOINT ./mavlink-camera-manager --mavlink=tcpout:192.168.2.2:5777 --verbose --reset
+ENTRYPOINT ./mavlink-camera-manager --mavlink=tcpout:0.0.0.0:5777 --verbose --reset
