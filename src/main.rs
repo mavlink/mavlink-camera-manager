@@ -30,9 +30,7 @@ async fn main() -> Result<(), std::io::Error> {
     mavlink::manager::Manager::init();
 
     stream::manager::init();
-    if let Some(endpoint) = cli::manager::mavlink_connection_string() {
-        settings::manager::set_mavlink_endpoint(&endpoint);
-    }
+    settings::manager::set_mavlink_endpoint(&cli::manager::mavlink_connection_string());
 
     if cli::manager::enable_thread_counter() {
         helper::threads::start_thread_counter_thread();
