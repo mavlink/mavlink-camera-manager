@@ -33,8 +33,7 @@ pub enum Message {
 impl Default for Manager {
     #[instrument(level = "debug")]
     fn default() -> Self {
-        let address =
-            settings::manager::mavlink_endpoint().expect("No configured mavlink endpoint");
+        let address = settings::manager::mavlink_endpoint();
 
         let (sender, _receiver) = broadcast::channel(100);
 

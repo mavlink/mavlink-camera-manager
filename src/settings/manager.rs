@@ -19,7 +19,7 @@ pub struct HeaderSettingsFile {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SettingsStruct {
     pub header: HeaderSettingsFile,
-    pub mavlink_endpoint: Option<String>, //TODO: Move to URL
+    pub mavlink_endpoint: String, //TODO: Move to URL
     pub streams: Vec<VideoAndStreamInformation>,
 }
 
@@ -44,7 +44,7 @@ impl Default for SettingsStruct {
                 name: "Camera Manager".to_string(),
                 version: 0,
             },
-            mavlink_endpoint: cli::manager::mavlink_connection_string().map(String::from),
+            mavlink_endpoint: cli::manager::mavlink_connection_string(),
             streams: custom::create_default_streams(),
         }
     }
@@ -175,7 +175,7 @@ pub fn header() -> HeaderSettingsFile {
     manager.content.as_ref().unwrap().config.header.clone()
 }
 
-pub fn mavlink_endpoint() -> Option<String> {
+pub fn mavlink_endpoint() -> String {
     let manager = MANAGER.read().unwrap();
     return manager
         .content
@@ -191,7 +191,7 @@ pub fn set_mavlink_endpoint(endpoint: &str) {
     {
         let mut manager = MANAGER.write().unwrap();
         let mut content = manager.content.as_mut();
-        content.as_mut().unwrap().config.mavlink_endpoint = Some(endpoint.into());
+        content.as_mut().unwrap().config.mavlink_endpoint = endpoint.into();
     }
     save();
 }
