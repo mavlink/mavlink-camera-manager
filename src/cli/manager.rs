@@ -11,8 +11,12 @@ use clap::Parser;
 #[command(version = env!("CARGO_PKG_VERSION"), author = env!("CARGO_PKG_AUTHORS"), about = env!("CARGO_PKG_DESCRIPTION"))]
 struct Args {
     /// Sets the mavlink connection string
-    #[arg(long, value_name = "TYPE>:<IP/SERIAL>:<PORT/BAUDRATE")]
-    mavlink: Option<String>,
+    #[arg(
+        long,
+        value_name = "TYPE>:<IP/SERIAL>:<PORT/BAUDRATE",
+        default_value = "udpin:0.0.0.0:14550"
+    )]
+    mavlink: String,
 
     /// Default settings to be used for different vehicles or environments.
     #[arg(long, value_name = "NAME")]
@@ -131,7 +135,7 @@ pub fn is_tracy() -> bool {
 
 #[allow(dead_code)]
 // Return the mavlink connection string
-pub fn mavlink_connection_string() -> Option<String> {
+pub fn mavlink_connection_string() -> String {
     MANAGER.clap_matches.mavlink.clone()
 }
 
