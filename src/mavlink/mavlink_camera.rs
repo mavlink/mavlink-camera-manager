@@ -138,9 +138,8 @@ impl MavlinkCameraInner {
         let component_id = camera.component.component_id;
         let system_id = camera.component.system_id;
 
-        let mut period = tokio::time::interval(tokio::time::Duration::from_secs(1));
         loop {
-            period.tick().await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
             let header = mavlink::MavHeader {
                 system_id,
@@ -277,7 +276,10 @@ impl MavlinkCameraInner {
                         focal_length: 0.0,
                         sensor_size_h: 0.0,
                         sensor_size_v: 0.0,
-                        flags: mavlink::common::CameraCapFlags::CAMERA_CAP_FLAGS_HAS_VIDEO_STREAM,
+                        flags: mavlink::common::CameraCapFlags::CAMERA_CAP_FLAGS_HAS_VIDEO_STREAM |
+                            mavlink::common::CameraCapFlags::CAMERA_CAP_FLAGS_CAN_CAPTURE_IMAGE_IN_VIDEO_MODE |
+                            mavlink::common::CameraCapFlags::CAMERA_CAP_FLAGS_HAS_BASIC_ZOOM |
+                            mavlink::common::CameraCapFlags::CAMERA_CAP_FLAGS_HAS_BASIC_FOCUS,
                         resolution_h: camera.component.resolution_h,
                         resolution_v: camera.component.resolution_v,
                         cam_definition_version: 0,

@@ -78,9 +78,11 @@ impl V4lPipeline {
                     concat!(
                         "v4l2src device={device} do-timestamp=true",
                         " ! videoconvert",
-                        " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! x264enc",
+                        " ! h264parse",
+                        " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
-                        " ! rtpvrawpay pt=96",
+                        " ! rtph264pay aggregate-mode=zero-latency config-interval=10 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     device = device,
@@ -120,7 +122,7 @@ impl V4lPipeline {
             }
         };
 
-        debug!("pipeline_description: {description:#?}");
+        debug!("pipeline_description: {description:?}");
 
         let pipeline = gst::parse::launch(&description)?;
 
