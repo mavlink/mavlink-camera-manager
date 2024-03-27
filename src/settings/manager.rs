@@ -271,7 +271,7 @@ mod tests {
 
         let fake_mavlink_endpoint = "tcp:potatohost:42";
         set_mavlink_endpoint(fake_mavlink_endpoint);
-        assert_eq!(mavlink_endpoint(), Some(fake_mavlink_endpoint.into()));
+        assert_eq!(mavlink_endpoint(), fake_mavlink_endpoint);
 
         let fake_streams = vec![VideoAndStreamInformation {
             name: "PotatoTestStream".into(),
