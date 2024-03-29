@@ -15,10 +15,10 @@ pub enum VideoSourceType {
 #[derive(Apiv2Schema, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum VideoEncodeType {
-    Unknown(String),
-    H265,
     H264,
+    H265,
     Mjpg,
+    Unknown(String),
     Yuyv,
 }
 
