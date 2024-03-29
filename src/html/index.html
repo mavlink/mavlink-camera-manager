@@ -272,9 +272,8 @@
                 },
             },
             mounted: function() {
-                this.stream_options.encoders = this.stream_options.encoders =
-                            this.device.formats
-                                .map((format) => this.encodeToStr(format.encode))
+                this.stream_options.encoders = this.device.formats
+                    .map((format) => this.encodeToStr(format.encode))
             },
             watch: {
                 streams: {
