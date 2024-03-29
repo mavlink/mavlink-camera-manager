@@ -2,6 +2,7 @@ use super::video_source::VideoSource;
 use super::video_source_gst::VideoSourceGst;
 use super::video_source_local::VideoSourceLocal;
 use super::video_source_redirect::VideoSourceRedirect;
+use gst;
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 
@@ -39,6 +40,15 @@ pub struct Size {
 pub struct FrameInterval {
     pub numerator: u32,
     pub denominator: u32,
+}
+
+impl From<gst::Fraction> for FrameInterval {
+    fn from(fraction: gst::Fraction) -> Self {
+        FrameInterval {
+            numerator: fraction.numer() as u32,
+            denominator: fraction.denom() as u32,
+        }
+    }
 }
 
 #[derive(Apiv2Schema, Clone, Debug, Default, Serialize)]
