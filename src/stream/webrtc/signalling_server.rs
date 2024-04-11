@@ -14,27 +14,6 @@ use crate::stream::manager::Manager;
 
 use super::signalling_protocol::{self, *};
 
-/// Interface between the session manager and the WebRTC Signalling Server, which should be implemented by both sides to retain all coupling.
-pub trait WebRTCSessionManagementInterface {
-    fn add_session(bind: &BindOffer, sender: UnboundedSender<Result<Message>>)
-        -> Result<SessionId>;
-    fn remove_session(bind: &BindAnswer, _reason: String) -> Result<()>;
-
-    /// This handle should interface the Signalling Server (directly or by means of a session manager) to the WebRTCBinInterface::handle_sdp.
-    fn handle_sdp(bind: &BindAnswer, sdp: &RTCSessionDescription) -> Result<()>;
-
-    /// This handle should interface the Signalling Server (directly or by means of a session manager) to the WebRTCBinInterface::handle_ice.
-    fn handle_ice(bind: &BindAnswer, sdp_m_line_index: u32, candidate: &str) -> Result<()>;
-}
-
-/// Interface between the stream manager and the WebRTC Signalling Server, which should be implemented by both sides to retain all coupling.
-pub trait StreamManagementInterface<T> {
-    fn add_stream(stream: crate::stream::Stream) -> Result<()>;
-    fn remove_stream(stream_id: &PeerId) -> Result<()>;
-    fn streams_information() -> Result<Vec<T>>;
-    fn generate_uuid() -> uuid::Uuid;
-}
-
 #[derive(Debug)]
 pub struct SignallingServer {
     handle: Option<tokio::task::JoinHandle<()>>,
@@ -238,7 +217,7 @@ impl SignallingServer {
                         // This looks something dumb, but in fact, by keeping signalling_protocol::Stream and
                         // webrtc_manager::VideoAndStreamInformation as different things, we can change internal logics
                         // without changing the protocol's interface.
-                        let streams = Self::streams_information().unwrap_or_default();
+                        let streams = Self::streams_information().await.unwrap_or_default();
                         Some(Answer::AvailableStreams(streams))
                     }
                     Question::StartSession(bind) => {
@@ -246,6 +225,7 @@ impl SignallingServer {
                         // which will use this mpsc channel's sender to queue the message for the
                         // WebSocket, which will receive and send it to the consumer via WebSocket.
                         Self::add_session(&bind, sender.clone())
+                            .await
                             .context("Failed adding session.")?;
 
                         None
@@ -254,7 +234,7 @@ impl SignallingServer {
                         let bind = end_session_question.bind;
                         let reason = end_session_question.reason;
 
-                        if let Err(error) = Self::remove_session(&bind, reason) {
+                        if let Err(error) = Self::remove_session(&bind, reason).await {
                             error!("Failed removing session {bind:?}. Reason: {error}",);
                         }
                         return Err(anyhow!("Session {bind:?} ended by consumer"));
@@ -269,7 +249,9 @@ impl SignallingServer {
                     let bind = negotiation.bind;
                     let sdp = negotiation.sdp;
 
-                    Self::handle_sdp(&bind, &sdp).context("Failed handling SDP")?;
+                    Self::handle_sdp(&bind, &sdp)
+                        .await
+                        .context("Failed handling SDP")?;
 
                     None
                 }
@@ -282,6 +264,7 @@ impl SignallingServer {
                         .context("Missing sdp_m_line_index")?;
 
                     Self::handle_ice(&bind, sdp_m_line_index, &candidate)
+                        .await
                         .context("Failed handling ICE")?;
 
                     None
@@ -299,40 +282,40 @@ impl SignallingServer {
 
         Ok(())
     }
-}
 
-impl WebRTCSessionManagementInterface for SignallingServer {
-    fn add_session(
+    pub async fn add_session(
         bind: &BindOffer,
         sender: UnboundedSender<Result<Message>>,
     ) -> Result<SessionId> {
-        Manager::add_session(bind, sender)
+        Manager::add_session(bind, sender).await
     }
 
-    fn remove_session(bind: &BindAnswer, reason: String) -> Result<()> {
-        Manager::remove_session(bind, reason)
+    pub async fn remove_session(bind: &BindAnswer, reason: String) -> Result<()> {
+        Manager::remove_session(bind, reason).await
     }
 
-    fn handle_sdp(bind: &BindAnswer, sdp: &RTCSessionDescription) -> Result<()> {
-        Manager::handle_sdp(bind, sdp)
+    pub async fn handle_sdp(bind: &BindAnswer, sdp: &RTCSessionDescription) -> Result<()> {
+        Manager::handle_sdp(bind, sdp).await
     }
 
-    fn handle_ice(bind: &BindAnswer, sdp_m_line_index: u32, candidate: &str) -> Result<()> {
-        Manager::handle_ice(bind, sdp_m_line_index, candidate)
-    }
-}
-
-impl StreamManagementInterface<Stream> for SignallingServer {
-    fn add_stream(stream: crate::stream::Stream) -> Result<()> {
-        Manager::add_stream(stream)
+    pub async fn handle_ice(
+        bind: &BindAnswer,
+        sdp_m_line_index: u32,
+        candidate: &str,
+    ) -> Result<()> {
+        Manager::handle_ice(bind, sdp_m_line_index, candidate).await
     }
 
-    fn remove_stream(stream_id: &PeerId) -> Result<()> {
-        Manager::remove_stream(stream_id)
+    pub async fn add_stream(stream: crate::stream::Stream) -> Result<()> {
+        Manager::add_stream(stream).await
     }
 
-    fn streams_information() -> Result<Vec<Stream>> {
-        let streams = Manager::streams_information()?;
+    pub async fn remove_stream(stream_id: &PeerId) -> Result<()> {
+        Manager::remove_stream(stream_id).await
+    }
+
+    pub async fn streams_information() -> Result<Vec<Stream>> {
+        let streams = Manager::streams_information().await?;
 
         Ok(streams
             .iter()
@@ -394,7 +377,7 @@ impl StreamManagementInterface<Stream> for SignallingServer {
             .collect())
     }
 
-    fn generate_uuid() -> uuid::Uuid {
+    pub fn generate_uuid() -> uuid::Uuid {
         Manager::generate_uuid()
     }
 }
