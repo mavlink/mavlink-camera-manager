@@ -1,16 +1,14 @@
 use std::net::SocketAddr;
 
-use crate::cli;
+use crate::{cli, stream};
 use anyhow::{anyhow, Context, Result};
 use async_tungstenite::tokio::TokioAdapter;
 use async_tungstenite::{tungstenite, WebSocketStream};
 use futures::{SinkExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc::{self, UnboundedSender};
+use tokio::sync::mpsc;
 
 use tracing::*;
-
-use crate::stream::manager::Manager;
 
 use super::signalling_protocol::{self, *};
 
@@ -124,7 +122,8 @@ impl SignallingServer {
                             let bind = end_session_question.bind;
                             let reason = end_session_question.reason;
 
-                            if let Err(error) = Self::remove_session(&bind, reason) {
+                            if let Err(error) = stream::Manager::remove_session(&bind, reason).await
+                            {
                                 error!("Failed removing session {bind:?}. Reason: {error}",);
                             }
 
@@ -211,7 +210,7 @@ impl SignallingServer {
             Message::Question(question) => {
                 match question {
                     Question::PeerId => Some(Answer::PeerId(PeerIdAnswer {
-                        id: Self::generate_uuid(),
+                        id: stream::Manager::generate_uuid(),
                     })),
                     Question::AvailableStreams => {
                         // This looks something dumb, but in fact, by keeping signalling_protocol::Stream and
@@ -224,7 +223,7 @@ impl SignallingServer {
                         // After this point, any further negotiation will be sent from webrtcbin,
                         // which will use this mpsc channel's sender to queue the message for the
                         // WebSocket, which will receive and send it to the consumer via WebSocket.
-                        Self::add_session(&bind, sender.clone())
+                        stream::Manager::add_session(&bind, sender.clone())
                             .await
                             .context("Failed adding session.")?;
 
@@ -234,7 +233,7 @@ impl SignallingServer {
                         let bind = end_session_question.bind;
                         let reason = end_session_question.reason;
 
-                        if let Err(error) = Self::remove_session(&bind, reason).await {
+                        if let Err(error) = stream::Manager::remove_session(&bind, reason).await {
                             error!("Failed removing session {bind:?}. Reason: {error}",);
                         }
                         return Err(anyhow!("Session {bind:?} ended by consumer"));
@@ -249,7 +248,7 @@ impl SignallingServer {
                     let bind = negotiation.bind;
                     let sdp = negotiation.sdp;
 
-                    Self::handle_sdp(&bind, &sdp)
+                    stream::Manager::handle_sdp(&bind, &sdp)
                         .await
                         .context("Failed handling SDP")?;
 
@@ -263,7 +262,7 @@ impl SignallingServer {
                         .sdp_m_line_index
                         .context("Missing sdp_m_line_index")?;
 
-                    Self::handle_ice(&bind, sdp_m_line_index, &candidate)
+                    stream::Manager::handle_ice(&bind, sdp_m_line_index, &candidate)
                         .await
                         .context("Failed handling ICE")?;
 
@@ -283,39 +282,8 @@ impl SignallingServer {
         Ok(())
     }
 
-    pub async fn add_session(
-        bind: &BindOffer,
-        sender: UnboundedSender<Result<Message>>,
-    ) -> Result<SessionId> {
-        Manager::add_session(bind, sender).await
-    }
-
-    pub async fn remove_session(bind: &BindAnswer, reason: String) -> Result<()> {
-        Manager::remove_session(bind, reason).await
-    }
-
-    pub async fn handle_sdp(bind: &BindAnswer, sdp: &RTCSessionDescription) -> Result<()> {
-        Manager::handle_sdp(bind, sdp).await
-    }
-
-    pub async fn handle_ice(
-        bind: &BindAnswer,
-        sdp_m_line_index: u32,
-        candidate: &str,
-    ) -> Result<()> {
-        Manager::handle_ice(bind, sdp_m_line_index, candidate).await
-    }
-
-    pub async fn add_stream(stream: crate::stream::Stream) -> Result<()> {
-        Manager::add_stream(stream).await
-    }
-
-    pub async fn remove_stream(stream_id: &PeerId) -> Result<()> {
-        Manager::remove_stream(stream_id).await
-    }
-
     pub async fn streams_information() -> Result<Vec<Stream>> {
-        let streams = Manager::streams_information().await?;
+        let streams = stream::Manager::streams_information().await?;
 
         Ok(streams
             .iter()
@@ -375,10 +343,6 @@ impl SignallingServer {
                 })
             })
             .collect())
-    }
-
-    pub fn generate_uuid() -> uuid::Uuid {
-        Manager::generate_uuid()
     }
 }
 
