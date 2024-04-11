@@ -1,7 +1,6 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+use std::{collections::HashMap, sync::Arc};
+
+use tokio::sync::RwLock;
 
 use crate::{
     settings,
@@ -25,11 +24,7 @@ use tracing::*;
 use super::{
     pipeline::PipelineGstreamerInterface,
     types::StreamStatus,
-    webrtc::{
-        self,
-        signalling_protocol::RTCSessionDescription,
-        signalling_server::{StreamManagementInterface, WebRTCSessionManagementInterface},
-    },
+    webrtc::{self, signalling_protocol::RTCSessionDescription},
     Stream,
 };
 
@@ -90,28 +85,22 @@ fn config_gst_plugins() {
     }
 }
 
-pub fn remove_all_streams() -> Result<()> {
+pub async fn remove_all_streams() -> Result<()> {
     let keys = {
         let mut ids = vec![];
 
-        match MANAGER.read() {
-            Ok(guard) => guard,
-            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-        }
-        .streams
-        .keys()
-        .for_each(|id| {
+        MANAGER.read().await.streams.keys().for_each(|id| {
             ids.push(*id);
         });
 
         ids
     };
 
-    keys.iter().for_each(|stream_id| {
-        if let Err(error) = Manager::remove_stream(stream_id) {
+    for stream_id in keys.iter() {
+        if let Err(error) = Manager::remove_stream(stream_id).await {
             warn!("Failed removing stream {stream_id:?}: {error:?}")
         }
-    });
+    }
 
     Ok(())
 }
@@ -125,7 +114,7 @@ pub async fn start_default() -> Result<()> {
     let mut streams = settings::manager::streams();
 
     // Gently remove all streams as we are going to replace the entire list below
-    remove_all_streams()?;
+    remove_all_streams().await?;
 
     // Update all local video sources to make sure that they are available
     let mut candidates = video_source::cameras_available();
@@ -197,17 +186,14 @@ pub fn update_devices(
 }
 
 #[instrument(level = "debug")]
-pub fn streams() -> Result<Vec<StreamStatus>> {
-    Manager::streams_information()
+pub async fn streams() -> Result<Vec<StreamStatus>> {
+    Manager::streams_information().await
 }
 
 #[instrument(level = "debug")]
 #[cached(time = 1)]
-pub fn get_first_sdp_from_source(source: String) -> ClonableResult<gst_sdp::SDPMessage> {
-    let manager = match MANAGER.read() {
-        Ok(guard) => guard,
-        Err(error) => return Err(Arc::new(anyhow!("Failed locking a Mutex. Reason: {error}"))),
-    };
+pub async fn get_first_sdp_from_source(source: String) -> ClonableResult<gst_sdp::SDPMessage> {
+    let manager = MANAGER.read().await;
 
     let Some(result) = manager.streams.values().find_map(|stream| {
         let state_guard = match stream.state.read() {
@@ -288,15 +274,9 @@ pub async fn get_jpeg_thumbnail_from_source(
             .expect("Failed building a new tokio runtime")
             .block_on(async move {
                 let res = async move {
-                    let manager = match MANAGER.read() {
-                        Ok(guard) => guard,
-                        Err(error) => {
-                            return Some(Err(Arc::new(anyhow!(
-                                "Failed locking a Mutex. Reason: {error}"
-                            ))))
-                        }
-                    };
-                    let Some(stream) = manager.streams.values().find(|stream| {
+                    let manager = MANAGER.read().await;
+
+                    let stream = manager.streams.values().find(|stream| {
                         let state = match stream.state.read() {
                             Ok(guard) => guard,
                             Err(error) => {
@@ -313,9 +293,7 @@ pub async fn get_jpeg_thumbnail_from_source(
                                 .source_string()
                                 == source
                         })
-                    }) else {
-                        return None;
-                    };
+                    })?;
 
                     let state_guard = match stream.state.read() {
                         Ok(guard) => {
@@ -369,10 +347,7 @@ pub async fn add_stream_and_start(
     video_and_stream_information: VideoAndStreamInformation,
 ) -> Result<()> {
     {
-        let manager = match MANAGER.read() {
-            Ok(guard) => guard,
-            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-        };
+        let manager = MANAGER.read().await;
         for stream in manager.streams.values() {
             let state_guard = match stream.state.read() {
                 Ok(guard) => {
@@ -395,17 +370,15 @@ pub async fn add_stream_and_start(
     }
 
     let stream = Stream::try_new(&video_and_stream_information).await?;
-    Manager::add_stream(stream)?;
+    Manager::add_stream(stream).await?;
 
     Ok(())
 }
 
 #[instrument(level = "debug")]
-pub fn remove_stream_by_name(stream_name: &str) -> Result<()> {
-    let manager = match MANAGER.read() {
-        Ok(guard) => guard,
-        Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-    };
+pub async fn remove_stream_by_name(stream_name: &str) -> Result<()> {
+    let manager = MANAGER.read().await;
+
     if let Some(stream_id) = &manager.streams.iter().find_map(|(id, stream)| {
         let state_guard = match stream.state.read() {
             Ok(guard) => {
@@ -433,23 +406,20 @@ pub fn remove_stream_by_name(stream_name: &str) -> Result<()> {
         None
     }) {
         drop(manager);
-        Manager::remove_stream(stream_id)?;
+        Manager::remove_stream(stream_id).await?;
         return Ok(());
     }
 
     Err(anyhow!("Stream named {stream_name:?} not found"))
 }
 
-impl WebRTCSessionManagementInterface for Manager {
+impl Manager {
     #[instrument(level = "debug", skip(sender))]
-    fn add_session(
+    pub async fn add_session(
         bind: &webrtc::signalling_protocol::BindOffer,
         sender: tokio::sync::mpsc::UnboundedSender<Result<webrtc::signalling_protocol::Message>>,
     ) -> Result<webrtc::signalling_protocol::SessionId> {
-        let mut manager = match MANAGER.write() {
-            Ok(guard) => guard,
-            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-        };
+        let mut manager = MANAGER.write().await;
 
         let producer_id = bind.producer_id;
         let consumer_id = bind.consumer_id;
@@ -487,14 +457,11 @@ impl WebRTCSessionManagementInterface for Manager {
     }
 
     #[instrument(level = "debug")]
-    fn remove_session(
+    pub async fn remove_session(
         bind: &webrtc::signalling_protocol::BindAnswer,
         _reason: String,
     ) -> Result<()> {
-        let mut manager = match MANAGER.write() {
-            Ok(guard) => guard,
-            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-        };
+        let mut manager = MANAGER.write().await;
 
         let stream = manager
             .streams
@@ -526,14 +493,11 @@ impl WebRTCSessionManagementInterface for Manager {
     }
 
     #[instrument(level = "debug")]
-    fn handle_sdp(
+    pub async fn handle_sdp(
         bind: &webrtc::signalling_protocol::BindAnswer,
         sdp: &webrtc::signalling_protocol::RTCSessionDescription,
     ) -> Result<()> {
-        let manager = match MANAGER.read() {
-            Ok(guard) => guard,
-            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-        };
+        let manager = MANAGER.read().await;
 
         let state_guard = match manager
             .streams
@@ -585,15 +549,12 @@ impl WebRTCSessionManagementInterface for Manager {
     }
 
     #[instrument(level = "debug")]
-    fn handle_ice(
+    pub async fn handle_ice(
         bind: &webrtc::signalling_protocol::BindAnswer,
         sdp_m_line_index: u32,
         candidate: &str,
     ) -> Result<()> {
-        let manager = match MANAGER.read() {
-            Ok(guard) => guard,
-            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-        };
+        let manager = MANAGER.read().await;
 
         let state_guard = match manager
             .streams
@@ -632,15 +593,10 @@ impl WebRTCSessionManagementInterface for Manager {
 
         session.handle_ice(&sdp_m_line_index, candidate)
     }
-}
 
-impl StreamManagementInterface<StreamStatus> for Manager {
     #[instrument(level = "debug")]
-    fn add_stream(stream: Stream) -> Result<()> {
-        let mut manager = match MANAGER.write() {
-            Ok(guard) => guard,
-            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-        };
+    pub async fn add_stream(stream: Stream) -> Result<()> {
+        let mut manager = MANAGER.write().await;
 
         let stream_id = match stream.state.read() {
             Ok(guard) => {
@@ -665,11 +621,8 @@ impl StreamManagementInterface<StreamStatus> for Manager {
     }
 
     #[instrument(level = "debug")]
-    fn remove_stream(stream_id: &webrtc::signalling_protocol::PeerId) -> Result<()> {
-        let mut manager = match MANAGER.write() {
-            Ok(guard) => guard,
-            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-        };
+    pub async fn remove_stream(stream_id: &webrtc::signalling_protocol::PeerId) -> Result<()> {
+        let mut manager = MANAGER.write().await;
 
         if !manager.streams.contains_key(stream_id) {
             return Err(anyhow!("Already removed"));
@@ -688,11 +641,8 @@ impl StreamManagementInterface<StreamStatus> for Manager {
     }
 
     #[instrument(level = "debug")]
-    fn streams_information() -> Result<Vec<StreamStatus>> {
-        let manager = match MANAGER.read() {
-            Ok(guard) => guard,
-            Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-        };
+    pub async fn streams_information() -> Result<Vec<StreamStatus>> {
+        let manager = MANAGER.read().await;
 
         Ok(manager
             .streams
@@ -724,7 +674,7 @@ impl StreamManagementInterface<StreamStatus> for Manager {
     }
 
     #[instrument(level = "debug")]
-    fn generate_uuid() -> uuid::Uuid {
+    pub fn generate_uuid() -> uuid::Uuid {
         uuid::Uuid::new_v4()
     }
 }
