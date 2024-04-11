@@ -18,7 +18,6 @@ use pipeline::Pipeline;
 use sink::{create_image_sink, create_rtsp_sink, create_udp_sink};
 use types::*;
 use webrtc::signalling_protocol::PeerId;
-use webrtc::signalling_server::StreamManagementInterface;
 
 use anyhow::{anyhow, Result};
 
@@ -126,6 +125,7 @@ impl Stream {
 
                     // Discards any source from other running streams, otherwise we'd be trying to create a stream from a device in use (which is not possible)
                     let current_running_streams = manager::streams()
+                        .await
                         .unwrap()
                         .iter()
                         .filter_map(|status| {

@@ -248,7 +248,7 @@ pub async fn reset_settings(query: web::Query<ResetSettings>) -> HttpResponse {
 #[api_v2_operation]
 /// Provide a list of all streams configured
 pub async fn streams() -> HttpResponse {
-    let streams = match stream_manager::streams() {
+    let streams = match stream_manager::streams().await {
         Ok(streams) => streams,
         Err(error) => {
             return HttpResponse::InternalServerError()
@@ -293,7 +293,7 @@ pub async fn streams_post(json: web::Json<PostStream>) -> HttpResponse {
             .body(format!("{error:#?}"));
     }
 
-    let streams = match stream_manager::streams() {
+    let streams = match stream_manager::streams().await {
         Ok(streams) => streams,
         Err(error) => {
             return HttpResponse::InternalServerError()
@@ -315,13 +315,13 @@ pub async fn streams_post(json: web::Json<PostStream>) -> HttpResponse {
 #[api_v2_operation]
 /// Remove a desired stream
 pub fn remove_stream(query: web::Query<RemoveStream>) -> HttpResponse {
-    if let Err(error) = stream_manager::remove_stream_by_name(&query.name) {
+    if let Err(error) = stream_manager::remove_stream_by_name(&query.name).await {
         return HttpResponse::NotAcceptable()
             .content_type("text/plain")
             .body(format!("{error:#?}"));
     }
 
-    let streams = match stream_manager::streams() {
+    let streams = match stream_manager::streams().await {
         Ok(streams) => streams,
         Err(error) => {
             return HttpResponse::InternalServerError()
@@ -356,7 +356,7 @@ pub fn camera_reset_controls(json: web::Json<ResetCameraControls>) -> HttpRespon
             ));
     }
 
-    let streams = match stream_manager::streams() {
+    let streams = match stream_manager::streams().await {
         Ok(streams) => streams,
         Err(error) => {
             return HttpResponse::InternalServerError()
@@ -407,7 +407,7 @@ pub fn xml(xml_file_request: web::Query<XmlFileRequest>) -> HttpResponse {
 pub fn sdp(sdp_file_request: web::Query<SdpFileRequest>) -> HttpResponse {
     debug!("{sdp_file_request:#?}");
 
-    match stream_manager::get_first_sdp_from_source(sdp_file_request.source.clone()) {
+    match stream_manager::get_first_sdp_from_source(sdp_file_request.source.clone()).await {
         Ok(sdp) => {
             if let Ok(sdp) = sdp.as_text() {
                 HttpResponse::Ok().content_type("text/plain").body(sdp)
