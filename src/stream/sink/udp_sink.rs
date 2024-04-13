@@ -260,12 +260,22 @@ impl SinkInterface for UdpSink {
     #[instrument(level = "debug", skip(self))]
     fn eos(&self) {
         let pipeline_weak = self.pipeline.downgrade();
-        std::thread::spawn(move || {
-            let pipeline = pipeline_weak.upgrade().unwrap();
-            if let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
-                error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
-            }
-        });
+        if let Err(error) = std::thread::Builder::new()
+            .name("EOS".to_string())
+            .spawn(move || {
+                let pipeline = pipeline_weak.upgrade().unwrap();
+                if let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
+                    error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
+                }
+            })
+            .expect("Failed spawning EOS thread")
+            .join()
+        {
+            error!(
+                "EOS Thread Panicked with: {:?}",
+                error.downcast_ref::<String>()
+            );
+        }
     }
 }
 
