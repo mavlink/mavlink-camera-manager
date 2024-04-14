@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import "webrtc-adapter";
+import "webrtc-adapter"
 
-import { Manager } from "@/manager";
+import { Manager } from "@/manager"
 
-import { reactive, ref } from "vue";
+import { reactive, ref } from "vue"
 
 // Hack to update object fields when they are not being tracked by Vue reactivity proxy.
 const componentKey = ref(0);
@@ -75,10 +75,15 @@ const manager = reactive(new Manager(ip, 6021, rtc_configuration));
           <p>Producers: {{ consumer.streams.size }}</p>
           <p>Sessions: {{ consumer.sessions.size }}</p>
         </div>
-        <button type="button" v-on:click="manager.removeConsumer(consumer.id)">
+        <button
+          id="remove-consumer"
+          type="button"
+          v-on:click="manager.removeConsumer(consumer.id)"
+        >
           Remove consumer
         </button>
         <button
+          id="remove-all-sessions"
           type="button"
           v-on:click="manager.removeAllSessions(consumer.id)"
         >
@@ -135,6 +140,7 @@ const manager = reactive(new Manager(ip, 6021, rtc_configuration));
           </div>
           <button
             type="button"
+            id="remove-session"
             v-on:click="manager.removeSession(consumer.id, session.id)"
           >
             Remove Session
