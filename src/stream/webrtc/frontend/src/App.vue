@@ -37,8 +37,8 @@ const manager = reactive(new Manager(ip, 6021, rtc_configuration));
   <header :key="componentKey">
     <h1>WebRTC Development UI</h1>
     <div>
-      <p>Status: {{ manager.status }}</p>
-      <p>Consumers: {{ manager.consumers.size }}</p>
+      <p id="status">Status: {{ manager.status }}</p>
+      <p id="consumers">Consumers: {{ manager.consumers.size }}</p>
     </div>
     <div>
       <button
@@ -69,16 +69,21 @@ const manager = reactive(new Manager(ip, 6021, rtc_configuration));
     >
       <div class="consumer-header">
         <h2>Consumer</h2>
-        <p>Consumer {{ consumer.id }}</p>
+        <p id="consumer-id">Consumer {{ consumer.id }}</p>
         <div>
-          <p>Status: {{ consumer.status }}</p>
-          <p>Producers: {{ consumer.streams.size }}</p>
-          <p>Sessions: {{ consumer.sessions.size }}</p>
+          <p id="consumer-status">Status: {{ consumer.status }}</p>
+          <p id="consumer-producers">Producers: {{ consumer.streams.size }}</p>
+          <p id="consumer-sessions">Sessions: {{ consumer.sessions.size }}</p>
         </div>
-        <button type="button" v-on:click="manager.removeConsumer(consumer.id)">
+        <button
+          id="remove-consumer"
+          type="button"
+          v-on:click="manager.removeConsumer(consumer.id)"
+        >
           Remove consumer
         </button>
         <button
+          id="remove-all-sessions"
           type="button"
           v-on:click="manager.removeAllSessions(consumer.id)"
         >
@@ -95,7 +100,7 @@ const manager = reactive(new Manager(ip, 6021, rtc_configuration));
           :key="stream.id"
           v-bind:id="'stream-' + stream.id"
         >
-          <p>Producer {{ stream.id }}</p>
+          <p id="producer-id">Producer {{ stream.id }}</p>
           <p>
             Stream: "{{ stream.name }}" - {{ stream.width }}x{{
               stream.height
@@ -122,7 +127,7 @@ const manager = reactive(new Manager(ip, 6021, rtc_configuration));
           v-for="session in consumer.sessions.values()"
           :key="session.id"
         >
-          <p>Session {{ session.id }}</p>
+          <p id="session-id">Session {{ session.id }}</p>
           <div>
             <p>
               Stream: "{{ session.stream.name }}" -
@@ -131,10 +136,11 @@ const manager = reactive(new Manager(ip, 6021, rtc_configuration));
               }}
               - {{ session.stream.encode }}
             </p>
-            <p>Status: {{ session.status }}</p>
+            <p id="session-status">Status: {{ session.status }}</p>
           </div>
           <button
             type="button"
+            id="remove-session"
             v-on:click="manager.removeSession(consumer.id, session.id)"
           >
             Remove Session
