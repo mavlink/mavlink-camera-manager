@@ -7,7 +7,7 @@ use crate::video_stream::types::VideoAndStreamInformation;
 pub fn take_webrtc_stream() -> Vec<VideoAndStreamInformation> {
     let size = STANDARD_SIZES.last().unwrap();
     vec![VideoAndStreamInformation {
-        name: format!("WebRTC fake stream for thread leak"),
+        name: "WebRTC fake stream for thread leak".to_string(),
         stream_information: StreamInformation {
             endpoints: vec![Url::parse("udp://0.0.0.0:8554/test").unwrap()],
             configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
