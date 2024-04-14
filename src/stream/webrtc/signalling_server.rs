@@ -142,20 +142,22 @@ impl SignallingServer {
                         let message = serde_json::to_string(&message)?;
                         ws_sink.send(tungstenite::Message::Text(message)).await?
                     }
-                    Ok(Some(Err(_))) | Ok(None) => break,
+                    reason @ (Ok(Some(Err(_))) | Ok(None)) => {
+                        if let Err(error) = ws_sink.send(tungstenite::Message::Close(None)).await {
+                            warn!("Failed sending Close message: {error}");
+                        }
+
+                        if let Err(error) = ws_sink.close().await {
+                            panic!("Failed closing the WebSocket: {error:#?}");
+                        }
+
+                        info!("WebSocket connection closed: {reason:?}");
+
+                        break;
+                    }
                     Err(_elapsed) => ws_sink.send(tungstenite::Message::Ping(vec![])).await?,
                 };
             }
-
-            info!("Closing WebSocket connection...");
-
-            if let Err(error) = ws_sink.send(tungstenite::Message::Close(None)).await {
-                warn!("Failed sending Close message: {error}");
-            }
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-            ws_sink.close().await?;
-
-            info!("WebSocket connection closed");
 
             anyhow::Ok(())
         });
@@ -164,7 +166,10 @@ impl SignallingServer {
             while let Some(msg) = ws_stream.next().await {
                 let msg = match msg {
                     Ok(tungstenite::Message::Text(msg)) => msg,
-                    Ok(tungstenite::Message::Close(_)) => break,
+                    Ok(tungstenite::Message::Close(close)) => {
+                        debug!("Websocket closed by client: {close:?}");
+                        break;
+                    }
                     Ok(tungstenite::Message::Pong(_)) => continue,
                     msg @ Ok(_) => {
                         warn!("Unsupported message type: {msg:?}");
@@ -177,19 +182,12 @@ impl SignallingServer {
                 };
 
                 if let Err(error) = Self::handle_message(msg.clone(), &mpsc_sender).await {
-                    error!("Failed handling message: {error:?}.");
+                    error!("Failed handling message: {error}");
                     break;
                 }
             }
 
-            debug!("Finishing Signalling connecntion...");
-
-            if !mpsc_sender.is_closed() {
-                if let Err(error) = mpsc_sender.send(Err(anyhow!("Websocket closed"))) {
-                    error!("Failed sending message to mpsc: {error:?}")
-                }
-                mpsc_sender.closed().await;
-            }
+            debug!("Finishing Signalling connection...");
 
             anyhow::Ok(())
         });
@@ -277,14 +275,10 @@ impl SignallingServer {
             },
         };
 
-        if sender.is_closed() {
-            warn!("Failed sending message to mpsc. Channel is closed.");
-            return Ok(());
-        }
         if let Some(answer) = answer {
             if let Err(reason) = sender.send(Ok(Message::from(answer))) {
                 return Err(anyhow!(
-                    "Failed sending message to mpsc channel. Reason: {reason:#?}"
+                    "Failed sending message to mpsc channel. Reason: {reason:}"
                 ));
             }
         }
