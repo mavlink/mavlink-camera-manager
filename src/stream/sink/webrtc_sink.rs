@@ -353,6 +353,30 @@ impl WebRTCSink {
             end_reason: None,
         };
 
+        let (peer_connected_tx, peer_connected_rx) = std::sync::mpsc::channel::<()>();
+
+        // End the stream if it doesn't complete the negotiation
+        let weak_proxy = this.downgrade();
+        std::thread::Builder::new()
+            .name("FailSafeKiller".to_string())
+            .spawn(move || {
+                debug!("Waiting for peer to be connected within 10 seconds...");
+
+                std::thread::sleep(std::time::Duration::from_secs(9));
+
+                if peer_connected_rx.recv_timeout(std::time::Duration::from_secs(1)).is_ok() {
+                    debug!("Peer connected. Disabling FailSafeKiller");
+                    return;
+                }
+
+                warn!("WebRTCBin failed to negotiate under 10 seconds. Session will be killed immediatly to save resources");
+
+                if let Err(error) = weak_proxy.terminate("WebRTC negotiation timeout".to_string()) {
+                    error!("Failed sending EndSessionQuestion: {error}");
+                }
+            })
+            .expect("Failed spawning FailSafeKiller thread");
+
         // Connect to on-negotiation-needed to handle sending an Offer
         let weak_proxy = this.downgrade();
         this.webrtcbin
@@ -388,6 +412,12 @@ impl WebRTCSink {
             .connect_notify(Some("connection-state"), move |webrtcbin, _pspec| {
                 let state =
                     webrtcbin.property::<gst_webrtc::WebRTCPeerConnectionState>("connection-state");
+
+                if matches!(state, gst_webrtc::WebRTCPeerConnectionState::Connected) {
+                    if let Err(error) = peer_connected_tx.send(()) {
+                        error!("Failed to disable FailSafeKiller: {error:?}");
+                    }
+                }
 
                 if let Err(error) = weak_proxy.on_connection_state_change(webrtcbin, &state) {
                     error!("Failed to processing connection-state: {error:?}");
