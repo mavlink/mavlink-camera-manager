@@ -28,6 +28,7 @@ async fn task(mut counter: i32) -> Result<()> {
 
     loop {
         for button in ["add-consumer", "add-session", "remove-all-consumers"] {
+            info!("Looking for element: {button}");
             driver
                 .query(By::Id(button))
                 .wait(Duration::from_secs(60), Duration::from_millis(100))
