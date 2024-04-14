@@ -316,31 +316,21 @@ impl WebRTCSink {
             .build()?;
 
         // Workaround to have a better name for the threads created by the WebRTCBin element
-        let webrtcbin = {
-            let (tx, rx) = std::sync::mpsc::sync_channel(1);
-            std::thread::Builder::new()
-                .name("WebRTCBin".to_string())
-                .spawn(move || {
-                    let webrtcbin = gst::ElementFactory::make("webrtcbin")
-                        .property_from_str(
-                            "name",
-                            format!("webrtcbin-{}", bind.session_id).as_str(),
-                        )
-                        .property("async-handling", true)
-                        .property("bundle-policy", gst_webrtc::WebRTCBundlePolicy::MaxBundle) // https://webrtcstandards.info/sdp-bundle/
-                        .property("latency", 0u32)
-                        .property_from_str(
-                            "stun-server",
-                            cli::manager::stun_server_address().as_str(),
-                        )
-                        .property_from_str("turn-server", DEFAULT_TURN_ENDPOINT)
-                        .build();
-
-                    tx.send(webrtcbin).unwrap();
-                })
-                .expect("Failed spawning leak_inside_webrtcbin thread");
-            rx.recv()??
-        };
+        let webrtcbin = std::thread::Builder::new()
+            .name("WebRTCBin".to_string())
+            .spawn(move || {
+                gst::ElementFactory::make("webrtcbin")
+                    .property_from_str("name", format!("webrtcbin-{}", bind.session_id).as_str())
+                    .property("async-handling", true)
+                    .property("bundle-policy", gst_webrtc::WebRTCBundlePolicy::MaxBundle) // https://webrtcstandards.info/sdp-bundle/
+                    .property("latency", 0u32)
+                    .property_from_str("stun-server", cli::manager::stun_server_address().as_str())
+                    .property_from_str("turn-server", DEFAULT_TURN_ENDPOINT)
+                    .build()
+            })
+            .expect("Failed spawning WebRTCBin thread")
+            .join()
+            .map_err(|e| anyhow!("{:?}", e.downcast_ref::<String>()))??;
 
         // Configure RTP
         let webrtcbin = webrtcbin.downcast::<gst::Bin>().unwrap();
