@@ -5,12 +5,10 @@ use tokio::sync::mpsc::{self, WeakUnboundedSender};
 use tracing::*;
 
 use super::SinkInterface;
-use crate::stream::manager::Manager;
 use crate::stream::webrtc::signalling_protocol::{
-    Answer, BindAnswer, IceNegotiation, MediaNegotiation, Message, RTCIceCandidateInit,
-    RTCSessionDescription, Sdp,
+    Answer, BindAnswer, EndSessionQuestion, IceNegotiation, MediaNegotiation, Message, Question,
+    RTCIceCandidateInit, RTCSessionDescription, Sdp,
 };
-use crate::stream::webrtc::signalling_server::WebRTCSessionManagementInterface;
 use crate::stream::webrtc::turn_server::DEFAULT_TURN_ENDPOINT;
 use crate::stream::webrtc::webrtcbin_interface::WebRTCBinInterface;
 
@@ -174,42 +172,25 @@ impl SinkInterface for WebRTCSink {
         // Reasoning: because we are not receiving the Disconnected | Failed | Closed of WebRTCPeerConnectionState,
         // we are directly connecting to webrtcbin->transceiver->transport->connect_state_notify:
         // When the bug is solved, we should remove this code and use WebRTCPeerConnectionState instead.
-        let webrtcbin_clone = self.webrtcbin.downgrade();
-        let bind_clone = self.bind.clone();
+        let weak_proxy = self.downgrade();
         let rtp_sender = transceiver
             .sender()
             .context("Failed getting transceiver's RTP sender element")?;
         rtp_sender.connect_notify(Some("transport"), move |rtp_sender, _pspec| {
             let transport = rtp_sender.property::<gst_webrtc::WebRTCDTLSTransport>("transport");
 
-            let bind = bind_clone.clone();
-            let webrtcbin_clone = webrtcbin_clone.clone();
+            let weak_proxy = weak_proxy.clone();
             transport.connect_state_notify(move |transport| {
                 use gst_webrtc::WebRTCDTLSTransportState::*;
 
-                let bind = bind.clone();
                 let state = transport.state();
                 debug!("DTLS Transport Connection changed to {state:#?}");
                 match state {
                     Failed | Closed => {
-                        if let Some(webrtcbin) = webrtcbin_clone.upgrade() {
-                            if webrtcbin.current_state() == gst::State::Playing {
-                                // Closing the channel from the same thread can cause a deadlock, so we are calling it from another one:
-                                std::thread::Builder::new()
-                                    .name("DTLSKiller".to_string())
-                                    .spawn(move || {
-                                        let bind = &bind.clone();
-                                        if let Err(error) = Manager::remove_session(
-                                            bind,
-                                            format!(
-                                                "DTLS Transport connection closed with: {state:?}"
-                                            ),
-                                        ) {
-                                            error!("Failed removing session {bind:#?}: {error}");
-                                        }
-                                    })
-                                    .expect("Failed spawing DTLSKiller thread");
-                            }
+                        if let Err(error) =
+                            weak_proxy.terminate(format!("DTLS closed with: {state:?}"))
+                        {
+                            error!("Failed sending EndSessionQuestion: {error}");
                         }
                     }
                     _ => (),
@@ -448,6 +429,25 @@ impl WebRTCSink {
     }
 }
 
+impl WebRTCSinkWeakProxy {
+    fn terminate(&self, reason: String) -> Result<()> {
+        let Some(sender) = self.sender.upgrade() else {
+            return Err(anyhow!("Failed accessing MPSC Sender"));
+        };
+
+        if !sender.is_closed() {
+            sender.send(Ok(Message::Question(Question::EndSession(
+                EndSessionQuestion {
+                    bind: self.bind.clone(),
+                    reason,
+                },
+            ))))?;
+        }
+
+        Ok(())
+    }
+}
+
 impl WebRTCBinInterface for WebRTCSinkWeakProxy {
     // Whenever webrtcbin tells us that (re-)negotiation is needed, simply ask
     // for a new offer SDP from webrtcbin without any customization and then
@@ -626,19 +626,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
                 }
             }
             Failed | Closed | Disconnected => {
-                let bind = self.bind.clone();
-                let state = *state;
-                // Closing the channel from the same thread can cause a deadlock, so we are calling it from another one:
-                std::thread::Builder::new()
-                    .name("ICEKiller".to_string())
-                    .spawn(move || {
-                        if let Err(error) =
-                            Manager::remove_session(&bind, format!("ICE closed with: {state:?}"))
-                        {
-                            error!("Failed removing session {bind:#?}: {error}");
-                        }
-                    })
-                    .expect("Failed spawing ICEKiller thread");
+                self.terminate(format!("ICE closed with: {state:?}"))?;
             }
             _ => (),
         };
@@ -658,8 +646,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         match state {
             // TODO: This would be the desired workflow, but it is not being detected, so we are using a workaround connecting direcly to the DTLS Transport connection state in the Session constructor.
             Disconnected | Failed | Closed => {
-                warn!("For mantainers: Peer connection lost was detected by WebRTCPeerConnectionState, we should remove the workaround. State: {state:#?}");
-                // self.close("Connection lost"); // TODO: Keep this line commented until the forementioned bug is solved.
+                self.terminate(format!("Connectiong closed with: {state:?}"))?;
             }
             _ => (),
         }

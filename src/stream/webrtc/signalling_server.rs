@@ -139,6 +139,20 @@ impl SignallingServer {
                     .await
                 {
                     Ok(Some(Ok(message))) => {
+                        if let Message::Question(Question::EndSession(end_session_question)) =
+                            message
+                        {
+                            let bind = end_session_question.bind;
+                            let reason = end_session_question.reason;
+
+                            if let Err(error) = Self::remove_session(&bind, reason) {
+                                error!("Failed removing session {bind:?}. Reason: {error}",);
+                            }
+
+                            info!("Session {bind:?} ended by consumer");
+                            continue;
+                        }
+
                         let message = serde_json::to_string(&message)?;
                         ws_sink.send(tungstenite::Message::Text(message)).await?
                     }
