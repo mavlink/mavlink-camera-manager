@@ -260,15 +260,13 @@ impl SinkInterface for WebRTCSink {
             warn!("Failed removing WebRTCBin's elements from pipeline: {remove_err:?}");
         }
 
-        // Set Queue to null
-        if let Err(state_err) = self.queue.set_state(gst::State::Null) {
-            warn!("Failed to set Queue's state to NULL: {state_err:#?}");
-        }
-
-        // Set Sink to null
-        if let Err(state_err) = self.webrtcbin.set_state(gst::State::Null) {
-            warn!("Failed to set WebRTCBin's to NULL: {state_err:#?}");
-        }
+        // Instead of setting each element individually to null, we are using a temporary
+        // pipeline so we can post and EOS and set the state of the elements to null
+        // It is important to send EOS to the queue, otherwise it can hang when setting its state to null.
+        let pipeline = gst::Pipeline::new();
+        pipeline.add_many(elements).unwrap();
+        pipeline.post_message(::gst::message::Eos::new()).unwrap();
+        pipeline.set_state(gst::State::Null).unwrap();
 
         Ok(())
     }
