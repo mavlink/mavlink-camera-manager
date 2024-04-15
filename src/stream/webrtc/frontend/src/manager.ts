@@ -41,6 +41,8 @@ export class Manager {
 
           this.consumers.set(consumer_id, consumer);
 
+          signaller.requestStreams();
+
           // Regularly asks for available streams, which will trigger the consumer "on_available_streams" callback
           let handler_id: number | undefined = undefined;
           handler_id = window.setInterval(() => {
