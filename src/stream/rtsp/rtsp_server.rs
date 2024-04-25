@@ -7,6 +7,8 @@ use gst_rtsp::RTSPLowerTrans;
 use gst_rtsp_server::{prelude::*, RTSPTransportMode};
 use tracing::*;
 
+use super::rtsp_scheme::RTSPScheme;
+
 #[allow(dead_code)]
 pub struct RTSPServer {
     pub server: gst_rtsp_server::RTSPServer,
@@ -105,17 +107,41 @@ impl RTSPServer {
     }
 
     #[instrument(level = "debug")]
-    pub fn add_pipeline(path: &str, socket_path: &str, rtp_caps: &gst::Caps) -> Result<()> {
+    pub fn add_pipeline(
+        scheme: &RTSPScheme,
+        path: &str,
+        socket_path: &str,
+        rtp_caps: &gst::Caps,
+    ) -> Result<()> {
         // Initialize the singleton before calling gst factory
         let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
+
+        let protocols = match scheme {
+            RTSPScheme::Rtsp => {
+                RTSPLowerTrans::UDP | RTSPLowerTrans::UDP_MCAST | RTSPLowerTrans::TCP
+            }
+            RTSPScheme::Rtspu => RTSPLowerTrans::UDP | RTSPLowerTrans::UDP_MCAST,
+            RTSPScheme::Rtspt => RTSPLowerTrans::TCP,
+            RTSPScheme::Rtsph => RTSPLowerTrans::HTTP | RTSPLowerTrans::TCP,
+            RTSPScheme::Rtsps => {
+                RTSPLowerTrans::TCP
+                    | RTSPLowerTrans::UDP
+                    | RTSPLowerTrans::UDP_MCAST
+                    | RTSPLowerTrans::TLS
+            }
+            RTSPScheme::Rtspsu => {
+                RTSPLowerTrans::UDP | RTSPLowerTrans::UDP_MCAST | RTSPLowerTrans::TLS
+            }
+            RTSPScheme::Rtspst => RTSPLowerTrans::TCP | RTSPLowerTrans::TLS,
+            RTSPScheme::Rtspsh => RTSPLowerTrans::HTTP | RTSPLowerTrans::TCP | RTSPLowerTrans::TLS,
+        };
 
         let factory = gst_rtsp_server::RTSPMediaFactory::new();
         factory.set_shared(true);
         factory.set_buffer_size(0);
         factory.set_latency(0u32);
         factory.set_transport_mode(RTSPTransportMode::PLAY);
-        factory
-            .set_protocols(RTSPLowerTrans::UDP | RTSPLowerTrans::UDP_MCAST | RTSPLowerTrans::TCP);
+        factory.set_protocols(protocols);
 
         let Some(encode) = rtp_caps.iter().find_map(|structure| {
             structure.iter().find_map(|(key, sendvalue)| {
