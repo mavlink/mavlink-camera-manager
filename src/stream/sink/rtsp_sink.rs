@@ -4,6 +4,8 @@ use tracing::*;
 
 use gst::prelude::*;
 
+use crate::stream::rtsp::rtsp_scheme::RTSPScheme;
+
 use super::SinkInterface;
 
 #[derive(Debug)]
@@ -13,6 +15,7 @@ pub struct RtspSink {
     sink: gst::Element,
     sink_sink_pad: gst::Pad,
     tee_src_pad: Option<gst::Pad>,
+    scheme: RTSPScheme,
     path: String,
     socket_path: String,
 }
@@ -232,9 +235,15 @@ impl RtspSink {
             .property("max-size-buffers", 0u32) // Disable buffers
             .build()?;
 
-        let path = addresses
+        let (path, scheme) = addresses
             .iter()
-            .find_map(|address| (address.scheme() == "rtsp").then_some(address.path().to_string()))
+            .find_map(|address| {
+                address
+                    .scheme()
+                    .starts_with("rtsp")
+                    .then_some(RTSPScheme::try_from(address.scheme()).unwrap_or_default())
+                    .map(|scheme| (address.path().to_string(), scheme))
+            })
             .context(
                 "Failed to find RTSP compatible address. Example: \"rtsp://0.0.0.0:8554/test\"",
             )?;
@@ -255,6 +264,7 @@ impl RtspSink {
             queue,
             sink,
             sink_sink_pad,
+            scheme,
             path,
             socket_path,
             tee_src_pad: Default::default(),
@@ -264,6 +274,11 @@ impl RtspSink {
     #[instrument(level = "trace", skip(self))]
     pub fn path(&self) -> String {
         self.path.clone()
+    }
+
+    #[instrument(level = "trace", skip(self))]
+    pub fn scheme(&self) -> RTSPScheme {
+        self.scheme.clone()
     }
 
     #[instrument(level = "trace", skip(self))]
