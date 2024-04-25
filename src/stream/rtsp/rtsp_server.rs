@@ -114,7 +114,8 @@ impl RTSPServer {
         factory.set_buffer_size(0);
         factory.set_latency(0u32);
         factory.set_transport_mode(RTSPTransportMode::PLAY);
-        factory.set_protocols(RTSPLowerTrans::UDP | RTSPLowerTrans::UDP_MCAST);
+        factory
+            .set_protocols(RTSPLowerTrans::UDP | RTSPLowerTrans::UDP_MCAST | RTSPLowerTrans::TCP);
 
         let Some(encode) = rtp_caps.iter().find_map(|structure| {
             structure.iter().find_map(|(key, sendvalue)| {
