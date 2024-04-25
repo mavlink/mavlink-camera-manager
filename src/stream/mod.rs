@@ -25,6 +25,7 @@ use anyhow::{anyhow, Result};
 use tracing::*;
 
 use self::gst::utils::wait_for_element_state;
+use self::rtsp::rtsp_scheme::RTSPScheme;
 use self::rtsp::rtsp_server::RTSP_SERVER_PORT;
 use self::sink::SinkInterface;
 
@@ -269,7 +270,10 @@ impl StreamState {
                 }
             }
 
-            if endpoints.iter().any(|endpoint| endpoint.scheme() == "rtsp") {
+            if endpoints
+                .iter()
+                .any(|endpoint| RTSPScheme::try_from(endpoint.scheme()).is_ok())
+            {
                 if let Err(reason) =
                     create_rtsp_sink(Manager::generate_uuid(), video_and_stream_information)
                         .and_then(|sink| stream.pipeline.add_sink(sink))
@@ -396,6 +400,29 @@ fn validate_endpoints(video_and_stream_information: &VideoAndStreamInformation) 
             };
         }
 
+        if scheme.starts_with("rtsp") {
+            if RTSPScheme::try_from(scheme).is_err() {
+                return Some(anyhow!(
+                    "Endpoint with rtsp scheme should use one of the following variant schemes: {:?}. Endpoint: {endpoint:?}",
+                    RTSPScheme::VALUES
+                ));
+            }
+
+            // RTSP endpoints should contain host, port, and path
+            if endpoint.host().is_none() || endpoint.port().is_none() || endpoint.path().is_empty() {
+                return Some(anyhow!(
+                    "Endpoint with rtsp scheme should contain host, port, and path. Endpoint: {endpoint:?}"
+                ));
+            }
+            if endpoint.port() != Some(RTSP_SERVER_PORT) {
+                return Some(anyhow!(
+                    "Endpoint with rtsp scheme should use port {RTSP_SERVER_PORT:?}. Endpoint: {endpoint:?}"
+                ));
+            }
+
+            return None;
+        };
+
         match scheme {
             "udp" => {
                 if VideoEncodeType::H265 == encode {
@@ -413,19 +440,6 @@ fn validate_endpoints(video_and_stream_information: &VideoAndStreamInformation) 
             "udp265" => {
                 if VideoEncodeType::H265 != encode {
                     return Some(anyhow!("Endpoint with udp265 scheme only supports H265 encode. Encode: {encode:?}, Endpoint: {endpoints:?}"));
-                }
-            }
-            "rtsp" => {
-                // RTSP endpoints should contain host, port, and path
-                if endpoint.host().is_none() || endpoint.port().is_none() || endpoint.path().is_empty() {
-                    return Some(anyhow!(
-                        "Endpoint with rtsp scheme should contain host, port, and path. Endpoint: {endpoint:?}"
-                    ));
-                }
-                if endpoint.port() != Some(RTSP_SERVER_PORT) {
-                    return Some(anyhow!(
-                        "Endpoint with rtsp scheme should use port {RTSP_SERVER_PORT:?}. Endpoint: {endpoint:?}"
-                    ));
                 }
             }
             _ => {
