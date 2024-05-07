@@ -85,7 +85,16 @@ export class Manager {
     return Result.ok(undefined as void);
   }
 
-  public addSession(consumer_id: string, producer_id: string): Result<void> {
+  public addSession(
+    consumer_id: string,
+    producer_id: string,
+    bundlePolicy: RTCBundlePolicy,
+    iceServers: RTCIceServer[],
+    allowedIps: string[],
+    allowedProtocols: string[],
+    jitterBufferTarget: number | null,
+    contentHint: string
+  ): Result<void> {
     const consumer = this.consumers.get(consumer_id);
     if (consumer == undefined) {
       const error = `Failed to find consumer ${consumer_id}`;
@@ -110,7 +119,12 @@ export class Manager {
           consumer_id,
           stream,
           signaller,
-          this.rtc_configuration,
+          bundlePolicy,
+          iceServers,
+          allowedIps,
+          allowedProtocols,
+          jitterBufferTarget,
+          contentHint,
           (session_id: string): void => {
             consumer.removeSession(session_id);
           }
