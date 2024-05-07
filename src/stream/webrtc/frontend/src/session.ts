@@ -9,9 +9,13 @@ export class Session {
   public consumer_id: string;
   public stream: Stream;
   public status: string;
-  private media_element: HTMLMediaElement | undefined;
-  private signaller: Signaller;
-  private peer_connection: RTCPeerConnection;
+  public allowedIps: string[];
+  public allowedProtocols: string[];
+  public jitterBufferTarget: number;
+  public contentHint: string;
+  public media_element: HTMLMediaElement | undefined;
+  public signaller: Signaller;
+  public peer_connection: RTCPeerConnection;
   public on_close?: on_close_callback;
 
   constructor(
@@ -19,7 +23,12 @@ export class Session {
     consumer_id: string,
     stream: Stream,
     signaller: Signaller,
-    rtc_configuration: RTCConfiguration,
+    bundlePolicy: RTCBundlePolicy,
+    iceServers: RTCIceServer[],
+    allowedIps: string[],
+    allowedProtocols: string[],
+    jitterBufferTarget: number | null,
+    contentHint: string,
     on_close?: on_close_callback
   ) {
     this.id = session_id;
@@ -28,8 +37,19 @@ export class Session {
     this.on_close = on_close;
     this.status = "";
     this.signaller = signaller;
+    this.allowedIps = allowedIps;
+    this.allowedProtocols = allowedProtocols;
+    this.jitterBufferTarget = jitterBufferTarget;
+    this.contentHint = contentHint;
 
-    this.peer_connection = this.createRTCPeerConnection(rtc_configuration);
+    console.log("allowedIps:", this.allowedIps);
+
+    const rtcConfiguration: RTCConfiguration = {
+      bundlePolicy: bundlePolicy,
+      iceServers: iceServers,
+    };
+
+    this.peer_connection = this.createRTCPeerConnection(rtcConfiguration);
 
     this.updateStatus("Creating Session...");
 
@@ -154,11 +174,30 @@ export class Session {
   }
 
   public onIncomingICE(candidate: RTCIceCandidateInit): void {
+    const c = candidate.candidate.toLowerCase();
+
+    const ip_disallowed =
+      this.allowedIps.length > 0 &&
+      this.allowedIps[0].length > 0 &&
+      this.allowedIps.find((ip) => {
+        return c.includes(ip);
+      }) === undefined;
+
+    const protocol_disallowed =
+      this.allowedProtocols.find((protocol) => {
+        return c.includes(protocol);
+      }) === undefined;
+
+    if (ip_disallowed || protocol_disallowed) {
+      console.log("Skipping remote ICE candidate:", c);
+      return;
+    }
+
     this.peer_connection
       .addIceCandidate(candidate)
       .then(() =>
         console.debug(
-          `ICE candidate added: ${JSON.stringify(candidate, null, 4)}`
+          `Remote ICE candidate added: ${JSON.stringify(candidate, null, 4)}`
         )
       )
       .catch((reason) =>
@@ -193,6 +232,41 @@ export class Session {
       if (this.media_element === undefined) {
         return;
       }
+
+      this.peer_connection
+        .getReceivers()
+        .forEach((receiver: RTCRtpReceiver) => {
+          if (receiver.track.kind !== "video") {
+            return;
+          }
+
+          console.debug(
+            `RTCRtpReceiver jitterBufferTarget attribute set from ${
+              (receiver as any).jitterBufferTarget
+            } to ${this.jitterBufferTarget}`
+          );
+          (receiver as any).jitterBufferTarget = this.jitterBufferTarget; // in milliseconds (DOMHighResTimeStamp)
+
+          let playoutDelayHint = null;
+          if (this.jitterBufferTarget !== null) {
+            playoutDelayHint = this.jitterBufferTarget / 1000; // in seconds, legacy Chrome API
+          }
+          console.debug(
+            `RTCRtpReceiver playoutDelayHint attribute set from ${
+              (receiver as any).playoutDelayHint
+            } to ${playoutDelayHint}`
+          );
+          (receiver as any).playoutDelayHint = playoutDelayHint;
+        });
+
+      event.streams.forEach((stream) => {
+        stream.getVideoTracks().forEach((video_track) => {
+          console.log(
+            `"MediaStreamTrack contentHint attribute set from ${video_track.contentHint} to ${this.contentHint}"`
+          );
+          video_track.contentHint = this.contentHint;
+        });
+      });
 
       const [remoteStream] = event.streams;
       this.media_element.srcObject = remoteStream;

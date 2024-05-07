@@ -3,7 +3,43 @@ import "webrtc-adapter";
 
 import { Manager } from "@/manager";
 
-import { reactive, ref } from "vue";
+import { reactive, ref, computed, watch, Ref } from "vue";
+
+const iceAllowedProtocols = ref(["udp", "tcp"]);
+const inner_iceAllowedIps: Ref<string[]> = ref([]);
+// eslint-disable-next-line no-undef
+const bundlePolicy = ref("max-bundle" as RTCBundlePolicy);
+// eslint-disable-next-line no-undef
+const iceServers: Ref<RTCIceServer[]> = ref([]);
+const jitterBufferTarget: Ref<number | null> = ref(0);
+const contentHint = ref("motion");
+
+const iceAllowedIps = computed({
+  get() {
+    return inner_iceAllowedIps.value;
+  },
+  set(newValue) {
+    const val = newValue
+      .toString()
+      .split("/;/ ?/,/ ?")
+      .filter((ip: string[]) => ip.length > 0)
+      .map((ip: string) => ip.toLowerCase().trim());
+    console.debug(val);
+    inner_iceAllowedIps.value = val;
+  },
+});
+
+watch(jitterBufferTarget, (newValue: number | null) => {
+  if (newValue === null || !Number.isFinite(newValue)) {
+    jitterBufferTarget.value = null;
+  }
+  if (newValue < 0) {
+    jitterBufferTarget.value = 0;
+  }
+  if (newValue > 4000) {
+    jitterBufferTarget.value = 4000;
+  }
+});
 
 // Hack to update object fields when they are not being tracked by Vue reactivity proxy.
 const componentKey = ref(0);
@@ -108,10 +144,76 @@ const manager = reactive(new Manager(ip, 6021, rtc_configuration));
             -
             {{ stream.encode }}
           </p>
+          <div>
+            <p>
+              ICE allowed IPs:
+              <input
+                id="iceAllowedIps"
+                style="width: 400px"
+                v-model="iceAllowedIps"
+                placeholder="list of ips, e.g: 192.168.0.2 192.168.0.3; empty for all"
+              />
+            </p>
+            <p>
+              ICE allowed protocols:
+              <a
+                v-for="(option, index) in ['udp', 'tcp']"
+                :key="index"
+                style="margin-left: 15px"
+              >
+                <input
+                  type="checkbox"
+                  :id="option"
+                  :value="option"
+                  v-model="iceAllowedProtocols"
+                />
+                <label :for="option" style="margin-left: 5px">
+                  {{ option }}</label
+                >
+              </a>
+            </p>
+            <p>
+              Jitter Buffer Target (milliseconds):
+              <input
+                id="jitterBufferTarget"
+                v-model.number="jitterBufferTarget"
+                placeholder="null"
+              />
+            </p>
+            <p>
+              Content Hint:
+              <a
+                v-for="(option, index) in ['motion', 'detail', 'text']"
+                :key="index"
+                style="margin-left: 15px"
+              >
+                <input
+                  type="radio"
+                  :id="option"
+                  :value="option"
+                  v-model="contentHint"
+                />
+                <label :for="option" style="margin-left: 5px">{{
+                  option
+                }}</label>
+              </a>
+            </p>
+          </div>
           <button
             id="add-session"
             type="button"
-            v-on:click="manager.addSession(consumer.id, stream.id)"
+            @click="
+              manager.addSession(
+                consumer.id,
+                stream.id,
+                bundlePolicy,
+                iceServers,
+                iceAllowedIps,
+                iceAllowedProtocols,
+                jitterBufferTarget,
+                contentHint
+              )
+            "
           >
             Add Session
           </button>
@@ -136,6 +238,21 @@ const manager = reactive(new Manager(ip, 6021, rtc_configuration));
               }}
               - {{ session.stream.encode }}
             </p>
+            <p>
+              Allowed ICE IPs:
+              {{ session.allowedIps.length > 0 ? session.allowedIps : "(any)" }}
+            </p>
+            <p>Allowed ICE Protocols: {{ session.allowedProtocols }}</p>
+            <p>
+              Target Jitter Buffer (seconds):
+              {{
+                session.jitterBufferTarget !== null
+                  ? session.jitterBufferTarget
+                  : "(null)"
+              }}
+            </p>
+
+            <p>Content Hint: "{{ session.contentHint }}"</p>
             <p id="session-status">Status: {{ session.status }}</p>
           </div>
           <button
