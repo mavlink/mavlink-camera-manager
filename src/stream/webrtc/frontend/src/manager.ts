@@ -6,22 +6,16 @@ import { Session } from "@/session";
 
 export class Manager {
   public status: string;
-  private url: URL;
-  public consumers: Map<String, Consumer>;
-  private rtc_configuration: RTCConfiguration;
-
-  constructor(ip: string, port: number, rtc_configuration: RTCConfiguration) {
-    this.status = "";
-    this.url = new URL(`ws://${ip}:${port}`);
-    this.consumers = new Map<string, Consumer>();
-    this.rtc_configuration = rtc_configuration;
-  }
+  public consumers: Map<String, Consumer> = new Map();
+  public signallerStatus: string;
 
   public updateStatus(status: string): void {
     this.status = status;
   }
 
-  public addConsumer(): void {
+  public addConsumer(signaller_ip: string, signaller_port: number): void {
+    const websocket_address = new URL(`ws://${signaller_ip}:${signaller_port}`);
+
     // Each consumer has its own signaller, which is shared with all its Sessions.
     const signaller = new Signaller(this.url, true, (status: string): void => {
       this.updateStatus(status);
