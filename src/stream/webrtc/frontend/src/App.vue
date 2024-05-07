@@ -5,6 +5,9 @@ import { Manager } from "@/manager";
 
 import { reactive, ref, computed, watch, Ref } from "vue";
 
+const signallerIp = ref(window.location.hostname.toString());
+const signallerPort = ref(6021);
+
 const iceAllowedProtocols = ref(["udp", "tcp"]);
 const inner_iceAllowedIps: Ref<string[]> = ref([]);
 // eslint-disable-next-line no-undef
@@ -22,7 +25,7 @@ const iceAllowedIps = computed({
     const val = newValue
       .toString()
       .split("/;/ ?/,/ ?")
-      .filter((ip: string[]) => ip.length > 0)
+      .filter((ip: string) => ip.length > 0)
       .map((ip: string) => ip.toLowerCase().trim());
     console.debug(val);
     inner_iceAllowedIps.value = val;
@@ -48,30 +51,31 @@ function update() {
 }
 setInterval(update, 1000);
 
-const ip = window.location.hostname.toString();
-
-// eslint-disable-next-line no-undef
-const rtc_configuration: RTCConfiguration = {
-  bundlePolicy: "max-bundle",
-  iceServers: [
-    {
-      urls: `turn:${ip}:3478`,
-      username: "user",
-      credential: "pwd",
-      credentialType: "password",
-    },
-    {
-      urls: `stun:${ip}:3478`,
-    },
-  ],
-};
-
-const manager = reactive(new Manager(ip, 6021, rtc_configuration));
+const manager = reactive(new Manager());
 </script>
 
 <template>
-  <header :key="componentKey">
-    <h1>WebRTC Development UI</h1>
+  <div :key="componentKey"></div>
+  <h1>WebRTC Development UI</h1>
+  <div>
+    <p>
+      Signaller Address:
+      <input
+        id="signallerIp"
+        v-model="signallerIp"
+        placeholder="ip, example: 192.168.0.2"
+        type="text"
+      />
+      :
+      <input
+        id="signallerPort"
+        v-model.number="signallerPort"
+        placeholder="port, example: 6020"
+        type="text"
+      />
+    </p>
+  </div>
+  <header>
     <div>
       <p id="status">Status: {{ manager.status }}</p>
       <p id="consumers">Consumers: {{ manager.consumers.size }}</p>
@@ -80,7 +84,7 @@ const manager = reactive(new Manager(ip, 6021, rtc_configuration));
       <button
         id="add-consumer"
         type="button"
-        v-on:click="manager.addConsumer()"
+        v-on:click="manager.addConsumer(signallerIp, signallerPort)"
       >
         Add consumer
       </button>
