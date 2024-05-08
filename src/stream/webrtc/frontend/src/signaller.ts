@@ -32,7 +32,7 @@ export class Signaller {
     console.debug(status);
     this.on_status_change?.(status);
 
-    this.ws = this.connect(url.toString());
+    this.ws = this.connect(url);
   }
 
   public requestConsumerId(
@@ -358,7 +358,7 @@ export class Signaller {
     }
   }
 
-  private connect(url: string) {
+  private connect(url: URL) {
     const ws = new WebSocket(url);
 
     ws.addEventListener("open", (ev: Event) => this.onOpen(ev));
@@ -369,7 +369,7 @@ export class Signaller {
     return ws;
   }
 
-  private reconnect(url: string) {
+  private reconnect(url: URL) {
     const status = `Reconnecting to signalling server on ${url}`;
     console.debug(status);
     this.on_status_change?.(status);
@@ -400,7 +400,9 @@ export class Signaller {
     this.on_status_change?.(status);
 
     if (this.should_reconnect) {
-      setTimeout(() => this.reconnect(this.ws.url), 1000);
+      const url = new URL(this.ws.url);
+
+      setTimeout(() => this.reconnect(url), 1000);
     }
   }
 
@@ -411,7 +413,7 @@ export class Signaller {
     console.debug(status);
     this.on_status_change?.(status);
 
-    const url = this.ws.url;
+    const url = new URL(this.ws.url);
 
     if (this.should_reconnect) {
       setTimeout(() => this.reconnect(url), 1000);
