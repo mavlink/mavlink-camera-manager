@@ -16,6 +16,7 @@
     "webrtc-adapter": "^8.2.0"
   },
   "devDependencies": {
+    "@babel/types": "^7.24.5",
     "@rushstack/eslint-patch": "^1.1.4",
     "@types/node": "^16.11.68",
     "@vitejs/plugin-vue": "^3.1.2",
