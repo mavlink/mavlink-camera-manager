@@ -49,7 +49,7 @@ const componentKey = ref(0);
 function update() {
   componentKey.value += 1;
 }
-setInterval(update, 1000);
+setInterval(update, 200);
 
 const manager = reactive(new Manager());
 </script>
