@@ -10,6 +10,7 @@ export class Consumer {
   public sessions: Map<string, Session>;
   public streams: Map<string, Stream>;
   public signaller: Signaller;
+  public signallerStatus: string;
 
   constructor(id: string, signaller: Signaller) {
     this.id = id;
@@ -17,11 +18,19 @@ export class Consumer {
     this.streams = new Map<string, Stream>();
     this.status = "";
     this.signaller = signaller;
+    this.signallerStatus = "";
   }
 
   public updateStatus(status: string) {
     console.debug(`Status updated to ${status}`);
-    this.status = status;
+    const time = new Date().toLocaleTimeString("en-US", { hour12: false });
+    this.status = `[${time}]: ${status}`;
+  }
+
+  public updateSignallerStatus(status: string) {
+    console.debug(`Signaller Status updated to ${status}`);
+    const time = new Date().toLocaleTimeString("en-US", { hour12: false });
+    this.status = `[${time}]: ${status}`;
   }
 
   public updateStreams(streams: Array<Stream>): void {

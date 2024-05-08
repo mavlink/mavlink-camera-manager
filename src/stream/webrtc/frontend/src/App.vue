@@ -112,6 +112,9 @@ const manager = reactive(new Manager());
         <p id="consumer-id">Consumer {{ consumer.id }}</p>
         <div>
           <p id="consumer-status">Status: {{ consumer.status }}</p>
+          <p id="consumer-signaller-status">
+            Signaller Status: {{ consumer.signallerStatus }}
+          </p>
           <p id="consumer-producers">Producers: {{ consumer.streams.size }}</p>
           <p id="consumer-sessions">Sessions: {{ consumer.sessions.size }}</p>
         </div>
