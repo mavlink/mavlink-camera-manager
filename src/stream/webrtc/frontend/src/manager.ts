@@ -7,19 +7,17 @@ import { Session } from "@/session";
 export class Manager {
   public status: string;
   public consumers: Map<String, Consumer> = new Map();
-  public signallerStatus: string;
 
   public updateStatus(status: string): void {
-    this.status = status;
+    const time = new Date().toLocaleTimeString("en-US", { hour12: false });
+    this.status = `[${time}]: ${status}`;
   }
 
   public addConsumer(signaller_ip: string, signaller_port: number): void {
     const websocket_address = new URL(`ws://${signaller_ip}:${signaller_port}`);
 
     // Each consumer has its own signaller, which is shared with all its Sessions.
-    const signaller = new Signaller(this.url, true, (status: string): void => {
-      this.updateStatus(status);
-    });
+    const signaller = new Signaller(websocket_address, true, null);
 
     signaller.ws.addEventListener(
       "open",
@@ -31,7 +29,8 @@ export class Manager {
             consumer.updateStreams.bind(consumer)
           );
           // Updates its status whenever signalling got a new status
-          consumer.signaller.on_status_change = this.updateStatus.bind(this);
+          consumer.signaller.on_status_change =
+            consumer.updateSignallerStatus.bind(consumer);
 
           this.consumers.set(consumer_id, consumer);
 
