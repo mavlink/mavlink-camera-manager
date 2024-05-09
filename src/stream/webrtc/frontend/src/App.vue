@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import "webrtc-adapter";
+import adapter from "webrtc-adapter";
 
 import { Manager } from "@/manager";
 
@@ -43,6 +43,10 @@ watch(jitterBufferTarget, (newValue: number | null) => {
     jitterBufferTarget.value = 4000;
   }
 });
+
+console.log(
+  `Using webrtc-adapter shim for browser ${adapter.browserDetails.browser}@{adapter.browserDetails.version}`
+);
 
 // Hack to update object fields when they are not being tracked by Vue reactivity proxy.
 const componentKey = ref(0);
