@@ -4,32 +4,104 @@ on: [push, pull_request]
 
 jobs:
   test-webrtc-thread-leak:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    container: ubuntu:24.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
 
     steps:
-    - uses: actions/checkout@v2
-
-    - name: Setup Chromedriver
-      uses: nanasess/setup-chromedriver@v2
-
-    - name: Install libraries
+    - name: Install build dependencies
       run: |
-        sudo apt install -y --no-install-recommends ca-certificates gnupg
-        sudo apt update
-        sudo apt install -y chromium-chromedriver
-        sudo apt install -y libunwind-dev
-        sudo apt install -y --no-install-recommends libclang-dev libssl-dev pkg-config libmount-dev libsepol-dev libselinux1-dev libglib2.0-dev libgudev-1.0-dev \
-          libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-good1.0-dev libgstreamer-plugins-bad1.0-dev libgstrtspserver-1.0-dev \
-          libgstreamer-plugins-base1.0-0 libgstreamer-plugins-good1.0-0 libgstreamer-plugins-bad1.0-0 \
-          gstreamer1.0-x gstreamer1.0-nice gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-          gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
-        gst-inspect-1.0 # Update database
-        chromedriver --port=6666& # Start webdriver for test
+        apt update -y
+          apt install -y --no-install-recommends \
+            libunwind-dev \
+            libclang-dev \
+            libssl-dev \
+            pkg-config \
+            build-essential \
+            curl \
+            wget \
+            gnupg \
+            git \
+            ca-certificates \
+            libgit2-dev \
+            libmount-dev \
+            libsepol-dev \
+            libselinux1-dev \
+            libglib2.0-dev \
+            libgudev-1.0-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libgstreamer-plugins-bad1.0-dev \
+            libgstrtspserver-1.0-dev
+
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install build dependencies - Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        # cache: 'yarn'
+        # cache-dependency-path: 'src/stream/webrtc/frontend'
+
+    - name: Install build dependencies - Install Yarn
+      run: npm install --global yarn
+    
+    - name: Set directory to safe for git
+      # Note: Required by vergen (https://crates.io/crates/vergen)
+      run: git config --global --add safe.directory $GITHUB_WORKSPACE
+
+    - name: Use cached dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: "${{ hashFiles('**/Cargo.lock') }}"
+        shared-key: "shared"
+
+    - name: Install build dependencies - Rustup
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain stable -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Build
+      run: cargo build --verbose --locked
+
+    - name: Install runtime dependencies
+      run: |
+        apt update -y
+        apt install -y --no-install-recommends \
+          gstreamer1.0-tools \
+          gstreamer1.0-x \
+          gstreamer1.0-nice \
+          gstreamer1.0-libav \
+          gstreamer1.0-plugins-ugly
+
+    - name: Install runtime dependencies - libssl.so.1.1
+      # Note: if the link breaks, find it here: https://packages.ubuntu.com/focal/amd64/libssl1.1/download
+      run: |
+        wget http://security.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.22_amd64.deb -O /tmp/openssl.deb
+        dpkg -i /tmp/openssl.deb
+
+    - name: Install runtime dependencies - Google Chrome and Chromedriver
+      # Get the json API from https://github.com/GoogleChromeLabs/chrome-for-testing?tab=readme-ov-file#json-api-endpoints
+      run: |
+        apt install -y --no-install-recommends jq unzip
+        wget --no-check-certificate https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json -O /tmp/downloads.json
+        mkdir -p /opt/google
+
+        chrome_url=$(jq -r '."channels"."Stable"."downloads"."chrome"[] | select(."platform" == "linux64") | ."url"' /tmp/downloads.json)
+        wget --no-check-certificate $chrome_url -O /tmp/chrome.zip
+        unzip /tmp/chrome.zip -d /tmp/
+        mv -f /tmp/chrome-linux64 /opt/google/chrome
+        ln -s /opt/google/chrome/chrome /usr/bin/chrome
+
+        chromedriver_url=$(jq -r '."channels"."Stable"."downloads"."chromedriver"[] | select(."platform" == "linux64") | ."url"' /tmp/downloads.json)
+        wget --no-check-certificate $chromedriver_url -O /tmp/chromedriver.zip
+        unzip /tmp/chromedriver.zip -d /tmp/
+        mv -f /tmp/chromedriver-linux64 /opt/google/chromedriver
+        ln -s /opt/google/chromedriver/chromedriver /usr/bin/chromedriver
 
     - name: Run test
       run: |
-        export DISPLAY=:99
-        chromedriver --url-base=/wd/hub &
-        cargo build
         RUST_BACKTRACE=1 timeout 300 cargo run --verbose -- \
-          --mavlink udpin:0.0.0.0:6666 --verbose --default-settings WebRTCTest --enable-thread-counter --enable-webrtc-task-test 6666 || echo "Test failed" && exit 1
+          --mavlink udpin:0.0.0.0:6666 --verbose --default-settings WebRTCTest --enable-webrtc-task-test 6666
