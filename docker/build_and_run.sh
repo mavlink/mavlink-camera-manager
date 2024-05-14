@@ -2,6 +2,9 @@
 
 cd $(git rev-parse --show-toplevel)
 
+# Get cross-rs
+cargo install cross
+
 # Build MCM
 cross build --release --target=x86_64-unknown-linux-gnu
 
