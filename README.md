@@ -139,7 +139,7 @@ gstreamer-launch-1.0 udpsrc port=$PORT \
 
 ## How to build it
 
-_This section assumes a Ubuntu 22.04, adaptation will be necessary for other distros._
+_This section assumes a Ubuntu 24.04, adaptation will be necessary for other distros._
 
 1. Install the development dependencies:
 
