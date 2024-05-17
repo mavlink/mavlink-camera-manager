@@ -87,21 +87,44 @@ fn build_with_yarn() {
     println!("cargo:rerun-if-changed=./src/stream/webrtc/frontend/index.html");
     println!("cargo:rerun-if-changed=./src/stream/webrtc/frontend/package.json");
     println!("cargo:rerun-if-changed=./src/stream/webrtc/frontend/src");
+
     // Build with YARN
     let frontend_dir = Path::new("./src/stream/webrtc/frontend");
     frontend_dir.try_exists().unwrap();
-    Command::new("yarn")
+    let version = Command::new("yarn")
         .args(["--version"])
         .status()
         .expect("Failed to build frontend, `yarn` appears to be not installed.");
-    Command::new("yarn")
-        .args(["install"])
+
+    if !version.success() {
+        panic!("yarn version failed!");
+    }
+
+    #[cfg(not(debug_assertions))]
+    let install = Command::new("yarn")
+        .args(["install", "--frozen-lockfile"])
         .current_dir(frontend_dir)
         .status()
         .unwrap();
-    Command::new("yarn")
+
+    #[cfg(debug_assertions)]
+    let install = Command::new("yarn")
+        .args(["install", "--frozen-lockfile"])
+        .current_dir(frontend_dir)
+        .status()
+        .unwrap();
+
+    if !install.success() {
+        panic!("yarn install failed!");
+    }
+
+    let build = Command::new("yarn")
         .args(["build"])
         .current_dir(frontend_dir)
         .status()
         .unwrap();
+
+    if !build.success() {
+        panic!("yarn build failed!");
+    }
 }
