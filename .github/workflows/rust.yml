@@ -7,28 +7,77 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Install libraries
-      run: |
-        sudo apt install -y --no-install-recommends ca-certificates gnupg
-        sudo apt update
-        sudo apt install -y libunwind-dev
-        sudo apt install -y --no-install-recommends libclang-dev libssl-dev pkg-config libmount-dev libsepol-dev libselinux1-dev libglib2.0-dev libgudev-1.0-dev \
-        gstreamer1.0-tools libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev libgstrtspserver-1.0-dev
-    - uses: actions-rs/toolchain@v1.0.1
+    - name: Install build dependencies
+      uses: awalsh128/cache-apt-pkgs-action@v1
       with:
-        toolchain: stable
-        override: true
+        packages: |
+          libunwind-dev \
+          libclang-dev \
+          libssl-dev \
+          pkg-config \
+          build-essential \
+          curl \
+          wget \
+          gnupg \
+          git \
+          ca-certificates \
+          libgit2-dev \
+          libmount-dev \
+          libsepol-dev \
+          libselinux1-dev \
+          libglib2.0-dev \
+          libgudev-1.0-dev \
+          libgstreamer1.0-dev \
+          libgstreamer-plugins-base1.0-dev \
+          libgstreamer-plugins-bad1.0-dev \
+          libgstrtspserver-1.0-dev
+
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install build dependencies - Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        # cache: 'yarn'
+        # cache-dependency-path: 'src/stream/webrtc/frontend'
+
+    - name: Install build dependencies - Install Yarn
+      run: npm install --global yarn
+
+    - name: Set directory to safe for git
+      # Note: Required by vergen (https://crates.io/crates/vergen)
+      run: git config --global --add safe.directory $GITHUB_WORKSPACE
+
+    - name: Use cached dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: "${{ hashFiles('**/Cargo.lock') }}"
+        shared-key: "shared"
+
+    - name: Install build dependencies - Rustup
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain stable -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
     - name: Check style
-      run: cargo fmt -- --check
+      run: cargo fmt --check
+
     - name: Check clippy
-      uses: actions-rs/clippy-check@v1
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        args: --all-features
+      run: cargo clippy --all-features --locked
+      
     - name: Build
-      run: |
-        cargo build --verbose
+      run: cargo build --verbose --locked
+      
+    - name: Install runtime dependencies
+      uses: awalsh128/cache-apt-pkgs-action@v1
+      with:
+        packages: |
+          gstreamer1.0-tools \
+          gstreamer1.0-x \
+          gstreamer1.0-nice \
+          gstreamer1.0-libav \
+          gstreamer1.0-plugins-ugly
+  
     - name: Run tests
-      run: |
-        cargo test --verbose
+      run: cargo test --verbose --locked

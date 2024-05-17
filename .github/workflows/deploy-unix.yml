@@ -23,15 +23,11 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: ${{ matrix.TARGET }}
-        override: true
-        profile: minimal
+    - name: Set directory to safe for git
+      # Note: Required by vergen (https://crates.io/crates/vergen)
+      run: git config --global --add safe.directory $GITHUB_WORKSPACE
 
     - name: Use cached dependencies
       uses: Swatinem/rust-cache@v2
@@ -39,19 +35,23 @@ jobs:
         key: "${{ matrix.os }}-${{ matrix.TARGET }}-${{ hashFiles('**/Cargo.lock') }}"
         shared-key: "shared"
 
+    - name: Install build dependencies - Rustup
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain stable --profile minimal --target ${{ matrix.TARGET }} -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Install build dependencies - Cross
+      run: cargo install cross
+
     - name: Building for ${{ matrix.os }} ${{ matrix.target }} (${{ matrix.SUFFIX }})
-      uses: actions-rs/cargo@v1
-      with:
-        use-cross: true
-        command: build
-        args: --verbose --release --target ${{matrix.target}}
+      run: cross build --release --locked --target ${{matrix.target}} --verbose
 
     - name: Prepare files
       run: |
         mkdir -p upload
         cp target/${{ matrix.TARGET }}/release/mavlink-camera-manager upload/mavlink-camera-manager-${{ matrix.SUFFIX }}
 
-    - uses: actions/upload-artifact@master
+    - uses: actions/upload-artifact@v4
       with:
         name: mavlink-camera-manager-${{ matrix.SUFFIX }}
         path: upload/*
