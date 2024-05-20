@@ -187,7 +187,7 @@ async fn task(session_cycles: i32) -> Result<()> {
                         .webdriver
                         .query(By::Id("session-status"))
                         .with_text("Status: Playing")
-                        .all()
+                        .all_from_selector()
                         .await
                     {
                         Ok(elements) => elements,
