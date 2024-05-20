@@ -30,23 +30,18 @@ pub enum Question {
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 pub struct BindOffer {
     /// each tab in the browser
-    #[ts(type = "string")]
     pub consumer_id: PeerId,
     /// each stream/camera
-    #[ts(type = "string")]
     pub producer_id: PeerId,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 pub struct BindAnswer {
     /// each tab in the browser
-    #[ts(type = "string")]
     pub consumer_id: PeerId,
     /// each stream/camera
-    #[ts(type = "string")]
     pub producer_id: PeerId,
     /// associated session
-    #[ts(type = "string")]
     pub session_id: SessionId,
 }
 
@@ -69,13 +64,11 @@ pub enum Answer {
 
 #[derive(Debug, Serialize, Deserialize, TS)]
 pub struct PeerIdAnswer {
-    #[ts(type = "string")]
     pub id: PeerId,
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
 pub struct Stream {
-    #[ts(type = "string")]
     pub id: PeerId,
     pub name: String,
     pub encode: Option<String>,
