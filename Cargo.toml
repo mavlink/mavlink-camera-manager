@@ -22,13 +22,13 @@ name = "mavlink-camera-manager"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.4", features = ["derive"] }
-regex = "1.10.3"
+clap = { version = "4.5", features = ["derive"] }
+regex = "1.10.4"
 
 #TODO: Investigate rweb to use openapi spec for free
 # https://github.com/kdy1/rweb
 actix-files = "0.6.5"
-actix-web = "4.5.1"
+actix-web = "4.6.0"
 actix-web-validator = "5.0.1"
 actix-service = "2.0.2"
 actix-extensible-rate-limit = "0.3.1"
@@ -49,11 +49,11 @@ v4l = "0.14.0"
 directories = "5.0.1"
 pnet = { version = "0.34.0", features = ["std"] }
 semver = "1.0"
-thirtyfour = "0.31"
+thirtyfour = "0.32"
 tracing = { version = "0.1.40", features = ["log", "async-await"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing-log = "0.2.0"
-tracing-actix-web = "0.7.9"
+tracing-actix-web = "0.7.10"
 tracing-gstreamer = "0.7.0"
 tracing-tracy = { version = "0.10.5", features = ["ondemand", "broadcast"] } # Note that these features defines the tracy client behavior.
 
@@ -62,11 +62,11 @@ tracing-tracy = { version = "0.10.5", features = ["ondemand", "broadcast"] } # N
 tracing-appender = { git = "https://github.com/joaoantoniocardoso/tracing", branch = "tracing-appender-0.2.2-with-filename-suffix" }
 
 anyhow = "1"
-tokio = { version = "1.36", features = ["full"] }
-enum_dispatch = "0.3.12"
-uuid = { version = "1.7", features = ["v4", "serde"] }
+tokio = { version = "1.37", features = ["full"] }
+enum_dispatch = "0.3.13"
+uuid = { version = "1.8", features = ["v4", "serde"] }
 ts-rs = "8.1.0"
-cached = { version = "0.48", features = ["serde", "serde_json", "async_tokio_rt_multi_thread"] }
+cached = { version = "0.51", features = ["serde", "serde_json", "async_tokio_rt_multi_thread"] }
 
 ## Mavlink
 mavlink = { version = "0.10.6", features = ["default", "emit-extensions"] }
@@ -75,7 +75,7 @@ mavlink = { version = "0.10.6", features = ["default", "emit-extensions"] }
 async-tungstenite = { version = "0.25", features = ["tokio-runtime", "tokio-native-tls"] }
 async-std = { version = "1.12", features =  ["tokio1"] }
 futures = "0.3"
-webrtc-util = { version = "0.8", default-features = false, features = ["vnet"] }
+webrtc-util = { version = "0.8.1", default-features = false, features = ["vnet"] }
 turn = "0.7"
 
 ## Image/Thumbnail
@@ -97,9 +97,9 @@ serial_test = "0.10"
 tracing-test = "0.2"
 
 [build-dependencies]
-reqwest = { version = "0.11", features = ["blocking"] }
+reqwest = { version = "0.12", features = ["blocking"] }
 vergen = { version = "7.5", default-features = false, features = ["build", "git"] }
 ts-rs = "8.1.0"
-uuid = { version = "1.7", features = ["v4", "serde"] }
+uuid = { version = "1.8", features = ["v4", "serde"] }
 serde = { version = "1.0", features = ["derive"] }
 regex = "1"
