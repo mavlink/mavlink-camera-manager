@@ -18,6 +18,14 @@ struct Args {
     )]
     mavlink: String,
 
+    /// Sets the settings file path
+    #[arg(
+        long,
+        value_name = "./settings.json",
+        default_value = "~/.config/mavlink-camera-manager/settings.json"
+    )]
+    settings_file: String,
+
     /// Default settings to be used for different vehicles or environments.
     #[arg(long, value_name = "NAME")]
     default_settings: Option<custom::CustomEnvironment>,
@@ -145,6 +153,11 @@ pub fn log_path() -> String {
         .log_path
         .clone()
         .expect("Clap arg \"log-path\" should always be \"Some(_)\" because of the default value.")
+}
+
+// Return the desired settings file
+pub fn settings_file() -> String {
+    MANAGER.clap_matches.settings_file.clone()
 }
 
 // Return the desired address for the REST API

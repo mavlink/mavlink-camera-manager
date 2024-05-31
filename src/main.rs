@@ -25,7 +25,7 @@ async fn main() -> Result<(), std::io::Error> {
     // Logger should start before everything else to register any log information
     logger::manager::init();
     // Settings should start before everybody else to ensure that the CLI are stored
-    settings::manager::init(None);
+    settings::manager::init(Some(&cli::manager::settings_file()));
 
     mavlink::manager::Manager::init();
 
