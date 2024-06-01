@@ -71,14 +71,14 @@ pub fn init() {
         }
     };
 
-    // Redirects all gstreamer logs to tracing.
+    // Configure GSTreamer logs integration
     gst::log::remove_default_log_function();
-    // This fundamentally changes the CPU usage of our streams, so we are only enabling
-    // this integration if absolutely necessary.
     if cli::manager::is_tracy() {
         tracing_gstreamer::integrate_events(); // This must be called before any gst::init()
         gst::init().unwrap();
         tracing_gstreamer::integrate_spans(); // This must be called after gst::init(), this is necessary to have GStreamer on tracy
+    } else {
+        redirect_gstreamer_logs_to_tracing();
     }
 
     info!(
@@ -96,5 +96,47 @@ pub fn init() {
     debug!(
         "Command line input struct call: {}",
         cli::manager::command_line()
+    );
+}
+
+fn redirect_gstreamer_logs_to_tracing() {
+    gst::log::add_log_function(
+        |category, gst_level, file, function, line, object, message| {
+            use gst::DebugLevel as GstLevel;
+            use tracing::Level as TracingLevel;
+
+            let tracing_level: TracingLevel = match gst_level {
+                GstLevel::Log | GstLevel::Info | GstLevel::None => TracingLevel::INFO,
+                GstLevel::Debug => TracingLevel::DEBUG,
+                GstLevel::Warning | GstLevel::Fixme => TracingLevel::WARN,
+                GstLevel::Error => TracingLevel::ERROR,
+                _ => TracingLevel::TRACE,
+            };
+
+            let object_name = object.map(|o| format!(":<{}>", o)).unwrap_or_default();
+            let category_name = category.name();
+            let message = message.get().map(|o| o.to_string()).unwrap_or_default();
+
+            // Quick workaround to use dynamic level, because the macro requires it to be static
+            #[macro_export]
+            macro_rules! dyn_event {
+                (target: $target:expr, parent: $parent:expr, $lvl:ident, $($fields:tt)*) => {
+                    match $lvl {
+                        TracingLevel::INFO => ::tracing::info!(target: $target, parent: $parent, $($fields)*),
+                        TracingLevel::DEBUG => ::tracing::debug!(target: $target, parent: $parent, $($fields)*),
+                        TracingLevel::WARN => ::tracing::warn!(target: $target, parent: $parent, $($fields)*),
+                        TracingLevel::ERROR => ::tracing::error!(target: $target, parent: $parent, $($fields)*),
+                        TracingLevel::TRACE => ::tracing::trace!(target: $target, parent: $parent, $($fields)*),
+                    }
+                };
+            }
+
+            dyn_event!(
+                target: "gstreamer",
+                parent: None,
+                tracing_level,
+                "{category_name} {file}:{line}:{function}{object_name} {message}",
+            );
+        },
     );
 }
