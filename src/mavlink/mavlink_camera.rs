@@ -281,19 +281,17 @@ impl MavlinkCameraInner {
                         resolution_h: camera.component.resolution_h,
                         resolution_v: camera.component.resolution_v,
                         cam_definition_version: 0,
-                        vendor_name: from_string_to_u8_array_with_size_32(
+                        vendor_name: from_string_to_sized_u8_array_with_null_terminator(
                             &camera.component.vendor_name,
                         ),
-                        model_name: from_string_to_u8_array_with_size_32(
+                        model_name: from_string_to_sized_u8_array_with_null_terminator(
                             &camera.component.vendor_name,
                         ),
 
                         lens_id: 0,
-                        cam_definition_uri:
-                            from_string_to_vec_char_with_defined_size_and_null_terminator(
-                                camera.cam_definition_uri().unwrap().as_str(),
-                                140,
-                            ),
+                        cam_definition_uri: from_string_to_sized_u8_array_with_null_terminator(
+                            camera.cam_definition_uri().unwrap().as_str(),
+                        ),
                     });
 
                 if let Err(error) = sender.send(Message::ToBeSent((our_header, message))) {
@@ -331,6 +329,9 @@ impl MavlinkCameraInner {
                         storage_id: 0,
                         storage_count: 0,
                         status: mavlink::common::StorageStatus::STORAGE_STATUS_READY,
+                        mavtype: mavlink::common::StorageType::STORAGE_TYPE_UNKNOWN,
+                        name: from_string_to_sized_u8_array_with_null_terminator("unknown"),
+                        storage_usage: mavlink::common::StorageUsageFlag::STORAGE_USAGE_FLAG_SET,
                     });
 
                 if let Err(error) = sender.send(Message::ToBeSent((our_header, message))) {
@@ -387,10 +388,11 @@ impl MavlinkCameraInner {
                         stream_id: camera.component.stream_id,
                         count: 0,
                         mavtype: camera.mavlink_stream_type,
-                        name: from_string_to_char_array_with_size_32(&camera.video_stream_name),
-                        uri: from_string_to_vec_char_with_defined_size_and_null_terminator(
+                        name: from_string_to_sized_u8_array_with_null_terminator(
+                            &camera.video_stream_name,
+                        ),
+                        uri: from_string_to_sized_u8_array_with_null_terminator(
                             camera.video_stream_uri.as_ref(),
-                            140,
                         ),
                     },
                 );
@@ -469,7 +471,7 @@ impl MavlinkCameraInner {
                 our_header,
                 MavMessage::PARAM_EXT_ACK(mavlink::common::PARAM_EXT_ACK_DATA {
                     param_id: data.param_id,
-                    param_value: data.param_value.clone(),
+                    param_value: data.param_value,
                     param_type: data.param_type,
                     param_result: result,
                 }),
@@ -547,7 +549,7 @@ impl MavlinkCameraInner {
             }
         };
 
-        let param_value = param_value_from_control_value(control_value, 128);
+        let param_value = param_value_from_control_value(control_value);
 
         let our_header = camera.component.header(None);
         let message = MavMessage::PARAM_EXT_VALUE(mavlink::common::PARAM_EXT_VALUE_DATA {
@@ -598,7 +600,7 @@ impl MavlinkCameraInner {
                     }
                 };
 
-                let param_value = param_value_from_control_value(control_value, 128);
+                let param_value = param_value_from_control_value(control_value);
 
                 let our_header = camera.component.header(None);
                 let message = MavMessage::PARAM_EXT_VALUE(mavlink::common::PARAM_EXT_VALUE_DATA {
