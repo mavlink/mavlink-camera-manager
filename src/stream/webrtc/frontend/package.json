@@ -1,6 +1,7 @@
 {
   "name": "mavlink-camera-manager-webrtc-interface",
   "version": "0.0.0",
+  "license": "MIT",
   "scripts": {
     "dev": "vite --host",
     "build": "run-p type-check build-only",
