@@ -28,7 +28,7 @@ regex = "1.10.4"
 #TODO: Investigate rweb to use openapi spec for free
 # https://github.com/kdy1/rweb
 actix-files = "0.6.5"
-actix-web = "4.6.0"
+actix-web = { version = "4.6.0", features = ["rustls"] }
 actix-web-validator = "5.0.1"
 actix-service = "2.0.2"
 actix-extensible-rate-limit = "0.3.1"
@@ -72,7 +72,7 @@ cached = { version = "0.51", features = ["serde", "serde_json", "async_tokio_rt_
 mavlink = { version = "0.12.2", features = ["default", "emit-extensions"] }
 
 ## WebRTC
-async-tungstenite = { version = "0.25", features = ["tokio-runtime", "tokio-native-tls"] }
+async-tungstenite = { version = "0.25", features = ["tokio-runtime"] }
 async-std = { version = "1.12", features =  ["tokio1"] }
 futures = "0.3"
 webrtc-util = { version = "0.8.1", default-features = false, features = ["vnet"] }
@@ -97,7 +97,7 @@ serial_test = "0.10"
 tracing-test = "0.2"
 
 [build-dependencies]
-reqwest = { version = "0.12", features = ["blocking"] }
+reqwest = { version = "0.12", features = ["blocking", "rustls-tls"] }
 vergen = { version = "7.5", default-features = false, features = ["build", "git"] }
 ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat", "uuid-impl"] }
 uuid = { version = "1.8", features = ["v4", "serde"] }
