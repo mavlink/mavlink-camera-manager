@@ -64,7 +64,6 @@ Download the mavlink-camera-manager binary for your architecture from our [relea
 ```Bash
 sudo apt update -y && \
 sudo apt install -y --no-install-recommends \
-   libssl1.1 \
    libgstreamer1.0-0 \
    libgstreamer-plugins-base1.0-0 \
    libgstreamer-plugins-bad1.0-0 \
@@ -148,7 +147,6 @@ sudo apt update -y &&\
 sudo apt install -y --no-install-recommends \
    libunwind-dev \
    libclang-dev \
-   libssl-dev \
    pkg-config \
    build-essential \
    curl \
