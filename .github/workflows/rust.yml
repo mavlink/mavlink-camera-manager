@@ -13,7 +13,6 @@ jobs:
         packages: |
           libunwind-dev \
           libclang-dev \
-          libssl-dev \
           pkg-config \
           build-essential \
           curl \
