@@ -140,7 +140,7 @@ impl SignallingServer {
                         }
 
                         if let Err(error) = ws_sink.close().await {
-                            panic!("Failed closing the WebSocket: {error:#?}");
+                            warn!("Failed closing the WebSocket: {error:#?}");
                         }
 
                         info!("WebSocket connection closed: {reason:?}");
