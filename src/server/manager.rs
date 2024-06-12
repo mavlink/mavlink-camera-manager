@@ -1,11 +1,12 @@
 use super::pages;
 
+use actix_cors::Cors;
 use actix_extensible_rate_limit::{
     backend::{memory::InMemoryBackend, SimpleInputFunctionBuilder},
     RateLimiter,
 };
 use actix_service::Service;
-use actix_web::{error::JsonPayloadError, App, HttpRequest, HttpServer};
+use actix_web::{error::JsonPayloadError, http::header, App, HttpRequest, HttpServer};
 use paperclip::{
     actix::{web, OpenApiExt},
     v2::models::{Api, Info},
@@ -31,6 +32,14 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
                 let fut = srv.call(req);
                 async { fut.await }
             })
+            .wrap(
+                Cors::default()
+                    .allow_any_origin()
+                    .allow_any_method()
+                    .allow_any_header()
+                    .send_wildcard()
+                    .max_age(3600),
+            )
             .wrap(TracingLogger::default())
             .wrap(actix_web::middleware::Logger::default())
             .wrap_api_with_spec(Api {
