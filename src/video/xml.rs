@@ -15,10 +15,8 @@ pub struct MavlinkCamera {
 pub struct Definition {
     #[serde(rename = "@version")]
     pub version: u32,
-    pub model: Model,
-    pub vendor: Vendor,
-    //TODO: Wait for flatten to be fixed in quick-xml.
-    //camera_info: CameraInfo,
+    #[serde(flatten)]
+    camera_info: CameraInfo,
 }
 
 #[derive(Debug, Serialize)]
@@ -33,14 +31,11 @@ pub struct Vendor {
     pub body: String,
 }
 
-/*
-//TODO: Wait for flatten to be fixed.
-#[derive(Debug, Default, Serialize)]
-#[serde(tag = "")]
+#[derive(Debug, Serialize)]
 struct CameraInfo {
-    vendor: String,
-    model: String,
-}*/
+    pub model: Model,
+    pub vendor: Vendor,
+}
 
 #[derive(Debug, Serialize)]
 pub struct Parameters {
@@ -134,11 +129,13 @@ pub fn from_video_source(video_source: &dyn VideoSource) -> Result<String> {
 
     let definition = Definition {
         version: 1,
-        model: Model {
-            body: video_source.name().clone(),
-        },
-        vendor: Vendor {
-            body: "Missing".into(),
+        camera_info: CameraInfo {
+            model: Model {
+                body: video_source.name().clone(),
+            },
+            vendor: Vendor {
+                body: "Missing".into(),
+            },
         },
     };
 
@@ -215,18 +212,14 @@ mod tests {
         let struct_string = to_string(&MavlinkCamera {
             definition: Definition {
                 version: 42,
-                model: Model {
-                    body: "Potato".into(),
-                },
-                vendor: Vendor {
-                    body: "PotatoFarm".into(),
-                },
-                //TODO: Wait for flatten to be fixed.
-                /*
                 camera_info: CameraInfo {
-                    vendor: "PotatoFarm2".into(),
-                    model: "Potato2".into(),
-                }*/
+                    model: Model {
+                        body: "Potato".into(),
+                    },
+                    vendor: Vendor {
+                        body: "PotatoFarm".into(),
+                    },
+                },
             },
             parameters: Parameters {
                 parameter: vec![
