@@ -1,3 +1,5 @@
+use crate::stream::gst::utils::is_gst_plugin_available;
+
 use super::types::*;
 use super::video_source::{VideoSource, VideoSourceAvailable};
 use super::video_source_local::VideoSourceLocal;
@@ -10,6 +12,7 @@ pub enum VideoSourceGstType {
     // TODO: local should have a pipeline also
     Local(VideoSourceLocal),
     Fake(String),
+    QR(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -27,6 +30,7 @@ impl VideoSource for VideoSourceGst {
         match &self.source {
             VideoSourceGstType::Local(local) => local.source_string(),
             VideoSourceGstType::Fake(string) => string,
+            VideoSourceGstType::QR(string) => string,
         }
     }
 
@@ -71,6 +75,46 @@ impl VideoSource for VideoSourceGst {
                     },
                     Format {
                         encode: VideoEncodeType::Mjpg,
+                        sizes,
+                    },
+                ]
+            }
+            VideoSourceGstType::QR(_) => {
+                let intervals: Vec<FrameInterval> = [60, 30, 24, 16, 10, 5]
+                    .iter()
+                    .map(|&frame_interval| FrameInterval {
+                        denominator: frame_interval,
+                        numerator: 1,
+                    })
+                    .collect();
+
+                let sizes: Vec<Size> = [
+                    (240, 240),
+                    (320, 320),
+                    (480, 480),
+                    (640, 640),
+                    (720, 720),
+                    (960, 960),
+                    (1080, 1080),
+                    (1280, 1280),
+                    (1440, 1440),
+                    (1920, 1920),
+                ]
+                .iter()
+                .map(|&(width, height)| Size {
+                    width,
+                    height,
+                    intervals: intervals.clone(),
+                })
+                .collect();
+
+                vec![
+                    Format {
+                        encode: VideoEncodeType::H264,
+                        sizes: sizes.clone(),
+                    },
+                    Format {
+                        encode: VideoEncodeType::Rgb,
                         sizes,
                     },
                 ]
@@ -120,6 +164,7 @@ impl VideoSource for VideoSourceGst {
                 | "snow" | "solid" | "spokes" | "white" | "zone" => true,
                 _ => false,
             },
+            VideoSourceGstType::QR(_) => true,
         }
     }
 
@@ -130,9 +175,16 @@ impl VideoSource for VideoSourceGst {
 
 impl VideoSourceAvailable for VideoSourceGst {
     fn cameras_available() -> Vec<VideoSourceType> {
-        vec![VideoSourceType::Gst(VideoSourceGst {
+        let mut sources = vec![VideoSourceType::Gst(VideoSourceGst {
             name: "Fake source".into(),
             source: VideoSourceGstType::Fake("ball".into()),
-        })]
+        })];
+        if is_gst_plugin_available("qrtimestampsrc", None) {
+            sources.push(VideoSourceType::Gst(VideoSourceGst {
+                name: "QR".into(),
+                source: VideoSourceGstType::QR("QRTimeStamp".into()),
+            }));
+        };
+        sources
     }
 }
