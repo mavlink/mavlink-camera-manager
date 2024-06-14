@@ -19,6 +19,7 @@ pub enum VideoEncodeType {
     H264,
     H265,
     Mjpg,
+    Rgb,
     Unknown(String),
     Yuyv,
 }
