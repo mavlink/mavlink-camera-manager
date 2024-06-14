@@ -43,7 +43,7 @@ impl FakePipeline {
             VideoSourceType::Gst(source) => source,
             unsupported => {
                 return Err(anyhow!(
-                    "SourceType {unsupported:?} is not supported as Fake Pipeline"
+                    "VideoSourceType {unsupported:?} is not supported as Fake Pipeline"
                 ))
             }
         };
@@ -52,7 +52,7 @@ impl FakePipeline {
             VideoSourceGstType::Fake(pattern) => pattern,
             unsupported => {
                 return Err(anyhow!(
-                    "SourceType {unsupported:?} is not supported as Fake Pipeline"
+                    "VideoSourceGstType {unsupported:?} is not supported as Fake Pipeline"
                 ))
             }
         };
