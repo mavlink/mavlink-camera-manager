@@ -1,4 +1,5 @@
 pub mod fake_pipeline;
+pub mod qr_pipeline;
 pub mod redirect_pipeline;
 pub mod runner;
 pub mod v4l_pipeline;
@@ -24,6 +25,7 @@ use crate::{
 };
 
 use fake_pipeline::FakePipeline;
+use qr_pipeline::QrPipeline;
 use redirect_pipeline::RedirectPipeline;
 use runner::PipelineRunner;
 use v4l_pipeline::V4lPipeline;
@@ -38,6 +40,7 @@ pub trait PipelineGstreamerInterface {
 pub enum Pipeline {
     V4l(V4lPipeline),
     Fake(FakePipeline),
+    QR(QrPipeline),
     Redirect(RedirectPipeline),
 }
 
@@ -46,6 +49,7 @@ impl Pipeline {
         match self {
             Pipeline::V4l(pipeline) => &mut pipeline.state,
             Pipeline::Fake(pipeline) => &mut pipeline.state,
+            Pipeline::QR(pipeline) => &mut pipeline.state,
             Pipeline::Redirect(pipeline) => &mut pipeline.state,
         }
     }
@@ -54,6 +58,7 @@ impl Pipeline {
         match self {
             Pipeline::V4l(pipeline) => &pipeline.state,
             Pipeline::Fake(pipeline) => &pipeline.state,
+            Pipeline::QR(pipeline) => &pipeline.state,
             Pipeline::Redirect(pipeline) => &pipeline.state,
         }
     }
@@ -63,11 +68,22 @@ impl Pipeline {
         video_and_stream_information: &VideoAndStreamInformation,
         pipeline_id: &uuid::Uuid,
     ) -> Result<Self> {
-        let pipeline_state = PipelineState::try_new(video_and_stream_information, pipeline_id)?;
+        let pipeline_state: PipelineState =
+            PipelineState::try_new(video_and_stream_information, pipeline_id)?;
         Ok(match &video_and_stream_information.video_source {
-            VideoSourceType::Gst(_) => Pipeline::Fake(FakePipeline {
-                state: pipeline_state,
-            }),
+            VideoSourceType::Gst(video_source_gst) => match video_source_gst.source {
+                crate::video::video_source_gst::VideoSourceGstType::Local(_) => todo!(),
+                crate::video::video_source_gst::VideoSourceGstType::Fake(_) => {
+                    Pipeline::Fake(FakePipeline {
+                        state: pipeline_state,
+                    })
+                }
+                crate::video::video_source_gst::VideoSourceGstType::QR(_) => {
+                    Pipeline::QR(QrPipeline {
+                        state: pipeline_state,
+                    })
+                }
+            },
             VideoSourceType::Local(_) => Pipeline::V4l(V4lPipeline {
                 state: pipeline_state,
             }),
@@ -110,9 +126,15 @@ impl PipelineState {
         pipeline_id: &uuid::Uuid,
     ) -> Result<Self> {
         let pipeline = match &video_and_stream_information.video_source {
-            VideoSourceType::Gst(_) => {
-                FakePipeline::try_new(pipeline_id, video_and_stream_information)
-            }
+            VideoSourceType::Gst(video) => match video.source {
+                crate::video::video_source_gst::VideoSourceGstType::Local(_) => todo!(),
+                crate::video::video_source_gst::VideoSourceGstType::Fake(_) => {
+                    FakePipeline::try_new(pipeline_id, video_and_stream_information)
+                }
+                crate::video::video_source_gst::VideoSourceGstType::QR(_) => {
+                    QrPipeline::try_new(pipeline_id, video_and_stream_information)
+                }
+            },
             VideoSourceType::Local(_) => {
                 V4lPipeline::try_new(pipeline_id, video_and_stream_information)
             }
