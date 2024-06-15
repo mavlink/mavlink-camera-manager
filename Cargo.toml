@@ -1,6 +1,6 @@
 [package]
 authors = ["Patrick José Pereira <patrickelectric@gmail.com>"]
-description = "Mavlink Camera Manager"
+description = "An extensible cross-platform camera server built on top of GStreamer and Rust-MAVLink."
 edition = "2021"
 license = "MIT"
 name = "mavlink-camera-manager"
