@@ -64,6 +64,7 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
                 r"/{filename:.*(\.html|\.js|\.css)}",
                 web::get().to(pages::root),
             )
+            .route("/gst_info", web::get().to(pages::gst_info))
             .route("/info", web::get().to(pages::info))
             .route("/delete_stream", web::delete().to(pages::remove_stream))
             .route("/reset_settings", web::post().to(pages::reset_settings))

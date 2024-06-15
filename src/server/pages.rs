@@ -1,6 +1,6 @@
 use crate::helper;
 use crate::settings;
-use crate::stream::{manager as stream_manager, types::StreamInformation};
+use crate::stream::{gst as gst_stream, manager as stream_manager, types::StreamInformation};
 use crate::video::{
     types::{Control, Format, VideoSourceType},
     video_source,
@@ -462,5 +462,20 @@ pub async fn thumbnail(thumbnail_file_request: web::Query<ThumbnailFileRequest>)
             "Thumbnail for source {:?} is temporarily unavailable. Try again later. Details: {error:?}",
             thumbnail_file_request.source
         )),
+    }
+}
+
+#[api_v2_operation]
+/// Provides information related to all gst plugins available for camera manager
+pub async fn gst_info() -> HttpResponse {
+    let gst_info = gst_stream::info::Info::default();
+
+    match serde_json::to_string_pretty(&gst_info) {
+        Ok(json) => HttpResponse::Ok()
+            .content_type("application/json")
+            .body(json),
+        Err(error) => HttpResponse::InternalServerError()
+            .content_type("text/plain")
+            .body(format!("{error:#?}")),
     }
 }
