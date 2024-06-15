@@ -6,9 +6,17 @@ use tracing::error;
 use crate::{custom, stream::gst::utils::PluginRankConfig};
 
 use clap::Parser;
+use constcat::concat;
+
+const fn version() -> &'static str {
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+    const SHA: &str = env!("VERGEN_GIT_SHA_SHORT");
+    const DATE: &str = env!("VERGEN_BUILD_DATE");
+    concat!(VERSION, " - ", SHA, " (", DATE, ")")
+}
 
 #[derive(Parser, Debug)]
-#[command(version = env!("CARGO_PKG_VERSION"), author = env!("CARGO_PKG_AUTHORS"), about = env!("CARGO_PKG_DESCRIPTION"))]
+#[command(version = version(), author = env!("CARGO_PKG_AUTHORS"), about = env!("CARGO_PKG_DESCRIPTION"))]
 struct Args {
     /// Sets the mavlink connection string
     #[arg(
