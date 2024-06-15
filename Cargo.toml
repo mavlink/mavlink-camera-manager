@@ -50,6 +50,7 @@ directories = "5.0.1"
 pnet = { version = "0.34.0", features = ["std"] }
 semver = "1.0"
 thirtyfour = "0.32"
+shellexpand = "3.1"
 tracing = { version = "0.1.40", features = ["log", "async-await"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing-log = "0.2.0"
