@@ -91,6 +91,7 @@ gst-rtsp-server = { package = "gstreamer-rtsp-server", version = "0.22", feature
 gst-video = { package = "gstreamer-video", version = "0.22", features = ["v1_16"] }
 webrtc-sdp = { git = "https://github.com/mozilla/webrtc-sdp", sha = "fc78607ac2fe0c7c978ca4630c2e1b937d7ff7c6" }
 constcat = "0.5.0"
+glib = "0.19.7"
 
 [target.'cfg(unix)'.dependencies]
 v4l = "0.14.0"
