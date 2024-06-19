@@ -79,10 +79,7 @@ pub fn reset_controls(source_string: &str) -> Result<(), Vec<std::io::Error>> {
             ControlType::Menu(menu) => menu.default,
         };
 
-        if let Err(error) = camera
-            .inner()
-            .set_control_by_id(control.id, default_value as i64)
-        {
+        if let Err(error) = camera.inner().set_control_by_id(control.id, default_value) {
             let error_message = format!(
                 "Error when trying to reset control '{}' (id {}). Error: {error}.",
                 control.name, control.id,
