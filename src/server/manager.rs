@@ -28,7 +28,7 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
         App::new()
             // Add debug call for API access
             .wrap_fn(|req, srv| {
-                trace!("{:#?}", &req);
+                trace!("{req:#?}");
                 srv.call(req)
             })
             .wrap(
