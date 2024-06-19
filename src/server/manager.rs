@@ -29,8 +29,7 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
             // Add debug call for API access
             .wrap_fn(|req, srv| {
                 trace!("{:#?}", &req);
-                let fut = srv.call(req);
-                async { fut.await }
+                srv.call(req)
             })
             .wrap(
                 Cors::default()
