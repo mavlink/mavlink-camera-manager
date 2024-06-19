@@ -6,7 +6,7 @@ use actix_extensible_rate_limit::{
     RateLimiter,
 };
 use actix_service::Service;
-use actix_web::{error::JsonPayloadError, http::header, App, HttpRequest, HttpServer};
+use actix_web::{error::JsonPayloadError, App, HttpRequest, HttpServer};
 use paperclip::{
     actix::{web, OpenApiExt},
     v2::models::{Api, Info},
