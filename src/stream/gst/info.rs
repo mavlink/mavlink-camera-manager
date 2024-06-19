@@ -48,7 +48,7 @@ fn get_plugin_properties(plugin: &gst::Plugin) -> BTreeMap<String, PropertyInfo>
     for property in element.list_properties() {
         let name = property.name().to_string();
         // There is no reason to display those
-        if ["name", "parent"].contains(&&name.as_ref()) {
+        if ["name", "parent"].contains(&name.as_ref()) {
             continue;
         }
         let property_info = PropertyInfo {
