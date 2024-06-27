@@ -16,6 +16,10 @@ path = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "mavlink_camera_manager"
+path = "src/lib/mod.rs"
+
 [[bin]]
 bench = false
 name = "mavlink-camera-manager"

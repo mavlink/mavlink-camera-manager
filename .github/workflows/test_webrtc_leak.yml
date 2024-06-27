@@ -42,11 +42,11 @@ jobs:
       with:
         node-version: '20'
         # cache: 'yarn'
-        # cache-dependency-path: 'src/stream/webrtc/frontend'
+        # cache-dependency-path: 'src/lib/stream/webrtc/frontend'
 
     - name: Install build dependencies - Install Yarn
       run: npm install --global yarn
-    
+
     - name: Set directory to safe for git
       # Note: Required by vergen (https://crates.io/crates/vergen)
       run: git config --global --add safe.directory $GITHUB_WORKSPACE

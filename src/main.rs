@@ -1,22 +1,6 @@
-#[macro_use]
-extern crate lazy_static;
-extern crate paperclip;
-extern crate tracing;
-
-#[macro_use]
-mod helper;
+use mavlink_camera_manager::{cli, helper, logger, mavlink, server, settings, stream};
 
 use tracing::*;
-mod cli;
-mod custom;
-mod logger;
-mod mavlink;
-mod network;
-mod server;
-mod settings;
-mod stream;
-mod video;
-mod video_stream;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() -> Result<(), std::io::Error> {

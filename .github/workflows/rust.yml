@@ -39,7 +39,7 @@ jobs:
       with:
         node-version: '20'
         # cache: 'yarn'
-        # cache-dependency-path: 'src/stream/webrtc/frontend'
+        # cache-dependency-path: 'src/lib/stream/webrtc/frontend'
 
     - name: Install build dependencies - Install Yarn
       run: npm install --global yarn
@@ -64,10 +64,10 @@ jobs:
 
     - name: Check clippy
       run: cargo clippy --all-features --locked
-      
+
     - name: Build
       run: cargo build --verbose --locked
-      
+
     - name: Install runtime dependencies
       uses: awalsh128/cache-apt-pkgs-action@v1
       with:
@@ -77,6 +77,6 @@ jobs:
           gstreamer1.0-nice \
           gstreamer1.0-libav \
           gstreamer1.0-plugins-ugly
-  
+
     - name: Run tests
       run: cargo test --verbose --locked
