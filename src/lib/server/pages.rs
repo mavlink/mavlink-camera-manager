@@ -118,7 +118,7 @@ use std::{ffi::OsStr, path::Path};
 
 use include_dir::{include_dir, Dir};
 
-static WEBRTC_DIST: Dir<'_> = include_dir!("src/stream/webrtc/frontend/dist");
+static WEBRTC_DIST: Dir<'_> = include_dir!("src/lib/stream/webrtc/frontend/dist");
 
 fn load_file(file_name: &str) -> String {
     if file_name.starts_with("webrtc/") {
@@ -135,8 +135,8 @@ fn load_file(file_name: &str) -> String {
     }
 
     match file_name {
-        "" | "index.html" => std::include_str!("../html/index.html").into(),
-        "vue.js" => std::include_str!("../html/vue.js").into(),
+        "" | "index.html" => std::include_str!("../../html/index.html").into(),
+        "vue.js" => std::include_str!("../../html/vue.js").into(),
         _ => format!("File not found: {file_name:?}"),
     }
 }
