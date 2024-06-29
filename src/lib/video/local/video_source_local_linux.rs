@@ -42,6 +42,7 @@ where
 pub enum VideoSourceLocalType {
     Unknown(String),
     Usb(String),
+    V4L2Loopback(String),
     LegacyRpiCam(String),
 }
 
@@ -104,7 +105,7 @@ impl VideoSourceLocalType {
     }
 
     fn v4l2_from_str(description: &str) -> Option<Self> {
-        let regex = match Regex::new(r"platform:(?P<device>\S+)-v4l2-[0-9]") {
+        let legacy_picam_regex = match Regex::new(r"platform:(?P<device>\S+)-v4l2-[0-9]") {
             Ok(regex) => regex,
             Err(error) => {
                 error!("Failed to construct regex: {error:?}");
@@ -112,9 +113,22 @@ impl VideoSourceLocalType {
             }
         };
 
-        if regex.is_match(description) {
+        if legacy_picam_regex.is_match(description) {
             return Some(VideoSourceLocalType::LegacyRpiCam(description.into()));
         }
+
+        let loopback_regex = match Regex::new(r"platform:v4l2loopback-[0-9]{3}") {
+            Ok(regex) => regex,
+            Err(error) => {
+                error!("Failed to construct regex: {error:?}");
+                return None;
+            }
+        };
+
+        if loopback_regex.is_match(description) {
+            return Some(VideoSourceLocalType::V4L2Loopback(description.into()));
+        }
+
         None
     }
 }
@@ -791,6 +805,11 @@ mod tests {
                 // Provided by the raspberry pi with a Raspberry Pi camera when in to use legacy camera mode
                 VideoSourceLocalType::LegacyRpiCam("platform:bcm2835-v4l2-0".into()),
                 "platform:bcm2835-v4l2-0",
+            ),
+            (
+                // V4l2 loopback device
+                VideoSourceLocalType::V4L2Loopback("platform:v4l2loopback-000".into()),
+                "platform:v4l2loopback-000",
             ),
             (
                 // Sanity test
