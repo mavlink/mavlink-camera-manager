@@ -9,7 +9,7 @@ pub mod webrtc;
 use std::sync::Arc;
 
 use ::gst::prelude::*;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use manager::Manager;
 use pipeline::Pipeline;
 use sink::{create_image_sink, create_rtsp_sink, create_udp_sink};
@@ -84,6 +84,14 @@ impl Stream {
             terminated,
             watcher_handle,
         })
+    }
+
+    pub async fn id(&self) -> Result<uuid::Uuid> {
+        let state_guard = self.state.read().await;
+
+        let state_ref = state_guard.as_ref().context("Stream without State")?;
+
+        Ok(state_ref.pipeline_id)
     }
 
     #[instrument(level = "debug", skip(video_and_stream_information, state, terminated))]
