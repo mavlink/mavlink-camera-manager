@@ -85,4 +85,4 @@ jobs:
           gstreamer1.0-plugins-ugly
 
     - name: Run tests
-      run: cargo test --verbose --locked
+      run: cargo test --lib --bins --verbose --locked
