@@ -96,7 +96,7 @@ impl V4lPipeline {
                     concat!(
                         "v4l2src device={device} do-timestamp=true",
                         " ! videoconvert",
-                        " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator},colorimetry=bt601,pixel-aspect-ratio=1/1,interlace-mode=progressive",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtpvrawpay pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
