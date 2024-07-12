@@ -175,11 +175,11 @@ pub fn update_devices(
                 candidates.remove(idx);
             }
             Err(reason) => {
-                // Invalidate the device
-                source.device_path = "".into();
                 if verbose {
                     warn!("Device {source:?} was invalidated. Reason: {reason:?}");
                 };
+                // Invalidate the device
+                source.device_path = "".into();
             }
             _ => (),
         }
