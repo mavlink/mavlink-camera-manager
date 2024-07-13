@@ -21,11 +21,21 @@ jobs:
             TARGET: aarch64-unknown-linux-gnu
             SUFFIX: aarch64
 
+          - os: macos-13
+            TARGET: x86_64-apple-darwin
+            SUFFIX: macos
+
+          - os: windows-2022
+            TARGET: x86_64-pc-windows-msvc
+            SUFFIX: x86_64-pc-windows
+            EXTENSION: .exe
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
     - name: Set directory to safe for git
+      if: ${{ !contains(matrix.TARGET, 'windows') }}
       # Note: Required by vergen (https://crates.io/crates/vergen)
       run: git config --global --add safe.directory $GITHUB_WORKSPACE
 
@@ -41,15 +51,39 @@ jobs:
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
     - name: Install build dependencies - Cross
+      if: ${{ contains(matrix.TARGET, 'linux') }}
       run: cargo install cross
 
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
     - name: Building for ${{ matrix.os }} ${{ matrix.target }} (${{ matrix.SUFFIX }})
-      run: cross build --release --locked --target ${{matrix.target}} --verbose
+      if: ${{ contains(matrix.TARGET, 'linux') }}
+      run: |
+        cd src/lib/stream/webrtc/frontend && bun install && bun run build && cd -
+        SKIP_BUN=1 cross build --release --locked --target ${{matrix.target}} --verbose
+
+    - name: Install gstreamer
+      if: ${{ !contains(matrix.TARGET, 'linux') }}
+      uses: blinemedical/setup-gstreamer@v1
+
+    - name: Install dependencies WinPcat since it's necessary for pnet crate
+      # https://github.com/libpnet/libpnet/tree/v0.35.0?tab=readme-ov-file#windows
+      if: ${{ contains(matrix.TARGET, 'windows') }}
+      run: |
+        Invoke-WebRequest -UseBasicParsing https://www.winpcap.org/install/bin/WpdPack_4_1_2.zip -OutFile "${Env:TEMP}\wpd.zip"
+        Expand-Archive -LiteralPath "${Env:TEMP}\wpd.zip" -DestinationPath "${Env:TEMP}\wpd"
+        Move-Item -LiteralPath "${Env:TEMP}\wpd\WpdPack\Lib" -Destination lib
+
+    - name: Building for ${{ matrix.os }} ${{ matrix.target }} (${{ matrix.SUFFIX }})
+      if: ${{ !contains(matrix.TARGET, 'linux') }}
+      run: cargo build --release --locked --target ${{matrix.target}} --verbose
 
     - name: Prepare files
       run: |
         mkdir -p upload
-        cp target/${{ matrix.TARGET }}/release/mavlink-camera-manager upload/mavlink-camera-manager-${{ matrix.SUFFIX }}
+        cp target/${{ matrix.TARGET }}/release/mavlink-camera-manager${{ matrix.EXTENSION }} upload/mavlink-camera-manager-${{ matrix.SUFFIX }}${{ matrix.EXTENSION }}
 
     - uses: actions/upload-artifact@v4
       with:
