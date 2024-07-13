@@ -2,6 +2,7 @@ pub mod fake_pipeline;
 pub mod qr_pipeline;
 pub mod redirect_pipeline;
 pub mod runner;
+#[cfg(target_os = "linux")]
 pub mod v4l_pipeline;
 
 use std::collections::HashMap;
@@ -28,6 +29,8 @@ use fake_pipeline::FakePipeline;
 use qr_pipeline::QrPipeline;
 use redirect_pipeline::RedirectPipeline;
 use runner::PipelineRunner;
+
+#[cfg(target_os = "linux")]
 use v4l_pipeline::V4lPipeline;
 
 #[enum_dispatch]
@@ -38,6 +41,7 @@ pub trait PipelineGstreamerInterface {
 #[enum_dispatch(PipelineGstreamerInterface)]
 #[derive(Debug)]
 pub enum Pipeline {
+    #[cfg(target_os = "linux")]
     V4l(V4lPipeline),
     Fake(FakePipeline),
     QR(QrPipeline),
@@ -47,6 +51,7 @@ pub enum Pipeline {
 impl Pipeline {
     pub fn inner_state_mut(&mut self) -> &mut PipelineState {
         match self {
+            #[cfg(target_os = "linux")]
             Pipeline::V4l(pipeline) => &mut pipeline.state,
             Pipeline::Fake(pipeline) => &mut pipeline.state,
             Pipeline::QR(pipeline) => &mut pipeline.state,
@@ -56,6 +61,7 @@ impl Pipeline {
 
     pub fn inner_state_as_ref(&self) -> &PipelineState {
         match self {
+            #[cfg(target_os = "linux")]
             Pipeline::V4l(pipeline) => &pipeline.state,
             Pipeline::Fake(pipeline) => &pipeline.state,
             Pipeline::QR(pipeline) => &pipeline.state,
@@ -84,9 +90,12 @@ impl Pipeline {
                     })
                 }
             },
+            #[cfg(target_os = "linux")]
             VideoSourceType::Local(_) => Pipeline::V4l(V4lPipeline {
                 state: pipeline_state,
             }),
+            #[cfg(not(target_os = "linux"))]
+            VideoSourceType::Local(_) => unreachable!("Local is only supported on linux"),
             VideoSourceType::Redirect(_) => Pipeline::Redirect(RedirectPipeline {
                 state: pipeline_state,
             }),
@@ -135,8 +144,13 @@ impl PipelineState {
                     QrPipeline::try_new(pipeline_id, video_and_stream_information)
                 }
             },
+            #[cfg(target_os = "linux")]
             VideoSourceType::Local(_) => {
                 V4lPipeline::try_new(pipeline_id, video_and_stream_information)
+            }
+            #[cfg(not(target_os = "linux"))]
+            VideoSourceType::Local(_) => {
+                unreachable!("Local source only supported on linux");
             }
             VideoSourceType::Redirect(_) => {
                 RedirectPipeline::try_new(pipeline_id, video_and_stream_information)
