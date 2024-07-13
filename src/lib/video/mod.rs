@@ -1,3 +1,5 @@
+mod local;
+
 pub mod types;
 pub mod video_source;
 pub mod xml;
