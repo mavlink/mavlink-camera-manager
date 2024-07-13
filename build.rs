@@ -41,9 +41,9 @@ fn main() {
         generate_typescript_bindings();
     }
 
-    // set SKIP_YARN=1 to skip YARN build
-    if std::env::var("SKIP_YARN").is_err() {
-        build_with_yarn();
+    // set SKIP_BUN=1 to skip bun build
+    if std::env::var("SKIP_BUN").is_err() {
+        build_with_bun();
     }
 }
 
@@ -82,49 +82,41 @@ fn generate_typescript_bindings() {
     bindings_file.write_all(bindings.as_bytes()).unwrap();
 }
 
-fn build_with_yarn() {
+fn build_with_bun() {
     // Note that as we are not waching all files, sometimes we'd need to force this build
     println!("cargo:rerun-if-changed=./src/lib/stream/webrtc/frontend/index.html");
     println!("cargo:rerun-if-changed=./src/lib/stream/webrtc/frontend/package.json");
     println!("cargo:rerun-if-changed=./src/lib/stream/webrtc/frontend/src");
 
-    // Build with YARN
+    // Build with bun
     let frontend_dir = Path::new("./src/lib/stream/webrtc/frontend");
     frontend_dir.try_exists().unwrap();
-    let version = Command::new("yarn")
+    let version = Command::new("bun")
         .args(["--version"])
         .status()
-        .expect("Failed to build frontend, `yarn` appears to be not installed.");
+        .expect("Failed to build frontend, `bun` appears to be not installed.");
 
     if !version.success() {
-        panic!("yarn version failed!");
+        panic!("bun version failed!");
     }
 
-    #[cfg(not(debug_assertions))]
-    let install = Command::new("yarn")
-        .args(["install", "--frozen-lockfile"])
-        .current_dir(frontend_dir)
-        .status()
-        .unwrap();
-
-    #[cfg(debug_assertions)]
-    let install = Command::new("yarn")
+    let install = Command::new("bun")
         .args(["install", "--frozen-lockfile"])
         .current_dir(frontend_dir)
         .status()
         .unwrap();
 
     if !install.success() {
-        panic!("yarn install failed!");
+        panic!("bun install failed!");
     }
 
-    let build = Command::new("yarn")
-        .args(["build"])
+    let build = Command::new("bun")
+        .args(["run", "build"])
         .current_dir(frontend_dir)
         .status()
         .unwrap();
 
     if !build.success() {
-        panic!("yarn build failed!");
+        panic!("bun build failed!");
     }
 }
