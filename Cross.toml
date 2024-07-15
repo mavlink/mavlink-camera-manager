@@ -13,3 +13,6 @@ pre-build = [
     "curl -fsSL https://bun.sh/install | bash -s 'bun-v1.0.0'",
     ". /root/.bashrc"
 ]
+
+[build.env]
+passthrough = ["SKIP_BINDINGS", "SKIP_BUN"]
