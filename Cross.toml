@@ -6,3 +6,10 @@ image = "joaoantoniocardoso/cross-rs:armv7-unknown-linux-gnueabihf-bullseye-slim
 
 [target.aarch64-unknown-linux-gnu]
 image = "joaoantoniocardoso/cross-rs:aarch64-unknown-linux-gnu-bullseye-slim-with-gstreamer"
+
+[build]
+pre-build = [
+    "apt-get update && apt-get --assume-yes install unzip",
+    "curl -fsSL https://bun.sh/install | bash -s 'bun-v1.0.0'",
+    ". /root/.bashrc"
+]
