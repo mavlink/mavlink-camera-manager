@@ -41,11 +41,6 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        # cache: 'yarn'
-        # cache-dependency-path: 'src/lib/stream/webrtc/frontend'
-
-    - name: Install build dependencies - Install Yarn
-      run: npm install --global yarn
 
     - name: Set directory to safe for git
       # Note: Required by vergen (https://crates.io/crates/vergen)
@@ -57,10 +52,15 @@ jobs:
         key: "${{ hashFiles('**/Cargo.lock') }}"
         shared-key: "shared"
 
-    - name: Install build dependencies - Rustup
+    - name: Install build dependencies - Rustup/unzip
       run: |
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain stable -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        apt-get install -y unzip
+
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
 
     - name: Build
       run: cargo build --verbose --locked
