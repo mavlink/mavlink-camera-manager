@@ -21,7 +21,7 @@ struct Args {
     /// Sets the mavlink connection string
     #[arg(
         long,
-        value_name = "TYPE>:<IP/SERIAL>:<PORT/BAUDRATE",
+        value_name = "<TYPE>:<IP/SERIAL>:<PORT/BAUDRATE>",
         default_value = "udpin:0.0.0.0:14550"
     )]
     mavlink: String,
@@ -43,13 +43,13 @@ struct Args {
     reset: bool,
 
     /// Sets the address for the REST API server
-    #[arg(long, value_name = "IP>:<PORT", default_value = "0.0.0.0:6020")]
+    #[arg(long, value_name = "<IP>:<PORT>", default_value = "0.0.0.0:6020")]
     rest_server: String,
 
     /// Sets the address for the stun server
     #[arg(
         long,
-        value_name = "stun://IP>:<PORT",
+        value_name = "stun://<HOST>:<PORT>",
         default_value = "stun://0.0.0.0:3478"
     )]
     stun_server: String,
@@ -61,7 +61,7 @@ struct Args {
     /// Sets the address for the Signalling server API server
     #[arg(
         long,
-        value_name = "ws://IP>:<PORT",
+        value_name = "ws://<IP>:<PORT>",
         default_value = "ws://0.0.0.0:6021"
     )]
     signalling_server: String,
@@ -71,7 +71,7 @@ struct Args {
     verbose: bool,
 
     /// Sets the Rank for the given Gst features.
-    #[clap(long, value_name = "GST_PLUGIN_NAME>=<GST_RANK_INT_VALUE", value_delimiter = ',', value_parser = gst_feature_rank_validator)]
+    #[clap(long, value_name = "<GST_PLUGIN_NAME>=<GST_RANK_INT_VALUE>", value_delimiter = ',', value_parser = gst_feature_rank_validator)]
     gst_feature_rank: Vec<String>,
 
     /// Specifies the path in witch the logs will be stored.
@@ -189,6 +189,11 @@ pub fn stun_server_address() -> String {
     MANAGER.clap_matches.stun_server.clone()
 }
 
+// Return the desired address for the TURN server
+pub fn turn_server_addresses() -> Vec<String> {
+    MANAGER.clap_matches.turn_servers.clone()
+}
+
 // Return the desired address for the signalling server
 pub fn signalling_server_address() -> String {
     MANAGER.clap_matches.signalling_server.clone()
@@ -262,6 +267,16 @@ fn gst_feature_rank_validator(val: &str) -> Result<String, String> {
         return Err("Unexpected format, it should be <GST_PLUGIN_NAME>=<GST_RANK_INT_VALUE>, where GST_PLUGIN_NAME is a string, and GST_RANK_INT_VALUE a valid 32 bits signed integer. Example: \"omxh264enc=264\" (without quotes).".to_string());
     }
     Ok(val.into())
+}
+
+fn turn_servers_validator(val: &str) -> Result<String, String> {
+    let url = url::Url::parse(val).map_err(|e| format!("Failed parsing turn url: {e:?}"))?;
+
+    if !matches!(url.scheme().to_lowercase().as_str(), "turn" | "turns") {
+        return Err("Turn server scheme should be either \"turn\" or \"turns\"".to_owned());
+    }
+
+    Ok(val.to_owned())
 }
 
 #[cfg(test)]
