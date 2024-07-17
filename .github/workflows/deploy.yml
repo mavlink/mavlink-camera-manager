@@ -1,4 +1,4 @@
-name: Deploy unix
+name: Deploy
 
 on: [push, pull_request]
 
