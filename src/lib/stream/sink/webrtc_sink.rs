@@ -9,7 +9,6 @@ use crate::stream::webrtc::signalling_protocol::{
     Answer, BindAnswer, EndSessionQuestion, IceNegotiation, MediaNegotiation, Message, Question,
     RTCIceCandidateInit, RTCSessionDescription, Sdp,
 };
-use crate::stream::webrtc::turn_server::DEFAULT_TURN_ENDPOINT;
 use crate::stream::webrtc::webrtcbin_interface::WebRTCBinInterface;
 
 #[derive(Clone)]
@@ -314,12 +313,20 @@ impl WebRTCSink {
                     .property("bundle-policy", gst_webrtc::WebRTCBundlePolicy::MaxBundle) // https://webrtcstandards.info/sdp-bundle/
                     .property("latency", 0u32)
                     .property_from_str("stun-server", cli::manager::stun_server_address().as_str())
-                    .property_from_str("turn-server", DEFAULT_TURN_ENDPOINT)
                     .build()
             })
             .expect("Failed spawning WebRTCBin thread")
             .join()
             .map_err(|e| anyhow!("{:?}", e.downcast_ref::<String>()))??;
+
+        cli::manager::turn_server_addresses()
+            .iter()
+            .for_each(|turn_server| {
+                debug!("Trying to add turn server: {turn_server:?}");
+                if !webrtcbin.emit_by_name::<bool>("add-turn-server", &[&turn_server.as_str()]) {
+                    warn!("Failed adding turn server {turn_server:?}");
+                }
+            });
 
         // Configure RTP
         let webrtcbin = webrtcbin.downcast::<gst::Bin>().unwrap();
