@@ -54,6 +54,10 @@ struct Args {
     )]
     stun_server: String,
 
+    /// Sets the addresses for the turn servers
+    #[arg(long, value_name = "turn(s)://[<USERNAME>:<PASSWORD>@]<HOST>:<PORT>", value_delimiter = ',', value_parser = turn_servers_validator)]
+    turn_servers: Vec<String>,
+
     /// Sets the address for the Signalling server API server
     #[arg(
         long,
