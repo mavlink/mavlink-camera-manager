@@ -120,7 +120,6 @@ impl FakePipeline {
                         // format available ("UYVY").
                         "videotestsrc pattern={pattern} is-live=true do-timestamp=true",
                         " ! timeoverlay",
-                        " ! video/x-raw,format=I420",
                         " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtpvrawpay pt=96",
