@@ -244,13 +244,7 @@ impl MavlinkCameraInner {
         ) {
             if let Err(error) = sender.send(Message::ToBeSent((
                 our_header,
-                MavMessage::COMMAND_ACK(mavlink::common::COMMAND_ACK_DATA {
-                    command,
-                    result,
-                    target_system: their_header.system_id,
-                    target_component: their_header.component_id,
-                    ..Default::default()
-                }),
+                MavMessage::COMMAND_ACK(mavlink::common::COMMAND_ACK_DATA { command, result }),
             ))) {
                 warn!("Failed to send message: {error:?}");
             }
@@ -304,8 +298,6 @@ impl MavlinkCameraInner {
 
                 let message = MavMessage::CAMERA_SETTINGS(mavlink::common::CAMERA_SETTINGS_DATA {
                     time_boot_ms: super::sys_info::sys_info().time_boot_ms,
-                    zoomLevel: 0.0,
-                    focusLevel: 0.0,
                     mode_id: mavlink::common::CameraMode::CAMERA_MODE_VIDEO,
                 });
 
@@ -329,9 +321,6 @@ impl MavlinkCameraInner {
                         storage_id: 0,
                         storage_count: 0,
                         status: mavlink::common::StorageStatus::STORAGE_STATUS_READY,
-                        mavtype: mavlink::common::StorageType::STORAGE_TYPE_UNKNOWN,
-                        name: from_string_to_sized_u8_array_with_null_terminator("unknown"),
-                        storage_usage: mavlink::common::StorageUsageFlag::STORAGE_USAGE_FLAG_SET,
                     });
 
                 if let Err(error) = sender.send(Message::ToBeSent((our_header, message))) {
@@ -351,7 +340,6 @@ impl MavlinkCameraInner {
                         available_capacity: sys_info.available_capacity,
                         image_status: 0,
                         video_status: 0,
-                        image_count: 0,
                     },
                 );
 
