@@ -59,8 +59,8 @@ fn main() {
     }
 
     // set SKIP_BUN=1 to skip bun build
-    if std::env::var("SKIP_BUN").is_err() {
-        build_with_bun();
+    if std::env::var("SKIP_WEB").is_err() {
+        build_web();
     }
 }
 
@@ -99,41 +99,61 @@ fn generate_typescript_bindings() {
     bindings_file.write_all(bindings.as_bytes()).unwrap();
 }
 
-fn build_with_bun() {
+fn build_web() {
     // Note that as we are not waching all files, sometimes we'd need to force this build
     println!("cargo:rerun-if-changed=./src/lib/stream/webrtc/frontend/index.html");
     println!("cargo:rerun-if-changed=./src/lib/stream/webrtc/frontend/package.json");
     println!("cargo:rerun-if-changed=./src/lib/stream/webrtc/frontend/src");
 
-    // Build with bun
     let frontend_dir = Path::new("./src/lib/stream/webrtc/frontend");
     frontend_dir.try_exists().unwrap();
-    let version = Command::new("bun")
+
+    let program = if Command::new("bun")
         .args(["--version"])
         .status()
-        .expect("Failed to build frontend, `bun` appears to be not installed.");
+        .ok()
+        .map(|status| status.success())
+        .unwrap_or(false)
+    {
+        "bun"
+    } else {
+        "yarn"
+    };
+
+    let version = Command::new(&program)
+        .args(["--version"])
+        .status()
+        .expect(&format!(
+            "Failed to build frontend, `{}` appears to be not installed.",
+            &program
+        ));
 
     if !version.success() {
-        panic!("bun version failed!");
+        panic!("{program} version failed!");
     }
 
-    let install = Command::new("bun")
+    let install = Command::new(&program)
         .args(["install", "--frozen-lockfile"])
         .current_dir(frontend_dir)
         .status()
         .unwrap();
 
     if !install.success() {
-        panic!("bun install failed!");
+        panic!("{program} install failed!");
     }
 
-    let build = Command::new("bun")
-        .args(["run", "build"])
+    let args = if program == "bun" {
+        vec!["run", "build"]
+    } else {
+        vec!["build"]
+    };
+    let build = Command::new(&program)
+        .args(&args)
         .current_dir(frontend_dir)
         .status()
         .unwrap();
 
     if !build.success() {
-        panic!("bun build failed!");
+        panic!("{program} build failed!");
     }
 }
