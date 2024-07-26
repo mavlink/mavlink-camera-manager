@@ -69,6 +69,7 @@ impl V4l2LoopBack {
             VideoEncodeType::H264 => format!(
                 concat!(
                     "qrtimestampsrc do-timestamp=true",
+                    " ! video/x-raw,width={width},height={height},framerate={framerate_num}/{framerate_den},format=RGB",
                     " ! videoconvert",
                     " ! video/x-raw,width={width},height={height},framerate={framerate_num}/{framerate_den},format=I420",
                     " ! x264enc tune=zerolatency speed-preset=ultrafast bitrate=5000",
@@ -85,10 +86,12 @@ impl V4l2LoopBack {
             VideoEncodeType::Mjpg => format!(
                 concat!(
                     "qrtimestampsrc do-timestamp=true",
+                    " ! video/x-raw,width={width},height={height},framerate={framerate_num}/{framerate_den},format=RGB",
                     " ! videoconvert",
                     " ! video/x-raw,width={width},height={height},framerate={framerate_num}/{framerate_den},format=I420",
                     " ! jpegenc quality=85 idct-method=ifast",
                     " ! jpegparse",
+                    " ! image/jpeg, width=(int){width}, height=(int){height}, sof-marker=(int)0, colorspace=(string)sYUV, sampling=(string)YCbCr-4:2:0, colorimetry=(string)bt601, interlace-mode=(string)progressive, framerate=(fraction){framerate_num}/{framerate_den}, pixel-aspect-ratio=(fraction)1/1",
                     " ! v4l2sink device={device_path} sync=false",
                 ),
                 height = configuration.height,
@@ -100,6 +103,7 @@ impl V4l2LoopBack {
             VideoEncodeType::Yuyv => format!(
                 concat!(
                     "qrtimestampsrc do-timestamp=true",
+                    " ! video/x-raw,width={width},height={height},framerate={framerate_num}/{framerate_den},format=RGB",
                     " ! videoconvert",
                     " ! video/x-raw,width={width},height={height},framerate={framerate_num}/{framerate_den},format=YUY2",
                     " ! rawvideoparse use-sink-caps=true",
@@ -114,7 +118,7 @@ impl V4l2LoopBack {
             _ => unimplemented!(),
         };
 
-        dbg!(&pipeline_description);
+        debug!("{pipeline_description:#?}");
 
         let pipeline = gst::parse::launch(&pipeline_description)?
             .downcast::<gst::Pipeline>()
@@ -167,9 +171,22 @@ impl QrTimeStampSink {
         let port = endpoint.port().unwrap();
 
         let source_description = match scheme.as_str() {
-            "udp" => format!("udpsrc address={address} port={port} do-timestamp=true"),
+            "udp" => format!(
+                concat!(
+                    "udpsrc address={address} port={port} do-timestamp=true",
+                    " ! application/x-rtp, media=(string)video, payload=(int)96, clock-rate=(int)90000, encoding-name=(string)JPEG, a-framerate=(string)30",
+                ),
+                address=address,
+                port=port,
+            ),
             "rtsp" => {
-                format!("rtspsrc location={endpoint} is-live=true latency=0")
+                format!(
+                    concat!(
+                        "rtspsrc location={endpoint} is-live=true latency=0",
+                        " ! application/x-rtp, media=(string)video, payload=(int)96, clock-rate=(int)90000",
+                    ),
+                    endpoint=endpoint,
+                )
             }
             _ => unimplemented!(),
         };
@@ -178,10 +195,10 @@ impl QrTimeStampSink {
             VideoEncodeType::H264 => format!(
                 concat!(
                     "{source_description}",
-                    " ! application/x-rtp,payload=96",
+                    " ! application/x-rtp, media=(string)video, payload=(int)96, clock-rate=(int)90000",
                     " ! rtph264depay",
                     " ! h264parse",
-                    " ! video/x-h264,width={width},height={height}",
+                    " ! video/x-h264, width=(int){width}, height=(int){height}, framerate=(fraction){framerate_num}/{framerate_den}",
                     " ! avdec_h264 discard-corrupted-frames=true",
                     " ! videoconvert",
                     " ! identity check-imperfect-timestamp=true check-imperfect-offset=true",
@@ -190,13 +207,14 @@ impl QrTimeStampSink {
                 source_description = source_description,
                 width = configuration.width,
                 height = configuration.height,
+                framerate_num = configuration.frame_interval.denominator,
+                framerate_den = configuration.frame_interval.numerator,
             ),
             VideoEncodeType::Mjpg => format!(
                 concat!(
                     "{source_description}",
-                    " ! application/x-rtp,payload=96",
                     " ! rtpjpegdepay",
-                    " ! image/jpeg,width={width},height={height}",
+                    " ! image/jpeg, width=(int){width}, height=(int){height}, framerate=(fraction){framerate_num}/{framerate_den}",
                     " ! jpegdec",
                     " ! videoconvert",
                     " ! identity check-imperfect-timestamp=true check-imperfect-offset=true",
@@ -205,15 +223,16 @@ impl QrTimeStampSink {
                 source_description = source_description,
                 width = configuration.width,
                 height = configuration.height,
+                framerate_num = configuration.frame_interval.denominator,
+                framerate_den = configuration.frame_interval.numerator,
             ),
             VideoEncodeType::Yuyv => format!(
                 concat!(
                     "{source_description}",
-                    " ! capsfilter caps=\"application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)RAW, sampling=(string)YCbCr-4:2:0, depth=(string)8, width=(string)320, height=(string)320, colorimetry=(string)BT601-5, payload=(int)96, a-framerate=(string)30\"",
+                    " ! application/x-rtp, media=(string)video, clock-rate=(int)90000, encoding-name=(string)RAW, sampling=(string)YCbCr-4:2:0, depth=(string)8, width=(string)320, height=(string)320, colorimetry=(string)BT601-5, payload=(int)96, a-framerate=(string)30",
                     " ! rtpvrawdepay",
                     " ! videorate skip-to-first=true silent=true",
-                    " ! capsfilter caps=\"video/x-raw, width=(int){width}, height=(int){height}, framerate=(fraction){framerate_num}/{framerate_den}, pixel-aspect-ratio=(fraction)1/1, interlace-mode=(string)progressive, format=(string)I420, colorimetry=(string)bt601\"",
-                    // " ! capsfilter caps=\"video/x-raw, width=(int){width}, height=(int){height}, pixel-aspect-ratio=(fraction)1/1, interlace-mode=(string)progressive, format=(string)I420, colorimetry=(string)bt601\"",
+                    " ! video/x-raw, width=(int){width}, height=(int){height}, framerate=(fraction){framerate_num}/{framerate_den}, pixel-aspect-ratio=(fraction)1/1, interlace-mode=(string)progressive, format=(string)I420, colorimetry=(string)bt601",
                     " ! rawvideoparse use-sink-caps=true ",
                     " ! videoconvert",
                     " ! identity check-imperfect-timestamp=true check-imperfect-offset=true",
@@ -228,7 +247,7 @@ impl QrTimeStampSink {
             _ => unimplemented!(),
         };
 
-        dbg!(&pipeline_description);
+        debug!("{pipeline_description:#?}");
 
         let pipeline = gst::parse::launch(&pipeline_description)
             .unwrap()
@@ -309,6 +328,7 @@ impl Baseline {
             VideoEncodeType::H264 => format!(
                 concat!(
                     "qrtimestampsrc do-timestamp=true",
+                    " ! video/x-raw,width={width},height={height},framerate={framerate_num}/{framerate_den},format=RGB",
                     " ! videoconvert",
                     " ! video/x-raw,width={width},height={height},framerate={framerate_num}/{framerate_den},format=I420",
                     " ! x264enc tune=zerolatency speed-preset=ultrafast bitrate=5000",
@@ -329,6 +349,7 @@ impl Baseline {
             VideoEncodeType::Mjpg => format!(
                 concat!(
                     "qrtimestampsrc do-timestamp=true",
+                    // " ! video/x-raw,width={width},height={height},framerate={framerate_num}/{framerate_den},format=RGB",
                     " ! videoconvert",
                     " ! video/x-raw,width={width},height={height},framerate={framerate_num}/{framerate_den},format=I420",
                     " ! jpegenc quality=85 idct-method=ifast",
@@ -346,12 +367,13 @@ impl Baseline {
             VideoEncodeType::Yuyv => format!(
                 concat!(
                     "qrtimestampsrc do-timestamp=true",
+                    " ! video/x-raw,width={width},height={height},framerate={framerate_num}/{framerate_den},format=RGB",
                     " ! videoconvert",
                     " ! video/x-raw,width={width},height={height},framerate={framerate_num}/{framerate_den},format=YUY2",
                     " ! rawvideoparse use-sink-caps=true ",
                     " ! videorate skip-to-first=true silent=true",
-                    " ! capsfilter caps=\"video/x-raw, width=(int){width}, height=(int){height}, framerate=(fraction){framerate_num}/{framerate_den}, pixel-aspect-ratio=(fraction)1/1, interlace-mode=(string)progressive, format=(string)YUY2, colorimetry=(string)bt601\"",
-                    // " ! capsfilter caps=\"video/x-raw, width=(int){width}, height=(int){height}, pixel-aspect-ratio=(fraction)1/1, interlace-mode=(string)progressive, format=(string)YUY2, colorimetry=(string)bt601\"",
+                    " ! video/x-raw, width=(int){width}, height=(int){height}, framerate=(fraction){framerate_num}/{framerate_den}, pixel-aspect-ratio=(fraction)1/1, interlace-mode=(string)progressive, format=(string)YUY2, colorimetry=(string)bt601",
+                    // " ! video/x-raw, width=(int){width}, height=(int){height}, pixel-aspect-ratio=(fraction)1/1, interlace-mode=(string)progressive, format=(string)YUY2, colorimetry=(string)bt601",
                     " ! rawvideoparse use-sink-caps=true ",
                     " ! videoconvert",
                     " ! identity check-imperfect-timestamp=true check-imperfect-offset=true",
@@ -365,7 +387,11 @@ impl Baseline {
             _ => unimplemented!(),
         };
 
-        dbg!(&pipeline_description);
+        /*
+        qrtimestampsrc do-timestamp=true ! video/x-raw,width=320,height=320,framerate=30/1,format=RGB ! videoconvert ! video/x-raw,width=320,height=320,framerate=30/1,format=I420 ! jpegenc quality=85 idct-method=ifast ! image/jpeg,width=320,height=320,framerate=30/1 ! jpegdec ! videoconvert ! identity check-imperfect-timestamp=true check-imperfect-offset=true ! qrtimestampsink name=qrsink sync=false
+         */
+
+        debug!("{pipeline_description:#?}");
 
         let pipeline = gst::parse::launch(&pipeline_description)
             .unwrap()
@@ -563,23 +589,23 @@ async fn main() {
     let buffers = 100;
 
     let test_cases = [
-        (VideoEncodeType::H264, format!("udp://{address}:5600"), 5.),
-        (VideoEncodeType::Mjpg, format!("udp://{address}:5600"), 5.),
-        (VideoEncodeType::Yuyv, format!("udp://{address}:5600"), 8.),
+        (VideoEncodeType::H264, format!("udp://{address}:5600"), 50.),
+        (VideoEncodeType::Mjpg, format!("udp://{address}:5600"), 50.),
+        (VideoEncodeType::Yuyv, format!("udp://{address}:5600"), 80.),
         (
             VideoEncodeType::H264,
             format!("rtsp://{address}:8554/test"),
-            5.,
+            50.,
         ),
         (
             VideoEncodeType::Mjpg,
             format!("rtsp://{address}:8554/test"),
-            5.,
+            50.,
         ),
         (
             VideoEncodeType::Yuyv,
             format!("rtsp://{address}:8554/test"),
-            8.,
+            80.,
         ),
     ];
 
@@ -617,12 +643,14 @@ async fn main() {
         let stream_id = stream.id().await.unwrap();
         stream::manager::Manager::add_stream(stream).await.unwrap();
 
-        info!("Getting baseline latency...");
-        let baseline_latencies =
-            compute_baseline_latency(&video_and_stream_information, buffers).await;
-        let baseline_latency = baseline_latencies.stats.latency_mean;
-        let baseline_max_jitter = baseline_latencies.stats.jitter_max;
-        info!("Baseline latency: {:#?}", &baseline_latencies.stats);
+        // info!("Getting baseline latency...");
+        // let baseline_latencies =
+        //     compute_baseline_latency(&video_and_stream_information, buffers).await;
+        // let baseline_latency = baseline_latencies.stats.latency_mean;
+        // let baseline_max_jitter = baseline_latencies.stats.jitter_max;
+        // info!("Baseline latency: {:#?}", &baseline_latencies.stats);
+        let baseline_latency = 100f64;
+        let baseline_max_jitter = 100f64;
 
         info!("Building qrtimestamp pipeline (video receiver with qrtimestampsink)...");
         let qrtimestampsink = QrTimeStampSink::try_new(&video_and_stream_information, buffers, 20.)
