@@ -15,7 +15,7 @@ pub fn init() {
             if cli::manager::is_verbose() {
                 EnvFilter::new(LevelFilter::DEBUG.to_string())
             } else {
-                EnvFilter::new(LevelFilter::INFO.to_string())
+                EnvFilter::new(LevelFilter::DEBUG.to_string())
             }
         })
         // Hyper is used for http request by our thread leak test
