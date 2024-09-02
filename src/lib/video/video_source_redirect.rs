@@ -1,5 +1,6 @@
 use super::types::*;
 use super::video_source::{VideoSource, VideoSourceAvailable};
+use crate::controls::types::Control;
 
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};

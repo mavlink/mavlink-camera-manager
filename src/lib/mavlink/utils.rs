@@ -70,7 +70,7 @@ pub fn control_value_from_param_value(
 #[instrument(level = "debug", skip(controls))]
 pub fn get_param_index_and_control_id(
     param_ext_req: &mavlink::common::PARAM_EXT_REQUEST_READ_DATA,
-    controls: &[crate::video::types::Control],
+    controls: &[crate::controls::types::Control],
 ) -> Option<(u16, u64)> {
     let param_index = param_ext_req.param_index;
     // Use param_index if it is !=1, otherwise, use param_id. For more information: https://mavlink.io/en/messages/common.html#PARAM_EXT_REQUEST_READ

@@ -1,5 +1,5 @@
-use super::types::*;
 use super::video_source::VideoSource;
+use crate::controls::types::ControlType;
 
 use anyhow::{anyhow, Result};
 use serde::Serialize;
@@ -191,6 +191,8 @@ pub fn from_video_source(video_source: &dyn VideoSource) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::video::types::VideoSourceType;
+
     use super::*;
     use quick_xml::se::to_string;
 

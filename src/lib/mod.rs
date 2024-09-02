@@ -7,6 +7,7 @@ extern crate tracing;
 pub mod helper;
 
 pub mod cli;
+pub mod controls;
 pub mod custom;
 pub mod logger;
 pub mod mavlink;
