@@ -1,3 +1,4 @@
+use crate::controls::types::Control;
 use crate::stream::types::VideoCaptureConfiguration;
 use crate::video::types::*;
 use crate::video::video_source::{VideoSource, VideoSourceAvailable};

@@ -2,6 +2,7 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use crate::controls::types::*;
 use crate::stream::types::VideoCaptureConfiguration;
 
 use crate::video::types::*;

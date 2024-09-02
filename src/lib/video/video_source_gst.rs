@@ -1,3 +1,4 @@
+use crate::controls::types::Control;
 use crate::stream::gst::utils::is_gst_plugin_available;
 
 use super::types::*;

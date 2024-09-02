@@ -1,8 +1,9 @@
+use crate::controls::types::Control;
 use crate::helper;
 use crate::settings;
 use crate::stream::{gst as gst_stream, manager as stream_manager, types::StreamInformation};
 use crate::video::{
-    types::{Control, Format, VideoSourceType},
+    types::{Format, VideoSourceType},
     video_source,
     video_source::VideoSource,
     xml,

@@ -1,3 +1,5 @@
+use crate::controls::types::{Control, ControlType};
+
 use super::types::*;
 use super::video_source_gst::VideoSourceGst;
 use super::video_source_local::VideoSourceLocal;
