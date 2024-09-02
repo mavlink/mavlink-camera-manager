@@ -1,4 +1,4 @@
-use mavlink_camera_manager::{cli, helper, logger, mavlink, server, settings, stream};
+use mavlink_camera_manager::{cli, controls, helper, logger, mavlink, server, settings, stream};
 
 use tracing::*;
 
@@ -10,6 +10,8 @@ async fn main() -> Result<(), std::io::Error> {
     logger::manager::init();
     // Settings should start before everybody else to ensure that the CLI are stored
     settings::manager::init(Some(&cli::manager::settings_file()));
+
+    controls::onvif::manager::Manager::init();
 
     mavlink::manager::Manager::init();
 
