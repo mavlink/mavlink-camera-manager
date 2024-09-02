@@ -15,7 +15,7 @@ pub struct VideoCaptureConfiguration {
     pub frame_interval: FrameInterval,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct RedirectCaptureConfiguration {}
 
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
