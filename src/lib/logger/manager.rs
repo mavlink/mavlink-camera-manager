@@ -92,6 +92,7 @@ pub fn init() {
         "Starting at {}",
         chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
     );
+    info!("Server running at {}", cli::manager::server_address(),);
     debug!("Command line call: {}", cli::manager::command_line_string());
     debug!(
         "Command line input struct call: {}",
