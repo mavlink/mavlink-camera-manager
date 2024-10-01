@@ -207,7 +207,7 @@ impl RTSPServer {
                 format!(
                     concat!(
                         "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
-                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=10",
+                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0",
                         " ! capsfilter caps={rtp_caps:?}",
                         " ! rtpjpegdepay",
                         " ! rtpjpegpay name=pay0 pt=26",
