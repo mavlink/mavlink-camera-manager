@@ -210,7 +210,7 @@ impl RTSPServer {
                         " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=10",
                         " ! capsfilter caps={rtp_caps:?}",
                         " ! rtpjpegdepay",
-                        " ! rtpjpegpay name=pay0 pt=96",
+                        " ! rtpjpegpay name=pay0 pt=26",
                     ),
                     socket_path = socket_path,
                     rtp_caps = rtp_caps,

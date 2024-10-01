@@ -118,7 +118,7 @@ impl V4lPipeline {
                         // We don't need a jpegparse, as it leads to incompatible caps, spoiling the negotiation.
                         " ! capsfilter name={filter_name} caps=image/jpeg,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
-                        " ! rtpjpegpay pt=96",
+                        " ! rtpjpegpay pt=26",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     device = device,
