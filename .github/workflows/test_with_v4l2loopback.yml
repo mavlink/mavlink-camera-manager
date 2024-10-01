@@ -1,0 +1,100 @@
+name: Test with v4l2loopback
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: rpi3
+
+    steps:
+    - name: Check if /dev/video42 exists
+      run: |
+        if [ ! -e /dev/video42 ]; then
+          echo "::error::Error: /dev/video42 does not exist."
+          exit 1
+        fi
+
+    - name: Install build dependencies
+      uses: awalsh128/cache-apt-pkgs-action@v1
+      with:
+        packages: |
+          libunwind-dev \
+          libclang-dev \
+          pkg-config \
+          build-essential \
+          curl \
+          wget \
+          gnupg \
+          git \
+          ca-certificates \
+          libgit2-dev \
+          libmount-dev \
+          libsepol-dev \
+          libselinux1-dev \
+          libglib2.0-dev \
+          libgudev-1.0-dev \
+          libgstreamer1.0-dev \
+          libgstreamer-plugins-base1.0-dev \
+          libgstreamer-plugins-bad1.0-dev \
+          libgstrtspserver-1.0-dev
+
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install build dependencies - Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        # cache: 'yarn'
+        # cache-dependency-path: 'src/lib/stream/webrtc/frontend'
+
+    - name: Install build dependencies - Install Yarn
+      run: npm install --global yarn
+
+    - name: Set directory to safe for git
+      # Note: Required by vergen (https://crates.io/crates/vergen)
+      run: git config --global --add safe.directory $GITHUB_WORKSPACE
+
+    - name: Use cached dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: "${{ hashFiles('**/Cargo.lock') }}"
+        shared-key: "shared"
+
+    - name: Install build dependencies - Rustup
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain stable -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
+    - name: Build tests
+      run: cargo test --no-run --verbose --locked -j 2
+
+    - name: Install runtime dependencies
+      uses: awalsh128/cache-apt-pkgs-action@v1
+      with:
+        packages: |
+          gstreamer1.0-libav \
+          gstreamer1.0-nice \
+          gstreamer1.0-plugins-ugly \
+          gstreamer1.0-tools \
+          gstreamer1.0-x \
+          libgstreamer-plugins-bad1.0-0 \
+          libgstreamer-plugins-base1.0-0 \
+          libgstreamer-plugins-good1.0-0 \
+          libgstreamer1.0-0 \
+          libgstrtspserver-1.0-0
+
+    - name: Install runtime dependencies - qrtimestamp
+      run: |
+        wget -q https://github.com/patrickelectric/qrtimestamp-gst/releases/download/0.1.0/libgstqrtimestamp-aarch64.so.tar -O - | tar -x
+
+    - name: Run tests
+      run: |
+        export GST_PLUGIN_PATH="$PWD:$GST_PLUGIN_PATH"
+        timeout 300 cargo test --test v4l2_latency_and_jitter --verbose --locked
