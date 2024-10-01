@@ -67,9 +67,9 @@ tracing-tracy = { version = "0.10.5", features = ["ondemand", "broadcast"] } # N
 # Reference: https://github.com/tokio-rs/tracing/issues/2441
 tracing-appender = { git = "https://github.com/joaoantoniocardoso/tracing", branch = "tracing-appender-0.2.2-with-filename-suffix" }
 
-# onvif library does not work using git dependency
-onvif = { path = "libs/onvif-rs/onvif" }
-onvif-schema = { path = "libs/onvif-rs/schema", package = "schema", default-features = true, features = ["analytics", "devicemgmt", "event", "media", "ptz"] }
+# Onvif
+onvif = { git = "https://github.com/lumeohq/onvif-rs", rev = "8e2408db" }
+onvif-schema = { git = "https://github.com/lumeohq/onvif-rs", rev = "8e2408db", package = "schema", features = ["analytics", "devicemgmt", "event", "media", "ptz"] }
 
 anyhow = "1"
 tokio = { version = "1.37", features = ["full"] }
