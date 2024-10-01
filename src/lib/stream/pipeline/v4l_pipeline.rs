@@ -99,6 +99,7 @@ impl V4lPipeline {
                         " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator},colorimetry=bt601,pixel-aspect-ratio=1/1,interlace-mode=progressive",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtpvrawpay pt=96",
+                        " ! capsfilter caps=\"application/x-rtp, clock-rate=(int)90000, encoding-name=(string)RAW, sampling=(string)YCbCr-4:2:0, depth=(string)8, width=(string){width}, height=(string){height}, colorimetry=(string)BT601-5, payload=(int)96, a-framerate=(string){framerate}\"",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     device = device,
@@ -109,6 +110,7 @@ impl V4lPipeline {
                     filter_name = filter_name,
                     video_tee_name = video_tee_name,
                     rtp_tee_name = rtp_tee_name,
+                    framerate = (configuration.frame_interval.denominator as f32 / configuration.frame_interval.numerator as f32) as u32,
                 )
             }
             VideoEncodeType::Mjpg => {
