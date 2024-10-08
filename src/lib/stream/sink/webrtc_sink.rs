@@ -44,7 +44,7 @@ impl SinkInterface for WebRTCSink {
             "direction",
             gst_webrtc::WebRTCRTPTransceiverDirection::Sendonly,
         );
-        transceiver.set_property("do-nack", true);
+        transceiver.set_property("do-nack", true); // Enable retransmission (RFC4588)
         transceiver.set_property("fec-type", gst_webrtc::WebRTCFECType::None);
 
         // Link
