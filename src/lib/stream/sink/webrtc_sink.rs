@@ -339,6 +339,23 @@ impl WebRTCSink {
 
                 // Use the pipeline clock time. This will ensure that the timestamps from the source are correct.
                 rtp_bin.set_property_from_str("ntp-time-source", "clock-time");
+
+                // Here we configure the RTP storage size, so the retransmission can compensate for longer periods of frame losts
+                rtp_bin.connect("new-storage", false, move |values| {
+                    let _rtp_bin = values[0].get::<gst::Element>().expect("Invalid argument");
+                    let storage = values[1].get::<gst::Element>().expect("Invalid argument");
+                    let _session = values[2].get::<u32>().expect("Invalid argument");
+
+                    let current_time_ns = storage.property::<u64>("size-time");
+
+                    let new_time_ns = std::time::Duration::from_secs(1).as_nanos() as u64;
+                    debug!(
+                        "Seting RTP storage size to {new_time_ns:?} ns, was {current_time_ns:?} ns"
+                    );
+                    storage.set_property("size-time", new_time_ns);
+
+                    None
+                });
             });
         let webrtcbin = webrtcbin.upcast::<gst::Element>();
 
