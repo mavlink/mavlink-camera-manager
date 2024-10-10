@@ -1,12 +1,11 @@
-
-<!-- TODO: Place a logo below -->
-<!-- <p align="center">[ A LOGO HERE ]</p> -->
-<h1 align="center">
-   Mavlink Camera Manager
-</h1>
+<a>
+<img src="./images/logo.png" align="left" hspace="10" vspace="6" width="50%">
+</a>
+<br>
 <h4 align="center">
    An extensible cross-platform camera server built on top of GStreamer and Rust-MAVLink
 </h4>
+<br>
 
 ---
 
@@ -14,6 +13,8 @@
 [![Cargo download](https://img.shields.io/crates/d/mavlink-camera-manager)](https://crates.io/crates/mavlink-camera-manager)
 [![Crate info](https://img.shields.io/crates/v/mavlink-camera-manager.svg)](https://crates.io/crates/mavlink-camera-manager)
 [![Documentation](https://docs.rs/mavlink-camera-manager/badge.svg)](https://docs.rs/mavlink-camera-manager)
+
+<br>
 
 ## Key Features
 
