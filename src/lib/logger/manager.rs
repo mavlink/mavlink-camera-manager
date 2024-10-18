@@ -33,8 +33,8 @@ pub fn init() {
         .with_line_number(true)
         .with_span_events(fmt::format::FmtSpan::NONE)
         .with_target(false)
-        .with_thread_ids(true)
-        .with_thread_names(true)
+        .with_thread_ids(false)
+        .with_thread_names(false)
         .with_filter(console_env_filter);
 
     // Configure the file log
