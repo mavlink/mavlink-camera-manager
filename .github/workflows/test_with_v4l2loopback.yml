@@ -1,12 +1,19 @@
-name: Rust
+name: Test with v4l2loopback
 
 on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: rpi3
 
     steps:
+    - name: Check if /dev/video42 exists
+      run: |
+        if [ ! -e /dev/video42 ]; then
+          echo "::error::Error: /dev/video42 does not exist."
+          exit 1
+        fi
+
     - name: Install build dependencies
       uses: awalsh128/cache-apt-pkgs-action@v1
       with:
@@ -65,24 +72,29 @@ jobs:
       with:
         bun-version: latest
 
-    - name: Check style
-      run: cargo fmt --check
-
-    - name: Check clippy
-      run: cargo clippy --all-features --locked
-
-    - name: Build
-      run: cargo build --verbose --locked
+    - name: Build tests
+      run: cargo test --no-run --verbose --locked -j 2
 
     - name: Install runtime dependencies
       uses: awalsh128/cache-apt-pkgs-action@v1
       with:
         packages: |
+          gstreamer1.0-libav \
+          gstreamer1.0-nice \
+          gstreamer1.0-plugins-ugly \
           gstreamer1.0-tools \
           gstreamer1.0-x \
-          gstreamer1.0-nice \
-          gstreamer1.0-libav \
-          gstreamer1.0-plugins-ugly
+          libgstreamer-plugins-bad1.0-0 \
+          libgstreamer-plugins-base1.0-0 \
+          libgstreamer-plugins-good1.0-0 \
+          libgstreamer1.0-0 \
+          libgstrtspserver-1.0-0
+
+    - name: Install runtime dependencies - qrtimestamp
+      run: |
+        wget -q https://github.com/patrickelectric/qrtimestamp-gst/releases/download/0.1.0/libgstqrtimestamp-aarch64.so.tar -O - | tar -x
 
     - name: Run tests
-      run: cargo test --lib --bins --verbose --locked
+      run: |
+        export GST_PLUGIN_PATH="$PWD:$GST_PLUGIN_PATH"
+        timeout 300 cargo test --test v4l2_latency_and_jitter --verbose --locked
