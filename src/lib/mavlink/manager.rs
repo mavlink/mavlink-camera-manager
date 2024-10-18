@@ -114,7 +114,7 @@ impl Manager {
                     continue;
                 }
 
-                debug!("Message accepted: {header:?}, {message:?}");
+                trace!("Message accepted: {header:?}, {message:?}");
 
                 // Send the received message to the cameras
                 if let Err(error) = inner_guard
