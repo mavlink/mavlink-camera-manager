@@ -48,7 +48,7 @@ impl Manager {
         use std::net::{IpAddr, Ipv4Addr};
 
         loop {
-            debug!("Discovering onvif...");
+            trace!("Discovering onvif...");
 
             const MAX_CONCURRENT_JUMPERS: usize = 100;
 
