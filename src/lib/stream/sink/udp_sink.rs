@@ -322,7 +322,7 @@ impl UdpSink {
         let clients = addresses
             .iter()
             .filter_map(|address| {
-                if address.scheme() != "udp" {
+                if !matches!(address.scheme(), "udp" | "udp265") {
                     return None;
                 }
                 if let (Some(host), Some(port)) = (address.host(), address.port()) {
