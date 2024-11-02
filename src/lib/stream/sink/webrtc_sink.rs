@@ -479,7 +479,7 @@ impl WebRTCSink {
         }
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self, sdp))]
     pub fn handle_sdp(&self, sdp: &gst_webrtc::WebRTCSessionDescription) -> Result<()> {
         self.downgrade().handle_sdp(&self.webrtcbin, sdp)
     }
@@ -557,7 +557,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
 
     // Once webrtcbin has create the offer SDP for us, handle it by sending it to the peer via the
     // WebSocket connection
-    #[instrument(level = "debug", skip(self, webrtcbin))]
+    #[instrument(level = "debug", skip_all)]
     fn on_offer_created(
         &self,
         webrtcbin: &gst::Element,
@@ -570,7 +570,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         );
 
         let Ok(sdp) = offer.sdp().as_text() else {
-            return Err(anyhow!("Failed reading the received SDP"));
+            return Err(anyhow!("Failed reading the created SDP"));
         };
 
         // All good, then set local description
@@ -607,7 +607,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         );
 
         let Ok(sdp) = answer.sdp().as_text() else {
-            return Err(anyhow!("Failed reading the received SDP"));
+            return Err(anyhow!("Failed reading the answer SDP"));
         };
 
         debug!("Sending SDP answer to peer. Answer:\n{sdp}");
