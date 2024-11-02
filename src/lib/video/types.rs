@@ -68,6 +68,7 @@ impl VideoEncodeType {
         let fourcc = fourcc.to_uppercase();
         match fourcc.as_str() {
             "H264" => VideoEncodeType::H264,
+            "H265" | "HEVC" => VideoEncodeType::H265,
             "MJPG" => VideoEncodeType::Mjpg,
             "YUYV" => VideoEncodeType::Yuyv,
             _ => VideoEncodeType::Unknown(fourcc),
