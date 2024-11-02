@@ -72,6 +72,10 @@ impl VideoSource for VideoSourceGst {
                         sizes: sizes.clone(),
                     },
                     Format {
+                        encode: VideoEncodeType::H265,
+                        sizes: sizes.clone(),
+                    },
+                    Format {
                         encode: VideoEncodeType::Yuyv,
                         sizes: sizes.clone(),
                     },
