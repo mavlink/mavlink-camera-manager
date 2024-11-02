@@ -357,6 +357,20 @@ impl ImageSink {
                 _transcoding_elements.push(filter);
                 _transcoding_elements.push(decoder);
             }
+            VideoEncodeType::H265 => {
+                // For h265, we need to filter-out unwanted non-key frames here, before decoding it.
+                let filter = gst::ElementFactory::make("identity")
+                .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
+                .property("sync", false)
+                .build()?;
+                let decoder = gst::ElementFactory::make("avdec_h265")
+                    .property_from_str("lowres", "2") // (0) is 'full'; (1) is '1/2-size'; (2) is '1/4-size'
+                    .build()?;
+                decoder.has_property("discard-corrupted-frames", None).then(|| decoder.set_property("discard-corrupted-frames", true));
+                decoder.has_property("std-compliance", None).then(|| decoder.set_property_from_str("std-compliance", "normal"));
+                _transcoding_elements.push(filter);
+                _transcoding_elements.push(decoder);
+            }
             VideoEncodeType::Mjpg => {
                 let decoder = gst::ElementFactory::make("jpegdec").build()?;
                 decoder.has_property("discard-corrupted-frames", None).then(|| decoder.set_property("discard-corrupted-frames", true));
