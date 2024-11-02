@@ -48,6 +48,7 @@ impl VideoSource for VideoSourceGst {
                     .collect();
 
                 let sizes: Vec<Size> = [
+                    (160, 120),
                     (320, 240),
                     (640, 480),
                     (720, 480),
