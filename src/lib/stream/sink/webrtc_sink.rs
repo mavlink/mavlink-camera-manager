@@ -718,12 +718,22 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self, webrtcbin))]
+    #[instrument(level = "debug", skip_all)]
     fn handle_sdp(
         &self,
         webrtcbin: &gst::Element,
         sdp: &gst_webrtc::WebRTCSessionDescription,
     ) -> Result<()> {
+        if let Ok(sdp) = sdp.sdp().as_text() {
+            trace!("Received SDP:\n{sdp}");
+        };
+
+        let sdp = gst_webrtc::WebRTCSessionDescription::new(sdp.type_(), sanitize_sdp(&sdp.sdp())?);
+
+        if let Ok(sdp) = sdp.sdp().as_text() {
+            debug!("Received (sanitized) SDP:\n{sdp}");
+        };
+
         webrtcbin.emit_by_name::<()>("set-remote-description", &[&sdp, &None::<gst::Promise>]);
         Ok(())
     }
