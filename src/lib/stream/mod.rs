@@ -404,9 +404,9 @@ fn validate_endpoints(video_and_stream_information: &VideoAndStreamInformation) 
             VideoSourceType::Redirect(_)
         ) {
             match scheme {
-                "udp" | "rtsp" => return None,
+                "udp" | "udp265" | "rtsp" => return None,
                 _ => return Some(anyhow!(
-                    "The URL's scheme for REDIRECT endpoints should be \"udp\" or \"rtsp\", but was: {scheme:?}",
+                    "The URL's scheme for REDIRECT endpoints should be \"udp\", \"udp265\", or \"rtsp\", but was: {scheme:?}",
                 ))
             };
         }
