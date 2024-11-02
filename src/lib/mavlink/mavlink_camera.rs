@@ -82,7 +82,7 @@ impl MavlinkCameraInner {
 
         let mavlink_stream_type = match video_stream_uri.scheme() {
             "rtsp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTSP,
-            "udp" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP,
+            "udp" | "udp265" => mavlink::common::VideoStreamType::VIDEO_STREAM_TYPE_RTPUDP,
             unsupported => {
                 return Err(anyhow!(
                     "Scheme {unsupported:#?} is not supported for a Mavlink Camera."
