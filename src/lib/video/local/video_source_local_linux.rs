@@ -430,7 +430,7 @@ impl VideoSource for VideoSourceLocal {
                 match v4l_format.fourcc.str() {
                     Ok(encode_str) => {
                         formats.push(Format {
-                            encode: VideoEncodeType::from_str(encode_str),
+                            encode: encode_str.parse().unwrap(),
                             sizes,
                         });
                     }
