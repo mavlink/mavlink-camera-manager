@@ -132,7 +132,7 @@ fn build_web() {
         panic!("{program} version failed!");
     }
 
-    let install = Command::new(&program)
+    let install = Command::new(program)
         .args(["install", "--frozen-lockfile"])
         .current_dir(frontend_dir)
         .status()
@@ -147,7 +147,7 @@ fn build_web() {
     } else {
         vec!["build"]
     };
-    let build = Command::new(&program)
+    let build = Command::new(program)
         .args(&args)
         .current_dir(frontend_dir)
         .status()
