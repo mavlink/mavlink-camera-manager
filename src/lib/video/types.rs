@@ -62,17 +62,20 @@ impl VideoSourceType {
     }
 }
 
-impl VideoEncodeType {
-    //TODO: use trait fromstr, check others places
-    pub fn from_str(fourcc: &str) -> VideoEncodeType {
+impl std::str::FromStr for VideoEncodeType {
+    type Err = std::convert::Infallible;
+
+    fn from_str(fourcc: &str) -> Result<Self, Self::Err> {
         let fourcc = fourcc.to_uppercase();
-        match fourcc.as_str() {
+        let res = match fourcc.as_str() {
             "H264" => VideoEncodeType::H264,
             "H265" | "HEVC" => VideoEncodeType::H265,
             "MJPG" => VideoEncodeType::Mjpg,
             "YUYV" => VideoEncodeType::Yuyv,
             _ => VideoEncodeType::Unknown(fourcc),
-        }
+        };
+
+        Ok(res)
     }
 }
 
