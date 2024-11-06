@@ -82,7 +82,7 @@ impl VideoSource for VideoSourceRedirect {
 }
 
 impl VideoSourceAvailable for VideoSourceRedirect {
-    fn cameras_available() -> Vec<VideoSourceType> {
+    async fn cameras_available() -> Vec<VideoSourceType> {
         vec![VideoSourceType::Redirect(VideoSourceRedirect {
             name: "Redirect source".into(),
             source: VideoSourceRedirectType::Redirect("Redirect".into()),
