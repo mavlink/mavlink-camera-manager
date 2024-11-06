@@ -1,26 +1,26 @@
-use crate::controls::types::Control;
-use crate::helper;
-use crate::settings;
-use crate::stream::{gst as gst_stream, manager as stream_manager, types::StreamInformation};
-use crate::video::{
-    types::{Format, VideoSourceType},
-    video_source,
-    video_source::VideoSource,
-    xml,
-};
-use crate::video_stream::types::VideoAndStreamInformation;
-use actix_web::http::header;
+use std::io::prelude::*;
+
 use actix_web::{
+    http::header,
     web::{self, Json},
     HttpRequest, HttpResponse,
 };
-
 use paperclip::actix::{api_v2_operation, Apiv2Schema, CreatedJson};
 use serde::{Deserialize, Serialize};
 use tracing::*;
 use validator::Validate;
 
-use std::io::prelude::*;
+use crate::{
+    controls::types::Control,
+    helper, settings,
+    stream::{gst as gst_stream, manager as stream_manager, types::StreamInformation},
+    video::{
+        types::{Format, VideoSourceType},
+        video_source::{self, VideoSource},
+        xml,
+    },
+    video_stream::types::VideoAndStreamInformation,
+};
 
 #[derive(Apiv2Schema, Debug, Serialize)]
 pub struct ApiVideoSource {

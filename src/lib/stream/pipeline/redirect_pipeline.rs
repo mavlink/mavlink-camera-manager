@@ -1,15 +1,13 @@
+use anyhow::{anyhow, Context, Result};
+use gst::prelude::*;
+use tracing::*;
+
 use crate::{
     stream::types::CaptureConfiguration, video::types::VideoSourceType,
     video_stream::types::VideoAndStreamInformation,
 };
 
 use super::{PipelineGstreamerInterface, PipelineState, PIPELINE_RTP_TEE_NAME};
-
-use anyhow::{anyhow, Context, Result};
-
-use tracing::*;
-
-use gst::prelude::*;
 
 #[derive(Debug)]
 pub struct RedirectPipeline {

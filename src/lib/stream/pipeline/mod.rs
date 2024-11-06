@@ -7,13 +7,10 @@ pub mod v4l_pipeline;
 
 use std::collections::HashMap;
 
-use enum_dispatch::enum_dispatch;
-
 use anyhow::{anyhow, Context, Result};
-
-use tracing::*;
-
+use enum_dispatch::enum_dispatch;
 use gst::prelude::*;
+use tracing::*;
 
 use crate::{
     stream::{

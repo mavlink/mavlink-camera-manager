@@ -1,14 +1,15 @@
+use std::{
+    io::Write,
+    path::Path,
+    sync::{Arc, RwLock},
+};
+
 use anyhow::{anyhow, Error, Result};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
-use std::io::prelude::*;
-use std::path::Path;
-use std::sync::{Arc, RwLock};
 use tracing::*;
 
-use crate::cli;
-use crate::custom;
-use crate::video_stream::types::VideoAndStreamInformation;
+use crate::{cli, custom, video_stream::types::VideoAndStreamInformation};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct HeaderSettingsFile {

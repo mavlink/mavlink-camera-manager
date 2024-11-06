@@ -8,29 +8,30 @@ pub mod webrtc;
 
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
-
-use crate::mavlink::mavlink_camera::MavlinkCamera;
-use crate::video::types::{VideoEncodeType, VideoSourceType};
-use crate::video::video_source::cameras_available;
-use crate::video_stream::types::VideoAndStreamInformation;
-
+use ::gst::prelude::*;
+use anyhow::{anyhow, Result};
 use manager::Manager;
 use pipeline::Pipeline;
 use sink::{create_image_sink, create_rtsp_sink, create_udp_sink};
+use tokio::sync::RwLock;
+use tracing::*;
 use types::*;
 use webrtc::signalling_protocol::PeerId;
 
-use anyhow::{anyhow, Result};
+use crate::{
+    mavlink::mavlink_camera::MavlinkCamera,
+    video::{
+        types::{VideoEncodeType, VideoSourceType},
+        video_source::cameras_available,
+    },
+    video_stream::types::VideoAndStreamInformation,
+};
 
-use tracing::*;
-
-use self::gst::utils::wait_for_element_state;
-use self::rtsp::rtsp_scheme::RTSPScheme;
-use self::rtsp::rtsp_server::RTSP_SERVER_PORT;
-use self::sink::SinkInterface;
-
-use ::gst::prelude::*;
+use self::{
+    gst::utils::wait_for_element_state,
+    rtsp::{rtsp_scheme::RTSPScheme, rtsp_server::RTSP_SERVER_PORT},
+    sink::SinkInterface,
+};
 
 #[derive(Debug)]
 pub struct Stream {

@@ -1,5 +1,3 @@
-use super::pages;
-
 use actix_cors::Cors;
 use actix_extensible_rate_limit::{
     backend::{memory::InMemoryBackend, SimpleInputFunctionBuilder},
@@ -11,9 +9,10 @@ use paperclip::{
     actix::{web, OpenApiExt},
     v2::models::{Api, Info},
 };
-
 use tracing::*;
 use tracing_actix_web::TracingLogger;
+
+use super::pages;
 
 fn json_error_handler(error: JsonPayloadError, _: &HttpRequest) -> actix_web::Error {
     warn!("Problem with json: {error}");

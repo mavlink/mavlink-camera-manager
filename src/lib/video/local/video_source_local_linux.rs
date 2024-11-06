@@ -2,20 +2,19 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::controls::types::*;
-use crate::stream::types::VideoCaptureConfiguration;
-
-use crate::video::types::*;
-use crate::video::video_source::{VideoSource, VideoSourceAvailable};
+use anyhow::{anyhow, Result};
+use lazy_static::lazy_static;
 use paperclip::actix::Apiv2Schema;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-
-use anyhow::{anyhow, Result};
-
 use tracing::*;
 
-use lazy_static::lazy_static;
+use crate::video::video_source::VideoSourceAvailable;
+use crate::{
+    controls::types::*,
+    stream::types::VideoCaptureConfiguration,
+    video::{types::*, video_source::VideoSource},
+};
 
 lazy_static! {
     static ref VIDEO_FORMATS: Arc<Mutex<HashMap<String, Vec<Format>>>> = Default::default();

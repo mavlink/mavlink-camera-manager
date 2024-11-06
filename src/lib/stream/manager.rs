@@ -1,25 +1,21 @@
 use std::{collections::HashMap, sync::Arc};
 
+use anyhow::{anyhow, Context, Error, Result};
+use cached::proc_macro::cached;
+use futures::stream::StreamExt;
 use tokio::sync::RwLock;
+use tracing::*;
 
 use crate::{
     settings,
-    stream::{types::CaptureConfiguration, webrtc::signalling_protocol::BindAnswer},
-    video::video_source,
-};
-use crate::{stream::sink::SinkInterface, video::types::VideoSourceType};
-use crate::{
-    stream::sink::{webrtc_sink::WebRTCSink, Sink},
+    stream::{
+        sink::{webrtc_sink::WebRTCSink, Sink, SinkInterface},
+        types::CaptureConfiguration,
+        webrtc::signalling_protocol::BindAnswer,
+    },
+    video::{types::VideoSourceType, video_source},
     video_stream::types::VideoAndStreamInformation,
 };
-
-use anyhow::{anyhow, Context, Error, Result};
-
-type ClonableResult<T> = Result<T, Arc<Error>>;
-
-use cached::proc_macro::cached;
-use futures::stream::StreamExt;
-use tracing::*;
 
 use super::{
     pipeline::PipelineGstreamerInterface,
@@ -27,6 +23,8 @@ use super::{
     webrtc::{self, signalling_protocol::RTCSessionDescription},
     Stream,
 };
+
+type ClonableResult<T> = Result<T, Arc<Error>>;
 
 #[derive(Default)]
 pub struct Manager {

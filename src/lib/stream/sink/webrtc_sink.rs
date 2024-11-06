@@ -1,15 +1,20 @@
-use crate::cli;
 use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use tokio::sync::mpsc::{self, WeakUnboundedSender};
 use tracing::*;
 
-use super::SinkInterface;
-use crate::stream::webrtc::signalling_protocol::{
-    Answer, BindAnswer, EndSessionQuestion, IceNegotiation, MediaNegotiation, Message, Question,
-    RTCIceCandidateInit, RTCSessionDescription, Sdp,
+use crate::{
+    cli,
+    stream::webrtc::{
+        signalling_protocol::{
+            Answer, BindAnswer, EndSessionQuestion, IceNegotiation, MediaNegotiation, Message,
+            Question, RTCIceCandidateInit, RTCSessionDescription, Sdp,
+        },
+        webrtcbin_interface::WebRTCBinInterface,
+    },
 };
-use crate::stream::webrtc::webrtcbin_interface::WebRTCBinInterface;
+
+use super::SinkInterface;
 
 #[derive(Clone)]
 pub struct WebRTCSinkWeakProxy {

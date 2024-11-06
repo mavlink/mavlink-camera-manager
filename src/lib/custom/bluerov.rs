@@ -1,10 +1,12 @@
+use tracing::*;
 use url::Url;
 
-use crate::network::utils::get_visible_qgc_address;
-use crate::stream::types::*;
-use crate::video::{self, types::*, video_source::VideoSourceAvailable};
-use crate::video_stream::types::VideoAndStreamInformation;
-use tracing::*;
+use crate::{
+    network::utils::get_visible_qgc_address,
+    stream::types::*,
+    video::{self, types::*, video_source::VideoSourceAvailable},
+    video_stream::types::VideoAndStreamInformation,
+};
 
 fn get_cameras_with_encode_type(encode: VideoEncodeType) -> Vec<VideoSourceType> {
     let cameras = video::video_source_local::VideoSourceLocal::cameras_available();

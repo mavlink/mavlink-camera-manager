@@ -1,5 +1,8 @@
 use anyhow::{anyhow, Result};
 use gst::prelude::*;
+use tracing::*;
+
+use crate::video::types::VideoEncodeType;
 
 #[derive(Debug)]
 pub struct PluginRankConfig {

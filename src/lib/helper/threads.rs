@@ -1,6 +1,6 @@
+use std::{collections::HashMap, thread, time::Duration};
+
 use cached::proc_macro::cached;
-use std::time::Duration;
-use std::{collections::HashMap, thread};
 use sysinfo::{PidExt, ProcessExt, System, SystemExt};
 use tracing::*;
 

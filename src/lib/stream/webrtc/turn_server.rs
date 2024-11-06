@@ -1,19 +1,20 @@
-use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
-use std::thread;
+use std::{
+    collections::HashMap,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::Arc,
+    thread,
+};
 
 use anyhow::{Context, Result};
 use tokio::net::UdpSocket;
-
-use webrtc_util::vnet::net::Net;
-
-use turn::auth::*;
-use turn::relay::relay_static::*;
-use turn::server::{config::*, *};
-use turn::Error;
-
 use tracing::*;
+use turn::{
+    auth::*,
+    relay::relay_static::*,
+    server::{config::*, *},
+    Error,
+};
+use webrtc_util::vnet::net::Net;
 
 pub const DEFAULT_TURN_ENDPOINT: &str = "turn://user:pwd@0.0.0.0:3478";
 

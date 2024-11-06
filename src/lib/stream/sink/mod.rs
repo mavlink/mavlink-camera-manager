@@ -3,7 +3,9 @@ pub mod rtsp_sink;
 pub mod udp_sink;
 pub mod webrtc_sink;
 
+use anyhow::{anyhow, Result};
 use enum_dispatch::enum_dispatch;
+use tracing::*;
 
 use crate::video_stream::types::VideoAndStreamInformation;
 
@@ -11,10 +13,6 @@ use image_sink::ImageSink;
 use rtsp_sink::RtspSink;
 use udp_sink::UdpSink;
 use webrtc_sink::WebRTCSink;
-
-use anyhow::{anyhow, Result};
-
-use tracing::*;
 
 #[enum_dispatch]
 pub trait SinkInterface {

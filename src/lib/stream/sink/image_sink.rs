@@ -4,16 +4,14 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Error, Result};
-
+use gst::prelude::*;
 use gst_video::VideoFrameExt;
+use image::FlatSamples;
 use tracing::*;
 
-use image::FlatSamples;
-
-use gst::prelude::*;
+use crate::{stream::pipeline::runner::PipelineRunner, video::types::VideoEncodeType};
 
 use super::SinkInterface;
-use crate::{stream::pipeline::runner::PipelineRunner, video::types::VideoEncodeType};
 
 type ClonableResult<T> = Result<T, Arc<Error>>;
 

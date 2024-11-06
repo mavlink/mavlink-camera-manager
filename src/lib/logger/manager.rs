@@ -1,8 +1,8 @@
-use crate::cli;
-
 use tracing::{metadata::LevelFilter, *};
 use tracing_log::LogTracer;
 use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Layer};
+
+use crate::cli;
 
 // Start logger, should be done inside main
 pub fn init() {

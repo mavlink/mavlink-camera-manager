@@ -1,12 +1,15 @@
-use crate::controls::types::Control;
-use crate::stream::types::VideoCaptureConfiguration;
-use crate::video::types::*;
-use crate::video::video_source::{VideoSource, VideoSourceAvailable};
-
+use anyhow::Result;
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 
-use anyhow::Result;
+use crate::{
+    controls::types::Control,
+    stream::types::VideoCaptureConfiguration,
+    video::{
+        types::*,
+        video_source::{VideoSource, VideoSourceAvailable},
+    },
+};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum VideoSourceLocalType {}
