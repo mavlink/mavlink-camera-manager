@@ -198,10 +198,10 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_device() {
+    #[tokio::test]
+    async fn test_device() {
         use crate::video::video_source;
-        for camera in video_source::cameras_available() {
+        for camera in video_source::cameras_available().await {
             if let VideoSourceType::Local(camera) = camera {
                 let xml_string = from_video_source(&camera).unwrap();
                 println!("{}", xml_string);

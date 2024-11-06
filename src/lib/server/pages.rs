@@ -186,7 +186,7 @@ pub async fn info() -> CreatedJson<Info> {
 #[api_v2_operation]
 /// Provides list of all video sources, with controls and formats
 pub async fn v4l() -> Json<Vec<ApiVideoSource>> {
-    let cameras = video_source::cameras_available();
+    let cameras = video_source::cameras_available().await;
     let cameras: Vec<ApiVideoSource> = cameras
         .iter()
         .map(|cam| match cam {
@@ -366,7 +366,7 @@ pub fn camera_reset_controls(json: web::Json<ResetCameraControls>) -> HttpRespon
 /// Provides a xml description file that contains information for a specific device, based on: https://mavlink.io/en/services/camera_def.html
 pub fn xml(xml_file_request: web::Query<XmlFileRequest>) -> HttpResponse {
     debug!("{xml_file_request:#?}");
-    let cameras = video_source::cameras_available();
+    let cameras = video_source::cameras_available().await;
     let camera = cameras
         .iter()
         .find(|source| source.inner().source_string() == xml_file_request.file);

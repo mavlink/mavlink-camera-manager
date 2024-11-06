@@ -120,7 +120,7 @@ impl Stream {
                 // If it's a camera, try to update the device
                 if let VideoSourceType::Local(_) = video_and_stream_information.video_source {
                     let mut streams = vec![video_and_stream_information.clone()];
-                    let mut candidates = cameras_available();
+                    let mut candidates = cameras_available().await;
 
                     // Discards any source from other running streams, otherwise we'd be trying to create a stream from a device in use (which is not possible)
                     let current_running_streams = manager::streams()

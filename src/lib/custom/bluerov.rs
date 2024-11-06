@@ -8,8 +8,8 @@ use crate::{
     video_stream::types::VideoAndStreamInformation,
 };
 
-fn get_cameras_with_encode_type(encode: VideoEncodeType) -> Vec<VideoSourceType> {
-    let cameras = video::video_source_local::VideoSourceLocal::cameras_available();
+async fn get_cameras_with_encode_type(encode: VideoEncodeType) -> Vec<VideoSourceType> {
+    let cameras = video::video_source_local::VideoSourceLocal::cameras_available().await;
     cameras
         .iter()
         .filter(move |cam| {
