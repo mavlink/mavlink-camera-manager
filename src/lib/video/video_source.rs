@@ -24,17 +24,17 @@ pub(crate) trait VideoSourceAvailable {
     async fn cameras_available() -> Vec<VideoSourceType>;
 }
 
-pub fn cameras_available() -> Vec<VideoSourceType> {
+pub async fn cameras_available() -> Vec<VideoSourceType> {
     [
-        &VideoSourceLocal::cameras_available()[..],
-        &VideoSourceGst::cameras_available()[..],
-        &VideoSourceRedirect::cameras_available()[..],
+        &VideoSourceLocal::cameras_available().await[..],
+        &VideoSourceGst::cameras_available().await[..],
+        &VideoSourceRedirect::cameras_available().await[..],
     ]
     .concat()
 }
 
-pub fn get_video_source(source_string: &str) -> Result<VideoSourceType, std::io::Error> {
-    let cameras = cameras_available();
+pub async fn get_video_source(source_string: &str) -> Result<VideoSourceType, std::io::Error> {
+    let cameras = cameras_available().await;
 
     if let Some(camera) = cameras
         .iter()
@@ -102,8 +102,8 @@ pub fn reset_controls(source_string: &str) -> Result<(), Vec<std::io::Error>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn simple_test() {
-        println!("{:#?}", cameras_available());
+    #[tokio::test]
+    async fn simple_test() {
+        println!("{:#?}", cameras_available().await);
     }
 }

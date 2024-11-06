@@ -84,8 +84,8 @@ impl VideoSource for VideoSourceLocal {
     }
 }
 
-impl VideoSourceLocal {
-    pub async fn cameras_available() -> Vec<VideoSourceType> {
+impl VideoSourceAvailable for VideoSourceLocal {
+    async fn cameras_available() -> Vec<VideoSourceType> {
         return vec![];
     }
 }

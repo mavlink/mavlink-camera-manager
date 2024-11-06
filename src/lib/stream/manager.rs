@@ -116,7 +116,7 @@ pub async fn start_default() -> Result<()> {
     remove_all_streams().await?;
 
     // Update all local video sources to make sure that they are available
-    let mut candidates = video_source::cameras_available();
+    let mut candidates = video_source::cameras_available().await;
     update_devices(&mut streams, &mut candidates, true);
 
     // Remove all invalid video_sources
