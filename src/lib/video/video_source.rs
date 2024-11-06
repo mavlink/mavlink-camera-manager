@@ -20,8 +20,8 @@ pub trait VideoSource {
     fn is_shareable(&self) -> bool;
 }
 
-pub trait VideoSourceAvailable {
-    fn cameras_available() -> Vec<VideoSourceType>;
+pub(crate) trait VideoSourceAvailable {
+    async fn cameras_available() -> Vec<VideoSourceType>;
 }
 
 pub fn cameras_available() -> Vec<VideoSourceType> {

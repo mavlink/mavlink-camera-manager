@@ -687,7 +687,7 @@ impl VideoSource for VideoSourceLocal {
 }
 
 impl VideoSourceAvailable for VideoSourceLocal {
-    fn cameras_available() -> Vec<VideoSourceType> {
+    async fn cameras_available() -> Vec<VideoSourceType> {
         let mut cameras: Vec<VideoSourceType> = vec![];
 
         let cameras_path = {

@@ -181,7 +181,7 @@ impl VideoSource for VideoSourceGst {
 }
 
 impl VideoSourceAvailable for VideoSourceGst {
-    fn cameras_available() -> Vec<VideoSourceType> {
+    async fn cameras_available() -> Vec<VideoSourceType> {
         let mut sources = vec![VideoSourceType::Gst(VideoSourceGst {
             name: "Fake source".into(),
             source: VideoSourceGstType::Fake("ball".into()),
