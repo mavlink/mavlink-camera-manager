@@ -1,10 +1,9 @@
-use clap::ValueEnum;
-
-use crate::cli;
-use crate::video_stream::types::VideoAndStreamInformation;
-
 mod bluerov;
 mod test;
+
+use clap::ValueEnum;
+
+use crate::{cli, video_stream::types::VideoAndStreamInformation};
 
 #[derive(ValueEnum, PartialEq, Debug, Clone)]
 #[clap(rename_all = "verbatim")]

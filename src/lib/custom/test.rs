@@ -1,8 +1,10 @@
 use url::Url;
 
-use crate::stream::types::*;
-use crate::video::{self, types::*, video_source_gst::VideoSourceGstType};
-use crate::video_stream::types::VideoAndStreamInformation;
+use crate::{
+    stream::types::*,
+    video::{self, types::*, video_source_gst::VideoSourceGstType},
+    video_stream::types::VideoAndStreamInformation,
+};
 
 pub fn take_webrtc_stream() -> Vec<VideoAndStreamInformation> {
     let size = STANDARD_SIZES.last().unwrap();

@@ -1,8 +1,9 @@
-use super::video_source::VideoSource;
-use crate::controls::types::ControlType;
-
 use anyhow::{anyhow, Result};
 use serde::Serialize;
+
+use crate::controls::types::ControlType;
+
+use super::video_source::VideoSource;
 
 #[derive(Debug, Serialize)]
 #[serde(rename = "mavlinkcamera")]
@@ -191,10 +192,11 @@ pub fn from_video_source(video_source: &dyn VideoSource) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use quick_xml::se::to_string;
+
     use crate::video::types::VideoSourceType;
 
     use super::*;
-    use quick_xml::se::to_string;
 
     #[test]
     fn test_device() {

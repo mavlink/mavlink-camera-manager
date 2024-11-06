@@ -1,12 +1,13 @@
-use crate::controls::types::Control;
-use crate::stream::gst::utils::is_gst_plugin_available;
-
-use super::types::*;
-use super::video_source::{VideoSource, VideoSourceAvailable};
-use super::video_source_local::VideoSourceLocal;
-
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
+
+use crate::{controls::types::Control, stream::gst::utils::is_gst_plugin_available};
+
+use super::{
+    types::*,
+    video_source::{VideoSource, VideoSourceAvailable},
+    video_source_local::VideoSourceLocal,
+};
 
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum VideoSourceGstType {

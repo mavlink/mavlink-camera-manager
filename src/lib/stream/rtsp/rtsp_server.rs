@@ -1,6 +1,8 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::thread;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    thread,
+};
 
 use anyhow::{anyhow, Context, Result};
 use gst_rtsp::RTSPLowerTrans;

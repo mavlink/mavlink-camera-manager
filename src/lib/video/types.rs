@@ -1,10 +1,11 @@
-use super::video_source::VideoSource;
-use super::video_source_gst::VideoSourceGst;
-use super::video_source_local::VideoSourceLocal;
-use super::video_source_redirect::VideoSourceRedirect;
 use gst;
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
+
+use super::{
+    video_source::VideoSource, video_source_gst::VideoSourceGst,
+    video_source_local::VideoSourceLocal, video_source_redirect::VideoSourceRedirect,
+};
 
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum VideoSourceType {

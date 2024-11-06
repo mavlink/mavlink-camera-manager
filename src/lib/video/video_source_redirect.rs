@@ -1,9 +1,12 @@
-use super::types::*;
-use super::video_source::{VideoSource, VideoSourceAvailable};
-use crate::controls::types::Control;
-
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
+
+use crate::controls::types::Control;
+
+use super::{
+    types::*,
+    video_source::{VideoSource, VideoSourceAvailable},
+};
 
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum VideoSourceRedirectType {

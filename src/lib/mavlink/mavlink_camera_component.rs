@@ -1,7 +1,7 @@
-use crate::video_stream::types::VideoAndStreamInformation;
-
 use anyhow::Result;
 use tracing::*;
+
+use crate::video_stream::types::VideoAndStreamInformation;
 
 #[derive(Debug, Clone)]
 pub struct MavlinkCameraComponent {

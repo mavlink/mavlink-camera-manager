@@ -1,3 +1,7 @@
+use anyhow::{anyhow, Result};
+use gst::prelude::*;
+use tracing::*;
+
 use crate::{
     stream::types::CaptureConfiguration,
     video::types::{VideoEncodeType, VideoSourceType},
@@ -8,12 +12,6 @@ use super::{
     PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_RTP_TEE_NAME,
     PIPELINE_VIDEO_TEE_NAME,
 };
-
-use anyhow::{anyhow, Result};
-
-use tracing::*;
-
-use gst::prelude::*;
 
 #[derive(Debug)]
 pub struct V4lPipeline {

@@ -3,11 +3,17 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use tracing::*;
 
-use crate::stream::types::CaptureConfiguration;
-use crate::stream::{manager as stream_manager, types::StreamInformation};
-use crate::video::types::VideoSourceType;
-use crate::video::video_source_redirect::{VideoSourceRedirect, VideoSourceRedirectType};
-use crate::video_stream::types::VideoAndStreamInformation;
+use crate::{
+    stream::{
+        manager as stream_manager,
+        types::{CaptureConfiguration, StreamInformation},
+    },
+    video::{
+        types::VideoSourceType,
+        video_source_redirect::{VideoSourceRedirect, VideoSourceRedirectType},
+    },
+    video_stream::types::VideoAndStreamInformation,
+};
 
 use super::client::*;
 

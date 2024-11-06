@@ -1,12 +1,10 @@
-use crate::stream::types::StreamInformation;
-use crate::video::types::VideoSourceType;
-
-use paperclip::actix::Apiv2Schema;
-use serde::{Deserialize, Serialize};
-
 use std::collections::HashSet;
 
 use anyhow::{anyhow, Result};
+use paperclip::actix::Apiv2Schema;
+use serde::{Deserialize, Serialize};
+
+use crate::{stream::types::StreamInformation, video::types::VideoSourceType};
 
 //TODO: move to stream ?
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]

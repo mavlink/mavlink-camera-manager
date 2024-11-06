@@ -1,8 +1,9 @@
-use std::marker::Send;
-use std::sync::{Arc, Mutex, RwLock};
+use std::{
+    marker::Send,
+    sync::{Arc, Mutex, RwLock},
+};
 
-use mavlink::common::MavMessage;
-use mavlink::{MavConnection, MavHeader};
+use mavlink::{common::MavMessage, MavConnection, MavHeader};
 
 use tokio::sync::broadcast;
 use tracing::*;

@@ -1,19 +1,18 @@
 use std::sync::Arc;
 
-use crate::{
-    cli, mavlink::mavlink_camera_component::MavlinkCameraComponent,
-    network::utils::get_visible_qgc_address, video::types::VideoSourceType,
-    video_stream::types::VideoAndStreamInformation,
-};
-
 use anyhow::{anyhow, Context, Result};
 use mavlink::{common::MavMessage, MavHeader};
 use tokio::sync::broadcast;
 use tracing::*;
 use url::Url;
 
-use super::manager::Message;
-use super::utils::*;
+use crate::{
+    cli, mavlink::mavlink_camera_component::MavlinkCameraComponent,
+    network::utils::get_visible_qgc_address, video::types::VideoSourceType,
+    video_stream::types::VideoAndStreamInformation,
+};
+
+use super::{manager::Message, utils::*};
 
 #[derive(Debug)]
 pub struct MavlinkCamera {

@@ -1,14 +1,15 @@
 use std::net::SocketAddr;
 
-use crate::{cli, stream};
 use anyhow::{anyhow, Context, Result};
-use async_tungstenite::tokio::TokioAdapter;
-use async_tungstenite::{tungstenite, WebSocketStream};
+use async_tungstenite::{tokio::TokioAdapter, tungstenite, WebSocketStream};
 use futures::{SinkExt, StreamExt};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc;
-
+use tokio::{
+    net::{TcpListener, TcpStream},
+    sync::mpsc,
+};
 use tracing::*;
+
+use crate::{cli, stream};
 
 use super::signalling_protocol::{self, *};
 

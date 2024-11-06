@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 
-use crate::cli;
-use crate::helper;
 use anyhow::{anyhow, Result};
 use thirtyfour::prelude::*;
-use tokio::process::Command;
-use tokio::runtime::Runtime;
-use tokio::sync::RwLock;
+use tokio::{process::Command, runtime::Runtime, sync::RwLock};
 use tracing::*;
+
+use crate::{cli, helper};
 
 pub struct ChromeWebDriver {
     _process: tokio::task::JoinHandle<()>,
