@@ -788,6 +788,8 @@ fn sanitize_sdp(sdp: &gst_sdp::SDPMessage) -> Result<gst_sdp::SDPMessage> {
 fn customize_sent_sdp(sdp: &gst_sdp::SDPMessage) -> Result<gst_sdp::SDPMessage> {
     let mut new_sdp = sdp.clone();
 
+    trace!("SDP: {:?}", new_sdp.as_text());
+
     new_sdp.medias_mut().enumerate().for_each(|(media_idx, media)| {
         let old_media = sdp.media(media_idx as u32).unwrap();
 
@@ -832,41 +834,45 @@ fn customize_sent_sdp(sdp: &gst_sdp::SDPMessage) -> Result<gst_sdp::SDPMessage> 
 
                 trace!("Found a fmtp attribute: {value:?}");
 
-                let Some((payload, values)) = value.split_once(' ') else {
+                let Some((payload, configs_str)) = value.split_once(' ') else {
                     return;
                 };
 
-                trace!("fmtp attribute parsed: payload: {payload:?}, values: {values:?}");
+                let mut new_configs = configs_str.split(';').map(|v|v.to_string()).collect::<Vec<String>>();
+                new_configs.retain(|v| {
+                    v.starts_with("sprop-parameter-sets")
+                });
 
-                let mut new_value = vec![payload.to_string()];
+                trace!("fmtp attribute parsed: payload: {payload:?}, values: {new_configs:?}");
 
                 match encoding {
                     "H264" => {
                         // Reference: https://www.iana.org/assignments/media-types/video/H264
                         const CONSTRAINED_BASELINE_LEVEL_ID: u32 = 0x42e01f;
-                        new_value.push(format!("profile-level-id={CONSTRAINED_BASELINE_LEVEL_ID}"));
-                        new_value.push("level-asymmetry-allowed=1".to_string());
-                        new_value.push("packetization-mode=1".to_string());
+                        new_configs.push("packetization-mode=1".to_string());
+                        new_configs.push(format!("profile-level-id={CONSTRAINED_BASELINE_LEVEL_ID:x}"));
+                        new_configs.push("level-asymmetry-allowed=1".to_string());
+
                     }
                     "H265" => {
                         // Rererence: https://www.iana.org/assignments/media-types/video/H265
                         const LEVEL_ID: u8 = 93;
-                        new_value.push(format!("level-id={LEVEL_ID}"));
+                        new_configs.push(format!("level-id={LEVEL_ID}"));
+
                     }
                     _ => (),
                 }
 
-                new_value.push(values.to_string());
-
-                let new_value = new_value.join(" ");
+                let new_configs_str = new_configs.join(";");
+                let new_value = [payload, &new_configs_str].join(" ");
 
                 let new_fmtp_attribute = gst_sdp::SDPAttribute::new("fmtp", Some(&new_value));
 
                 if let Err(error) = media.replace_attribute(fmtp_idx as u32, new_fmtp_attribute) {
-                    warn!("Failed to customize fmtp attribute from {value:?} to {new_value:?}. Error: {error:?}");
+                    warn!("Failed to customize fmtp attribute \nfrom: {value:?}\nto: {new_value:?}.\nError: {error:?}");
                 }
 
-                trace!("fmtp attribute changed from {value:?} to {new_value:?}");
+                trace!("fmtp attribute changed \nfrom: {value:?}\nto: {new_value:?}");
             }
         });
     });
