@@ -117,7 +117,7 @@ pub async fn start_default() -> Result<()> {
 
     // Update all local video sources to make sure that they are available
     let mut candidates = video_source::cameras_available().await;
-    update_devices(&mut streams, &mut candidates, true);
+    update_devices(&mut streams, &mut candidates, true).await;
 
     // Remove all invalid video_sources
     let streams: Vec<VideoAndStreamInformation> = streams
@@ -137,7 +137,7 @@ pub async fn start_default() -> Result<()> {
 }
 
 #[instrument(level = "debug")]
-pub fn update_devices(
+pub async fn update_devices(
     streams: &mut Vec<VideoAndStreamInformation>,
     candidates: &mut Vec<VideoSourceType>,
     verbose: bool,
@@ -152,7 +152,10 @@ pub fn update_devices(
             continue;
         };
 
-        match source.try_identify_device(capture_configuration, candidates) {
+        match source
+            .try_identify_device(capture_configuration, candidates)
+            .await
+        {
             Ok(Some(candidate_source_string)) => {
                 let Some((idx, candidate)) =
                     candidates.iter().enumerate().find_map(|(idx, candidate)| {

@@ -13,10 +13,10 @@ pub enum CustomEnvironment {
     WebRTCTest,
 }
 
-pub fn create_default_streams() -> Vec<VideoAndStreamInformation> {
+pub async fn create_default_streams() -> Vec<VideoAndStreamInformation> {
     match cli::manager::default_settings() {
-        Some(CustomEnvironment::BlueROVUDP) => bluerov::udp(),
-        Some(CustomEnvironment::BlueROVRTSP) => bluerov::rtsp(),
+        Some(CustomEnvironment::BlueROVUDP) => bluerov::udp().await,
+        Some(CustomEnvironment::BlueROVRTSP) => bluerov::rtsp().await,
         Some(CustomEnvironment::WebRTCTest) => test::take_webrtc_stream(),
         _ => vec![],
     }

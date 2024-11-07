@@ -120,7 +120,7 @@ impl VideoSourceLocalType {
 }
 
 impl VideoSourceLocal {
-    pub fn try_identify_device(
+    pub async fn try_identify_device(
         &mut self,
         capture_configuration: &VideoCaptureConfiguration,
         candidates: &[VideoSourceType],
@@ -137,7 +137,7 @@ impl VideoSourceLocal {
 
         // Rule n.2 - All candidates must share the same encode
         let candidates =
-            Self::get_cameras_with_same_encode(&candidates, &capture_configuration.encode);
+            Self::get_cameras_with_same_encode(&candidates, &capture_configuration.encode).await;
 
         let len = candidates.len();
         if len == 0 {
@@ -201,21 +201,24 @@ impl VideoSourceLocal {
             .collect()
     }
 
-    fn get_cameras_with_same_encode(
+    async fn get_cameras_with_same_encode(
         candidates: &[VideoSourceType],
         encode: &VideoEncodeType,
     ) -> Vec<VideoSourceType> {
-        candidates
-            .iter()
-            .filter(|candidate| {
-                candidate
-                    .inner()
-                    .formats()
-                    .iter()
-                    .any(|format| &format.encode == encode)
-            })
-            .cloned()
-            .collect()
+        let mut result = Vec::new();
+
+        for candidate in candidates.iter() {
+            if candidate
+                .formats()
+                .await
+                .iter()
+                .any(|format| &format.encode == encode)
+            {
+                result.push(candidate.clone());
+            }
+        }
+
+        result
     }
 
     fn get_cameras_with_same_bus(
@@ -761,8 +764,11 @@ impl VideoSourceAvailable for VideoSourceLocal {
 
 #[cfg(test)]
 mod tests {
+    use tracing_test::traced_test;
+
     use super::*;
 
+    #[traced_test]
     #[test]
     fn bus_decode() {
         let descriptions = vec![
@@ -801,16 +807,15 @@ mod tests {
 
 #[cfg(test)]
 mod device_identification_tests {
+    use serial_test::serial;
+    use tracing_test::traced_test;
+
     use super::*;
     use crate::{
         stream::types::{CaptureConfiguration, StreamInformation},
         video_stream::types::VideoAndStreamInformation,
     };
     use VideoEncodeType::*;
-
-    use serial_test::serial;
-
-    use tracing_test::traced_test;
 
     fn add_available_camera(
         name: &str,
@@ -875,9 +880,10 @@ mod device_identification_tests {
         }
     }
 
-    #[serial("Using a mocked global VIDEO_FORMATS")]
-    #[test]
-    fn test_get_cameras_with_same_name() {
+    #[serial]
+    #[traced_test]
+    #[tokio::test]
+    async fn test_get_cameras_with_same_name() {
         VIDEO_FORMATS.lock().unwrap().clear();
 
         let candidates = vec![
@@ -895,9 +901,10 @@ mod device_identification_tests {
         VIDEO_FORMATS.lock().unwrap().clear();
     }
 
-    #[serial("Using a mocked global VIDEO_FORMATS")]
-    #[test]
-    fn test_get_cameras_with_same_encode() {
+    #[serial]
+    #[traced_test]
+    #[tokio::test]
+    async fn test_get_cameras_with_same_encode() {
         VIDEO_FORMATS.lock().unwrap().clear();
 
         let candidates = vec![
@@ -908,15 +915,16 @@ mod device_identification_tests {
         ];
 
         let same_encode_candidates =
-            VideoSourceLocal::get_cameras_with_same_encode(&candidates, &H264);
+            VideoSourceLocal::get_cameras_with_same_encode(&candidates, &H264).await;
         assert_eq!(candidates[..2].to_vec(), same_encode_candidates);
 
         VIDEO_FORMATS.lock().unwrap().clear();
     }
 
-    #[serial("Using a mocked global VIDEO_FORMATS")]
-    #[test]
-    fn test_get_cameras_with_same_bus() {
+    #[serial]
+    #[traced_test]
+    #[tokio::test]
+    async fn test_get_cameras_with_same_bus() {
         VIDEO_FORMATS.lock().unwrap().clear();
 
         let candidates = vec![
@@ -935,10 +943,11 @@ mod device_identification_tests {
         VIDEO_FORMATS.lock().unwrap().clear();
     }
 
+    // #[traced_test]
+    #[serial]
     #[traced_test]
-    #[serial("Using a mocked global VIDEO_FORMATS")]
-    #[test]
-    fn identify_a_candidate_with_same_name_and_encode() {
+    #[tokio::test]
+    async fn identify_a_candidate_with_same_name_and_encode() {
         VIDEO_FORMATS.lock().unwrap().clear();
 
         let candidates = vec![
@@ -959,6 +968,7 @@ mod device_identification_tests {
         let Ok(Some(candidate_source_string)) = source
             .to_owned()
             .try_identify_device(capture_configuration, &candidates)
+            .await
         else {
             panic!("Failed to identify the only device with the same name and encode")
         };
@@ -972,15 +982,17 @@ mod device_identification_tests {
         source
             .to_owned()
             .try_identify_device(capture_configuration, &candidates[1..])
+            .await
             .expect_err("Failed to identify the only device with the same name and encode");
 
         VIDEO_FORMATS.lock().unwrap().clear();
     }
 
+    // #[traced_test]
+    #[serial]
     #[traced_test]
-    #[serial("Using a mocked global VIDEO_FORMATS")]
-    #[test]
-    fn identify_a_candidate_when_usb_port_changed() {
+    #[tokio::test]
+    async fn identify_a_candidate_when_usb_port_changed() {
         VIDEO_FORMATS.lock().unwrap().clear();
 
         // Before this boot, the device candidates[0] was in "usb_port_0" and the device candidates[1] was in "usb_port_1":
@@ -1010,6 +1022,7 @@ mod device_identification_tests {
             let Ok(Some(candidate_source_string)) = source
                 .to_owned()
                 .try_identify_device(capture_configuration, &candidates)
+                .await
             else {
                 panic!("Failed to identify the only device with the same name and encode")
             };
@@ -1024,16 +1037,18 @@ mod device_identification_tests {
             source
                 .to_owned()
                 .try_identify_device(capture_configuration, &other_candidates)
+                .await
                 .expect_err("Failed to identify the only device with the same name and encode");
         }
 
         VIDEO_FORMATS.lock().unwrap().clear();
     }
 
+    // #[traced_test]
+    #[serial]
     #[traced_test]
-    #[serial("Using a mocked global VIDEO_FORMATS")]
-    #[test]
-    fn identify_a_candidate_when_path_changed() {
+    #[tokio::test]
+    async fn identify_a_candidate_when_path_changed() {
         VIDEO_FORMATS.lock().unwrap().clear();
 
         // Before this boot, the device candidates[0] was in "/dev/video1" and the device candidates[1] was in "/dev/video0":
@@ -1064,6 +1079,7 @@ mod device_identification_tests {
             let Ok(Some(candidate_source_string)) = source
                 .to_owned()
                 .try_identify_device(capture_configuration, &candidates)
+                .await
             else {
                 panic!("Failed to identify the only device with the same name and encode")
             };
@@ -1076,10 +1092,11 @@ mod device_identification_tests {
         VIDEO_FORMATS.lock().unwrap().clear();
     }
 
+    // #[traced_test]
+    #[serial]
     #[traced_test]
-    #[serial("Using a mocked global VIDEO_FORMATS")]
-    #[test]
-    fn do_not_identify_if_several_devices_with_same_name_and_encode() {
+    #[tokio::test]
+    async fn do_not_identify_if_several_devices_with_same_name_and_encode() {
         VIDEO_FORMATS.lock().unwrap().clear();
 
         // Before this boot, the device candidates[0] was in "usb_port_0" and the device candidates[1] was in "usb_port_1":
@@ -1109,6 +1126,7 @@ mod device_identification_tests {
             assert!(source
                 .to_owned()
                 .try_identify_device(capture_configuration, &candidates)
+                .await
                 .expect("Failed to identify the only device with the same name and encode")
                 .is_none())
         }
