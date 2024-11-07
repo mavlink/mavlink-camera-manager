@@ -5,7 +5,7 @@ use crate::controls::types::Control;
 
 use super::{
     types::*,
-    video_source::{VideoSource, VideoSourceAvailable},
+    video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats},
 };
 
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -19,6 +19,16 @@ pub struct VideoSourceRedirect {
     pub source: VideoSourceRedirectType,
 }
 
+impl VideoSourceFormats for VideoSourceRedirect {
+    async fn formats(&self) -> Vec<Format> {
+        match &self.source {
+            VideoSourceRedirectType::Redirect(_) => {
+                vec![]
+            }
+        }
+    }
+}
+
 impl VideoSource for VideoSourceRedirect {
     fn name(&self) -> &String {
         &self.name
@@ -27,14 +37,6 @@ impl VideoSource for VideoSourceRedirect {
     fn source_string(&self) -> &str {
         match &self.source {
             VideoSourceRedirectType::Redirect(string) => string,
-        }
-    }
-
-    fn formats(&self) -> Vec<Format> {
-        match &self.source {
-            VideoSourceRedirectType::Redirect(_) => {
-                vec![]
-            }
         }
     }
 

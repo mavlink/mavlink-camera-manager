@@ -10,7 +10,6 @@ use super::{
 pub trait VideoSource {
     fn name(&self) -> &String;
     fn source_string(&self) -> &str;
-    fn formats(&self) -> Vec<Format>;
     fn set_control_by_name(&self, control_name: &str, value: i64) -> std::io::Result<()>;
     fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()>;
     fn control_value_by_name(&self, control_name: &str) -> std::io::Result<i64>;
@@ -18,6 +17,10 @@ pub trait VideoSource {
     fn controls(&self) -> Vec<Control>;
     fn is_valid(&self) -> bool;
     fn is_shareable(&self) -> bool;
+}
+
+pub(crate) trait VideoSourceFormats {
+    async fn formats(&self) -> Vec<Format>;
 }
 
 pub(crate) trait VideoSourceAvailable {

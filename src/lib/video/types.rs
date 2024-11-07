@@ -3,8 +3,10 @@ use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    video_source::VideoSource, video_source_gst::VideoSourceGst,
-    video_source_local::VideoSourceLocal, video_source_redirect::VideoSourceRedirect,
+    video_source::{VideoSource, VideoSourceFormats},
+    video_source_gst::VideoSourceGst,
+    video_source_local::VideoSourceLocal,
+    video_source_redirect::VideoSourceRedirect,
 };
 
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -59,6 +61,17 @@ impl VideoSourceType {
             VideoSourceType::Local(local) => local,
             VideoSourceType::Gst(gst) => gst,
             VideoSourceType::Redirect(redirect) => redirect,
+        }
+    }
+}
+
+impl VideoSourceFormats for VideoSourceType {
+    async fn formats(&self) -> Vec<Format> {
+        match self {
+            VideoSourceType::Gst(gst) => gst.formats().await,
+            VideoSourceType::Local(local) => local.formats().await,
+            VideoSourceType::Onvif(onvif) => onvif.formats().await,
+            VideoSourceType::Redirect(redirect) => redirect.formats().await,
         }
     }
 }
