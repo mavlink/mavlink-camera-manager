@@ -729,14 +729,31 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         webrtcbin: &gst::Element,
         sdp: &gst_webrtc::WebRTCSessionDescription,
     ) -> Result<()> {
-        if let Ok(sdp) = sdp.sdp().as_text() {
-            trace!("Received SDP:\n{sdp}");
+        let remote_sdp = webrtcbin
+            .property::<Option<gst_webrtc::WebRTCSessionDescription>>("remote-description");
+
+        if let Ok(sdp_str) = sdp.sdp().as_text() {
+            trace!("Received SDP (type: {}):\n{sdp_str}", sdp.type_());
         };
+
+        // This avoids a negotiation loop when the browser doesn't accept the SDP we sent
+        if let Some(remote_sdp) = remote_sdp {
+            if gst_webrtc::WebRTCSDPType::Answer == remote_sdp.type_()
+                && remote_sdp.type_() == sdp.type_()
+            {
+                debug!("Skipping SDP because this session already has an SDP answer");
+
+                return Ok(());
+            }
+        }
 
         let sdp = gst_webrtc::WebRTCSessionDescription::new(sdp.type_(), sanitize_sdp(&sdp.sdp())?);
 
-        if let Ok(sdp) = sdp.sdp().as_text() {
-            debug!("Received (sanitized) SDP:\n{sdp}");
+        if let Ok(sdp_str) = sdp.sdp().as_text() {
+            debug!(
+                "Received SDP (Sanitized) (type: {}):\n{sdp_str}",
+                sdp.type_()
+            );
         };
 
         webrtcbin.emit_by_name::<()>("set-remote-description", &[&sdp, &None::<gst::Promise>]);
