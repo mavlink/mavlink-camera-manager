@@ -205,6 +205,12 @@ pub async fn v4l() -> Json<Vec<ApiVideoSource>> {
                     formats: gst.formats().await,
                     controls: gst.controls(),
                 },
+                VideoSourceType::Onvif(onvif) => ApiVideoSource {
+                    name: onvif.name().clone(),
+                    source: onvif.source_string().to_string(),
+                    formats: onvif.formats().await,
+                    controls: onvif.controls(),
+                },
                 VideoSourceType::Redirect(redirect) => ApiVideoSource {
                     name: redirect.name().clone(),
                     source: redirect.source_string().to_string(),
