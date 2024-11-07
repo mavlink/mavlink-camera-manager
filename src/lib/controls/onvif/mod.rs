@@ -1,2 +1,2 @@
-mod client;
+pub mod camera;
 pub mod manager;

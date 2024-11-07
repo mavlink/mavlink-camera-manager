@@ -4,7 +4,10 @@ use onvif_schema::{devicemgmt::GetDeviceInformationResponse, transport};
 use anyhow::{anyhow, Result};
 use tracing::*;
 
-pub struct Clients {
+use crate::{stream::gst::utils::get_encode_from_rtspsrc, video::types::Format};
+
+#[derive(Clone)]
+pub struct OnvifCamera {
     devicemgmt: soap::client::Client,
     event: Option<soap::client::Client>,
     deviceio: Option<soap::client::Client>,
@@ -13,22 +16,29 @@ pub struct Clients {
     imaging: Option<soap::client::Client>,
     ptz: Option<soap::client::Client>,
     analytics: Option<soap::client::Client>,
+    pub streams_information: Option<Vec<OnvifStreamInformation>>,
 }
 
 pub struct Auth {
     pub credentials: Option<soap::client::Credentials>,
-    pub url: Box<str>,
+    pub url: url::Url,
 }
 
-impl Clients {
-    #[instrument(level = "debug", skip(auth))]
+#[derive(Debug, Clone)]
+pub struct OnvifStreamInformation {
+    pub stream_uri: url::Url,
+    pub format: Format,
+}
+
+impl OnvifCamera {
+    #[instrument(level = "trace", skip(auth))]
     pub async fn try_new(auth: &Auth) -> Result<Self> {
         let creds = &auth.credentials;
-        let devicemgmt_uri = url::Url::parse(&auth.url)?;
+        let devicemgmt_uri = &auth.url;
         let base_uri = &devicemgmt_uri.origin().ascii_serialization();
 
         let mut this = Self {
-            devicemgmt: soap::client::ClientBuilder::new(&devicemgmt_uri)
+            devicemgmt: soap::client::ClientBuilder::new(devicemgmt_uri)
                 .credentials(creds.clone())
                 .build(),
             imaging: None,
@@ -38,6 +48,7 @@ impl Clients {
             media: None,
             media2: None,
             analytics: None,
+            streams_information: None,
         };
 
         let services =
@@ -57,7 +68,7 @@ impl Clients {
             );
             match service.namespace.as_str() {
                 "http://www.onvif.org/ver10/device/wsdl" => {
-                    if service_url != devicemgmt_uri {
+                    if &service_url != devicemgmt_uri {
                         warn!(
                             "advertised device mgmt uri {service_url} not expected {devicemgmt_uri}"
                         );
@@ -70,14 +81,17 @@ impl Clients {
                 "http://www.onvif.org/ver20/imaging/wsdl" => this.imaging = svc,
                 "http://www.onvif.org/ver20/ptz/wsdl" => this.ptz = svc,
                 "http://www.onvif.org/ver20/analytics/wsdl" => this.analytics = svc,
-                _ => debug!("unknown service: {:?}", service),
+                _ => trace!("unknown service: {:?}", service),
             }
         }
+
+        this.streams_information
+            .replace(this.get_streams_information().await?);
 
         Ok(this)
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "trace", skip(self))]
     pub async fn get_device_information(
         &self,
     ) -> Result<GetDeviceInformationResponse, transport::Error> {
@@ -85,16 +99,20 @@ impl Clients {
             .await
     }
 
-    pub async fn get_stream_uris(&self) -> Result<Vec<url::Url>, transport::Error> {
-        let mut urls: Vec<url::Url> = vec![];
+    async fn get_streams_information(
+        &self,
+    ) -> Result<Vec<OnvifStreamInformation>, transport::Error> {
+        let mut streams_information = vec![];
+
         let media_client = self
             .media
             .as_ref()
             .ok_or_else(|| transport::Error::Other("Client media is not available".into()))?;
-        let profiles = onvif_schema::media::get_profiles(media_client, &Default::default()).await?;
-        debug!("get_profiles response: {:#?}", &profiles);
+        let profiles = onvif_schema::media::get_profiles(media_client, &Default::default())
+            .await?
+            .profiles;
+        trace!("get_profiles response: {:#?}", &profiles);
         let requests: Vec<_> = profiles
-            .profiles
             .iter()
             .map(
                 |p: &onvif_schema::onvif::Profile| onvif_schema::media::GetStreamUri {
@@ -116,34 +134,54 @@ impl Clients {
                 .map(|r| onvif_schema::media::get_stream_uri(media_client, r)),
         )
         .await?;
-        for (p, resp) in profiles.profiles.iter().zip(responses.iter()) {
-            debug!("token={} name={}", &p.token.0, &p.name.0);
-            debug!("    {}", &resp.media_uri.uri);
-            match url::Url::parse(&resp.media_uri.uri) {
-                Ok(address) => urls.push(address),
+        for (profile, stream_uri_response) in profiles.iter().zip(responses.iter()) {
+            trace!("token={} name={}", &profile.token.0, &profile.name.0);
+            trace!("\t{}", &stream_uri_response.media_uri.uri);
+
+            let stream_uri = match url::Url::parse(&stream_uri_response.media_uri.uri) {
+                Ok(stream_url) => stream_url,
                 Err(error) => {
                     error!(
                         "Failed to parse stream url: {}, reason: {error:?}",
-                        &resp.media_uri.uri
-                    )
+                        &stream_uri_response.media_uri.uri
+                    );
+                    continue;
                 }
-            }
-            if let Some(ref v) = p.video_encoder_configuration {
-                debug!(
-                    "    {:?}, {}x{}",
-                    v.encoding, v.resolution.width, v.resolution.height
-                );
-                if let Some(ref r) = v.rate_control {
-                    debug!("    {} fps, {} kbps", r.frame_rate_limit, r.bitrate_limit);
-                }
-            }
-            if let Some(ref a) = p.audio_encoder_configuration {
-                debug!(
-                    "    audio: {:?}, {} kbps, {} kHz",
-                    a.encoding, a.bitrate, a.sample_rate
-                );
-            }
+            };
+
+            let Some(video_encoder_configuration) = &profile.video_encoder_configuration else {
+                warn!("Skipping uri with no encoders");
+                continue;
+            };
+
+            let Some(encode) = get_encode_from_rtspsrc(&stream_uri).await else {
+                continue;
+            };
+
+            let video_rate = video_encoder_configuration
+                .rate_control
+                .as_ref()
+                .map(|rate_control| {
+                    (rate_control.frame_rate_limit as f32
+                        / rate_control.encoding_interval.max(1) as f32) as u32
+                })
+                .unwrap_or_default();
+
+            let intervals = vec![crate::video::types::FrameInterval {
+                numerator: 1,
+                denominator: video_rate,
+            }];
+
+            let sizes = vec![crate::video::types::Size {
+                width: video_encoder_configuration.resolution.width.max(0) as u32,
+                height: video_encoder_configuration.resolution.height.max(0) as u32,
+                intervals,
+            }];
+
+            let format = Format { encode, sizes };
+
+            streams_information.push(OnvifStreamInformation { stream_uri, format });
         }
-        Ok(urls)
+        Ok(streams_information)
     }
 }

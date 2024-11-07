@@ -1,55 +1,80 @@
-use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
+use onvif::soap::client::Credentials;
+use tokio::sync::RwLock;
 use tracing::*;
 
-use crate::{
-    stream::{
-        manager as stream_manager,
-        types::{CaptureConfiguration, StreamInformation},
-    },
-    video::{
-        types::VideoSourceType,
-        video_source_redirect::{VideoSourceRedirect, VideoSourceRedirectType},
-    },
-    video_stream::types::VideoAndStreamInformation,
+use crate::video::{
+    types::{Format, VideoSourceType},
+    video_source_onvif::{VideoSourceOnvif, VideoSourceOnvifType},
 };
 
-use super::client::*;
+use super::camera::*;
 
 lazy_static! {
-    static ref MANAGER: Arc<Mutex<Manager>> = Default::default();
+    static ref MANAGER: Arc<RwLock<Manager>> = Default::default();
 }
 
-#[derive(Debug)]
 pub struct Manager {
-    _process: tokio::task::JoinHandle<Result<(), anyhow::Error>>,
+    mcontext: Arc<RwLock<ManagerContext>>,
+    _task: tokio::task::JoinHandle<Result<(), anyhow::Error>>,
 }
+
+pub struct ManagerContext {
+    cameras: HashMap<StreamURI, OnvifCamera>,
+    /// Credentials can be either added in runtime, or passed via ENV or CLI args
+    credentials: HashMap<Host, Arc<RwLock<Credentials>>>,
+}
+
+type StreamURI = String;
+type Host = String;
 
 impl Drop for Manager {
     fn drop(&mut self) {
-        self._process.abort();
+        self._task.abort();
     }
 }
 
 impl Default for Manager {
     #[instrument(level = "trace")]
     fn default() -> Self {
-        Self {
-            _process: tokio::spawn(async move { Manager::discover_loop().await }),
-        }
+        let mcontext = Arc::new(RwLock::new(ManagerContext {
+            cameras: HashMap::new(),
+            credentials: HashMap::new(),
+        }));
+
+        let mcontext_clone = mcontext.clone();
+        let _task = tokio::spawn(async { Manager::discover_loop(mcontext_clone).await });
+
+        Self { mcontext, _task }
     }
 }
 
 impl Manager {
     // Construct our manager, should be done inside main
-    #[instrument(level = "debug")]
-    pub fn init() {
+    #[instrument(level = "trace")]
+    pub async fn init() {
         MANAGER.as_ref();
+
+        let manager = MANAGER.write().await;
+
+        let mut mcontext = manager.mcontext.write().await;
+
+        // TODO: fill MANAGER.context.credentials with credentials passed by ENV and CLI
+        // It can be in the form of "<USER>:<PWD>@<IP>", but we need to escape special characters need to.
+        let _ = mcontext.credentials.insert(
+            "192.168.0.168".to_string(),
+            Arc::new(RwLock::new(Credentials {
+                username: "admin".to_string(),
+                password: "12345".to_string(),
+            })),
+        );
     }
 
-    #[instrument(level = "debug")]
-    async fn discover_loop() -> Result<()> {
+    #[instrument(level = "trace", skip(context))]
+    async fn discover_loop(context: Arc<RwLock<ManagerContext>>) -> Result<()> {
         use futures::stream::StreamExt;
         use std::net::{IpAddr, Ipv4Addr};
 
@@ -60,91 +85,106 @@ impl Manager {
 
             onvif::discovery::DiscoveryBuilder::default()
                 .listen_address(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
-                .duration(tokio::time::Duration::from_secs(5))
+                .duration(tokio::time::Duration::from_secs(20))
                 .run()
                 .await?
-                .for_each_concurrent(MAX_CONCURRENT_JUMPERS, |device| async move {
-                    debug!("Device found: {device:#?}");
+                .for_each_concurrent(MAX_CONCURRENT_JUMPERS, |device| {
+                    let context = context.clone();
 
-                    //TODO: We should add support to auth later
-                    let credentials = None;
-                    let clients = match Clients::try_new(&Auth {
-                        credentials: credentials.clone(),
-                        url: device.urls.first().unwrap().to_string().into(),
-                    })
-                    .await
-                    {
-                        Ok(clients) => clients,
-                        Err(error) => {
-                            error!("Failed creating clients: {error:#?}");
-                            return;
-                        }
-                    };
+                    async move {
+                        trace!("Device found: {device:#?}");
 
-                    match clients.get_stream_uris().await {
-                        Ok(stream_uris) => {
-                            let mut url = stream_uris[0].clone();
+                        for url in device.urls {
+                            let host = url
+                                .host()
+                                .map(|host| host.to_string())
+                                .unwrap_or(url.to_string());
 
-                            let name = if let Ok(device) = &clients.get_device_information().await {
-                                format!("{} - {} - {}", device.model, device.serial_number, url)
-                            } else {
-                                if let Some(name) = device.name {
-                                    format!("{name} - {url}")
-                                } else {
-                                    format!("{url}")
-                                }
-                            };
-
-                            if let Some(credentials) = credentials {
-                                if url.set_username(&credentials.username).is_err() {
-                                    error!("Failed setting username for {url}");
-                                }
-                                if url.set_password(Some(&credentials.password)).is_err() {
-                                    error!("Failed setting password for {url}");
-                                }
-                            }
-                            let video_source_redirect = VideoSourceRedirect {
-                                name: name.clone(),
-                                source: VideoSourceRedirectType::Redirect(
-                                    stream_uris[0].to_string(),
-                                ),
-                            };
-
-                            let video_and_stream = VideoAndStreamInformation {
-                                name: name.clone(),
-                                stream_information: StreamInformation {
-                                    endpoints: vec![url],
-                                    configuration: CaptureConfiguration::Redirect(
-                                        Default::default(),
-                                    ),
-                                    extended_configuration: None,
-                                },
-                                video_source: VideoSourceType::Redirect(video_source_redirect),
-                            };
-
-                            if let Ok(streams) = stream_manager::streams().await {
-                                for stream in streams {
-                                    if let Err(error) =
-                                        video_and_stream.conflicts_with(&stream.video_and_stream)
-                                    {
-                                        debug!("Stream {name} is already registered: {error}");
-                                        return;
-                                    }
-                                }
-                            }
-
-                            if let Err(error) =
-                                stream_manager::add_stream_and_start(video_and_stream).await
+                            let credentials = if let Some(credentials) =
+                                context.read().await.credentials.get(&host)
                             {
-                                error!("Failed adding stream: {error:#?}");
+                                Some(credentials.read().await.clone())
+                            } else {
+                                None
+                            };
+
+                            trace!("Device {host}. Using credentials: {credentials:?}");
+
+                            let camera = match OnvifCamera::try_new(&Auth {
+                                credentials: credentials.clone(),
+                                url: url.clone(),
+                            })
+                            .await
+                            {
+                                Ok(camera) => camera,
+                                Err(error) => {
+                                    error!(host, "Failed creating camera: {error:?}");
+                                    return;
+                                }
+                            };
+
+                            let Some(streams_informations) = &camera.streams_information else {
+                                error!(host, "Failed getting stream information");
+                                continue;
+                            };
+
+                            trace!(host, "Found streams {streams_informations:?}");
+
+                            let mut context = context.write().await;
+                            for stream_information in streams_informations {
+                                context
+                                    .cameras
+                                    .entry(stream_information.stream_uri.to_string())
+                                    .and_modify(|old_camera| *old_camera = camera.clone())
+                                    .or_insert_with(|| {
+                                        debug!(host, "New stream inserted: {stream_information:?}");
+
+                                        camera.clone()
+                                    });
                             }
-                        }
-                        Err(error) => {
-                            error!("Failed getting stream uris: {error:#?}");
                         }
                     }
                 })
                 .await;
         }
+    }
+
+    #[instrument(level = "trace")]
+    pub async fn get_formats(stream_uri: &StreamURI) -> Result<Vec<Format>> {
+        let mcontext = MANAGER.read().await.mcontext.clone();
+        let mcontext = mcontext.read().await;
+
+        let camera = mcontext
+            .cameras
+            .get(stream_uri)
+            .context("Camera not found")?;
+
+        let Some(streams_information) = &camera.streams_information else {
+            return Err(anyhow!("Failed getting stream information"));
+        };
+
+        let stream_information = streams_information
+            .iter()
+            .find(|&stream_information| &stream_information.stream_uri.to_string() == stream_uri)
+            .context("Camera not found")?;
+
+        Ok(vec![stream_information.format.clone()])
+    }
+
+    #[instrument(level = "trace")]
+    pub async fn streams_available() -> Vec<VideoSourceType> {
+        let mcontext = MANAGER.read().await.mcontext.clone();
+        let mcontext = mcontext.read().await;
+
+        mcontext
+            .cameras
+            .keys()
+            .map(|stream_uri| {
+                VideoSourceType::Onvif(VideoSourceOnvif {
+                    name: format!("{stream_uri}"),
+                    source: VideoSourceOnvifType::Onvif(stream_uri.clone()),
+                })
+            })
+            .collect::<Vec<VideoSourceType>>()
     }
 }
