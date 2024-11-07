@@ -4,7 +4,7 @@ use crate::controls::types::{Control, ControlType};
 
 use super::{
     types::*, video_source_gst::VideoSourceGst, video_source_local::VideoSourceLocal,
-    video_source_redirect::VideoSourceRedirect,
+    video_source_onvif::VideoSourceOnvif, video_source_redirect::VideoSourceRedirect,
 };
 
 pub trait VideoSource {
@@ -31,6 +31,7 @@ pub async fn cameras_available() -> Vec<VideoSourceType> {
     [
         &VideoSourceLocal::cameras_available().await[..],
         &VideoSourceGst::cameras_available().await[..],
+        &VideoSourceOnvif::cameras_available().await[..],
         &VideoSourceRedirect::cameras_available().await[..],
     ]
     .concat()
