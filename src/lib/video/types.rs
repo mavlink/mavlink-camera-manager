@@ -6,6 +6,7 @@ use super::{
     video_source::{VideoSource, VideoSourceFormats},
     video_source_gst::VideoSourceGst,
     video_source_local::VideoSourceLocal,
+    video_source_onvif::VideoSourceOnvif,
     video_source_redirect::VideoSourceRedirect,
 };
 
@@ -13,6 +14,7 @@ use super::{
 pub enum VideoSourceType {
     Gst(VideoSourceGst),
     Local(VideoSourceLocal),
+    Onvif(VideoSourceOnvif),
     Redirect(VideoSourceRedirect),
 }
 
@@ -60,6 +62,7 @@ impl VideoSourceType {
         match self {
             VideoSourceType::Local(local) => local,
             VideoSourceType::Gst(gst) => gst,
+            VideoSourceType::Onvif(onvif) => onvif,
             VideoSourceType::Redirect(redirect) => redirect,
         }
     }
