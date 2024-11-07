@@ -271,7 +271,7 @@ impl PipelineState {
         );
 
         let sink = self.sinks.remove(sink_id).context(format!(
-            "Failed to remove sink {sink_id} from Sinks of the Pipeline {pipeline_id}"
+            "Sink {sink_id} not found in Pipeline {pipeline_id}"
         ))?;
 
         // Terminate the Sink
