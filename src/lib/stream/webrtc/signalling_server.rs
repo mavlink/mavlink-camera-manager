@@ -125,10 +125,10 @@ impl SignallingServer {
 
                             if let Err(error) = stream::Manager::remove_session(&bind, reason).await
                             {
-                                error!("Failed removing session {bind:?}. Reason: {error}",);
+                                error!("Failed removing session: {bind:?}. Reason: {error}",);
                             }
 
-                            info!("Session {bind:?} ended by consumer");
+                            info!("Session: {bind:?} ended by consumer");
                             continue;
                         }
 
