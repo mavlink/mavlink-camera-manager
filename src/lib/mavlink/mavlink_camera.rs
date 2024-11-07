@@ -393,7 +393,7 @@ impl MavlinkCameraInner {
                 send_ack(&sender, our_header, their_header, data.command, result);
 
                 let source_string = camera.video_source_type.inner().source_string();
-                let result = match crate::video::video_source::reset_controls(source_string) {
+                let result = match crate::video::video_source::reset_controls(source_string).await {
                     Ok(_) => mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                     Err(error) => {
                         error!("Failed to reset {source_string:?} controls with its default values as {:#?}:{:#?}. Reason: {error:?}", our_header.system_id, our_header.component_id);

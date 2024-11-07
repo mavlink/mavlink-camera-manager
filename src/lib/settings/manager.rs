@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use tracing::*;
@@ -38,21 +38,21 @@ lazy_static! {
     static ref MANAGER: Arc<RwLock<Manager>> = Arc::new(RwLock::new(Manager { content: None }));
 }
 
-impl Default for SettingsStruct {
-    fn default() -> Self {
+impl SettingsStruct {
+    async fn new() -> Self {
         SettingsStruct {
             header: HeaderSettingsFile {
                 name: "Camera Manager".to_string(),
                 version: 0,
             },
             mavlink_endpoint: cli::manager::mavlink_connection_string(),
-            streams: custom::create_default_streams(),
+            streams: custom::create_default_streams().await,
         }
     }
 }
 
 impl Manager {
-    fn with(file_name: &str) -> ManagerStruct {
+    async fn with(file_name: &str) -> ManagerStruct {
         let file_name = if !Path::new(file_name).is_absolute() {
             match ProjectDirs::from("com", "Blue Robotics", env!("CARGO_PKG_NAME")) {
                 Some(project) => {
@@ -76,10 +76,10 @@ impl Manager {
 
         let config = if cli::manager::is_reset() {
             debug!("Settings reset, an empty settings will be loaded and stored as {file_name:?}.");
-            fallback_settings_with_backup_file(&file_name)
+            fallback_settings_with_backup_file(&file_name).await
         } else {
             debug!("Using settings file: {file_name:?}");
-            load_settings_from_file(&file_name)
+            load_settings_from_file(&file_name).await
         };
 
         let settings = ManagerStruct {
@@ -101,13 +101,15 @@ impl Manager {
 
 // Init settings manager with the desired settings file,
 // will be created if does not exist
-pub fn init(file_name: Option<&str>) {
-    let mut manager = MANAGER.write().unwrap();
+pub async fn init(file_name: Option<&str>) {
     let file_name = file_name.unwrap_or("settings.json");
-    manager.content = Some(Manager::with(file_name));
+    let new_content = Manager::with(file_name).await;
+
+    let mut manager = MANAGER.write().unwrap();
+    manager.content.replace(new_content);
 }
 
-fn fallback_settings_with_backup_file(file_name: &str) -> SettingsStruct {
+async fn fallback_settings_with_backup_file(file_name: &str) -> SettingsStruct {
     let backup_file_name = format!("{file_name}.bak");
 
     if std::fs::metadata(file_name).is_ok() {
@@ -118,17 +120,23 @@ fn fallback_settings_with_backup_file(file_name: &str) -> SettingsStruct {
         }
     }
 
-    SettingsStruct::default()
+    SettingsStruct::new().await
 }
 
-fn load_settings_from_file(file_name: &str) -> SettingsStruct {
-    std::fs::read_to_string(file_name)
-        .map_err(Error::msg)
-        .and_then(|value| serde_json::from_str(&value).map_err(Error::msg))
-        .unwrap_or_else(|error| {
+async fn load_settings_from_file(file_name: &str) -> SettingsStruct {
+    match std::fs::read_to_string(file_name) {
+        Ok(value) => match serde_json::from_str(&value) {
+            Ok(settings) => settings,
+            Err(error) => {
+                warn!("Failed to parse settings file {file_name:?}. Reason: {error}");
+                fallback_settings_with_backup_file(file_name).await
+            }
+        },
+        Err(error) => {
             warn!("Failed to load settings file {file_name:?}. Reason: {error}");
-            fallback_settings_with_backup_file(file_name)
-        })
+            fallback_settings_with_backup_file(file_name).await
+        }
+    }
 }
 
 fn create_directories(file_name: &str) -> Result<()> {
@@ -219,11 +227,12 @@ pub fn set_streams(streams: &[VideoAndStreamInformation]) {
     save();
 }
 
-pub fn reset() {
+pub async fn reset() {
+    let new_settings = SettingsStruct::new().await;
     // Take care of scope RwLock
     {
         let mut manager = MANAGER.write().unwrap();
-        manager.content.as_mut().unwrap().config = SettingsStruct::default();
+        manager.content.as_mut().unwrap().config = new_settings
     }
     save();
 }
@@ -252,9 +261,9 @@ mod tests {
         format!("/tmp/{}.json", rand_string)
     }
 
-    #[test]
-    fn test_no_aboslute_path() {
-        init(None);
+    #[tokio::test]
+    async fn test_no_aboslute_path() {
+        init(None).await;
         let manager = MANAGER.read().unwrap();
         let file_name = &manager.content.as_ref().unwrap().file_name;
         assert!(
@@ -263,9 +272,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_store() {
-        init(Some(&generate_random_settings_file_name()));
+    #[tokio::test]
+    async fn test_store() {
+        init(Some(&generate_random_settings_file_name())).await;
 
         let header = header();
         assert_eq!(header.name, "Camera Manager".to_string());

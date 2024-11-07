@@ -59,14 +59,14 @@ pub async fn get_video_source(source_string: &str) -> Result<VideoSourceType, st
     ))
 }
 
-pub fn set_control(source_string: &str, control_id: u64, value: i64) -> std::io::Result<()> {
-    let camera = get_video_source(source_string)?;
+pub async fn set_control(source_string: &str, control_id: u64, value: i64) -> std::io::Result<()> {
+    let camera = get_video_source(source_string).await?;
     debug!("Set camera ({source_string}) control ({control_id}) value ({value}).");
     return camera.inner().set_control_by_id(control_id, value);
 }
 
-pub fn reset_controls(source_string: &str) -> Result<(), Vec<std::io::Error>> {
-    let camera = match get_video_source(source_string) {
+pub async fn reset_controls(source_string: &str) -> Result<(), Vec<std::io::Error>> {
+    let camera = match get_video_source(source_string).await {
         Ok(camera) => camera,
         Err(error) => return Err(vec![error]),
     };

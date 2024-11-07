@@ -139,7 +139,7 @@ impl Stream {
                         std::time::Instant::now() - last_report_time >= report_interval;
 
                     // Find the best candidate
-                    manager::update_devices(&mut streams, &mut candidates, should_report);
+                    manager::update_devices(&mut streams, &mut candidates, should_report).await;
                     video_and_stream_information = streams.first().unwrap().clone();
 
                     // Check if the chosen video source is available
@@ -148,7 +148,9 @@ impl Stream {
                             .video_source
                             .inner()
                             .source_string(),
-                    ) {
+                    )
+                    .await
+                    {
                         Ok(best_candidate) => {
                             video_and_stream_information.video_source = best_candidate;
                         }

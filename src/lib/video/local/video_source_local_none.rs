@@ -21,7 +21,7 @@ pub struct VideoSourceLocal {
 }
 
 impl VideoSourceLocal {
-    pub fn try_identify_device(
+    pub async fn try_identify_device(
         &mut self,
         capture_configuration: &VideoCaptureConfiguration,
         candidates: &[VideoSourceType],
