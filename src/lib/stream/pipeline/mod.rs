@@ -1,4 +1,5 @@
 pub mod fake_pipeline;
+pub mod onvif_pipeline;
 pub mod qr_pipeline;
 pub mod redirect_pipeline;
 pub mod runner;
@@ -23,6 +24,7 @@ use crate::{
 };
 
 use fake_pipeline::FakePipeline;
+use onvif_pipeline::OnvifPipeline;
 use qr_pipeline::QrPipeline;
 use redirect_pipeline::RedirectPipeline;
 use runner::PipelineRunner;
@@ -42,6 +44,7 @@ pub enum Pipeline {
     V4l(V4lPipeline),
     Fake(FakePipeline),
     QR(QrPipeline),
+    Onvif(OnvifPipeline),
     Redirect(RedirectPipeline),
 }
 
@@ -52,6 +55,7 @@ impl Pipeline {
             Pipeline::V4l(pipeline) => &mut pipeline.state,
             Pipeline::Fake(pipeline) => &mut pipeline.state,
             Pipeline::QR(pipeline) => &mut pipeline.state,
+            Pipeline::Onvif(pipeline) => &mut pipeline.state,
             Pipeline::Redirect(pipeline) => &mut pipeline.state,
         }
     }
@@ -62,6 +66,7 @@ impl Pipeline {
             Pipeline::V4l(pipeline) => &pipeline.state,
             Pipeline::Fake(pipeline) => &pipeline.state,
             Pipeline::QR(pipeline) => &pipeline.state,
+            Pipeline::Onvif(pipeline) => &pipeline.state,
             Pipeline::Redirect(pipeline) => &pipeline.state,
         }
     }
@@ -93,6 +98,9 @@ impl Pipeline {
             }),
             #[cfg(not(target_os = "linux"))]
             VideoSourceType::Local(_) => unreachable!("Local is only supported on linux"),
+            VideoSourceType::Onvif(_) => Pipeline::Onvif(OnvifPipeline {
+                state: pipeline_state,
+            }),
             VideoSourceType::Redirect(_) => Pipeline::Redirect(RedirectPipeline {
                 state: pipeline_state,
             }),
@@ -148,6 +156,9 @@ impl PipelineState {
             #[cfg(not(target_os = "linux"))]
             VideoSourceType::Local(_) => {
                 unreachable!("Local source only supported on linux");
+            }
+            VideoSourceType::Onvif(_) => {
+                OnvifPipeline::try_new(pipeline_id, video_and_stream_information)
             }
             VideoSourceType::Redirect(_) => {
                 RedirectPipeline::try_new(pipeline_id, video_and_stream_information)
