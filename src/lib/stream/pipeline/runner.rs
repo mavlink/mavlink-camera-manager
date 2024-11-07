@@ -46,15 +46,25 @@ impl PipelineRunner {
 
         debug!("Starting PipelineRunner task...");
 
+        let span = span!(
+            Level::DEBUG,
+            "PipelineRunner task",
+            id = pipeline_id.to_string()
+        );
+        let task_handle = tokio::spawn(
+            async move {
+                debug!("task started!");
+                match Self::runner(pipeline_weak, pipeline_id, start_rx, allow_block).await {
+                    Ok(_) => debug!("task eneded with no errors"),
+                    Err(error) => warn!("task ended with error: {error:#?}"),
+                };
+            }
+            .instrument(span),
+        );
+
         Ok(Self {
             start: start_tx,
-            handle: Some(tokio::spawn(async move {
-                debug!("PipelineRunner task started!");
-                match Self::runner(pipeline_weak, pipeline_id, start_rx, allow_block).await {
-                    Ok(_) => debug!("PipelineRunner task eneded with no errors"),
-                    Err(error) => warn!("PipelineRunner task ended with error: {error:#?}"),
-                };
-            })),
+            handle: Some(task_handle),
             pipeline_id,
         })
     }
