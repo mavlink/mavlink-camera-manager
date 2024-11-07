@@ -108,3 +108,62 @@ pub async fn wait_for_element_state_async(
 
     Ok(())
 }
+
+#[instrument(level = "debug")]
+pub async fn get_encode_from_rtspsrc(stream_uri: &url::Url) -> Option<VideoEncodeType> {
+    use gst::prelude::*;
+
+    let description = format!(
+        concat!(
+            "rtspsrc location={location} is-live=true latency=0",
+            " ! fakesink name=fakesink sync=false"
+        ),
+        location = stream_uri.to_string(),
+    );
+
+    let pipeline = gst::parse::launch(&description)
+        .expect("Failed to create pipeline")
+        .downcast::<gst::Pipeline>()
+        .expect("Pipeline is not a valid gst::Pipeline");
+
+    pipeline
+        .set_state(gst::State::Playing)
+        .expect("Failed to set pipeline to Playing");
+
+    let fakesink = pipeline
+        .by_name("fakesink")
+        .expect("Fakesink not found in pipeline");
+    let pad = fakesink.static_pad("sink").expect("Sink pad not found");
+
+    let encode = tokio::time::timeout(tokio::time::Duration::from_secs(5), wait_for_encode(pad))
+        .await
+        .ok()
+        .flatten();
+
+    pipeline
+        .set_state(gst::State::Null)
+        .expect("Failed to set pipeline to Null");
+
+    encode
+}
+
+pub async fn wait_for_encode(pad: gst::Pad) -> Option<VideoEncodeType> {
+    loop {
+        if let Some(caps) = pad.current_caps() {
+            trace!("caps from rtspsrc: {caps:?}");
+
+            if let Some(structure) = caps.structure(0) {
+                if let Ok(encoding_name) = structure.get::<String>("encoding-name") {
+                    let encoding = match encoding_name.to_ascii_uppercase().as_str() {
+                        "H264" => Some(VideoEncodeType::H264),
+                        "H265" => Some(VideoEncodeType::H265),
+                        _unsupported => None,
+                    };
+
+                    break encoding;
+                }
+            }
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+}
