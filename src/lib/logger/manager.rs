@@ -10,21 +10,13 @@ pub fn init() {
     LogTracer::init_with_filter(tracing::log::LevelFilter::Trace).expect("Failed to set logger");
 
     // Configure the console log
-    let console_env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| {
-            if cli::manager::is_verbose() {
-                EnvFilter::new(LevelFilter::DEBUG.to_string())
-            } else {
-                EnvFilter::new(LevelFilter::INFO.to_string())
-            }
-        })
-        // Hyper is used for http request by our thread leak test
-        // And it's pretty verbose when it's on
-        .add_directive("hyper=off".parse().unwrap())
-        // Reducing onvif-related libs verbosity
-        .add_directive("yaserde=off".parse().unwrap())
-        .add_directive("ws_discovery=off".parse().unwrap())
-        .add_directive("onvif::discovery=off".parse().unwrap());
+    let console_env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        if cli::manager::is_verbose() {
+            EnvFilter::new(LevelFilter::DEBUG.to_string())
+        } else {
+            EnvFilter::new(LevelFilter::INFO.to_string())
+        }
+    });
 
     let console_layer = fmt::Layer::new()
         .with_writer(std::io::stdout)
@@ -35,7 +27,7 @@ pub fn init() {
         .with_target(false)
         .with_thread_ids(false)
         .with_thread_names(false)
-        .with_filter(console_env_filter);
+        .with_filter(filter_unwanted_crates(console_env_filter));
 
     // Configure the file log
     let file_env_filter = if cli::manager::is_tracing() {
@@ -54,7 +46,7 @@ pub fn init() {
         .with_target(false)
         .with_thread_ids(true)
         .with_thread_names(true)
-        .with_filter(file_env_filter);
+        .with_filter(filter_unwanted_crates(file_env_filter));
 
     // Configure the default subscriber
     match cli::manager::is_tracy() {
@@ -145,4 +137,58 @@ fn redirect_gstreamer_logs_to_tracing() {
             );
         },
     );
+}
+
+fn filter_unwanted_crates(env_filter: EnvFilter) -> EnvFilter {
+    env_filter
+        // Hyper is used for http request by our thread leak test
+        // And it's pretty verbose when it's on
+        .add_directive("hyper=off".parse().unwrap())
+        // Reducing onvif-related libs verbosity
+        .add_directive("yaserde=off".parse().unwrap())
+        .add_directive("reqwest=off".parse().unwrap())
+        .add_directive("onvif=off".parse().unwrap())
+        .add_directive("schema=off".parse().unwrap())
+        .add_directive("transport=off".parse().unwrap())
+        .add_directive("validate=off".parse().unwrap())
+        .add_directive("common=off".parse().unwrap())
+        .add_directive("metadatastream=off".parse().unwrap())
+        .add_directive("onvif_xsd=off".parse().unwrap())
+        .add_directive("radiometry=off".parse().unwrap())
+        .add_directive("rules=off".parse().unwrap())
+        .add_directive("soap_envelope=off".parse().unwrap())
+        .add_directive("types=off".parse().unwrap())
+        .add_directive("xmlmime=off".parse().unwrap())
+        .add_directive("xop=off".parse().unwrap())
+        .add_directive("accesscontrol=off".parse().unwrap())
+        .add_directive("accessrules=off".parse().unwrap())
+        .add_directive("actionengine=off".parse().unwrap())
+        .add_directive("advancedsecurity=off".parse().unwrap())
+        .add_directive("analytics=off".parse().unwrap())
+        .add_directive("authenticationbehavior=off".parse().unwrap())
+        .add_directive("b_2=off".parse().unwrap())
+        .add_directive("bf_2=off".parse().unwrap())
+        .add_directive("credential=off".parse().unwrap())
+        .add_directive("deviceio=off".parse().unwrap())
+        .add_directive("devicemgmt=off".parse().unwrap())
+        .add_directive("display=off".parse().unwrap())
+        .add_directive("doorcontrol=off".parse().unwrap())
+        .add_directive("event=off".parse().unwrap())
+        .add_directive("imaging=off".parse().unwrap())
+        .add_directive("media=off".parse().unwrap())
+        .add_directive("media2=off".parse().unwrap())
+        .add_directive("provisioning=off".parse().unwrap())
+        .add_directive("ptz=off".parse().unwrap())
+        .add_directive("receiver=off".parse().unwrap())
+        .add_directive("recording=off".parse().unwrap())
+        .add_directive("replay=off".parse().unwrap())
+        .add_directive("schedule=off".parse().unwrap())
+        .add_directive("search=off".parse().unwrap())
+        .add_directive("t_1=off".parse().unwrap())
+        .add_directive("thermal=off".parse().unwrap())
+        .add_directive("uplink=off".parse().unwrap())
+        .add_directive("ws_addr=off".parse().unwrap())
+        .add_directive("ws_discovery=off".parse().unwrap())
+        .add_directive("xml_xsd=off".parse().unwrap())
+        .add_directive("onvif::discovery=off".parse().unwrap())
 }
