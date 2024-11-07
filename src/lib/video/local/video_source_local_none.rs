@@ -7,7 +7,7 @@ use crate::{
     stream::types::VideoCaptureConfiguration,
     video::{
         types::*,
-        video_source::{VideoSource, VideoSourceAvailable},
+        video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats},
     },
 };
 
@@ -30,6 +30,12 @@ impl VideoSourceLocal {
     }
 }
 
+impl VideoSourceFormats for VideoSourceLocal {
+    async fn formats(&self) -> Vec<Format> {
+        vec![]
+    }
+}
+
 impl VideoSource for VideoSourceLocal {
     fn name(&self) -> &String {
         &self.name
@@ -37,10 +43,6 @@ impl VideoSource for VideoSourceLocal {
 
     fn source_string(&self) -> &str {
         &self.device_path
-    }
-
-    fn formats(&self) -> Vec<Format> {
-        return vec![];
     }
 
     fn set_control_by_name(&self, _control_name: &str, _value: i64) -> std::io::Result<()> {

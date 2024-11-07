@@ -9,11 +9,13 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tracing::*;
 
-use crate::video::video_source::VideoSourceAvailable;
 use crate::{
     controls::types::*,
     stream::types::VideoCaptureConfiguration,
-    video::{types::*, video_source::VideoSource},
+    video::{
+        types::*,
+        video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats},
+    },
 };
 
 lazy_static! {
@@ -321,16 +323,8 @@ fn validate_control(control: &Control, value: i64) -> Result<(), String> {
     Ok(())
 }
 
-impl VideoSource for VideoSourceLocal {
-    fn name(&self) -> &String {
-        &self.name
-    }
-
-    fn source_string(&self) -> &str {
-        &self.device_path
-    }
-
-    fn formats(&self) -> Vec<Format> {
+impl VideoSourceFormats for VideoSourceLocal {
+    async fn formats(&self) -> Vec<Format> {
         let device_path = self.device_path.clone();
         let typ = self.typ.clone();
 
@@ -481,6 +475,16 @@ impl VideoSource for VideoSourceLocal {
                 .insert(device_path.to_string(), formats.clone());
             formats
         })
+    }
+}
+
+impl VideoSource for VideoSourceLocal {
+    fn name(&self) -> &String {
+        &self.name
+    }
+
+    fn source_string(&self) -> &str {
+        &self.device_path
     }
 
     fn set_control_by_name(&self, control_name: &str, value: i64) -> std::io::Result<()> {

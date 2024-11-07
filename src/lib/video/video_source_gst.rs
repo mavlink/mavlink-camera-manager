@@ -5,7 +5,7 @@ use crate::{controls::types::Control, stream::gst::utils::is_gst_plugin_availabl
 
 use super::{
     types::*,
-    video_source::{VideoSource, VideoSourceAvailable},
+    video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats},
     video_source_local::VideoSourceLocal,
 };
 
@@ -23,22 +23,10 @@ pub struct VideoSourceGst {
     pub source: VideoSourceGstType,
 }
 
-impl VideoSource for VideoSourceGst {
-    fn name(&self) -> &String {
-        &self.name
-    }
-
-    fn source_string(&self) -> &str {
+impl VideoSourceFormats for VideoSourceGst {
+    async fn formats(&self) -> Vec<Format> {
         match &self.source {
-            VideoSourceGstType::Local(local) => local.source_string(),
-            VideoSourceGstType::Fake(string) => string,
-            VideoSourceGstType::QR(string) => string,
-        }
-    }
-
-    fn formats(&self) -> Vec<Format> {
-        match &self.source {
-            VideoSourceGstType::Local(local) => local.formats(),
+            VideoSourceGstType::Local(local) => local.formats().await,
             VideoSourceGstType::Fake(_) => {
                 let intervals: Vec<FrameInterval> = [60, 30, 24, 16, 10, 5]
                     .iter()
@@ -126,6 +114,20 @@ impl VideoSource for VideoSourceGst {
                     },
                 ]
             }
+        }
+    }
+}
+
+impl VideoSource for VideoSourceGst {
+    fn name(&self) -> &String {
+        &self.name
+    }
+
+    fn source_string(&self) -> &str {
+        match &self.source {
+            VideoSourceGstType::Local(local) => local.source_string(),
+            VideoSourceGstType::Fake(string) => string,
+            VideoSourceGstType::QR(string) => string,
         }
     }
 
