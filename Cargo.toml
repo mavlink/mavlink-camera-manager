@@ -35,6 +35,7 @@ async-trait = "0.1.41"
 actix-files = "0.6.5"
 actix-web = { version = "4.6.0", features = ["rustls"] }
 actix-web-validator = "5.0.1"
+actix-ws = "0.3.0"
 actix-service = "2.0.2"
 actix-extensible-rate-limit = "0.3.1"
 actix-cors = "0.7.0"
@@ -62,6 +63,7 @@ tracing-log = "0.2.0"
 tracing-actix-web = "0.7.10"
 tracing-gstreamer = "0.7.0"
 tracing-tracy = { version = "0.10.5", features = ["ondemand", "broadcast"] } # Note that these features defines the tracy client behavior.
+ringbuffer = "0.15.0"
 
 # This is a custom revision adding file name suffix on top of tracing-appender-0.2.2" "0.2.2", but compatible with the current tracing version.
 # Reference: https://github.com/tokio-rs/tracing/issues/2441
