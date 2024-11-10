@@ -1,8 +1,86 @@
+use std::{
+    io::{self, Write},
+    sync::{Arc, Mutex},
+};
+
+use ringbuffer::{AllocRingBuffer, RingBuffer};
+use tokio::sync::broadcast::{Receiver, Sender};
 use tracing::{metadata::LevelFilter, *};
 use tracing_log::LogTracer;
-use tracing_subscriber::{fmt, layer::SubscriberExt, EnvFilter, Layer};
+use tracing_subscriber::{
+    fmt::{self, MakeWriter},
+    layer::SubscriberExt,
+    EnvFilter, Layer,
+};
 
 use crate::cli;
+
+struct BroadcastWriter {
+    sender: Sender<String>,
+}
+
+impl Write for BroadcastWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let message = String::from_utf8_lossy(buf).to_string();
+        let _ = self.sender.send(message);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+struct BroadcastMakeWriter {
+    sender: Sender<String>,
+}
+
+impl<'a> MakeWriter<'a> for BroadcastMakeWriter {
+    type Writer = BroadcastWriter;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        BroadcastWriter {
+            sender: self.sender.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Manager {
+    pub process: Option<tokio::task::JoinHandle<()>>,
+}
+
+pub struct History {
+    pub history: AllocRingBuffer<String>,
+    pub sender: Sender<String>,
+}
+
+impl Default for History {
+    fn default() -> Self {
+        let (sender, _receiver) = tokio::sync::broadcast::channel(100);
+        Self {
+            history: AllocRingBuffer::new(10 * 1024),
+            sender,
+        }
+    }
+}
+
+impl History {
+    pub fn push(&mut self, message: String) {
+        self.history.push(message.clone());
+        let _ = self.sender.send(message);
+    }
+
+    pub fn subscribe(&self) -> (Receiver<String>, Vec<String>) {
+        let reader = self.sender.subscribe();
+        (reader, self.history.to_vec())
+    }
+}
+
+lazy_static! {
+    static ref MANAGER: Arc<Mutex<Manager>> = Default::default();
+    pub static ref HISTORY: Arc<Mutex<History>> = Default::default();
+}
 
 // Start logger, should be done inside main
 pub fn init() {
@@ -56,6 +134,38 @@ pub fn init() {
         .with_thread_names(true)
         .with_filter(file_env_filter);
 
+    // Configure the server log
+    let server_env_filter = if cli::manager::is_tracing() {
+        EnvFilter::new(LevelFilter::TRACE.to_string())
+    } else {
+        EnvFilter::new(LevelFilter::DEBUG.to_string())
+    };
+    let (tx, mut rx) = tokio::sync::broadcast::channel(100);
+    let server_layer = fmt::Layer::new()
+        .with_writer(BroadcastMakeWriter { sender: tx.clone() })
+        .with_ansi(false)
+        .with_file(true)
+        .with_line_number(true)
+        .with_span_events(fmt::format::FmtSpan::NONE)
+        .with_target(false)
+        .with_thread_ids(true)
+        .with_thread_names(true)
+        .with_filter(server_env_filter);
+
+    let history = HISTORY.clone();
+    MANAGER.lock().unwrap().process = Some(tokio::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(message) => {
+                    history.lock().unwrap().push(message);
+                }
+                Err(error) => {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                }
+            }
+        }
+    }));
+
     // Configure the default subscriber
     match cli::manager::is_tracy() {
         true => {
@@ -63,6 +173,7 @@ pub fn init() {
             let subscriber = tracing_subscriber::registry()
                 .with(console_layer)
                 .with(file_layer)
+                .with(server_layer)
                 .with(tracy_layer);
             tracing::subscriber::set_global_default(subscriber)
                 .expect("Unable to set a global subscriber");
@@ -70,7 +181,8 @@ pub fn init() {
         false => {
             let subscriber = tracing_subscriber::registry()
                 .with(console_layer)
-                .with(file_layer);
+                .with(file_layer)
+                .with(server_layer);
             tracing::subscriber::set_global_default(subscriber)
                 .expect("Unable to set a global subscriber");
         }
