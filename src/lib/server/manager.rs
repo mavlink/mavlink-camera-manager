@@ -76,6 +76,7 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
             )
             .route("/xml", web::get().to(pages::xml))
             .route("/sdp", web::get().to(pages::sdp))
+            .route("/log", web::get().to(pages::log))
             .service(
                 web::scope("/thumbnail")
                     // Add a rate limitter to prevent flood

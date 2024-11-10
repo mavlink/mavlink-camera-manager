@@ -2,8 +2,9 @@ use std::io::prelude::*;
 
 use actix_web::{
     http::header,
+    rt,
     web::{self, Json},
-    HttpRequest, HttpResponse,
+    Error, HttpRequest, HttpResponse,
 };
 use paperclip::actix::{api_v2_operation, Apiv2Schema, CreatedJson};
 use serde::{Deserialize, Serialize};
@@ -464,4 +465,27 @@ pub async fn gst_info() -> HttpResponse {
             .content_type("text/plain")
             .body(format!("{error:#?}")),
     }
+}
+
+#[api_v2_operation]
+/// Provides a access point for the service log
+pub async fn log(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Error> {
+    let (response, mut session, _stream) = actix_ws::handle(&req, stream)?;
+    rt::spawn(async move {
+        let (mut receiver, history) = crate::logger::manager::HISTORY.lock().unwrap().subscribe();
+
+        for message in history {
+            if session.text(message).await.is_err() {
+                return;
+            }
+        }
+
+        while let Ok(message) = receiver.recv().await {
+            if session.text(message).await.is_err() {
+                return;
+            }
+        }
+    });
+
+    Ok(response)
 }
