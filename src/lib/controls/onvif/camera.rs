@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use onvif::soap;
-use onvif_schema::{devicemgmt::GetDeviceInformationResponse, transport};
+use onvif_schema::transport;
 
 use anyhow::{anyhow, Context, Result};
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tracing::*;
 
@@ -15,6 +16,7 @@ pub struct OnvifCamera {
 }
 
 pub struct OnvifCameraContext {
+    pub device_information: OnvifDeviceInformation,
     pub streams_information: Option<Vec<OnvifStreamInformation>>,
     devicemgmt: soap::client::Client,
     event: Option<soap::client::Client>,
@@ -37,6 +39,15 @@ pub struct OnvifStreamInformation {
     pub format: Format,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OnvifDeviceInformation {
+    pub manufacturer: String,
+    pub model: String,
+    pub firmware_version: String,
+    pub serial_number: String,
+    pub hardware_id: String,
+}
+
 impl OnvifCamera {
     #[instrument(level = "trace", skip(auth))]
     pub async fn try_new(auth: &Auth) -> Result<Self> {
@@ -48,7 +59,19 @@ impl OnvifCamera {
             .credentials(creds.clone())
             .build();
 
+        let device_information =
+            onvif_schema::devicemgmt::get_device_information(&devicemgmt, &Default::default())
+                .await
+                .map(|i| OnvifDeviceInformation {
+                    manufacturer: i.manufacturer,
+                    model: i.model,
+                    firmware_version: i.firmware_version,
+                    serial_number: i.serial_number,
+                    hardware_id: i.hardware_id,
+                })?;
+
         let mut context = OnvifCameraContext {
+            device_information,
             streams_information: None,
             devicemgmt,
             imaging: None,
@@ -103,14 +126,6 @@ impl OnvifCamera {
         }
 
         Ok(Self { context })
-    }
-
-    #[instrument(level = "trace", skip(self))]
-    pub async fn get_device_information(
-        &self,
-    ) -> Result<GetDeviceInformationResponse, transport::Error> {
-        onvif_schema::devicemgmt::get_device_information(&self.devicemgmt, &Default::default())
-            .await
     }
 
     async fn get_streams_information(
