@@ -116,6 +116,22 @@ impl Info {
     }
 }
 
+#[derive(Apiv2Schema, Deserialize, Debug)]
+pub struct AuthenticateOnvifDeviceRequest {
+    /// Onvif Device UUID, obtained via `/onvif/devices` get request
+    device_uuid: uuid::Uuid,
+    /// Username for the Onvif Device
+    username: String,
+    /// Password for the Onvif Device
+    password: String,
+}
+
+#[derive(Apiv2Schema, Deserialize, Debug)]
+pub struct UnauthenticateOnvifDeviceRequest {
+    /// Onvif Device UUID, obtained via `/onvif/devices` get request
+    device_uuid: uuid::Uuid,
+}
+
 use std::{ffi::OsStr, path::Path};
 
 use include_dir::{include_dir, Dir};
@@ -499,4 +515,55 @@ pub async fn log(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse,
     });
 
     Ok(response)
+}
+
+#[api_v2_operation]
+pub async fn onvif_devices() -> HttpResponse {
+    let onvif_devices = crate::controls::onvif::manager::Manager::onvif_devices().await;
+
+    match serde_json::to_string_pretty(&onvif_devices) {
+        Ok(json) => HttpResponse::Ok()
+            .content_type("application/json")
+            .body(json),
+        Err(error) => HttpResponse::InternalServerError()
+            .content_type("text/plain")
+            .body(format!("{error:#?}")),
+    }
+}
+
+#[api_v2_operation]
+pub async fn authenticate_onvif_device(
+    query: web::Query<AuthenticateOnvifDeviceRequest>,
+) -> HttpResponse {
+    if let Err(error) = crate::controls::onvif::manager::Manager::register_credentials(
+        query.device_uuid,
+        Some(onvif::soap::client::Credentials {
+            username: query.username.clone(),
+            password: query.password.clone(),
+        }),
+    )
+    .await
+    {
+        return HttpResponse::InternalServerError()
+            .content_type("text/plain")
+            .body(format!("{error:#?}"));
+    }
+
+    HttpResponse::Ok().finish()
+}
+
+#[api_v2_operation]
+pub async fn unauthenticate_onvif_device(
+    query: web::Query<UnauthenticateOnvifDeviceRequest>,
+) -> HttpResponse {
+    if let Err(error) =
+        crate::controls::onvif::manager::Manager::register_credentials(query.device_uuid, None)
+            .await
+    {
+        return HttpResponse::InternalServerError()
+            .content_type("text/plain")
+            .body(format!("{error:#?}"));
+    }
+
+    HttpResponse::Ok().finish()
 }
