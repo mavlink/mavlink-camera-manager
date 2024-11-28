@@ -26,7 +26,7 @@ name = "mavlink-camera-manager"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 regex = "1.10.4"
 
 #TODO: Investigate rweb to use openapi spec for free
