@@ -69,7 +69,7 @@ impl Drop for Manager {
 }
 
 impl Default for Manager {
-    #[instrument(level = "trace")]
+    #[instrument(level = "debug")]
     fn default() -> Self {
         let mcontext = Arc::new(RwLock::new(ManagerContext {
             cameras: HashMap::new(),
@@ -85,7 +85,7 @@ impl Default for Manager {
 
 impl Manager {
     // Construct our manager, should be done inside main
-    #[instrument(level = "trace")]
+    #[instrument(level = "debug")]
     pub async fn init() {
         MANAGER.as_ref();
 
@@ -187,7 +187,7 @@ impl Manager {
         }
     }
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "debug")]
     pub async fn get_formats(stream_uri: &StreamURI) -> Result<Vec<Format>> {
         let mcontext = MANAGER.read().await.mcontext.clone();
         let mcontext = mcontext.read().await;
@@ -209,7 +209,7 @@ impl Manager {
         Ok(vec![stream_information.format.clone()])
     }
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "debug")]
     pub async fn streams_available() -> Vec<VideoSourceType> {
         let mcontext = MANAGER.read().await.mcontext.clone();
         let mcontext = mcontext.read().await;
