@@ -1,10 +1,11 @@
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use onvif::soap::client::Credentials;
+use serde::Serialize;
 use tokio::sync::RwLock;
 use tracing::*;
+use url::Url;
 
 use crate::video::{
     types::{Format, VideoSourceType},
@@ -24,12 +25,42 @@ pub struct Manager {
 
 pub struct ManagerContext {
     cameras: HashMap<StreamURI, OnvifCamera>,
-    /// Credentials can be either added in runtime, or passed via ENV or CLI args
-    credentials: HashMap<Host, Arc<RwLock<Credentials>>>,
+    /// Onvif devices discovered
+    discovered_devices: HashMap<uuid::Uuid, OnvifDevice>,
 }
 
 type StreamURI = String;
-type Host = String;
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct OnvifDevice {
+    pub uuid: uuid::Uuid,
+    pub ip: Ipv4Addr,
+    pub types: Vec<String>,
+    pub hardware: Option<String>,
+    pub name: Option<String>,
+    pub urls: Vec<Url>,
+}
+
+impl TryFrom<onvif::discovery::Device> for OnvifDevice {
+    type Error = anyhow::Error;
+
+    fn try_from(device: onvif::discovery::Device) -> Result<Self, Self::Error> {
+        Ok(Self {
+            uuid: device_address_to_uuid(&device.address)?,
+            ip: device
+                .urls
+                .first()
+                .context("Device should have at least one URL")?
+                .host_str()
+                .context("Device URL should have a host")?
+                .parse()?,
+            types: device.types,
+            hardware: device.hardware,
+            name: device.name,
+            urls: device.urls,
+        })
+    }
+}
 
 impl Drop for Manager {
     fn drop(&mut self) {
@@ -42,7 +73,7 @@ impl Default for Manager {
     fn default() -> Self {
         let mcontext = Arc::new(RwLock::new(ManagerContext {
             cameras: HashMap::new(),
-            credentials: HashMap::new(),
+            discovered_devices: HashMap::new(),
         }));
 
         let mcontext_clone = mcontext.clone();
@@ -73,7 +104,14 @@ impl Manager {
         );
     }
 
-    #[instrument(level = "trace", skip(context))]
+    #[instrument(level = "debug")]
+    pub async fn onvif_devices() -> Vec<OnvifDevice> {
+        let mcontext = MANAGER.read().await.mcontext.clone();
+        let mcontext = mcontext.read().await;
+
+        mcontext.discovered_devices.values().cloned().collect()
+    }
+
     async fn discover_loop(context: Arc<RwLock<ManagerContext>>) -> Result<()> {
         use futures::stream::StreamExt;
         use std::net::{IpAddr, Ipv4Addr};
@@ -187,4 +225,16 @@ impl Manager {
             })
             .collect::<Vec<VideoSourceType>>()
     }
+}
+
+/// Address must be something like `urn:uuid:bc071801-c50f-8301-ac36-bc071801c50f`.
+/// Read 7 Device discovery from [ONVIF-Core-Specification](https://www.onvif.org/specs/core/ONVIF-Core-Specification-v1612a.pdf)
+#[instrument(level = "debug")]
+fn device_address_to_uuid(device_address: &str) -> Result<uuid::Uuid> {
+    device_address
+        .split(':')
+        .last()
+        .context("Failed to parse device address into a UUID")?
+        .parse()
+        .map_err(anyhow::Error::msg)
 }
