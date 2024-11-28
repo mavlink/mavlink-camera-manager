@@ -288,9 +288,15 @@ impl Manager {
             return Err(anyhow!("Failed getting stream information"));
         };
 
+        // Remove credentials
+        let mut stream_uri: url::Url = stream_uri.parse()?;
+        let _ = stream_uri.set_password(None);
+        let _ = stream_uri.set_username("");
+        let stream_uri = stream_uri.to_string();
+
         let stream_information = streams_information
             .iter()
-            .find(|&stream_information| &stream_information.stream_uri.to_string() == stream_uri)
+            .find(|&stream_information| stream_information.stream_uri.to_string() == stream_uri)
             .context("Camera not found")?;
 
         Ok(vec![stream_information.format.clone()])
