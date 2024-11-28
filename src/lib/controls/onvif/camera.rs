@@ -174,7 +174,8 @@ impl OnvifCamera {
         let profiles = onvif_schema::media::get_profiles(media_client, &Default::default())
             .await?
             .profiles;
-        trace!("get_profiles response: {:#?}", &profiles);
+        trace!("get_profiles response: {profiles:#?}");
+
         let requests: Vec<_> = profiles
             .iter()
             .map(
@@ -245,6 +246,7 @@ impl OnvifCamera {
 
             streams_information.push(OnvifStreamInformation { stream_uri, format });
         }
+
         Ok(streams_information)
     }
 }
