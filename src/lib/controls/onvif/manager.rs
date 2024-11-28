@@ -277,7 +277,8 @@ impl Manager {
             .get(stream_uri)
             .context("Camera not found")?;
 
-        let Some(streams_information) = &camera.streams_information else {
+        let Some(streams_information) = &camera.context.read().await.streams_information.clone()
+        else {
             return Err(anyhow!("Failed getting stream information"));
         };
 
@@ -294,16 +295,29 @@ impl Manager {
         let mcontext = MANAGER.read().await.mcontext.clone();
         let mcontext = mcontext.read().await;
 
-        mcontext
-            .cameras
-            .keys()
-            .map(|stream_uri| {
-                VideoSourceType::Onvif(VideoSourceOnvif {
-                    name: format!("{stream_uri}"),
-                    source: VideoSourceOnvifType::Onvif(stream_uri.clone()),
-                })
-            })
-            .collect::<Vec<VideoSourceType>>()
+        let mut streams_available = vec![];
+        for (stream_uri, camera) in mcontext.cameras.iter() {
+            let device_information = camera.context.read().await.device_information.clone();
+
+            let name = format!(
+                "{model} - {manufacturer} ({hardware_id})",
+                model = device_information.model,
+                manufacturer = device_information.manufacturer,
+                hardware_id = device_information.hardware_id
+            );
+
+            let source = VideoSourceOnvifType::Onvif(stream_uri.clone());
+
+            let stream = VideoSourceType::Onvif(VideoSourceOnvif {
+                name,
+                source,
+                device_information,
+            });
+
+            streams_available.push(stream);
+        }
+
+        streams_available
     }
 
     #[instrument(level = "debug")]
