@@ -128,6 +128,39 @@ impl OnvifCamera {
         Ok(Self { context })
     }
 
+    #[instrument(level = "trace", skip_all)]
+    async fn update_streams_information(context: &Arc<RwLock<OnvifCameraContext>>) -> Result<()> {
+        let mut context = context.write().await;
+
+        let media_client = context
+            .media
+            .clone()
+            .ok_or_else(|| transport::Error::Other("Client media is not available".into()))?;
+
+        // Sometimes a camera responds empty, so we try a couple of times to improve our reliability
+        let mut tries = 10;
+        let new_streams_information = loop {
+            let new_streams_information = OnvifCamera::get_streams_information(&media_client)
+                .await
+                .context("Failed to get streams information")?;
+
+            if new_streams_information.is_empty() {
+                if tries == 0 {
+                    return Err(anyhow!("No streams information found"));
+                }
+
+                tries -= 1;
+                continue;
+            }
+
+            break new_streams_information;
+        };
+
+        context.streams_information.replace(new_streams_information);
+
+        Ok(())
+    }
+
     async fn get_streams_information(
         &self,
     ) -> Result<Vec<OnvifStreamInformation>, transport::Error> {
