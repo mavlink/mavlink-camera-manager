@@ -10,12 +10,15 @@ use tracing::*;
 
 use crate::{stream::gst::utils::get_encode_from_rtspsrc, video::types::Format};
 
+use super::manager::OnvifDevice;
+
 #[derive(Clone)]
 pub struct OnvifCamera {
     pub context: Arc<RwLock<OnvifCameraContext>>,
 }
 
 pub struct OnvifCameraContext {
+    pub device: OnvifDevice,
     pub device_information: OnvifDeviceInformation,
     pub streams_information: Option<Vec<OnvifStreamInformation>>,
     devicemgmt: soap::client::Client,
@@ -50,7 +53,7 @@ pub struct OnvifDeviceInformation {
 
 impl OnvifCamera {
     #[instrument(level = "trace", skip(auth))]
-    pub async fn try_new(auth: &Auth) -> Result<Self> {
+    pub async fn try_new(device: &OnvifDevice, auth: &Auth) -> Result<Self> {
         let creds = &auth.credentials;
         let devicemgmt_uri = &auth.url;
         let base_uri = &devicemgmt_uri.origin().ascii_serialization();
@@ -71,6 +74,7 @@ impl OnvifCamera {
                 })?;
 
         let mut context = OnvifCameraContext {
+            device: device.clone(),
             device_information,
             streams_information: None,
             devicemgmt,
