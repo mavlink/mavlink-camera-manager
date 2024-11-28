@@ -154,9 +154,12 @@ impl Manager {
         mcontext.discovered_devices.values().cloned().collect()
     }
 
-    async fn discover_loop(context: Arc<RwLock<ManagerContext>>) -> Result<()> {
+    #[instrument(level = "debug", skip(mcontext))]
+    async fn discover_loop(mcontext: Arc<RwLock<ManagerContext>>) -> Result<()> {
         use futures::stream::StreamExt;
         use std::net::{IpAddr, Ipv4Addr};
+
+        let scan_duration = tokio::time::Duration::from_secs(20);
 
         loop {
             trace!("Discovering onvif...");
@@ -165,67 +168,102 @@ impl Manager {
 
             onvif::discovery::DiscoveryBuilder::default()
                 .listen_address(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
-                .duration(tokio::time::Duration::from_secs(20))
+                .duration(scan_duration)
                 .run()
                 .await?
                 .for_each_concurrent(MAX_CONCURRENT_JUMPERS, |device| {
-                    let context = context.clone();
+                    let context = mcontext.clone();
 
                     async move {
-                        trace!("Device found: {device:#?}");
+                        let device: OnvifDevice = match device.try_into() {
+                            Ok(onvif_device) => onvif_device,
+                            Err(error) => {
+                                error!("Failed parsing device: {error:?}");
+                                return;
+                            }
+                        };
 
-                        for url in device.urls {
-                            let host = url
-                                .host()
-                                .map(|host| host.to_string())
-                                .unwrap_or(url.to_string());
-
-                            let credentials = if let Some(credentials) =
-                                context.read().await.credentials.get(&host)
-                            {
-                                Some(credentials.read().await.clone())
-                            } else {
-                                None
-                            };
-
-                            trace!("Device {host}. Using credentials: {credentials:?}");
-
-                            let camera = match OnvifCamera::try_new(&Auth {
-                                credentials: credentials.clone(),
-                                url: url.clone(),
-                            })
-                            .await
-                            {
-                                Ok(camera) => camera,
-                                Err(error) => {
-                                    error!(host, "Failed creating camera: {error:?}");
-                                    return;
-                                }
-                            };
-
-                            let Some(streams_informations) = &camera.streams_information else {
-                                error!(host, "Failed getting stream information");
-                                continue;
-                            };
-
-                            trace!(host, "Found streams {streams_informations:?}");
-
+                        // Transfer from url_credentials to credentials. Note that `url_credentials` should never overwrride `credentials`,
+                        // otherwise, the credentials set during runtime (via rest API) would not overwrride credentials passed via ENV/CLI.
+                        {
                             let mut context = context.write().await;
-                            for stream_information in streams_informations {
-                                context
-                                    .cameras
-                                    .entry(stream_information.stream_uri.to_string())
-                                    .and_modify(|old_camera| *old_camera = camera.clone())
-                                    .or_insert_with(|| {
-                                        debug!(host, "New stream inserted: {stream_information:?}");
-
-                                        camera.clone()
-                                    });
+                            if let Some(credential) = context.url_credentials.remove(&device.ip) {
+                                trace!("Transferring credential: {credential:?}");
+                                let _ =
+                                    context.credentials.entry(device.uuid).or_insert(credential);
                             }
                         }
+
+                        Self::handle_device(context, device).await;
                     }
                 })
                 .await;
+
+            // Remove old cameras
+            let mut mcontext = mcontext.write().await;
+            mcontext.cameras.retain(|stream_uri, camera| {
+                if camera.last_update.elapsed() > 3 * scan_duration {
+                    debug!("Stream {stream_uri} removed after not being seen for too long");
+
+                    return false;
+                }
+
+                true
+            });
+        }
+    }
+
+    #[instrument(level = "debug", skip(mcontext))]
+    async fn handle_device(mcontext: Arc<RwLock<ManagerContext>>, device: OnvifDevice) {
+        let _ = mcontext
+            .write()
+            .await
+            .discovered_devices
+            .insert(device.uuid, device.clone());
+
+        let credentials = mcontext.read().await.credentials.get(&device.uuid).cloned();
+
+        trace!("Device found, using credentials: {credentials:?}");
+
+        for url in &device.urls {
+            let camera = match OnvifCamera::try_new(
+                &device,
+                &Auth {
+                    credentials: credentials.clone(),
+                    url: url.clone(),
+                },
+            )
+            .await
+            {
+                Ok(camera) => camera,
+                Err(error) => {
+                    let cause = error.root_cause();
+                    error!("Failed creating OnvifCamera: {error}: {cause}");
+                    continue;
+                }
+            };
+
+            let Some(streams_informations) =
+                &camera.context.read().await.streams_information.clone()
+            else {
+                error!("Failed getting stream information");
+                continue;
+            };
+
+            trace!("Stream found: {streams_informations:?}");
+
+            let mut context = mcontext.write().await;
+            for stream_information in streams_informations {
+                context
+                    .cameras
+                    .entry(stream_information.stream_uri.to_string())
+                    .and_modify(|old_camera| *old_camera = camera.clone())
+                    .or_insert_with(|| {
+                        trace!("New stream inserted: {stream_information:?}");
+
+                        camera.clone()
+                    });
+            }
         }
     }
 
@@ -266,6 +304,32 @@ impl Manager {
                 })
             })
             .collect::<Vec<VideoSourceType>>()
+    }
+
+    #[instrument(level = "debug")]
+    pub(crate) async fn remove_camera(device_uuid: uuid::Uuid) -> Result<()> {
+        let mcontext = MANAGER.read().await.mcontext.clone();
+
+        let mut cameras_to_remove = vec![];
+        {
+            let mcontext = mcontext.read().await;
+
+            for (stream_uri, camera) in mcontext.cameras.iter() {
+                if camera.context.read().await.device.uuid == device_uuid {
+                    cameras_to_remove.push(stream_uri.clone())
+                }
+            }
+        }
+
+        {
+            let mut mcontext = mcontext.write().await;
+
+            for stream_uri in cameras_to_remove {
+                let _ = mcontext.cameras.remove(&stream_uri);
+            }
+        }
+
+        Ok(())
     }
 }
 
