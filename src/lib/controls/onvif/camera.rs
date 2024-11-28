@@ -15,6 +15,7 @@ use super::manager::OnvifDevice;
 #[derive(Clone)]
 pub struct OnvifCamera {
     pub context: Arc<RwLock<OnvifCameraContext>>,
+    pub last_update: std::time::Instant,
 }
 
 pub struct OnvifCameraContext {
@@ -129,7 +130,10 @@ impl OnvifCamera {
             warn!("Failed to update streams information: {error:?}");
         }
 
-        Ok(Self { context })
+        Ok(Self {
+            context,
+            last_update: std::time::Instant::now(),
+        })
     }
 
     #[instrument(level = "trace", skip_all)]
