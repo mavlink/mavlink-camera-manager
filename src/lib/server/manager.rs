@@ -92,6 +92,15 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
                     )
                     .route("", web::get().to(pages::thumbnail)),
             )
+            .route("/onvif/devices", web::get().to(pages::onvif_devices))
+            .route(
+                "/onvif/authentication",
+                web::post().to(pages::authenticate_onvif_device),
+            )
+            .route(
+                "/onvif/authentication",
+                web::delete().to(pages::unauthenticate_onvif_device),
+            )
             .build()
     })
     .bind(server_address)

@@ -1,13 +1,27 @@
-use onvif::soap;
-use onvif_schema::{devicemgmt::GetDeviceInformationResponse, transport};
+use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use onvif::soap;
+use onvif_schema::transport;
+
+use anyhow::{anyhow, Context, Result};
+use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 use tracing::*;
 
 use crate::{stream::gst::utils::get_encode_from_rtspsrc, video::types::Format};
 
+use super::manager::OnvifDevice;
+
 #[derive(Clone)]
 pub struct OnvifCamera {
+    pub context: Arc<RwLock<OnvifCameraContext>>,
+    pub last_update: std::time::Instant,
+}
+
+pub struct OnvifCameraContext {
+    pub device: OnvifDevice,
+    pub device_information: OnvifDeviceInformation,
+    pub streams_information: Option<Vec<OnvifStreamInformation>>,
     devicemgmt: soap::client::Client,
     event: Option<soap::client::Client>,
     deviceio: Option<soap::client::Client>,
@@ -16,7 +30,6 @@ pub struct OnvifCamera {
     imaging: Option<soap::client::Client>,
     ptz: Option<soap::client::Client>,
     analytics: Option<soap::client::Client>,
-    pub streams_information: Option<Vec<OnvifStreamInformation>>,
 }
 
 pub struct Auth {
@@ -30,17 +43,42 @@ pub struct OnvifStreamInformation {
     pub format: Format,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OnvifDeviceInformation {
+    pub manufacturer: String,
+    pub model: String,
+    pub firmware_version: String,
+    pub serial_number: String,
+    pub hardware_id: String,
+}
+
 impl OnvifCamera {
     #[instrument(level = "trace", skip(auth))]
-    pub async fn try_new(auth: &Auth) -> Result<Self> {
+    pub async fn try_new(device: &OnvifDevice, auth: &Auth) -> Result<Self> {
         let creds = &auth.credentials;
         let devicemgmt_uri = &auth.url;
         let base_uri = &devicemgmt_uri.origin().ascii_serialization();
 
-        let mut this = Self {
-            devicemgmt: soap::client::ClientBuilder::new(devicemgmt_uri)
-                .credentials(creds.clone())
-                .build(),
+        let devicemgmt = soap::client::ClientBuilder::new(devicemgmt_uri)
+            .credentials(creds.clone())
+            .build();
+
+        let device_information =
+            onvif_schema::devicemgmt::get_device_information(&devicemgmt, &Default::default())
+                .await
+                .map(|i| OnvifDeviceInformation {
+                    manufacturer: i.manufacturer,
+                    model: i.model,
+                    firmware_version: i.firmware_version,
+                    serial_number: i.serial_number,
+                    hardware_id: i.hardware_id,
+                })?;
+
+        let mut context = OnvifCameraContext {
+            device: device.clone(),
+            device_information,
+            streams_information: None,
+            devicemgmt,
             imaging: None,
             ptz: None,
             event: None,
@@ -48,11 +86,12 @@ impl OnvifCamera {
             media: None,
             media2: None,
             analytics: None,
-            streams_information: None,
         };
 
         let services =
-            onvif_schema::devicemgmt::get_services(&this.devicemgmt, &Default::default()).await?;
+            onvif_schema::devicemgmt::get_services(&context.devicemgmt, &Default::default())
+                .await
+                .context("Failed to get services")?;
 
         for service in &services.service {
             let service_url = url::Url::parse(&service.x_addr).map_err(anyhow::Error::msg)?;
@@ -74,44 +113,73 @@ impl OnvifCamera {
                         );
                     }
                 }
-                "http://www.onvif.org/ver10/events/wsdl" => this.event = svc,
-                "http://www.onvif.org/ver10/deviceIO/wsdl" => this.deviceio = svc,
-                "http://www.onvif.org/ver10/media/wsdl" => this.media = svc,
-                "http://www.onvif.org/ver20/media/wsdl" => this.media2 = svc,
-                "http://www.onvif.org/ver20/imaging/wsdl" => this.imaging = svc,
-                "http://www.onvif.org/ver20/ptz/wsdl" => this.ptz = svc,
-                "http://www.onvif.org/ver20/analytics/wsdl" => this.analytics = svc,
-                _ => trace!("unknown service: {:?}", service),
+                "http://www.onvif.org/ver10/events/wsdl" => context.event = svc,
+                "http://www.onvif.org/ver10/deviceIO/wsdl" => context.deviceio = svc,
+                "http://www.onvif.org/ver10/media/wsdl" => context.media = svc,
+                "http://www.onvif.org/ver20/media/wsdl" => context.media2 = svc,
+                "http://www.onvif.org/ver20/imaging/wsdl" => context.imaging = svc,
+                "http://www.onvif.org/ver20/ptz/wsdl" => context.ptz = svc,
+                "http://www.onvif.org/ver20/analytics/wsdl" => context.analytics = svc,
+                _ => trace!("Unknwon service: {service:?}"),
             }
         }
 
-        this.streams_information
-            .replace(this.get_streams_information().await?);
+        let context = Arc::new(RwLock::new(context));
 
-        Ok(this)
+        if let Err(error) = Self::update_streams_information(&context).await {
+            warn!("Failed to update streams information: {error:?}");
+        }
+
+        Ok(Self {
+            context,
+            last_update: std::time::Instant::now(),
+        })
     }
 
-    #[instrument(level = "trace", skip(self))]
-    pub async fn get_device_information(
-        &self,
-    ) -> Result<GetDeviceInformationResponse, transport::Error> {
-        onvif_schema::devicemgmt::get_device_information(&self.devicemgmt, &Default::default())
-            .await
+    #[instrument(level = "trace", skip_all)]
+    async fn update_streams_information(context: &Arc<RwLock<OnvifCameraContext>>) -> Result<()> {
+        let mut context = context.write().await;
+
+        let media_client = context
+            .media
+            .clone()
+            .ok_or_else(|| transport::Error::Other("Client media is not available".into()))?;
+
+        // Sometimes a camera responds empty, so we try a couple of times to improve our reliability
+        let mut tries = 10;
+        let new_streams_information = loop {
+            let new_streams_information = OnvifCamera::get_streams_information(&media_client)
+                .await
+                .context("Failed to get streams information")?;
+
+            if new_streams_information.is_empty() {
+                if tries == 0 {
+                    return Err(anyhow!("No streams information found"));
+                }
+
+                tries -= 1;
+                continue;
+            }
+
+            break new_streams_information;
+        };
+
+        context.streams_information.replace(new_streams_information);
+
+        Ok(())
     }
 
+    #[instrument(level = "trace", skip_all)]
     async fn get_streams_information(
-        &self,
+        media_client: &soap::client::Client,
     ) -> Result<Vec<OnvifStreamInformation>, transport::Error> {
         let mut streams_information = vec![];
 
-        let media_client = self
-            .media
-            .as_ref()
-            .ok_or_else(|| transport::Error::Other("Client media is not available".into()))?;
         let profiles = onvif_schema::media::get_profiles(media_client, &Default::default())
             .await?
             .profiles;
-        trace!("get_profiles response: {:#?}", &profiles);
+        trace!("get_profiles response: {profiles:#?}");
+
         let requests: Vec<_> = profiles
             .iter()
             .map(
@@ -182,6 +250,7 @@ impl OnvifCamera {
 
             streams_information.push(OnvifStreamInformation { stream_uri, format });
         }
+
         Ok(streams_information)
     }
 }
