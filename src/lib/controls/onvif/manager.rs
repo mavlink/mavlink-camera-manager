@@ -28,6 +28,10 @@ pub struct ManagerContext {
     cameras: HashMap<StreamURI, OnvifCamera>,
     /// Onvif devices discovered
     discovered_devices: HashMap<uuid::Uuid, OnvifDevice>,
+    /// Credentials can be either added in runtime, or loaded from settings
+    credentials: HashMap<uuid::Uuid, Credentials>,
+    /// Credentials provided via url, such as those provided via ENV or CLI
+    url_credentials: HashMap<Ipv4Addr, Credentials>,
 }
 
 type StreamURI = String;
@@ -72,9 +76,14 @@ impl Drop for Manager {
 impl Default for Manager {
     #[instrument(level = "debug")]
     fn default() -> Self {
+        let url_credentials = crate::cli::manager::onvif_auth();
+        dbg!(&url_credentials);
+
         let mcontext = Arc::new(RwLock::new(ManagerContext {
             cameras: HashMap::new(),
             discovered_devices: HashMap::new(),
+            credentials: HashMap::new(),
+            url_credentials,
         }));
 
         let mcontext_clone = mcontext.clone();
@@ -89,20 +98,52 @@ impl Manager {
     #[instrument(level = "debug")]
     pub async fn init() {
         MANAGER.as_ref();
+    }
 
-        let manager = MANAGER.write().await;
+    #[instrument(level = "debug", skip_all)]
+    pub async fn register_credentials(
+        device_uuid: uuid::Uuid,
+        credentials: Option<Credentials>,
+    ) -> Result<()> {
+        let mcontext = MANAGER.read().await.mcontext.clone();
+        let mut mcontext = mcontext.write().await;
 
-        let mut mcontext = manager.mcontext.write().await;
+        match credentials {
+            Some(credentials) => {
+                let _ = mcontext.credentials.insert(device_uuid, credentials);
+            }
+            None => {
+                let _ = mcontext.credentials.remove(&device_uuid);
+            }
+        }
 
-        // TODO: fill MANAGER.context.credentials with credentials passed by ENV and CLI
-        // It can be in the form of "<USER>:<PWD>@<IP>", but we need to escape special characters need to.
-        let _ = mcontext.credentials.insert(
-            "192.168.0.168".to_string(),
-            Arc::new(RwLock::new(Credentials {
-                username: "admin".to_string(),
-                password: "12345".to_string(),
-            })),
-        );
+        Ok(())
+    }
+
+    #[instrument(level = "debug", skip_all)]
+    /// Expect onvif://<user>:<password>@<ip>:<port>/<path>, where path and port are ignored, and all the rest is mandatory.
+    pub fn credentials_from_url(url: &url::Url) -> Result<(Ipv4Addr, Credentials)> {
+        if url.scheme().ne("onvif") {
+            return Err(anyhow!("Scheme must be `onvif`"));
+        }
+
+        let host = url
+            .host_str()
+            .context("Host must be provided")?
+            .parse::<Ipv4Addr>()?;
+
+        let password = url
+            .password()
+            .context("Password must be provided")?
+            .to_string();
+
+        Ok((
+            host,
+            Credentials {
+                username: url.username().to_string(),
+                password,
+            },
+        ))
     }
 
     #[instrument(level = "debug")]
