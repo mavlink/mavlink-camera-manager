@@ -151,7 +151,7 @@ pub fn init() {
                 Ok(message) => {
                     history.lock().unwrap().push(message);
                 }
-                Err(error) => {
+                Err(_) => {
                     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                 }
             }
