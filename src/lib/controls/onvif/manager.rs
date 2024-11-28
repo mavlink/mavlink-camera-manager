@@ -283,7 +283,7 @@ impl Manager {
 
         let stream_information = streams_information
             .iter()
-            .find(|&stream_information| &stream_information.stream_uri.to_string() == stream_uri)
+            .find(|&stream_information| stream_information.stream_uri.to_string() == *stream_uri)
             .context("Camera not found")?;
 
         Ok(vec![stream_information.format.clone()])
