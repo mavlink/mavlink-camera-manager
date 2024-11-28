@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tracing::error;
 
 use crate::{custom, stream::gst::utils::PluginRankConfig};
@@ -101,6 +101,10 @@ struct Args {
     /// Sets the MAVLink System ID.
     #[arg(long, value_name = "SYSTEM_ID", default_value = "1")]
     mavlink_system_id: u8,
+
+    /// Sets Onvif authentications. Alternatively, this can be passed as `MCM_ONVIF_AUTH` environment variable.
+    #[clap(long, value_name = "onvif://<USERNAME>:<PASSWORD>@<HOST>", value_delimiter = ',', value_parser = onvif_auth_validator, env = "MCM_ONVIF_AUTH")]
+    onvif_auth: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -258,6 +262,34 @@ pub fn gst_feature_rank() -> Vec<PluginRankConfig> {
         .collect()
 }
 
+pub fn onvif_auth() -> HashMap<std::net::Ipv4Addr, onvif::soap::client::Credentials> {
+    MANAGER
+        .clap_matches
+        .onvif_auth
+        .iter()
+        .filter_map(|val| {
+            let url = match url::Url::parse(val) {
+                Ok(url) => url,
+                Err(error) => {
+                    error!("Failed parsing onvif auth url: {error:?}");
+                    return None;
+                }
+            };
+
+            let (host, credentials) =
+                match crate::controls::onvif::manager::Manager::credentials_from_url(&url) {
+                    Ok((host, credentials)) => (host, credentials),
+                    Err(error) => {
+                        error!("Failed to get credentials from url {url}: {error:?}");
+                        return None;
+                    }
+                };
+
+            Some((host, credentials))
+        })
+        .collect()
+}
+
 fn gst_feature_rank_validator(val: &str) -> Result<String, String> {
     if let Some((_key, value_str)) = val.split_once('=') {
         if value_str.parse::<i32>().is_err() {
@@ -274,6 +306,16 @@ fn turn_servers_validator(val: &str) -> Result<String, String> {
 
     if !matches!(url.scheme().to_lowercase().as_str(), "turn" | "turns") {
         return Err("Turn server scheme should be either \"turn\" or \"turns\"".to_owned());
+    }
+
+    Ok(val.to_owned())
+}
+
+fn onvif_auth_validator(val: &str) -> Result<String, String> {
+    let url = url::Url::parse(val).map_err(|e| format!("Failed parsing onvif auth url: {e:?}"))?;
+
+    if !matches!(url.scheme().to_lowercase().as_str(), "onvif") {
+        return Err("Onvif authentication scheme should be \"onvif\"".to_owned());
     }
 
     Ok(val.to_owned())
