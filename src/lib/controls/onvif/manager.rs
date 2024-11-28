@@ -24,6 +24,7 @@ pub struct Manager {
 }
 
 pub struct ManagerContext {
+    /// Onvif Cameras
     cameras: HashMap<StreamURI, OnvifCamera>,
     /// Onvif devices discovered
     discovered_devices: HashMap<uuid::Uuid, OnvifDevice>,
