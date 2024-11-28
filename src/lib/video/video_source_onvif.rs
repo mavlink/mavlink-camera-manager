@@ -1,7 +1,10 @@
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 
-use crate::controls::{onvif::manager::Manager as OnvifManager, types::Control};
+use crate::controls::{
+    onvif::{camera::OnvifDeviceInformation, manager::Manager as OnvifManager},
+    types::Control,
+};
 
 use super::{
     types::*,
@@ -17,6 +20,8 @@ pub enum VideoSourceOnvifType {
 pub struct VideoSourceOnvif {
     pub name: String,
     pub source: VideoSourceOnvifType,
+    #[serde(flatten)]
+    pub device_information: OnvifDeviceInformation,
 }
 
 impl VideoSourceFormats for VideoSourceOnvif {
