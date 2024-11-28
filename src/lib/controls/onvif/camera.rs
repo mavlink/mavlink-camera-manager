@@ -165,6 +165,7 @@ impl OnvifCamera {
         Ok(())
     }
 
+    #[instrument(level = "trace", skip_all)]
     async fn get_streams_information(
         &self,
     ) -> Result<Vec<OnvifStreamInformation>, transport::Error> {
