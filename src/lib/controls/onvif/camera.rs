@@ -167,14 +167,10 @@ impl OnvifCamera {
 
     #[instrument(level = "trace", skip_all)]
     async fn get_streams_information(
-        &self,
+        media_client: &soap::client::Client,
     ) -> Result<Vec<OnvifStreamInformation>, transport::Error> {
         let mut streams_information = vec![];
 
-        let media_client = self
-            .media
-            .as_ref()
-            .ok_or_else(|| transport::Error::Other("Client media is not available".into()))?;
         let profiles = onvif_schema::media::get_profiles(media_client, &Default::default())
             .await?
             .profiles;
