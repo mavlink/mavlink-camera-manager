@@ -877,5 +877,21 @@ fn customize_sent_sdp(sdp: &gst_sdp::SDPMessage) -> Result<gst_sdp::SDPMessage> 
         });
     });
 
+    // Some SDP from RTSP cameras end up with a "a=recvonly" that breaks the webrtcbin when the browser responds, so we are removing them here
+    new_sdp.medias_mut().for_each(|media| {
+        let mut attributes_to_remove = media
+            .attributes()
+            .enumerate()
+            .filter_map(|(attribute_idx, attribute)| {
+                matches!(attribute.key(), "recvonly").then_some(attribute_idx)
+            })
+            .collect::<Vec<usize>>();
+        attributes_to_remove.reverse();
+
+        for attribute_idx in attributes_to_remove {
+            let _ = media.remove_attribute(attribute_idx as u32);
+        }
+    });
+
     Ok(new_sdp)
 }
