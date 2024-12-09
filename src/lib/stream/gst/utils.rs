@@ -135,7 +135,7 @@ pub async fn get_encode_from_rtspsrc(stream_uri: &url::Url) -> Option<VideoEncod
         .expect("Fakesink not found in pipeline");
     let pad = fakesink.static_pad("sink").expect("Sink pad not found");
 
-    let encode = tokio::time::timeout(tokio::time::Duration::from_secs(5), wait_for_encode(pad))
+    let encode = tokio::time::timeout(tokio::time::Duration::from_secs(15), wait_for_encode(pad))
         .await
         .ok()
         .flatten();
