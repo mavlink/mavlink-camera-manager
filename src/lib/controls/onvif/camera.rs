@@ -22,6 +22,7 @@ pub struct OnvifCameraContext {
     pub device: OnvifDevice,
     pub device_information: OnvifDeviceInformation,
     pub streams_information: Option<Vec<OnvifStreamInformation>>,
+    pub credentials: Option<soap::client::Credentials>,
     devicemgmt: soap::client::Client,
     event: Option<soap::client::Client>,
     deviceio: Option<soap::client::Client>,
@@ -78,6 +79,7 @@ impl OnvifCamera {
             device: device.clone(),
             device_information,
             streams_information: None,
+            credentials: creds.clone(),
             devicemgmt,
             imaging: None,
             ptz: None,
@@ -148,9 +150,10 @@ impl OnvifCamera {
         // Sometimes a camera responds empty, so we try a couple of times to improve our reliability
         let mut tries = 10;
         let new_streams_information = loop {
-            let new_streams_information = OnvifCamera::get_streams_information(&media_client)
-                .await
-                .context("Failed to get streams information")?;
+            let new_streams_information =
+                OnvifCamera::get_streams_information(&media_client, &context.credentials)
+                    .await
+                    .context("Failed to get streams information")?;
 
             if new_streams_information.is_empty() {
                 if tries == 0 {
@@ -172,6 +175,7 @@ impl OnvifCamera {
     #[instrument(level = "trace", skip_all)]
     async fn get_streams_information(
         media_client: &soap::client::Client,
+        credentials: &Option<soap::client::Credentials>,
     ) -> Result<Vec<OnvifStreamInformation>, transport::Error> {
         let mut streams_information = vec![];
 
@@ -206,7 +210,7 @@ impl OnvifCamera {
             trace!("token={} name={}", &profile.token.0, &profile.name.0);
             trace!("\t{}", &stream_uri_response.media_uri.uri);
 
-            let stream_uri = match url::Url::parse(&stream_uri_response.media_uri.uri) {
+            let mut stream_uri = match url::Url::parse(&stream_uri_response.media_uri.uri) {
                 Ok(stream_url) => stream_url,
                 Err(error) => {
                     error!(
@@ -222,7 +226,25 @@ impl OnvifCamera {
                 continue;
             };
 
+            if let Some(credentials) = &credentials {
+                if stream_uri.set_username(&credentials.username).is_err() {
+                    warn!("Failed setting username");
+                    continue;
+                }
+
+                if stream_uri
+                    .set_password(Some(&credentials.password))
+                    .is_err()
+                {
+                    warn!("Failed setting password");
+                    continue;
+                }
+
+                trace!("Using credentials {credentials:?}");
+            }
+
             let Some(encode) = get_encode_from_rtspsrc(&stream_uri).await else {
+                warn!("Failed getting encoding from RTSP stream at {stream_uri}");
                 continue;
             };
 
