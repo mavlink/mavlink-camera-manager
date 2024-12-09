@@ -142,7 +142,7 @@ pub fn init() {
         .with_target(false)
         .with_thread_ids(true)
         .with_thread_names(true)
-        .with_filter(server_env_filter);
+        .with_filter(filter_unwanted_crates(server_env_filter));
 
     let history = HISTORY.clone();
     MANAGER.lock().unwrap().process = Some(tokio::spawn(async move {
@@ -151,7 +151,7 @@ pub fn init() {
                 Ok(message) => {
                     history.lock().unwrap().push(message);
                 }
-                Err(error) => {
+                Err(_) => {
                     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                 }
             }
