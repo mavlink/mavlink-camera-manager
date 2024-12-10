@@ -4,7 +4,7 @@ use actix_web::{
     http::header,
     rt,
     web::{self, Json},
-    Error, HttpRequest, HttpResponse,
+    HttpRequest, HttpResponse,
 };
 use paperclip::actix::{api_v2_operation, Apiv2Schema, CreatedJson};
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,9 @@ use validator::Validate;
 
 use crate::{
     controls::types::Control,
-    helper, settings,
+    helper,
+    server::error::{Error, Result},
+    settings,
     stream::{gst as gst_stream, manager as stream_manager, types::StreamInformation},
     video::{
         types::{Format, VideoSourceType},
@@ -167,7 +169,7 @@ fn load_webrtc(filename: &str) -> String {
 }
 
 #[api_v2_operation]
-pub fn root(req: HttpRequest) -> HttpResponse {
+pub fn root(req: HttpRequest) -> Result<HttpResponse> {
     let filename = match req.match_info().query("filename") {
         "" | "index.html" => "index.html",
         "vue.js" => "vue.js",
@@ -176,9 +178,9 @@ pub fn root(req: HttpRequest) -> HttpResponse {
 
         something => {
             //TODO: do that in load_file
-            return HttpResponse::NotFound()
-                .content_type("text/plain")
-                .body(format!("Page does not exist: {something:?}"));
+            return Err(Error::NotFound(format!(
+                "Page does not exist: {something:?}"
+            )));
         }
     };
     let content = load_file(filename);
@@ -188,20 +190,20 @@ pub fn root(req: HttpRequest) -> HttpResponse {
         .unwrap_or("");
     let mime = actix_files::file_extension_to_mime(extension).to_string();
 
-    HttpResponse::Ok().content_type(mime).body(content)
+    Ok(HttpResponse::Ok().content_type(mime).body(content))
 }
 
 #[api_v2_operation]
 /// Provide information about the running service
 /// There is no stable API guarantee for the development field
-pub async fn info() -> CreatedJson<Info> {
-    CreatedJson(Info::new())
+pub async fn info() -> Result<CreatedJson<Info>> {
+    Ok(CreatedJson(Info::new()))
 }
 
 //TODO: change endpoint name to sources
 #[api_v2_operation]
 /// Provides list of all video sources, with controls and formats
-pub async fn v4l() -> Json<Vec<ApiVideoSource>> {
+pub async fn v4l() -> Result<Json<Vec<ApiVideoSource>>> {
     let cameras = video_source::cameras_available().await;
 
     use futures::stream::{self, StreamExt};
@@ -238,160 +240,123 @@ pub async fn v4l() -> Json<Vec<ApiVideoSource>> {
         .collect()
         .await;
 
-    Json(cameras)
+    Ok(Json(cameras))
 }
 
 #[api_v2_operation]
 /// Change video control for a specific source
-pub async fn v4l_post(json: web::Json<V4lControl>) -> HttpResponse {
+pub async fn v4l_post(json: web::Json<V4lControl>) -> Result<HttpResponse> {
     let control = json.into_inner();
-    let answer = video_source::set_control(&control.device, control.v4l_id, control.value).await;
+    video_source::set_control(&control.device, control.v4l_id, control.value)
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
 
-    if let Err(error) = answer {
-        return HttpResponse::NotAcceptable()
-            .content_type("text/plain")
-            .body(format!("{error:#?}"));
-    }
-
-    HttpResponse::Ok().finish()
+    Ok(HttpResponse::Ok().finish())
 }
 
 #[api_v2_operation]
 /// Reset service settings
-pub async fn reset_settings(query: web::Query<ResetSettings>) -> HttpResponse {
+pub async fn reset_settings(query: web::Query<ResetSettings>) -> Result<HttpResponse> {
     if query.all.unwrap_or_default() {
         settings::manager::reset().await;
-        if let Err(error) = stream_manager::start_default().await {
-            return HttpResponse::InternalServerError()
-                .content_type("text/plain")
-                .body(format!("{error:#?}"));
-        };
-        return HttpResponse::Ok().finish();
+        stream_manager::start_default()
+            .await
+            .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+        return Ok(HttpResponse::Ok().finish());
     }
 
-    HttpResponse::NotAcceptable()
-        .content_type("text/plain")
-        .body("Missing argument for reset_settings.")
+    Err(Error::Internal(
+        "Missing argument for reset_settings.".to_string(),
+    ))
 }
 
 #[api_v2_operation]
 /// Provide a list of all streams configured
-pub async fn streams() -> HttpResponse {
-    let streams = match stream_manager::streams().await {
-        Ok(streams) => streams,
-        Err(error) => {
-            return HttpResponse::InternalServerError()
-                .content_type("text/plain")
-                .body(format!("{error:#?}"))
-        }
-    };
+pub async fn streams() -> Result<HttpResponse> {
+    let streams = stream_manager::streams()
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
 
-    match serde_json::to_string_pretty(&streams) {
-        Ok(json) => HttpResponse::Ok()
-            .content_type("application/json")
-            .body(json),
-        Err(error) => HttpResponse::InternalServerError()
-            .content_type("text/plain")
-            .body(format!("{error:#?}")),
-    }
+    let json = serde_json::to_string_pretty(&streams)
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(json))
 }
 
 #[api_v2_operation]
 /// Create a video stream
-pub async fn streams_post(json: web::Json<PostStream>) -> HttpResponse {
+pub async fn streams_post(json: web::Json<PostStream>) -> Result<HttpResponse> {
     let json = json.into_inner();
 
-    let video_source = match video_source::get_video_source(&json.source).await {
-        Ok(video_source) => video_source,
-        Err(error) => {
-            return HttpResponse::NotAcceptable()
-                .content_type("text/plain")
-                .body(format!("{error:#?}"));
-        }
-    };
+    let video_source = video_source::get_video_source(&json.source)
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
 
-    if let Err(error) = stream_manager::add_stream_and_start(VideoAndStreamInformation {
+    stream_manager::add_stream_and_start(VideoAndStreamInformation {
         name: json.name,
         stream_information: json.stream_information,
         video_source,
     })
     .await
-    {
-        return HttpResponse::NotAcceptable()
-            .content_type("text/plain")
-            .body(format!("{error:#?}"));
-    }
+    .map_err(|error| Error::Internal(format!("{error:?}")))?;
 
     // Return the new streams available
-    streams().await
+    streams()
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))
 }
 
 #[api_v2_operation]
 /// Remove a desired stream
-pub fn remove_stream(query: web::Query<RemoveStream>) -> HttpResponse {
-    if let Err(error) = stream_manager::remove_stream_by_name(&query.name).await {
-        return HttpResponse::NotAcceptable()
-            .content_type("text/plain")
-            .body(format!("{error:#?}"));
-    }
+pub fn remove_stream(query: web::Query<RemoveStream>) -> Result<HttpResponse> {
+    stream_manager::remove_stream_by_name(&query.name)
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
 
-    let streams = match stream_manager::streams().await {
-        Ok(streams) => streams,
-        Err(error) => {
-            return HttpResponse::InternalServerError()
-                .content_type("text/plain")
-                .body(format!("{error:#?}"))
-        }
-    };
+    let streams = stream_manager::streams()
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
 
-    match serde_json::to_string_pretty(&streams) {
-        Ok(json) => HttpResponse::Ok()
-            .content_type("application/json")
-            .body(json),
-        Err(error) => HttpResponse::InternalServerError()
-            .content_type("text/plain")
-            .body(format!("{error:#?}")),
-    }
+    let json = serde_json::to_string_pretty(&streams)
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(json))
 }
 
 #[api_v2_operation]
 /// Reset controls from a given camera source
-pub fn camera_reset_controls(json: web::Json<ResetCameraControls>) -> HttpResponse {
+pub fn camera_reset_controls(json: web::Json<ResetCameraControls>) -> Result<HttpResponse> {
     if let Err(errors) = video_source::reset_controls(&json.device).await {
         let mut error: String = Default::default();
         errors
             .iter()
             .enumerate()
             .for_each(|(i, e)| error.push_str(&format!("{}: {e}\n", i + 1)));
-        return HttpResponse::NotAcceptable()
-            .content_type("text/plain")
-            .body(format!(
-                "One or more controls were not reseted due to the following errors: \n{error:#?}",
-            ));
+        return Err(Error::Internal(format!(
+            "One or more controls were not reseted due to the following errors: \n{error:#?}",
+        )));
     }
 
-    let streams = match stream_manager::streams().await {
-        Ok(streams) => streams,
-        Err(error) => {
-            return HttpResponse::InternalServerError()
-                .content_type("text/plain")
-                .body(format!("{error:#?}"))
-        }
-    };
+    let streams = stream_manager::streams()
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
 
-    match serde_json::to_string_pretty(&streams) {
-        Ok(json) => HttpResponse::Ok()
-            .content_type("application/json")
-            .body(json),
-        Err(error) => HttpResponse::InternalServerError()
-            .content_type("text/plain")
-            .body(format!("{error:#?}")),
-    }
+    let json = serde_json::to_string_pretty(&streams)
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(json))
 }
 
 #[api_v2_operation]
 /// Provides a xml description file that contains information for a specific device, based on: https://mavlink.io/en/services/camera_def.html
-pub fn xml(xml_file_request: web::Query<XmlFileRequest>) -> HttpResponse {
+pub fn xml(xml_file_request: web::Query<XmlFileRequest>) -> Result<HttpResponse> {
     debug!("{xml_file_request:#?}");
     let cameras = video_source::cameras_available().await;
     let camera = cameras
@@ -399,50 +364,48 @@ pub fn xml(xml_file_request: web::Query<XmlFileRequest>) -> HttpResponse {
         .find(|source| source.inner().source_string() == xml_file_request.file);
 
     let Some(camera) = camera else {
-        return HttpResponse::NotFound()
-            .content_type("text/plain")
-            .body(format!(
-                "File for {} does not exist.",
-                xml_file_request.file
-            ));
+        return Err(Error::NotFound(format!(
+            "File for {} does not exist.",
+            xml_file_request.file
+        )));
     };
 
-    match xml::from_video_source(camera.inner()) {
-        Ok(xml) => HttpResponse::Ok().content_type("text/xml").body(xml),
-        Err(error) => HttpResponse::InternalServerError().body(format!(
+    let xml = xml::from_video_source(camera.inner()).map_err(|error| {
+        Error::Internal(format!(
             "Failed getting XML file {}: {error:?}",
             xml_file_request.file
-        )),
-    }
+        ))
+    })?;
+
+    Ok(HttpResponse::Ok().content_type("text/xml").body(xml))
 }
 
 #[api_v2_operation]
 /// Provides a sdp description file that contains information for a specific stream, based on: [RFC 8866](https://www.rfc-editor.org/rfc/rfc8866.html)
-pub fn sdp(sdp_file_request: web::Query<SdpFileRequest>) -> HttpResponse {
+pub fn sdp(sdp_file_request: web::Query<SdpFileRequest>) -> Result<HttpResponse> {
     debug!("{sdp_file_request:#?}");
 
-    match stream_manager::get_first_sdp_from_source(sdp_file_request.source.clone()).await {
-        Ok(sdp) => {
-            if let Ok(sdp) = sdp.as_text() {
-                HttpResponse::Ok().content_type("text/plain").body(sdp)
-            } else {
-                HttpResponse::InternalServerError()
-                    .content_type("text/plain")
-                    .body("Failed to convert SDP to text".to_string())
-            }
-        }
-        Err(error) => HttpResponse::NotFound()
-            .content_type("text/plain")
-            .body(format!(
+    let sdp = stream_manager::get_first_sdp_from_source(sdp_file_request.source.clone())
+        .await
+        .map_err(|error| {
+            Error::Internal(format!(
                 "Failed to get SDP file for {:?}. Reason: {error:?}",
                 sdp_file_request.source
-            )),
-    }
+            ))
+        })?;
+
+    let sdp_text = sdp
+        .as_text()
+        .map_err(|error| Error::Internal(format!("Failed to convert SDP to text: {error:?}")))?;
+
+    Ok(HttpResponse::Ok().content_type("text/plain").body(sdp_text))
 }
 
 #[api_v2_operation]
 /// Provides a thumbnail file of the given source
-pub async fn thumbnail(thumbnail_file_request: web::Query<ThumbnailFileRequest>) -> HttpResponse {
+pub async fn thumbnail(
+    thumbnail_file_request: web::Query<ThumbnailFileRequest>,
+) -> Result<HttpResponse> {
     // Ideally, we should be using `actix_web_validator::Query` instead of `web::Query`,
     // but because paperclip (at least until 0.8) is using `actix-web-validator 3.x`,
     // and `validator 0.14`, the newest api needed to use it along #[api_v2_operation]
@@ -453,7 +416,9 @@ pub async fn thumbnail(thumbnail_file_request: web::Query<ThumbnailFileRequest>)
     // rid of this workaround.
     if let Err(errors) = thumbnail_file_request.validate() {
         warn!("Failed validating ThumbnailFileRequest. Reason: {errors:?}");
-        return actix_web::ResponseError::error_response(&actix_web_validator::Error::from(errors));
+        return Ok(actix_web::ResponseError::error_response(
+            &actix_web_validator::Error::from(errors),
+        ));
     }
 
     let source = thumbnail_file_request.source.clone();
@@ -461,43 +426,43 @@ pub async fn thumbnail(thumbnail_file_request: web::Query<ThumbnailFileRequest>)
     let target_height = thumbnail_file_request.target_height.map(|v| v as u32);
 
     match stream_manager::get_jpeg_thumbnail_from_source(source, quality, target_height).await {
-        Some(Ok(image)) => HttpResponse::Ok().content_type("image/jpeg").body(image),
-        None => HttpResponse::NotFound()
+        Some(Ok(image)) => Ok(HttpResponse::Ok().content_type("image/jpeg").body(image)),
+        None => Ok(HttpResponse::NotFound()
             .content_type("text/plain")
             .body(format!(
                 "Thumbnail not found for source {:?}.",
                 thumbnail_file_request.source
-        )),
-        Some(Err(error)) => HttpResponse::ServiceUnavailable()
+            ))),
+            Some(Err(error)) => Ok(HttpResponse::ServiceUnavailable()
             .reason("Thumbnail temporarily unavailable")
             .insert_header((header::RETRY_AFTER, 10))
             .content_type("text/plain")
             .body(format!(
             "Thumbnail for source {:?} is temporarily unavailable. Try again later. Details: {error:?}",
             thumbnail_file_request.source
-        )),
+        ))),
     }
 }
 
 #[api_v2_operation]
 /// Provides information related to all gst plugins available for camera manager
-pub async fn gst_info() -> HttpResponse {
+pub async fn gst_info() -> Result<HttpResponse> {
     let gst_info = gst_stream::info::Info::default();
 
-    match serde_json::to_string_pretty(&gst_info) {
-        Ok(json) => HttpResponse::Ok()
-            .content_type("application/json")
-            .body(json),
-        Err(error) => HttpResponse::InternalServerError()
-            .content_type("text/plain")
-            .body(format!("{error:#?}")),
-    }
+    let json = serde_json::to_string_pretty(&gst_info)
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(json))
 }
 
 #[api_v2_operation]
 /// Provides a access point for the service log
-pub async fn log(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Error> {
-    let (response, mut session, _stream) = actix_ws::handle(&req, stream)?;
+pub async fn log(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse> {
+    let (response, mut session, _stream) =
+        actix_ws::handle(&req, stream).map_err(|error| Error::Internal(format!("{error:?}")))?;
+
     rt::spawn(async move {
         let (mut receiver, history) = crate::logger::manager::HISTORY.lock().unwrap().subscribe();
 
@@ -518,24 +483,22 @@ pub async fn log(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse,
 }
 
 #[api_v2_operation]
-pub async fn onvif_devices() -> HttpResponse {
+pub async fn onvif_devices() -> Result<HttpResponse> {
     let onvif_devices = crate::controls::onvif::manager::Manager::onvif_devices().await;
 
-    match serde_json::to_string_pretty(&onvif_devices) {
-        Ok(json) => HttpResponse::Ok()
-            .content_type("application/json")
-            .body(json),
-        Err(error) => HttpResponse::InternalServerError()
-            .content_type("text/plain")
-            .body(format!("{error:#?}")),
-    }
+    let json = serde_json::to_string_pretty(&onvif_devices)
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(json))
 }
 
 #[api_v2_operation]
 pub async fn authenticate_onvif_device(
     query: web::Query<AuthenticateOnvifDeviceRequest>,
-) -> HttpResponse {
-    if let Err(error) = crate::controls::onvif::manager::Manager::register_credentials(
+) -> Result<HttpResponse> {
+    crate::controls::onvif::manager::Manager::register_credentials(
         query.device_uuid,
         Some(onvif::soap::client::Credentials {
             username: query.username.clone(),
@@ -543,27 +506,18 @@ pub async fn authenticate_onvif_device(
         }),
     )
     .await
-    {
-        return HttpResponse::InternalServerError()
-            .content_type("text/plain")
-            .body(format!("{error:#?}"));
-    }
+    .map_err(|error| Error::Internal(format!("{error:?}")))?;
 
-    HttpResponse::Ok().finish()
+    Ok(HttpResponse::Ok().finish())
 }
 
 #[api_v2_operation]
 pub async fn unauthenticate_onvif_device(
     query: web::Query<UnauthenticateOnvifDeviceRequest>,
-) -> HttpResponse {
-    if let Err(error) =
-        crate::controls::onvif::manager::Manager::register_credentials(query.device_uuid, None)
-            .await
-    {
-        return HttpResponse::InternalServerError()
-            .content_type("text/plain")
-            .body(format!("{error:#?}"));
-    }
+) -> Result<HttpResponse> {
+    crate::controls::onvif::manager::Manager::register_credentials(query.device_uuid, None)
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
 
-    HttpResponse::Ok().finish()
+    Ok(HttpResponse::Ok().finish())
 }
