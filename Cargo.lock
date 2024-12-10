@@ -50,7 +50,7 @@ dependencies = [
  "dashmap",
  "futures",
  "log",
- "thiserror",
+ "thiserror 1.0.61",
 ]
 
 [[package]]
@@ -280,7 +280,7 @@ dependencies = [
  "serde_json",
  "serde_qs",
  "serde_urlencoded",
- "thiserror",
+ "thiserror 1.0.61",
  "validator",
 ]
 
@@ -832,7 +832,7 @@ dependencies = [
  "once_cell",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.61",
  "tokio",
 ]
 
@@ -1755,7 +1755,7 @@ dependencies = [
  "libc",
  "memchr",
  "smallvec",
- "thiserror",
+ "thiserror 1.0.61",
 ]
 
 [[package]]
@@ -1887,7 +1887,7 @@ dependencies = [
  "paste",
  "pin-project-lite",
  "smallvec",
- "thiserror",
+ "thiserror 1.0.61",
 ]
 
 [[package]]
@@ -1912,7 +1912,7 @@ dependencies = [
  "paste",
  "pin-project-lite",
  "smallvec",
- "thiserror",
+ "thiserror 1.0.61",
 ]
 
 [[package]]
@@ -2117,7 +2117,7 @@ dependencies = [
  "gstreamer-video-sys",
  "libc",
  "once_cell",
- "thiserror",
+ "thiserror 1.0.61",
 ]
 
 [[package]]
@@ -2793,7 +2793,7 @@ dependencies = [
  "proc-macro2",
  "quick-xml 0.26.0",
  "quote",
- "thiserror",
+ "thiserror 1.0.61",
 ]
 
 [[package]]
@@ -2846,6 +2846,7 @@ dependencies = [
  "shellexpand",
  "sysinfo",
  "thirtyfour",
+ "thiserror 2.0.6",
  "tokio",
  "tracing",
  "tracing-actix-web",
@@ -3140,7 +3141,7 @@ dependencies = [
  "reqwest",
  "schema",
  "sha1 0.6.1",
- "thiserror",
+ "thiserror 1.0.61",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -3254,7 +3255,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "serde_yaml",
- "thiserror",
+ "thiserror 1.0.61",
  "url",
 ]
 
@@ -3290,7 +3291,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "thiserror",
+ "thiserror 1.0.61",
  "url",
  "uuid 0.8.2",
  "uuid 1.8.0",
@@ -3729,7 +3730,7 @@ checksum = "bd283d9651eeda4b2a83a43c1c91b266c40fd76ecd39a50a8c630ae69dc72891"
 dependencies = [
  "getrandom",
  "libredox",
- "thiserror",
+ "thiserror 1.0.61",
 ]
 
 [[package]]
@@ -4123,7 +4124,7 @@ dependencies = [
  "futures",
  "percent-encoding",
  "serde",
- "thiserror",
+ "thiserror 1.0.61",
 ]
 
 [[package]]
@@ -4446,7 +4447,7 @@ dependencies = [
  "rand",
  "ring 0.17.8",
  "subtle",
- "thiserror",
+ "thiserror 1.0.61",
  "tokio",
  "url",
  "webrtc-util",
@@ -4617,7 +4618,7 @@ dependencies = [
  "stringmatch",
  "strum 0.26.2",
  "thirtyfour-macros",
- "thiserror",
+ "thiserror 1.0.61",
  "tokio",
  "tracing",
  "url",
@@ -4641,7 +4642,16 @@ version = "1.0.61"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c546c80d6be4bc6a00c0f01730c08df82eaa7a7a61f11d656526506112cc1709"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 1.0.61",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fec2a1820ebd077e2b90c4df007bebf344cd394098a13c563957d0afc83ea47"
+dependencies = [
+ "thiserror-impl 2.0.6",
 ]
 
 [[package]]
@@ -4649,6 +4659,17 @@ name = "thiserror-impl"
 version = "1.0.61"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46c3384250002a6d5af4d114f2845d37b57521033f30d5c3f46c4d70e1197533"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.87",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d65750cab40f4ff1929fb1ba509e9914eb756131cef4210da8d5d700d26f6312"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5053,7 +5074,7 @@ version = "0.1.0"
 source = "git+https://github.com/lumeohq/onvif-rs?rev=8e2408db#8e2408dbbf59dfed2e58b30cfe3a8ae09affaa9f"
 dependencies = [
  "async-trait",
- "thiserror",
+ "thiserror 1.0.61",
  "yaserde",
 ]
 
@@ -5069,7 +5090,7 @@ version = "8.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09d3fa4606cdab1e9b668cc65ce2545941d01f52bc27536a195c66c55b91cb84"
 dependencies = [
- "thiserror",
+ "thiserror 1.0.61",
  "ts-rs-macros",
  "uuid 1.8.0",
 ]
@@ -5101,7 +5122,7 @@ dependencies = [
  "log",
  "rand",
  "sha1 0.10.6",
- "thiserror",
+ "thiserror 1.0.61",
  "url",
  "utf-8",
 ]
@@ -5120,7 +5141,7 @@ dependencies = [
  "rand",
  "ring 0.17.8",
  "stun",
- "thiserror",
+ "thiserror 1.0.61",
  "tokio",
  "tokio-util",
  "webrtc-util",
@@ -5345,7 +5366,7 @@ dependencies = [
  "getset",
  "git2",
  "rustversion",
- "thiserror",
+ "thiserror 1.0.61",
  "time",
 ]
 
@@ -5510,7 +5531,7 @@ dependencies = [
  "log",
  "nix",
  "rand",
- "thiserror",
+ "thiserror 1.0.61",
  "tokio",
  "winapi",
 ]
