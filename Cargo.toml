@@ -94,16 +94,16 @@ turn = "0.7"
 image = "0.24"
 
 ## GSTREAMER
-gst = { package = "gstreamer", version = "0.22", features = ["v1_16"] }
-gst-app = { package = "gstreamer-app", version = "0.22", features = ["v1_16"] }
-gst-sdp = { package = "gstreamer-sdp", version = "0.22", features=["v1_16"] }
-gst-webrtc = { package = "gstreamer-webrtc", version = "0.22", features = ["v1_16"] }
-gst-rtsp = { package = "gstreamer-rtsp", version = "0.22", features = ["v1_16"] }
-gst-rtsp-server = { package = "gstreamer-rtsp-server", version = "0.22", features = ["v1_16"] }
-gst-video = { package = "gstreamer-video", version = "0.22", features = ["v1_16"] }
+gst = { package = "gstreamer", version = "0.23", features = ["v1_16"] }
+gst-app = { package = "gstreamer-app", version = "0.23", features = ["v1_16"] }
+gst-sdp = { package = "gstreamer-sdp", version = "0.23", features=["v1_16"] }
+gst-webrtc = { package = "gstreamer-webrtc", version = "0.23", features = ["v1_16"] }
+gst-rtsp = { package = "gstreamer-rtsp", version = "0.23", features = ["v1_16"] }
+gst-rtsp-server = { package = "gstreamer-rtsp-server", version = "0.23", features = ["v1_16"] }
+gst-video = { package = "gstreamer-video", version = "0.23", features = ["v1_16"] }
 webrtc-sdp = { git = "https://github.com/mozilla/webrtc-sdp", sha = "fc78607ac2fe0c7c978ca4630c2e1b937d7ff7c6" }
 constcat = "0.5.0"
-glib = "0.19.7"
+glib = "0.20.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 v4l = "0.14.0"
