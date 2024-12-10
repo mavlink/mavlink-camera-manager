@@ -608,7 +608,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         // Recreate the SDP answer with our customized SDP
         let answer = gst_webrtc::WebRTCSessionDescription::new(
             answer.type_(),
-            customize_sent_sdp(&answer.sdp())?,
+            customize_sent_sdp(answer.sdp())?,
         );
 
         let Ok(sdp) = answer.sdp().as_text() else {
@@ -775,7 +775,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
 /// Because GStreamer's WebRTCBin often crashes when receiving an invalid SDP,
 /// we use Mozzila's SDP parser to manipulate the SDP Message before giving it to GStreamer
 #[instrument(level = "debug", skip_all)]
-fn sanitize_sdp(sdp: &gst_sdp::SDPMessage) -> Result<gst_sdp::SDPMessage> {
+fn sanitize_sdp(sdp: &gst_sdp::SDPMessageRef) -> Result<gst_sdp::SDPMessage> {
     gst_sdp::SDPMessage::parse_buffer(
         webrtc_sdp::parse_sdp(sdp.as_text()?.as_str(), false)?
             .to_string()
@@ -785,8 +785,8 @@ fn sanitize_sdp(sdp: &gst_sdp::SDPMessage) -> Result<gst_sdp::SDPMessage> {
 }
 
 #[instrument(level = "debug", skip_all)]
-fn customize_sent_sdp(sdp: &gst_sdp::SDPMessage) -> Result<gst_sdp::SDPMessage> {
-    let mut new_sdp = sdp.clone();
+fn customize_sent_sdp(sdp: &gst_sdp::SDPMessageRef) -> Result<gst_sdp::SDPMessage> {
+    let mut new_sdp = sdp.to_owned();
 
     trace!("SDP: {:?}", new_sdp.as_text());
 
