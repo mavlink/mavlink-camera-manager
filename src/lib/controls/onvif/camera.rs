@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tracing::*;
 
-use crate::{stream::gst::utils::get_encode_from_rtspsrc, video::types::Format};
+use crate::{stream::gst::utils::get_encode_from_stream_uri, video::types::Format};
 
 use super::manager::OnvifDevice;
 
@@ -243,7 +243,7 @@ impl OnvifCamera {
                 trace!("Using credentials {credentials:?}");
             }
 
-            let Some(encode) = get_encode_from_rtspsrc(&stream_uri).await else {
+            let Some(encode) = get_encode_from_stream_uri(&stream_uri).await else {
                 warn!("Failed getting encoding from RTSP stream at {stream_uri}");
                 continue;
             };
