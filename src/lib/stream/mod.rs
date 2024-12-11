@@ -9,7 +9,8 @@ pub mod webrtc;
 use std::sync::Arc;
 
 use ::gst::prelude::*;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use gst::utils::get_encode_from_stream_uri;
 use manager::Manager;
 use pipeline::Pipeline;
 use sink::{create_image_sink, create_rtsp_sink, create_udp_sink};
@@ -21,7 +22,7 @@ use webrtc::signalling_protocol::PeerId;
 use crate::{
     mavlink::mavlink_camera::MavlinkCamera,
     video::{
-        types::{VideoEncodeType, VideoSourceType},
+        types::{FrameInterval, VideoEncodeType, VideoSourceType},
         video_source::cameras_available,
     },
     video_stream::types::VideoAndStreamInformation,
@@ -53,8 +54,41 @@ impl Stream {
     pub async fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
         let pipeline_id = Manager::generate_uuid();
 
+        let video_and_stream_information = {
+            let mut video_and_stream_information = video_and_stream_information.clone();
+
+            if matches!(
+                video_and_stream_information.video_source,
+                VideoSourceType::Redirect(_)
+            ) {
+                let url = video_and_stream_information
+                    .stream_information
+                    .endpoints
+                    .first()
+                    .context("No URL found")?;
+
+                let Some(encode) = get_encode_from_stream_uri(&url).await else {
+                    return Err(anyhow!("No encode found for stream"));
+                };
+
+                video_and_stream_information
+                    .stream_information
+                    .configuration = CaptureConfiguration::Video(VideoCaptureConfiguration {
+                    encode,
+                    height: 0,
+                    width: 0,
+                    frame_interval: FrameInterval {
+                        numerator: 0,
+                        denominator: 0,
+                    },
+                });
+            }
+
+            video_and_stream_information
+        };
+
         let state = Arc::new(RwLock::new(Some(
-            StreamState::try_new(video_and_stream_information, &pipeline_id).await?,
+            StreamState::try_new(&video_and_stream_information, &pipeline_id).await?,
         )));
 
         let terminated = Arc::new(RwLock::new(false));
