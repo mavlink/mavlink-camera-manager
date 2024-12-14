@@ -60,12 +60,6 @@ jobs:
       with:
         bun-version: latest
 
-    - name: Building for ${{ matrix.os }} ${{ matrix.target }} (${{ matrix.SUFFIX }})
-      if: ${{ contains(matrix.TARGET, 'linux') }}
-      run: |
-        cd src/lib/stream/webrtc/frontend && bun install && bun run build && cd -
-        SKIP_BUN=1 cross build --release --locked --target ${{matrix.target}} --verbose
-
     - name: Install gstreamer
       if: ${{ !contains(matrix.TARGET, 'linux') }}
       uses: blinemedical/setup-gstreamer@v1
@@ -79,7 +73,6 @@ jobs:
         Move-Item -LiteralPath "${Env:TEMP}\wpd\WpdPack\Lib" -Destination lib
 
     - name: Building for ${{ matrix.os }} ${{ matrix.target }} (${{ matrix.SUFFIX }})
-      if: ${{ !contains(matrix.TARGET, 'linux') }}
       run: cargo build --release --locked --target ${{matrix.target}} --verbose
 
     - name: Prepare files
