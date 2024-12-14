@@ -112,6 +112,7 @@ v4l = "0.14.0"
 rand = "0.8.5"
 serial_test = "0.10"
 tracing-test = "0.2"
+statrs = "0.18.0"
 
 [build-dependencies]
 reqwest = { version = "0.12", features = ["blocking", "rustls-tls"] }
