@@ -27,8 +27,6 @@ impl SinkInterface for RtspSink {
     ) -> Result<()> {
         let sink_id = &self.get_id();
 
-        let _ = std::fs::remove_file(&self.socket_path); // Remove if already exists
-
         // Set Tee's src pad
         if self.tee_src_pad.is_some() {
             return Err(anyhow!(
@@ -147,10 +145,6 @@ impl SinkInterface for RtspSink {
 
     #[instrument(level = "debug", skip(self, pipeline))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
-        if let Err(error) = std::fs::remove_file(&self.socket_path) {
-            warn!("Failed removing the RTSP Sink socket file. Reason: {error:?}");
-        }
-
         let Some(tee_src_pad) = &self.tee_src_pad else {
             warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
             return Ok(());
@@ -199,6 +193,8 @@ impl SinkInterface for RtspSink {
             warn!("Failed to set RtspSink's to NULL: {state_err:#?}");
         }
 
+        let _ = std::fs::remove_file(&self.socket_path);
+
         Ok(())
     }
 
@@ -246,7 +242,15 @@ impl RtspSink {
                 "Failed to find RTSP compatible address. Example: \"rtsp://0.0.0.0:8554/test\"",
             )?;
 
-        let socket_path = format!("/tmp/{id}");
+        let socket_path = {
+            let path = std::env::temp_dir().join(format!("{id}.sock"));
+
+            if path.try_exists()? {
+                std::fs::remove_file(path.clone())?;
+            }
+            path.to_string_lossy().to_string()
+        };
+
         let sink = gst::ElementFactory::make("shmsink")
             .property_from_str("socket-path", &socket_path)
             .property("sync", false)
