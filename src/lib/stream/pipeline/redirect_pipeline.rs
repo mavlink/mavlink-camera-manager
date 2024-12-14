@@ -72,7 +72,7 @@ impl RedirectPipeline {
             "udp" => {
                 format!(
                     concat!(
-                        "udpsrc address={address} port={port} close-socket=false auto-multicast=true",
+                        "udpsrc address={address} port={port} close-socket=false auto-multicast=true do-timestamp=true",
                         " ! application/x-rtp",
                         " ! tee name={sink_tee_name} allow-not-linked=true"
                     ),

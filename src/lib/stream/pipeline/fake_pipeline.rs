@@ -75,7 +75,7 @@ impl FakePipeline {
                         " ! h264parse",
                         " ! capsfilter name={filter_name} caps=video/x-h264,profile={profile},stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
-                        " ! rtph264pay aggregate-mode=zero-latency config-interval=10 pt=96",
+                        " ! rtph264pay aggregate-mode=zero-latency config-interval=-1 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     pattern = pattern,
@@ -120,7 +120,6 @@ impl FakePipeline {
                         // format available ("UYVY").
                         "videotestsrc pattern={pattern} is-live=true do-timestamp=true",
                         " ! timeoverlay",
-                        " ! video/x-raw,format=I420",
                         " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtpvrawpay pt=96",
@@ -145,7 +144,7 @@ impl FakePipeline {
                         " ! jpegenc quality=85 idct-method=1",
                         " ! capsfilter name={filter_name} caps=image/jpeg,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
-                        " ! rtpjpegpay pt=96",
+                        " ! rtpjpegpay pt=26",
                         " ! tee name={rtp_tee_name} allow-not-linked=true",
                     ),
                     pattern = pattern,

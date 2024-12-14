@@ -58,7 +58,7 @@ fn main() {
         generate_typescript_bindings();
     }
 
-    // set SKIP_BUN=1 to skip bun build
+    // set SKIP_WEB=1 to skip bun build
     if std::env::var("SKIP_WEB").is_err() {
         build_web();
     }

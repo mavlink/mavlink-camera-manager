@@ -176,11 +176,11 @@ pub async fn update_devices(
                 candidates.remove(idx);
             }
             Err(reason) => {
-                // Invalidate the device
-                source.device_path = "".into();
                 if verbose {
                     warn!("Device {source:?} was invalidated. Reason: {reason:?}");
                 };
+                // Invalidate the device
+                source.device_path = "".into();
             }
             _ => (),
         }
@@ -543,13 +543,7 @@ impl Manager {
     pub async fn add_stream(stream: Stream) -> Result<()> {
         let mut manager = MANAGER.write().await;
 
-        let stream_id = {
-            let state_guard = stream.state.read().await;
-
-            let state_ref = state_guard.as_ref().context("Stream without State")?;
-
-            state_ref.pipeline_id
-        };
+        let stream_id = stream.id().await?;
 
         if manager.streams.insert(stream_id, stream).is_some() {
             return Err(anyhow!("Failed adding stream {stream_id:?}"));

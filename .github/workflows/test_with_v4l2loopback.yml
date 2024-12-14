@@ -1,0 +1,108 @@
+name: Test with v4l2loopback
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            TARGET: aarch64-unknown-linux-gnu
+            SUFFIX: aarch64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set directory to safe for git
+        if: ${{ !contains(matrix.TARGET, 'windows') }}
+        # Note: Required by vergen (https://crates.io/crates/vergen)
+        run: git config --global --add safe.directory $GITHUB_WORKSPACE
+
+      - name: Use cached dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: "${{ matrix.os }}-${{ matrix.TARGET }}-${{ hashFiles('**/Cargo.lock') }}"
+          shared-key: "shared"
+
+      - name: Install build dependencies - Rustup
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain stable --profile minimal --target ${{ matrix.TARGET }} -y
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install build dependencies - Cross
+        if: ${{ contains(matrix.TARGET, 'linux') }}
+        run: cargo install cross
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Building for ${{ matrix.os }} ${{ matrix.target }} (${{ matrix.SUFFIX }})
+        run: |
+          cd src/lib/stream/webrtc/frontend && bun install && bun run build && cd -
+          SKIP_BUN=1 cross test --no-run --release --locked --target ${{matrix.target}}
+
+      - name: Prepare files
+        run: |
+          mkdir -p upload
+          TARGET_FILE="$(find target/${{ matrix.TARGET }}/release/deps -type f -executable -iname 'v4l2_latency_and_jitter-*')"
+          cp "$TARGET_FILE" upload/v4l2_latency_and_jitter-${{ matrix.SUFFIX }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v4l2_latency_and_jitter-${{ matrix.SUFFIX }}
+          path: upload/*
+          retention-days: 1
+
+  test:
+    needs: build
+    runs-on: PI5-ARM64-with-v4l2loopback
+
+    steps:
+      - name: Check if /dev/video42 exists
+        run: |
+          if [ ! -e /dev/video42 ]; then
+            echo "::error::Error: /dev/video42 does not exist."
+            exit 1
+          fi
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: v4l2_latency_and_jitter-aarch64
+
+      - name: Install runtime dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: |
+            gstreamer1.0-libav \
+            gstreamer1.0-nice \
+            gstreamer1.0-plugins-ugly \
+            gstreamer1.0-tools \
+            gstreamer1.0-x \
+            libgstreamer-plugins-bad1.0-0 \
+            libgstreamer-plugins-base1.0-0 \
+            libgstreamer-plugins-good1.0-0 \
+            libgstreamer1.0-0 \
+            libgstrtspserver-1.0-0
+
+      - name: Install runtime dependencies - qrtimestamp
+        run: |
+          wget -q https://github.com/patrickelectric/qrtimestamp-gst/releases/download/0.1.0/libgstqrtimestamp-aarch64.so.tar -O - | tar -x
+
+      - name: Run tests
+        run: |
+          chmod +x ./v4l2_latency_and_jitter-aarch64
+          export GST_PLUGIN_PATH="$PWD:$GST_PLUGIN_PATH"
+          timeout 300 ./v4l2_latency_and_jitter-aarch64
+
+      - name: Delete artifacts
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: v4l2_latency_and_jitter-aarch64

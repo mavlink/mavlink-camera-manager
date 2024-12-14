@@ -58,7 +58,7 @@ impl V4lPipeline {
                         " ! h264parse",  // Here we need the parse to help the stream-format and alignment part, which is being fixated here because avc/au seems to reduce the CPU usage in the RTP payloading part.
                         " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
-                        " ! rtph264pay aggregate-mode=zero-latency config-interval=10 pt=96",
+                        " ! rtph264pay aggregate-mode=zero-latency config-interval=-1 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     device = device,
@@ -96,9 +96,10 @@ impl V4lPipeline {
                     concat!(
                         "v4l2src device={device} do-timestamp=true",
                         " ! videoconvert",
-                        " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator},colorimetry=bt601,pixel-aspect-ratio=1/1,interlace-mode=progressive",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtpvrawpay pt=96",
+                        " ! capsfilter caps=\"application/x-rtp, clock-rate=(int)90000, encoding-name=(string)RAW, sampling=(string)YCbCr-4:2:0, depth=(string)8, width=(string){width}, height=(string){height}, colorimetry=(string)BT601-5, payload=(int)96, a-framerate=(string){framerate}\"",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     device = device,
@@ -109,6 +110,7 @@ impl V4lPipeline {
                     filter_name = filter_name,
                     video_tee_name = video_tee_name,
                     rtp_tee_name = rtp_tee_name,
+                    framerate = (configuration.frame_interval.denominator as f32 / configuration.frame_interval.numerator as f32) as u32,
                 )
             }
             VideoEncodeType::Mjpg => {
@@ -118,7 +120,7 @@ impl V4lPipeline {
                         // We don't need a jpegparse, as it leads to incompatible caps, spoiling the negotiation.
                         " ! capsfilter name={filter_name} caps=image/jpeg,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
-                        " ! rtpjpegpay pt=96",
+                        " ! rtpjpegpay pt=26",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     device = device,
