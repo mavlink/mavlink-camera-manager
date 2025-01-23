@@ -77,7 +77,6 @@ impl Default for Manager {
     #[instrument(level = "debug")]
     fn default() -> Self {
         let url_credentials = crate::cli::manager::onvif_auth();
-        dbg!(&url_credentials);
 
         let mcontext = Arc::new(RwLock::new(ManagerContext {
             cameras: HashMap::new(),
