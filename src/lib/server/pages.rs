@@ -272,6 +272,22 @@ pub async fn reset_settings(query: web::Query<ResetSettings>) -> Result<HttpResp
 }
 
 #[api_v2_operation]
+/// Restart streams
+pub async fn restart_streams(query: web::Query<ResetSettings>) -> Result<HttpResponse> {
+    if query.all.unwrap_or_default() {
+        stream_manager::start_default()
+            .await
+            .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+        return Ok(HttpResponse::Ok().finish());
+    }
+
+    Err(Error::Internal(
+        "Missing argument for restart_streams.".to_string(),
+    ))
+}
+
+#[api_v2_operation]
 /// Provide a list of all streams configured
 pub async fn streams() -> Result<HttpResponse> {
     let streams = stream_manager::streams()
