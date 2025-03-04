@@ -562,7 +562,10 @@ impl Manager {
     }
 
     #[instrument(level = "debug")]
-    pub async fn remove_stream(stream_id: &webrtc::signalling_protocol::PeerId, rewrite_config: bool) -> Result<()> {
+    pub async fn remove_stream(
+        stream_id: &webrtc::signalling_protocol::PeerId,
+        rewrite_config: bool,
+    ) -> Result<()> {
         let mut manager = MANAGER.write().await;
 
         if !manager.streams.contains_key(stream_id) {
