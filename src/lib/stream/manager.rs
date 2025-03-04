@@ -96,7 +96,7 @@ pub async fn remove_all_streams() -> Result<()> {
     };
 
     for stream_id in keys.iter() {
-        if let Err(error) = Manager::remove_stream(stream_id).await {
+        if let Err(error) = Manager::remove_stream(stream_id, false).await {
             warn!("Failed removing stream {stream_id:?}: {error:?}")
         }
     }
@@ -393,7 +393,7 @@ async fn get_stream_id_from_name(stream_name: &str) -> Result<uuid::Uuid> {
 pub async fn remove_stream_by_name(stream_name: &str) -> Result<()> {
     let stream_id = get_stream_id_from_name(stream_name).await?;
 
-    Manager::remove_stream(&stream_id).await?;
+    Manager::remove_stream(&stream_id, true).await?;
 
     Ok(())
 }
@@ -562,7 +562,7 @@ impl Manager {
     }
 
     #[instrument(level = "debug")]
-    pub async fn remove_stream(stream_id: &webrtc::signalling_protocol::PeerId) -> Result<()> {
+    pub async fn remove_stream(stream_id: &webrtc::signalling_protocol::PeerId, rewrite_config: bool) -> Result<()> {
         let mut manager = MANAGER.write().await;
 
         if !manager.streams.contains_key(stream_id) {
@@ -573,7 +573,10 @@ impl Manager {
             .streams
             .remove(stream_id)
             .context(format!("Stream {stream_id:?} not found"))?;
-        manager.update_settings().await;
+
+        if rewrite_config {
+            manager.update_settings().await;
+        }
 
         info!("Stream {stream_id} successfully removed!");
 
