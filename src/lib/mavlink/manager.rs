@@ -191,7 +191,8 @@ impl Manager {
     pub fn new_component_id() -> u8 {
         let manager = MANAGER.lock().unwrap();
 
-        let mut id = mavlink::common::MavComponent::MAV_COMP_ID_CAMERA as u8;
+        // Cameras IDs from MAV_COMP_ID_CAMERA (100) to MAV_COMP_ID_CAMERA6 (105) are reserved for cameras proxied by the autopilot, so we start from ID 106
+        let mut id = (mavlink::common::MavComponent::MAV_COMP_ID_CAMERA6 as u8) + 1;
         let mut vector = manager.ids.write().unwrap();
 
         // Find the closest ID available
