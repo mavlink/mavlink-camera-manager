@@ -37,7 +37,9 @@ impl MavlinkCameraComponent {
                     cfg.frame_interval.denominator as f32 / cfg.frame_interval.numerator as f32;
                 (cfg.height as u16, cfg.width as u16, framerate)
             }
-            crate::stream::types::CaptureConfiguration::Redirect(_) => (0, 0, 0.0),
+            crate::stream::types::CaptureConfiguration::Redirect(_) => {
+                unreachable!("Redirect streams now use CaptureConfiguration::Video")
+            }
         };
 
         let thermal = video_and_stream_information
