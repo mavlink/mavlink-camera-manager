@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use tokio::sync::mpsc::{self, WeakUnboundedSender};
@@ -38,7 +40,7 @@ impl SinkInterface for WebRTCSink {
     fn link(
         self: &mut WebRTCSink,
         pipeline: &gst::Pipeline,
-        pipeline_id: &uuid::Uuid,
+        pipeline_id: &Arc<uuid::Uuid>,
         tee_src_pad: gst::Pad,
     ) -> Result<()> {
         // Configure transceiver https://gstreamer.freedesktop.org/documentation/webrtclib/gstwebrtc-transceiver.html?gi-language=c
@@ -100,7 +102,7 @@ impl SinkInterface for WebRTCSink {
     }
 
     #[instrument(level = "debug", skip(self, pipeline))]
-    fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
+    fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &Arc<uuid::Uuid>) -> Result<()> {
         let Some(tee_src_pad) = &self.tee_src_pad else {
             warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
             return Ok(());
@@ -113,8 +115,8 @@ impl SinkInterface for WebRTCSink {
     }
 
     #[instrument(level = "trace", skip(self))]
-    fn get_id(&self) -> uuid::Uuid {
-        self.bind.session_id
+    fn get_id(&self) -> Arc<uuid::Uuid> {
+        Arc::new(self.bind.session_id)
     }
 
     #[instrument(level = "trace", skip(self))]

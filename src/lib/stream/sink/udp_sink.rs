@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use tracing::*;
@@ -8,7 +10,7 @@ use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
 
 #[derive(Debug)]
 pub struct UdpSink {
-    sink_id: uuid::Uuid,
+    sink_id: Arc<uuid::Uuid>,
     pipeline: gst::Pipeline,
     queue: gst::Element,
     proxysink: gst::Element,
@@ -24,7 +26,7 @@ impl SinkInterface for UdpSink {
     fn link(
         &mut self,
         pipeline: &gst::Pipeline,
-        pipeline_id: &uuid::Uuid,
+        pipeline_id: &Arc<uuid::Uuid>,
         tee_src_pad: gst::Pad,
     ) -> Result<()> {
         if self.tee_src_pad.is_some() {
@@ -45,7 +47,7 @@ impl SinkInterface for UdpSink {
     }
 
     #[instrument(level = "debug", skip(self, pipeline))]
-    fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
+    fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &Arc<uuid::Uuid>) -> Result<()> {
         let Some(tee_src_pad) = &self.tee_src_pad else {
             warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
             return Ok(());
@@ -58,8 +60,8 @@ impl SinkInterface for UdpSink {
     }
 
     #[instrument(level = "debug", skip(self))]
-    fn get_id(&self) -> uuid::Uuid {
-        self.sink_id
+    fn get_id(&self) -> Arc<uuid::Uuid> {
+        self.sink_id.clone()
     }
 
     #[instrument(level = "debug", skip(self))]
@@ -130,7 +132,7 @@ impl SinkInterface for UdpSink {
 
 impl UdpSink {
     #[instrument(level = "debug")]
-    pub fn try_new(sink_id: uuid::Uuid, addresses: Vec<url::Url>) -> Result<Self> {
+    pub fn try_new(sink_id: Arc<uuid::Uuid>, addresses: Vec<url::Url>) -> Result<Self> {
         let queue = gst::ElementFactory::make("queue")
             .property_from_str("leaky", "downstream") // Throw away any data
             .property("silent", true)
@@ -221,7 +223,7 @@ impl UdpSink {
         }
 
         Ok(Self {
-            sink_id,
+            sink_id: sink_id.clone(),
             pipeline,
             queue,
             proxysink,

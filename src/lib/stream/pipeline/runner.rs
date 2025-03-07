@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use tracing::*;
@@ -8,7 +10,7 @@ use crate::stream::gst::utils::wait_for_element_state_async;
 pub struct PipelineRunner {
     start: tokio::sync::mpsc::Sender<()>,
     handle: Option<tokio::task::JoinHandle<()>>,
-    pipeline_id: uuid::Uuid,
+    pipeline_id: Arc<uuid::Uuid>,
 }
 
 impl Drop for PipelineRunner {
@@ -36,11 +38,10 @@ impl PipelineRunner {
     #[instrument(level = "debug", skip(pipeline))]
     pub fn try_new(
         pipeline: &gst::Pipeline,
-        pipeline_id: &uuid::Uuid,
+        pipeline_id: &Arc<uuid::Uuid>,
         allow_block: bool,
     ) -> Result<Self> {
         let pipeline_weak = pipeline.downgrade();
-        let pipeline_id = *pipeline_id;
 
         let (start_tx, start_rx) = tokio::sync::mpsc::channel(1);
 
@@ -51,7 +52,8 @@ impl PipelineRunner {
             "PipelineRunner task",
             id = pipeline_id.to_string()
         );
-        let task_handle = tokio::spawn(
+        let task_handle = tokio::spawn({
+            let pipeline_id = pipeline_id.clone();
             async move {
                 debug!("task started!");
                 match Self::runner(pipeline_weak, pipeline_id, start_rx, allow_block).await {
@@ -59,13 +61,13 @@ impl PipelineRunner {
                     Err(error) => warn!("task ended with error: {error:#?}"),
                 };
             }
-            .instrument(span),
-        );
+            .instrument(span)
+        });
 
         Ok(Self {
             start: start_tx,
             handle: Some(task_handle),
-            pipeline_id,
+            pipeline_id: pipeline_id.clone(),
         })
     }
 
@@ -94,7 +96,7 @@ impl PipelineRunner {
     #[instrument(level = "debug", skip(pipeline_weak, start))]
     async fn runner(
         pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
-        pipeline_id: uuid::Uuid,
+        pipeline_id: Arc<uuid::Uuid>,
         mut start: tokio::sync::mpsc::Receiver<()>,
         allow_block: bool,
     ) -> Result<()> {
@@ -122,7 +124,7 @@ impl PipelineRunner {
         debug!("Starting BusWatcher task...");
         tokio::spawn(bus_watcher_task(
             pipeline_weak_cloned,
-            pipeline_id,
+            pipeline_id.clone(),
             bus_rx,
             finish_tx,
         ));
@@ -224,7 +226,7 @@ impl PipelineRunner {
 #[instrument(level = "debug", skip(pipeline_weak, bus_rx, finish_tx))]
 async fn bus_watcher_task(
     pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
-    pipeline_id: uuid::Uuid,
+    pipeline_id: Arc<uuid::Uuid>,
     mut bus_rx: tokio::sync::mpsc::UnboundedReceiver<gst::Message>,
     finish_tx: tokio::sync::mpsc::Sender<String>,
 ) {

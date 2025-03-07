@@ -3,9 +3,10 @@ pub mod rtsp_sink;
 pub mod udp_sink;
 pub mod webrtc_sink;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use enum_dispatch::enum_dispatch;
 use gst::prelude::*;
+use std::sync::Arc;
 use tracing::*;
 
 use crate::video_stream::types::VideoAndStreamInformation;
@@ -22,16 +23,16 @@ pub trait SinkInterface {
     fn link(
         &mut self,
         pipeline: &gst::Pipeline,
-        pipeline_id: &uuid::Uuid,
+        pipeline_id: &Arc<uuid::Uuid>,
         tee_src_pad: gst::Pad,
     ) -> Result<()>;
 
     /// Unlink this Sink's sink pad from the already associated Pipelines's Tee element's src pad.
     /// Read important notes about dynamically pipeline manipulation [here](https://gstreamer.freedesktop.org/documentation/application-development/advanced/pipeline-manipulation.html?gi-language=c#dynamically-changing-the-pipeline)
-    fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()>;
+    fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &Arc<uuid::Uuid>) -> Result<()>;
 
     /// Get the id associated with this Sink
-    fn get_id(&self) -> uuid::Uuid;
+    fn get_id(&self) -> Arc<uuid::Uuid>;
 
     /// Get the sdp file describing this Sink, following the [RFC 8866](https://www.rfc-editor.org/rfc/rfc8866.html)
     ///
@@ -56,7 +57,7 @@ pub enum Sink {
 
 #[instrument(level = "debug")]
 pub fn create_udp_sink(
-    id: uuid::Uuid,
+    id: Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
     let addresses = video_and_stream_information
@@ -69,7 +70,7 @@ pub fn create_udp_sink(
 
 #[instrument(level = "debug")]
 pub fn create_rtsp_sink(
-    id: uuid::Uuid,
+    id: Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
     let addresses = video_and_stream_information
@@ -82,7 +83,7 @@ pub fn create_rtsp_sink(
 
 #[instrument(level = "debug")]
 pub fn create_image_sink(
-    id: uuid::Uuid,
+    id: Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
     let encoding = match &video_and_stream_information
@@ -93,9 +94,7 @@ pub fn create_image_sink(
             video_configuraiton.encode.clone()
         }
         super::types::CaptureConfiguration::Redirect(_) => {
-            return Err(anyhow!(
-                "ImageSinks are not yet implemented for Redirect sources"
-            ))
+            unreachable!("Redirect streams now use CaptureConfiguration::Video")
         }
     };
     Ok(Sink::Image(ImageSink::try_new(id, encoding)?))
