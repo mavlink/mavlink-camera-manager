@@ -44,5 +44,6 @@ pub struct StreamInformation {
 pub struct StreamStatus {
     pub id: uuid::Uuid,
     pub running: bool,
+    pub error: Option<String>,
     pub video_and_stream: VideoAndStreamInformation,
 }
