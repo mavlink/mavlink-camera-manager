@@ -46,9 +46,11 @@ impl Manager {
             futures::StreamExt::filter_map(streams, |stream| async move {
                 let stream_guard = stream.state.read().await;
 
-                stream_guard
-                    .as_ref()
-                    .map(|state| state.video_and_stream_information.clone())
+                if let Some(state) = stream_guard.as_ref() {
+                    Some(state.video_and_stream_information.read().await.clone())
+                } else {
+                    None
+                }
             })
             .collect::<Vec<VideoAndStreamInformation>>()
             .await;
@@ -208,13 +210,18 @@ pub async fn get_first_sdp_from_source(source: String) -> ClonableResult<gst_sdp
 
                 if state_ref
                     .video_and_stream_information
+                    .read()
+                    .await
                     .video_source
                     .inner()
                     .source_string()
                     .eq(source)
                 {
-                    return state_ref
-                        .pipeline
+                    let Some(pipeline) = &state_ref.pipeline else {
+                        return None;
+                    };
+
+                    return pipeline
                         .inner_state_as_ref()
                         .sinks
                         .values()
@@ -291,6 +298,8 @@ pub async fn get_jpeg_thumbnail_from_source(
 
                             if !state_ref
                                 .video_and_stream_information
+                                .read()
+                                .await
                                 .video_source
                                 .inner()
                                 .source_string()
@@ -299,7 +308,11 @@ pub async fn get_jpeg_thumbnail_from_source(
                                 return None;
                             }
 
-                            let sinks = state_ref.pipeline.inner_state_as_ref().sinks.values();
+                            let Some(pipeline) = &state_ref.pipeline else {
+                                return None;
+                            };
+
+                            let sinks = pipeline.inner_state_as_ref().sinks.values();
 
                             let sink = futures::stream::iter(sinks)
                                 .filter_map(|sink| {
@@ -351,6 +364,8 @@ pub async fn add_stream_and_start(
 
             state_ref
                 .video_and_stream_information
+                .read()
+                .await
                 .conflicts_with(&video_and_stream_information)?;
         }
     }
@@ -372,8 +387,10 @@ async fn get_stream_id_from_name(stream_name: &str) -> Result<uuid::Uuid> {
 
                 let state_ref = state_guard.as_ref()?;
 
-                state_ref
-                    .video_and_stream_information
+                let video_and_stream_information =
+                    state_ref.video_and_stream_information.read().await;
+
+                video_and_stream_information
                     .name
                     .eq(stream_name)
                     .then_some(*id)
@@ -426,7 +443,11 @@ impl Manager {
 
         let state_mut = state_guard.as_mut().context("Stream without State")?;
 
-        state_mut.pipeline.add_sink(sink)?;
+        state_mut
+            .pipeline
+            .as_mut()
+            .context("No Pipeline")?
+            .add_sink(sink)?;
 
         debug!("WebRTC session created: {session_id:?}");
 
@@ -451,6 +472,8 @@ impl Manager {
 
         state_mut
             .pipeline
+            .as_mut()
+            .context("No Pipeline")?
             .remove_sink(&bind.session_id)
             .context(format!("Cannot remove session {:?}", bind.session_id))?;
 
@@ -477,6 +500,8 @@ impl Manager {
 
         let sink = state_ref
             .pipeline
+            .as_ref()
+            .context("No Pipeline")?
             .inner_state_as_ref()
             .sinks
             .get(&bind.session_id)
@@ -523,6 +548,8 @@ impl Manager {
 
         let sink = state_ref
             .pipeline
+            .as_ref()
+            .context("No Pipeline")?
             .inner_state_as_ref()
             .sinks
             .get(&bind.session_id)
@@ -548,7 +575,7 @@ impl Manager {
 
             let state_ref = state_guard.as_ref().context("Stream without State")?;
 
-            state_ref.pipeline_id
+            *state_ref.pipeline_id
         };
 
         if manager.streams.insert(stream_id, stream).is_some() {
@@ -594,12 +621,32 @@ impl Manager {
             .filter_map(|stream| async move {
                 let state_guard = stream.state.read().await;
 
-                let state_ref = state_guard.as_ref()?;
+                let id = *stream.pipeline_id;
+                let running = state_guard
+                    .as_ref()
+                    .map(|state| {
+                        state
+                            .pipeline
+                            .as_ref()
+                            .map(super::pipeline::Pipeline::is_running)
+                            .unwrap_or_default()
+                    })
+                    .unwrap_or_default();
+                let error = stream
+                    .error
+                    .read()
+                    .await
+                    .as_ref()
+                    .err()
+                    .map(|error| error.to_string());
+
+                let video_and_stream = stream.video_and_stream_information.read().await.clone();
 
                 Some(StreamStatus {
-                    id: state_ref.pipeline_id,
-                    running: state_ref.pipeline.is_running(),
-                    video_and_stream: state_ref.video_and_stream_information.clone(),
+                    id,
+                    running,
+                    error,
+                    video_and_stream,
                 })
             })
             .collect()
