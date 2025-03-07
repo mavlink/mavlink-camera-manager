@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{anyhow, Result};
 use gst::prelude::*;
 use tracing::*;
@@ -21,7 +23,7 @@ pub struct V4lPipeline {
 impl V4lPipeline {
     #[instrument(level = "debug")]
     pub fn try_new(
-        pipeline_id: &uuid::Uuid,
+        pipeline_id: &Arc<uuid::Uuid>,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<gst::Pipeline> {
         let configuration = match &video_and_stream_information
