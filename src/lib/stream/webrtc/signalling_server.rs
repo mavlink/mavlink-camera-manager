@@ -286,6 +286,11 @@ impl SignallingServer {
     pub async fn streams_information() -> Result<Vec<Stream>> {
         let streams = stream::Manager::streams_information().await?;
 
+        let streams = streams
+            .iter()
+            .filter(|stream| stream.running)
+            .collect::<Vec<_>>();
+
         Ok(streams
             .iter()
             .filter_map(|stream| {
