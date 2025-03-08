@@ -571,7 +571,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         // Recreate the SDP offer with our customized SDP
         let offer = gst_webrtc::WebRTCSessionDescription::new(
             offer.type_(),
-            customize_sent_sdp(&offer.sdp())?,
+            customize_sent_sdp(offer.sdp())?,
         );
 
         let Ok(sdp) = offer.sdp().as_text() else {
@@ -747,7 +747,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
             }
         }
 
-        let sdp = gst_webrtc::WebRTCSessionDescription::new(sdp.type_(), sanitize_sdp(&sdp.sdp())?);
+        let sdp = gst_webrtc::WebRTCSessionDescription::new(sdp.type_(), sanitize_sdp(sdp.sdp())?);
 
         if let Ok(sdp_str) = sdp.sdp().as_text() {
             debug!(

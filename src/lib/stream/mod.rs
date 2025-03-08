@@ -67,7 +67,7 @@ impl Stream {
                     .first()
                     .context("No URL found")?;
 
-                let Some(encode) = get_encode_from_stream_uri(&url).await else {
+                let Some(encode) = get_encode_from_stream_uri(url).await else {
                     return Err(anyhow!("No encode found for stream"));
                 };
 

@@ -186,13 +186,13 @@ pub fn header() -> HeaderSettingsFile {
 
 pub fn mavlink_endpoint() -> String {
     let manager = MANAGER.read().unwrap();
-    return manager
+    manager
         .content
         .as_ref()
         .unwrap()
         .config
         .mavlink_endpoint
-        .clone();
+        .clone()
 }
 
 pub fn set_mavlink_endpoint(endpoint: &str) {

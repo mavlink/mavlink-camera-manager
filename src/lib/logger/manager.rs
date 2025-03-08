@@ -228,7 +228,6 @@ fn redirect_gstreamer_logs_to_tracing() {
             let message = message.get().map(|o| o.to_string()).unwrap_or_default();
 
             // Quick workaround to use dynamic level, because the macro requires it to be static
-            #[macro_export]
             macro_rules! dyn_event {
                 (target: $target:expr, parent: $parent:expr, $lvl:ident, $($fields:tt)*) => {
                     match $lvl {
