@@ -58,7 +58,7 @@ impl CachedThumbnails {
 
 #[derive(Debug)]
 pub struct ImageSink {
-    sink_id: uuid::Uuid,
+    sink_id: Arc<uuid::Uuid>,
     pipeline: gst::Pipeline,
     queue: gst::Element,
     proxysink: gst::Element,
@@ -76,7 +76,7 @@ impl SinkInterface for ImageSink {
     fn link(
         &mut self,
         pipeline: &gst::Pipeline,
-        pipeline_id: &uuid::Uuid,
+        pipeline_id: &Arc<uuid::Uuid>,
         tee_src_pad: gst::Pad,
     ) -> Result<()> {
         let sink_id = &self.get_id();
@@ -202,7 +202,7 @@ impl SinkInterface for ImageSink {
     }
 
     #[instrument(level = "debug", skip(self, pipeline))]
-    fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
+    fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &Arc<uuid::Uuid>) -> Result<()> {
         let Some(tee_src_pad) = &self.tee_src_pad else {
             warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
             return Ok(());
@@ -260,8 +260,8 @@ impl SinkInterface for ImageSink {
     }
 
     #[instrument(level = "debug", skip(self))]
-    fn get_id(&self) -> uuid::Uuid {
-        self.sink_id
+    fn get_id(&self) -> Arc<uuid::Uuid> {
+        self.sink_id.clone()
     }
 
     #[instrument(level = "trace", skip(self))]
@@ -300,7 +300,7 @@ impl SinkInterface for ImageSink {
 
 impl ImageSink {
     #[instrument(level = "debug")]
-    pub fn try_new(sink_id: uuid::Uuid, encoding: VideoEncodeType) -> Result<Self> {
+    pub fn try_new(sink_id: Arc<uuid::Uuid>, encoding: VideoEncodeType) -> Result<Self> {
         let queue = gst::ElementFactory::make("queue")
             .property_from_str("leaky", "downstream") // Throw away any data
             .property("silent", true)
@@ -531,7 +531,7 @@ impl ImageSink {
         }
 
         Ok(Self {
-            sink_id,
+            sink_id: sink_id.clone(),
             pipeline,
             queue,
             proxysink,

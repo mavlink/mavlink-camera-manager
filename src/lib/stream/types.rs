@@ -15,6 +15,7 @@ pub struct VideoCaptureConfiguration {
     pub frame_interval: FrameInterval,
 }
 
+#[deprecated(note = "The API will soon allow for optional CaptureConfiguration instead")]
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct RedirectCaptureConfiguration {}
 
@@ -22,6 +23,7 @@ pub struct RedirectCaptureConfiguration {}
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum CaptureConfiguration {
     Video(VideoCaptureConfiguration),
+    /// This is only still used for easy stream creation, and it is always converted to Self::Video.
     Redirect(RedirectCaptureConfiguration),
 }
 
@@ -42,5 +44,6 @@ pub struct StreamInformation {
 pub struct StreamStatus {
     pub id: uuid::Uuid,
     pub running: bool,
+    pub error: Option<String>,
     pub video_and_stream: VideoAndStreamInformation,
 }

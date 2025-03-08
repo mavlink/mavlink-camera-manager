@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use tracing::*;
@@ -8,7 +10,7 @@ use super::SinkInterface;
 
 #[derive(Debug)]
 pub struct RtspSink {
-    sink_id: uuid::Uuid,
+    sink_id: Arc<uuid::Uuid>,
     queue: gst::Element,
     sink: gst::Element,
     sink_sink_pad: gst::Pad,
@@ -22,7 +24,7 @@ impl SinkInterface for RtspSink {
     fn link(
         &mut self,
         pipeline: &gst::Pipeline,
-        pipeline_id: &uuid::Uuid,
+        pipeline_id: &Arc<uuid::Uuid>,
         tee_src_pad: gst::Pad,
     ) -> Result<()> {
         let sink_id = &self.get_id();
@@ -146,7 +148,7 @@ impl SinkInterface for RtspSink {
     }
 
     #[instrument(level = "debug", skip(self, pipeline))]
-    fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
+    fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &Arc<uuid::Uuid>) -> Result<()> {
         if let Err(error) = std::fs::remove_file(&self.socket_path) {
             warn!("Failed removing the RTSP Sink socket file. Reason: {error:?}");
         }
@@ -203,8 +205,8 @@ impl SinkInterface for RtspSink {
     }
 
     #[instrument(level = "debug", skip(self))]
-    fn get_id(&self) -> uuid::Uuid {
-        self.sink_id
+    fn get_id(&self) -> Arc<uuid::Uuid> {
+        self.sink_id.clone()
     }
 
     #[instrument(level = "trace", skip(self))]
@@ -225,7 +227,7 @@ impl SinkInterface for RtspSink {
 
 impl RtspSink {
     #[instrument(level = "debug")]
-    pub fn try_new(id: uuid::Uuid, addresses: Vec<url::Url>) -> Result<Self> {
+    pub fn try_new(id: Arc<uuid::Uuid>, addresses: Vec<url::Url>) -> Result<Self> {
         let queue = gst::ElementFactory::make("queue")
             .property_from_str("leaky", "downstream") // Throw away any data
             .property("silent", true)
@@ -258,7 +260,7 @@ impl RtspSink {
         let sink_sink_pad = sink.static_pad("sink").context("Failed to get Sink Pad")?;
 
         Ok(Self {
-            sink_id: id,
+            sink_id: id.clone(),
             queue,
             sink,
             sink_sink_pad,

@@ -6,7 +6,7 @@ pub mod runner;
 #[cfg(target_os = "linux")]
 pub mod v4l_pipeline;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use enum_dispatch::enum_dispatch;
@@ -74,7 +74,7 @@ impl Pipeline {
     #[instrument(level = "debug")]
     pub fn try_new(
         video_and_stream_information: &VideoAndStreamInformation,
-        pipeline_id: &uuid::Uuid,
+        pipeline_id: &Arc<uuid::Uuid>,
     ) -> Result<Self> {
         let pipeline_state: PipelineState =
             PipelineState::try_new(video_and_stream_information, pipeline_id)?;
@@ -121,7 +121,7 @@ impl Pipeline {
 
 #[derive(Debug)]
 pub struct PipelineState {
-    pub pipeline_id: uuid::Uuid,
+    pub pipeline_id: Arc<uuid::Uuid>,
     pub pipeline: gst::Pipeline,
     pub video_tee: Option<gst::Element>,
     pub rtp_tee: Option<gst::Element>,
@@ -137,7 +137,7 @@ impl PipelineState {
     #[instrument(level = "debug")]
     pub fn try_new(
         video_and_stream_information: &VideoAndStreamInformation,
-        pipeline_id: &uuid::Uuid,
+        pipeline_id: &Arc<uuid::Uuid>,
     ) -> Result<Self> {
         let pipeline = match &video_and_stream_information.video_source {
             VideoSourceType::Gst(video) => match video.source {
@@ -177,7 +177,7 @@ impl PipelineState {
         );
 
         Ok(Self {
-            pipeline_id: *pipeline_id,
+            pipeline_id: pipeline_id.clone(),
             pipeline,
             video_tee,
             rtp_tee,
@@ -263,7 +263,7 @@ impl PipelineState {
             }
         }
 
-        self.sinks.insert(*sink_id, sink);
+        self.sinks.insert(**sink_id, sink);
 
         Ok(())
     }

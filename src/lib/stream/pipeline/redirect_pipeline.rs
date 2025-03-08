@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use tracing::*;
@@ -21,7 +23,7 @@ pub struct RedirectPipeline {
 impl RedirectPipeline {
     #[instrument(level = "debug")]
     pub fn try_new(
-        pipeline_id: &uuid::Uuid,
+        pipeline_id: &Arc<uuid::Uuid>,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<gst::Pipeline> {
         match &video_and_stream_information
