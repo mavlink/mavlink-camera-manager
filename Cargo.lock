@@ -2839,6 +2839,7 @@ dependencies = [
  "reqwest",
  "ringbuffer",
  "schema",
+ "scopeguard",
  "semver",
  "serde",
  "serde_json",
