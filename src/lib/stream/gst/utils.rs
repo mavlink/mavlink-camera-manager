@@ -196,5 +196,5 @@ pub async fn wait_for_encode(mut rx: mpsc::Receiver<gst::Caps>) -> Option<VideoE
         return encoding;
     }
 
-    return None;
+    None
 }
