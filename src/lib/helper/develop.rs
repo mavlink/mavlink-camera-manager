@@ -142,8 +142,7 @@ where
     K: std::hash::Hash + Eq,
     V: PartialEq,
 {
-    map2.iter()
-        .any(|(key, value)| map1.get(key).map_or(false, |v| v == value))
+    map2.iter().any(|(key, value)| map1.get(key) == Some(value))
 }
 
 #[instrument]
