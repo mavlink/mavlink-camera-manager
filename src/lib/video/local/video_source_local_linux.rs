@@ -67,6 +67,7 @@ impl VideoSourceLocalType {
     //
     // https://www.kernel.org/doc/html/v4.9/media/uapi/v4l/vidioc-querycap.html#:~:text=__u8-,bus_info,-%5B32%5D
 
+    #[instrument(level = "debug")]
     pub fn from_str(description: &str) -> Self {
         if let Some(result) = VideoSourceLocalType::usb_from_str(description) {
             return result;
@@ -86,6 +87,7 @@ impl VideoSourceLocalType {
         VideoSourceLocalType::Unknown(description.into())
     }
 
+    #[instrument(level = "debug")]
     fn usb_from_str(description: &str) -> Option<Self> {
         let regex = match Regex::new(
             r"usb-(?P<interface>(([0-9a-fA-F]{2}){1,2}:?){4})?\.(usb-)?(?P<device>.*)",
@@ -103,6 +105,7 @@ impl VideoSourceLocalType {
         None
     }
 
+    #[instrument(level = "debug")]
     fn v4l2_from_str(description: &str) -> Option<Self> {
         let regex = match Regex::new(r"platform:(?P<device>\S+)-v4l2-[0-9]") {
             Ok(regex) => regex,
@@ -120,6 +123,7 @@ impl VideoSourceLocalType {
 }
 
 impl VideoSourceLocal {
+    #[instrument(level = "debug")]
     pub async fn try_identify_device(
         &mut self,
         capture_configuration: &VideoCaptureConfiguration,
@@ -184,6 +188,7 @@ impl VideoSourceLocal {
         Ok(None)
     }
 
+    #[instrument(level = "debug")]
     fn get_cameras_with_same_name(
         candidates: &[VideoSourceType],
         name: &str,
@@ -201,6 +206,7 @@ impl VideoSourceLocal {
             .collect()
     }
 
+    #[instrument(level = "debug")]
     async fn get_cameras_with_same_encode(
         candidates: &[VideoSourceType],
         encode: &VideoEncodeType,
@@ -221,6 +227,7 @@ impl VideoSourceLocal {
         result
     }
 
+    #[instrument(level = "debug")]
     fn get_cameras_with_same_bus(
         candidates: &[VideoSourceType],
         typ: &VideoSourceLocalType,
@@ -238,6 +245,7 @@ impl VideoSourceLocal {
     }
 }
 
+#[instrument(level = "debug")]
 fn convert_v4l_intervals(v4l_intervals: &[v4l::FrameInterval]) -> Vec<FrameInterval> {
     let mut intervals: Vec<FrameInterval> = vec![];
 
@@ -284,6 +292,7 @@ fn convert_v4l_intervals(v4l_intervals: &[v4l::FrameInterval]) -> Vec<FrameInter
     intervals
 }
 
+#[instrument(level = "debug")]
 fn validate_control(control: &Control, value: i64) -> Result<(), String> {
     if control.state.is_inactive {
         return Err("Control is inactive".to_string());
@@ -327,6 +336,7 @@ fn validate_control(control: &Control, value: i64) -> Result<(), String> {
 }
 
 impl VideoSourceFormats for VideoSourceLocal {
+    #[instrument(level = "debug")]
     async fn formats(&self) -> Vec<Format> {
         let device_path = self.device_path.clone();
         let typ = self.typ.clone();
@@ -341,7 +351,7 @@ impl VideoSourceFormats for VideoSourceLocal {
             let v4l_device = match v4l::Device::with_path(&device_path) {
                 Ok(device) => device,
                 Err(error) => {
-                    error!("Faield to get device {device_path:?}: {error:?}");
+                    trace!("Faield to get device {device_path:?}: {error:?}");
                     return formats;
                 }
             };
@@ -357,7 +367,7 @@ impl VideoSourceFormats for VideoSourceLocal {
                 let v4l_framesizes = match v4l_device.enum_framesizes(v4l_format.fourcc) {
                     Ok(v4l_framesizes) => v4l_framesizes,
                     Err(error) => {
-                        warn!(
+                        trace!(
                             "Failed to get framesizes from format {v4l_format:?} for device {device_path:?}: {error:#?}"
                         );
                         continue;
@@ -482,14 +492,17 @@ impl VideoSourceFormats for VideoSourceLocal {
 }
 
 impl VideoSource for VideoSourceLocal {
+    #[instrument(level = "debug")]
     fn name(&self) -> &String {
         &self.name
     }
 
+    #[instrument(level = "debug")]
     fn source_string(&self) -> &str {
         &self.device_path
     }
 
+    #[instrument(level = "debug")]
     fn set_control_by_name(&self, control_name: &str, value: i64) -> std::io::Result<()> {
         let Some(control_id) = self
             .controls()
@@ -510,6 +523,7 @@ impl VideoSource for VideoSourceLocal {
         self.set_control_by_id(control_id, value)
     }
 
+    #[instrument(level = "debug")]
     fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()> {
         let Some(control) = self
             .controls()
@@ -543,7 +557,7 @@ impl VideoSource for VideoSourceLocal {
         match unpanic(move || v4l_device.set_control(v4l_control)) {
             ok @ Ok(_) => ok,
             Err(error) => {
-                warn!("Failed to set control {control:#?}, error: {error:#?}");
+                trace!("Failed to set control {control:#?}, error: {error:#?}");
                 Err(error)
             }
         }
@@ -569,6 +583,7 @@ impl VideoSource for VideoSourceLocal {
         self.control_value_by_id(control_id)
     }
 
+    #[instrument(level = "debug")]
     fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64> {
         let device_path = self.device_path.clone();
 
@@ -586,6 +601,7 @@ impl VideoSource for VideoSourceLocal {
         }
     }
 
+    #[instrument(level = "debug")]
     fn controls(&self) -> Vec<Control> {
         let mut controls: Vec<Control> = vec![];
 
@@ -594,7 +610,7 @@ impl VideoSource for VideoSourceLocal {
         let v4l_device = match unpanic(move || v4l::Device::with_path(device_path)) {
             Ok(device) => device,
             Err(error) => {
-                error!("Faield to get device {:?}: {error:?}", self.device_path);
+                trace!("Faield to get device {:?}: {error:?}", self.device_path);
                 return controls;
             }
         };
@@ -602,7 +618,7 @@ impl VideoSource for VideoSourceLocal {
         let v4l_controls = match unpanic(move || v4l_device.query_controls()) {
             Ok(device) => device,
             Err(error) => {
-                error!(
+                trace!(
                     "Faield to get controls for device {:?}: {error:?}",
                     self.device_path
                 );
@@ -684,16 +700,19 @@ impl VideoSource for VideoSourceLocal {
         controls
     }
 
+    #[instrument(level = "debug")]
     fn is_valid(&self) -> bool {
         !self.device_path.is_empty()
     }
 
+    #[instrument(level = "debug")]
     fn is_shareable(&self) -> bool {
         false
     }
 }
 
 impl VideoSourceAvailable for VideoSourceLocal {
+    #[instrument(level = "debug")]
     async fn cameras_available() -> Vec<VideoSourceType> {
         let mut cameras: Vec<VideoSourceType> = vec![];
 
@@ -729,17 +748,17 @@ impl VideoSourceAvailable for VideoSourceLocal {
                 let camera_path = camera_path.clone();
                 move || {
                     let v4l_device = v4l::Device::with_path(&camera_path).inspect_err(|error| {
-                        warn!("Faield to get device {camera_path:?}. Reason: {error:?}")
+                        trace!("Failed to get device {camera_path:?}. Reason: {error:?}")
                     })?;
 
                     let caps = v4l_device.query_caps().inspect_err(|error| {
-                        warn!(
+                        trace!(
                             "Failed to capture caps for device: {camera_path:?}. Reason: {error:?}"
                         )
                     })?;
 
                     v4l_device.format().inspect_err(|error| {
-                        warn!("Failed to capture formats for device: {camera_path:?}. Reason: {error:?}")
+                        trace!("Failed to capture formats for device: {camera_path:?}. Reason: {error:?}")
                     })?;
 
                     Ok::<_, std::io::Error>(caps)
@@ -769,6 +788,7 @@ mod tests {
     use super::*;
 
     #[traced_test]
+    #[instrument(level = "debug")]
     #[test]
     fn bus_decode() {
         let descriptions = vec![
@@ -817,6 +837,7 @@ mod device_identification_tests {
     };
     use VideoEncodeType::*;
 
+    #[instrument(level = "debug")]
     fn add_available_camera(
         name: &str,
         device_path: &str,
@@ -851,6 +872,7 @@ mod device_identification_tests {
         })
     }
 
+    #[instrument(level = "debug")]
     fn create_stream(
         name: &str,
         device_path: &str,
