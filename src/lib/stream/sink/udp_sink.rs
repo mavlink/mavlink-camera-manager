@@ -4,7 +4,7 @@ use tracing::*;
 
 use crate::stream::pipeline::runner::PipelineRunner;
 
-use super::SinkInterface;
+use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
 
 #[derive(Debug)]
 pub struct UdpSink {
@@ -27,12 +27,10 @@ impl SinkInterface for UdpSink {
         pipeline_id: &uuid::Uuid,
         tee_src_pad: gst::Pad,
     ) -> Result<()> {
-        let sink_id = &self.get_id();
-
-        // Set Tee's src pad
         if self.tee_src_pad.is_some() {
             return Err(anyhow!(
-                "Tee's src pad from UdpSink {sink_id} has already been configured"
+                "Tee's src pad from Sink {:?} has already been configured",
+                self.get_id()
             ));
         }
         self.tee_src_pad.replace(tee_src_pad);
@@ -40,111 +38,8 @@ impl SinkInterface for UdpSink {
             unreachable!()
         };
 
-        // Block data flow to prevent any data before set Playing, which would cause an error
-        let Some(tee_src_pad_data_blocker) = tee_src_pad
-            .add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, |_pad, _info| {
-                gst::PadProbeReturn::Ok
-            })
-        else {
-            let msg =
-                "Failed adding probe to Tee's src pad to block data before going to playing state"
-                    .to_string();
-            error!(msg);
-
-            if let Some(parent) = tee_src_pad.parent_element() {
-                parent.release_request_pad(tee_src_pad)
-            }
-
-            return Err(anyhow!(msg));
-        };
-
-        // Add the ProxySink element to the source's pipeline
         let elements = &[&self.queue, &self.proxysink];
-        if let Err(error) = pipeline.add_many(elements) {
-            let msg = format!("Failed to add ProxySink to Pipeline {pipeline_id}: {error:#?}");
-
-            if let Some(parent) = tee_src_pad.parent_element() {
-                parent.release_request_pad(tee_src_pad)
-            }
-
-            return Err(anyhow!(msg));
-        }
-
-        // Link the queue's src pad to the ProxySink's sink pad
-        let queue_src_pad = &self
-            .queue
-            .static_pad("src")
-            .expect("No src pad found on Queue");
-        let proxysink_sink_pad = &self
-            .proxysink
-            .static_pad("sink")
-            .expect("No sink pad found on ProxySink");
-        if let Err(link_err) = queue_src_pad.link(proxysink_sink_pad) {
-            let msg =
-                format!("Failed to link Queue's src pad with ProxySink's sink pad: {link_err:?}");
-            error!(msg);
-
-            if let Some(parent) = tee_src_pad.parent_element() {
-                parent.release_request_pad(tee_src_pad)
-            }
-
-            if let Err(remove_err) = pipeline.remove_many(elements) {
-                error!("Failed to remove elements from pipeline: {remove_err:?}");
-            }
-
-            return Err(anyhow!(msg));
-        }
-
-        // Link the new Tee's src pad to the ProxySink's sink pad
-        let queue_sink_pad = &self
-            .queue
-            .static_pad("sink")
-            .expect("No sink pad found on Queue");
-        if let Err(link_err) = tee_src_pad.link(queue_sink_pad) {
-            let msg = format!("Failed to link Tee's src pad with Queue's sink pad: {link_err:?}");
-            error!(msg);
-
-            if let Err(unlink_err) = queue_src_pad.unlink(proxysink_sink_pad) {
-                error!("Failed to unlink Queue's src pad and ProxySink's sink pad: {unlink_err:?}");
-            }
-
-            if let Some(parent) = tee_src_pad.parent_element() {
-                parent.release_request_pad(tee_src_pad)
-            }
-
-            if let Err(remove_err) = pipeline.remove_many(elements) {
-                error!("Failed to remove elements from pipeline: {remove_err:?}");
-            }
-
-            return Err(anyhow!(msg));
-        }
-
-        // Syncronize added and linked elements
-        if let Err(sync_err) = pipeline.sync_children_states() {
-            let msg = format!("Failed to synchronize children states: {sync_err:?}");
-            error!(msg);
-
-            if let Err(unlink_err) = queue_src_pad.unlink(proxysink_sink_pad) {
-                error!("Failed to unlink Queue's src pad and ProxySink's sink pad: {unlink_err:?}");
-            }
-
-            if let Err(unlink_err) = queue_src_pad.unlink(proxysink_sink_pad) {
-                error!("Failed to unlink Queue's src pad and ProxySink's sink pad: {unlink_err:?}");
-            }
-
-            if let Some(parent) = tee_src_pad.parent_element() {
-                parent.release_request_pad(tee_src_pad)
-            }
-
-            if let Err(remove_err) = pipeline.remove_many(elements) {
-                error!("Failed to remove elements from pipeline: {remove_err:?}");
-            }
-
-            return Err(anyhow!(msg));
-        }
-
-        // Unblock data to go through this added Tee src pad
-        tee_src_pad.remove_probe(tee_src_pad_data_blocker);
+        link_sink_to_tee(tee_src_pad, pipeline, elements)?;
 
         Ok(())
     }
@@ -156,53 +51,8 @@ impl SinkInterface for UdpSink {
             return Ok(());
         };
 
-        // Block data flow to prevent any data from holding the Pipeline elements alive
-        if tee_src_pad
-            .add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, |_pad, _info| {
-                gst::PadProbeReturn::Ok
-            })
-            .is_none()
-        {
-            warn!(
-                "Failed adding probe to Tee's src pad to block data before going to playing state"
-            );
-        }
-
-        // Unlink the Queue element from the source's pipeline Tee's src pad
-        let queue_sink_pad = self
-            .queue
-            .static_pad("sink")
-            .expect("No sink pad found on Queue");
-        if let Err(unlink_err) = tee_src_pad.unlink(&queue_sink_pad) {
-            warn!("Failed unlinking UdpSink's Queue element from Tee's src pad: {unlink_err:?}");
-        }
-        drop(queue_sink_pad);
-
-        // Release Tee's src pad
-        if let Some(parent) = tee_src_pad.parent_element() {
-            parent.release_request_pad(tee_src_pad)
-        }
-
-        // Remove the Sink's elements from the Source's pipeline
         let elements = &[&self.queue, &self.proxysink];
-        if let Err(remove_err) = pipeline.remove_many(elements) {
-            warn!("Failed removing UdpSink's elements from pipeline: {remove_err:?}");
-        }
-
-        // Set Sink's pipeline to null
-        if let Err(state_err) = self.pipeline.set_state(gst::State::Null) {
-            warn!("Failed to set Pipeline's state from UdpSink to NULL: {state_err:#?}");
-        }
-
-        // Set Queue to null
-        if let Err(state_err) = self.queue.set_state(gst::State::Null) {
-            warn!("Failed to set Queue's state to NULL: {state_err:#?}");
-        }
-
-        // Set ProxySink to null
-        if let Err(state_err) = self.proxysink.set_state(gst::State::Null) {
-            warn!("Failed to set ProxySink's state to NULL: {state_err:#?}");
-        }
+        unlink_sink_from_tee(tee_src_pad, pipeline, elements)?;
 
         Ok(())
     }
