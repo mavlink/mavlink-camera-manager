@@ -3,8 +3,9 @@ pub mod rtsp_sink;
 pub mod udp_sink;
 pub mod webrtc_sink;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use enum_dispatch::enum_dispatch;
+use gst::prelude::*;
 use tracing::*;
 
 use crate::video_stream::types::VideoAndStreamInformation;
@@ -98,4 +99,163 @@ pub fn create_image_sink(
         }
     };
     Ok(Sink::Image(ImageSink::try_new(id, encoding)?))
+}
+
+#[instrument(level = "debug")]
+pub fn link_sink_to_tee(
+    tee_src_pad: &gst::Pad,
+    sink_pipeline: &gst::Pipeline,
+    sink_elements: &[&gst::Element],
+) -> Result<()> {
+    // Block data flow to prevent any data before set Playing, which would cause an error
+    let _data_blocker_guard = {
+        let data_blocker_id = tee_src_pad
+            .add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, |_pad, _info| {
+                gst::PadProbeReturn::Ok
+            })
+            .context("Failed adding blocking tee_src_pad")?;
+
+        // Unblock data to go through when the function
+        scopeguard::guard(data_blocker_id, |data_blocker_id| {
+            tee_src_pad.remove_probe(data_blocker_id);
+        })
+    };
+
+    // Add all elements to the pipeline
+    sink_pipeline
+        .add_many(sink_elements)
+        .context("Failed adding elements to the pipeline")?;
+
+    // Link Queue to tee
+    {
+        let queue = sink_elements[0];
+        let queue_sink_pad = queue
+            .static_pad("sink")
+            .expect("No Sink pad found on Queue");
+        tee_src_pad
+            .link(&queue_sink_pad)
+            .context("Failed linking Queue to Tee")?;
+    }
+
+    // Define a cleanup guard to be run in case of errors
+    let cleanup_guard = scopeguard::guard(
+        (tee_src_pad, sink_pipeline),
+        |(tee_src_pad, sink_pipeline)| {
+            if let Some(parent) = tee_src_pad.parent_element() {
+                parent.release_request_pad(tee_src_pad)
+            }
+
+            if let Err(error) = sink_pipeline.remove_many(sink_elements) {
+                warn!("Failed removing elements from the pipeline: {error:?}");
+            }
+        },
+    );
+
+    link_and_add_all_elements(sink_pipeline, sink_elements)?;
+
+    sink_pipeline
+        .sync_children_states()
+        .context("Failed synchronizing pipeline elements")?;
+
+    // Defer the cleanup guard
+    scopeguard::ScopeGuard::into_inner(cleanup_guard);
+
+    Ok(())
+}
+
+#[instrument(level = "debug")]
+pub fn link_and_add_all_elements(
+    pipeline: &gst::Pipeline,
+    elements: &[&gst::Element],
+) -> Result<()> {
+    elements
+        .windows(2)
+        .enumerate()
+        .try_for_each(|(position, pair)| {
+            let src_element = pair[0];
+            let sink_element = pair[1];
+
+            src_element.link(sink_element).map_err(|linking_error| {
+                error!("Failed linking elements at position {position:?}: {linking_error:?}");
+
+                if let Err(unlinking_error) =
+                    unlink_and_remove_all_elements(pipeline, &elements[..position])
+                {
+                    error!("Failed unlinking elements: {unlinking_error:?}");
+                }
+
+                linking_error
+            })
+        })?;
+
+    Ok(())
+}
+
+#[instrument(level = "debug")]
+pub fn unlink_sink_from_tee(
+    tee_src_pad: &gst::Pad,
+    sink_pipeline: &gst::Pipeline,
+    sink_elements: &[&gst::Element],
+) -> Result<()> {
+    // Block data flow to prevent any data before set Playing, which would cause an error
+    let _data_blocker_guard = {
+        let data_blocker_id = tee_src_pad
+            .add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, |_pad, _info| {
+                gst::PadProbeReturn::Ok
+            })
+            .context("Failed adding blocking tee_src_pad")?;
+
+        // Unblock data to go through when the function
+        scopeguard::guard(data_blocker_id, |data_blocker_id| {
+            tee_src_pad.remove_probe(data_blocker_id);
+        })
+    };
+
+    // Unlink the Queue element from the source's pipeline Tee's src pad
+    {
+        let queue = sink_elements[0];
+        let queue_sink_pad = queue
+            .static_pad("sink")
+            .expect("No sink pad found on Queue");
+        if let Err(unlink_err) = tee_src_pad.unlink(&queue_sink_pad) {
+            warn!("Failed unlinking FileSink's Queue element from Tee's src pad: {unlink_err:?}");
+        }
+    }
+
+    if let Some(parent) = tee_src_pad.parent_element() {
+        parent.release_request_pad(tee_src_pad)
+    }
+
+    unlink_and_remove_all_elements(sink_pipeline, sink_elements)?;
+
+    // Instead of setting each element individually to null, we are using a temporary
+    // pipeline so we can post and EOS and set the state of the elements to null
+    // It is important to send EOS to the queue, otherwise it can hang when setting its state to null.
+    let pipeline = gst::Pipeline::new();
+    pipeline.add_many(sink_elements).unwrap();
+    pipeline.post_message(::gst::message::Eos::new()).unwrap();
+    pipeline.set_state(gst::State::Null).unwrap();
+
+    Ok(())
+}
+
+#[instrument(level = "debug")]
+pub fn unlink_and_remove_all_elements(
+    pipeline: &gst::Pipeline,
+    elements: &[&gst::Element],
+) -> Result<()> {
+    // Unlink every linked element
+    elements.windows(2).for_each(|pair| {
+        let src_element = pair[0];
+        let sink_element = pair[1];
+
+        src_element.unlink(sink_element);
+    });
+
+    // Remove all elements from the pipeline
+    pipeline
+        .remove_many(elements)
+        .context("Failed to remove elements from pipeline")?;
+
+    Ok(())
 }
