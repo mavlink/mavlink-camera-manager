@@ -206,13 +206,7 @@ async fn wait_for_encode(mut rx: mpsc::Receiver<gst::Caps>) -> Option<VideoEncod
 pub async fn get_capture_configuration_from_stream_uri(
     stream_uri: &url::Url,
 ) -> Result<CaptureConfiguration> {
-    use gst::prelude::*;
-
-    let encode = get_encode_from_stream_uri(stream_uri)
-        .await
-        .context("Failed getting encode")?;
-
-    let mut description = match stream_uri.scheme() {
+    let description = match stream_uri.scheme() {
         "rtsp" => {
             format!(
                 concat!("rtspsrc location={location} is-live=true latency=0",),
@@ -235,6 +229,30 @@ pub async fn get_capture_configuration_from_stream_uri(
         }
     };
 
+    let known_encodings = [VideoEncodeType::H264, VideoEncodeType::H265];
+    for encode in known_encodings {
+        debug!("Trying the encoding {encode:?}...");
+
+        match get_capture_configuration_using_encoding(description.clone(), encode).await {
+            video_capture_configuration @ Ok(_) => return video_capture_configuration,
+            Err(error) => {
+                debug!("Failed getting capture configuration: {error:?}");
+                continue;
+            }
+        };
+    }
+
+    Err(anyhow!("Failed after trying all known encodings"))
+}
+
+async fn get_capture_configuration_using_encoding(
+    mut description: String,
+    encode: VideoEncodeType,
+) -> Result<CaptureConfiguration> {
+    use gst::prelude::*;
+
+    description.push_str(" ! application/x-rtp ");
+
     match encode {
         VideoEncodeType::H264 => description.push_str(" ! rtph264depay ! avdec_h264"),
         VideoEncodeType::H265 => description.push_str(" ! rtph265depay ! avdec_h265"),
@@ -242,7 +260,7 @@ pub async fn get_capture_configuration_from_stream_uri(
     }
 
     description.push_str(concat!(
-        " ! typefind name=typefinder minimum=1",
+        " ! typefind name=typefinder minimum=99",
         " ! fakesink name=fakesink sync=false",
     ));
 
@@ -279,46 +297,46 @@ pub async fn get_capture_configuration_from_stream_uri(
     )
     .await
     .ok()
-    .flatten();
+    .context("Timeout");
 
     pipeline
         .set_state(gst::State::Null)
         .expect("Failed to set pipeline to Null");
 
-    video_capture_configuration.context("Failed waiting for capture configuration")
+    video_capture_configuration?
 }
 
 async fn wait_for_video_capture_configuration(
     mut rx: mpsc::Receiver<gst::Caps>,
     encode: VideoEncodeType,
-) -> Option<CaptureConfiguration> {
-    if let Some(caps) = rx.recv().await {
-        dbg!(&caps);
+) -> Result<CaptureConfiguration> {
+    let Some(caps) = rx.recv().await else {
+        return Err(anyhow!("No caps received"));
+    };
 
-        let structure = caps.structure(0)?;
+    debug!("Received caps: {caps:#?}");
 
-        let width = structure.get::<i32>("width").ok()? as u32;
-        let height = structure.get::<i32>("height").ok()? as u32;
-        let framerate = structure.get::<gst::Fraction>("framerate").ok()?;
+    let structure = caps.structure(0).context("Empty structure")?;
 
-        let frame_interval = FrameInterval {
-            numerator: framerate.denom() as u32,
-            denominator: framerate.numer() as u32,
-        };
+    let width = structure.get::<i32>("width").context("No width")? as u32;
+    let height = structure.get::<i32>("height").context("No height")? as u32;
+    let framerate = structure
+        .get::<gst::Fraction>("framerate")
+        .context("No framerate")?;
 
-        let video_capture_configuration = CaptureConfiguration::Video(VideoCaptureConfiguration {
-            encode,
-            height,
-            width,
-            frame_interval,
-        });
+    let frame_interval = FrameInterval {
+        numerator: framerate.denom() as u32,
+        denominator: framerate.numer() as u32,
+    };
 
-        trace!(
-            "Found video_capture_configuration {video_capture_configuration:?} from caps: {caps:?}"
-        );
+    let video_capture_configuration = CaptureConfiguration::Video(VideoCaptureConfiguration {
+        encode,
+        height,
+        width,
+        frame_interval,
+    });
 
-        return Some(video_capture_configuration);
-    }
+    trace!("Found video_capture_configuration {video_capture_configuration:?} from caps: {caps:?}");
 
-    None
+    Ok(video_capture_configuration)
 }
