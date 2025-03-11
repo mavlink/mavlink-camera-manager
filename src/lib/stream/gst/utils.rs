@@ -131,7 +131,7 @@ pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Option<VideoEn
         "udp" => {
             format!(
                 concat!(
-                    "udpsrc address={address} port={port} close-socket=false auto-multicast=true",
+                    "udpsrc address={address} port={port} close-socket=false auto-multicast=true do-timestamp=true",
                     " ! typefind name=typefinder minimum=1",
                     " ! fakesink name=fakesink sync=false"
                 ),
@@ -222,7 +222,7 @@ pub async fn get_capture_configuration_from_stream_uri(
         "udp" => {
             format!(
                 concat!(
-                    "udpsrc address={address} port={port} close-socket=false auto-multicast=true",
+                    "udpsrc address={address} port={port} close-socket=false auto-multicast=true do-timestamp=true",
                 ),
                 address = stream_uri.host().context("URI without host")?,
                 port = stream_uri.port().context("URI without port")?,
