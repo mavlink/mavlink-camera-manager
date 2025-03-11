@@ -167,16 +167,21 @@ impl Stream {
                             .first()
                             .context("No URL found")?;
 
-                        let Ok(capture_configuration) =
-                            get_capture_configuration_from_stream_uri(url).await
-                        else {
-                            let error_message =
-                                "Failed getting CaptureConfiguration from endpoint, trying again soon...";
+                        let capture_configuration = match get_capture_configuration_from_stream_uri(
+                            url,
+                        )
+                        .await
+                        {
+                            Ok(capture_configuration) => capture_configuration,
+                            Err(error) => {
+                                let error_message =
+                                        format!("Failed getting CaptureConfiguration from endpoint. Error: {error:?}. Trying again soon...");
 
-                            warn!(error_message);
-                            *error_status.write().await = Err(anyhow!(error_message));
+                                warn!(error_message);
+                                *error_status.write().await = Err(anyhow!(error_message));
 
-                            continue;
+                                continue;
+                            }
                         };
 
                         *error_status.write().await = Ok(());
