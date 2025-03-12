@@ -38,22 +38,11 @@ lazy_static! {
 impl Manager {
     #[instrument(level = "debug", skip(self))]
     async fn update_settings(&self) {
-        use futures::StreamExt;
-
-        let streams = futures::stream::iter(self.streams.values());
-
-        let video_and_stream_informations =
-            futures::StreamExt::filter_map(streams, |stream| async move {
-                let stream_guard = stream.state.read().await;
-
-                if let Some(state) = stream_guard.as_ref() {
-                    Some(state.video_and_stream_information.read().await.clone())
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<VideoAndStreamInformation>>()
-            .await;
+        let mut video_and_stream_informations = vec![];
+        for stream in self.streams.values() {
+            video_and_stream_informations
+                .push(stream.video_and_stream_information.read().await.clone())
+        }
 
         settings::manager::set_streams(video_and_stream_informations.as_slice());
     }
@@ -358,11 +347,7 @@ pub async fn add_stream_and_start(
     {
         let manager = MANAGER.read().await;
         for stream in manager.streams.values() {
-            let state_guard = stream.state.read().await;
-
-            let state_ref = state_guard.as_ref().context("Stream without State")?;
-
-            state_ref
+            stream
                 .video_and_stream_information
                 .read()
                 .await
@@ -383,12 +368,7 @@ async fn get_stream_id_from_name(stream_name: &str) -> Result<uuid::Uuid> {
     let stream_id = futures::stream::iter(&manager.streams)
         .filter_map(|(id, stream)| {
             let future = async move {
-                let state_guard = stream.state.read().await;
-
-                let state_ref = state_guard.as_ref()?;
-
-                let video_and_stream_information =
-                    state_ref.video_and_stream_information.read().await;
+                let video_and_stream_information = stream.video_and_stream_information.read().await;
 
                 video_and_stream_information
                     .name
@@ -570,13 +550,7 @@ impl Manager {
     pub async fn add_stream(stream: Stream) -> Result<()> {
         let mut manager = MANAGER.write().await;
 
-        let stream_id = {
-            let state_guard = stream.state.read().await;
-
-            let state_ref = state_guard.as_ref().context("Stream without State")?;
-
-            *state_ref.pipeline_id
-        };
+        let stream_id = *stream.pipeline_id;
 
         if manager.streams.insert(stream_id, stream).is_some() {
             return Err(anyhow!("Failed adding stream {stream_id:?}"));
