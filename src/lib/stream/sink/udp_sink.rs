@@ -56,6 +56,10 @@ impl SinkInterface for UdpSink {
         let elements = &[&self.queue, &self.proxysink];
         unlink_sink_from_tee(tee_src_pad, pipeline, elements)?;
 
+        if let Err(error) = self.pipeline.set_state(::gst::State::Null) {
+            warn!("Failed setting sink Pipeline state to Null: {error:?}");
+        }
+
         Ok(())
     }
 
