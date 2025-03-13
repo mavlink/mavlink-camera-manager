@@ -69,6 +69,8 @@ jobs:
     - name: Install gstreamer
       if: ${{ !contains(matrix.TARGET, 'linux') }}
       uses: blinemedical/setup-gstreamer@v1
+      with:
+        version: '1.26.0'
 
     - name: Install dependencies WinPcat since it's necessary for pnet crate
       # https://github.com/libpnet/libpnet/tree/v0.35.0?tab=readme-ov-file#windows
