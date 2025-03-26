@@ -417,43 +417,43 @@ impl StreamState {
                     ));
                 }
             }
+        }
 
-            if let Err(reason) = create_image_sink(
-                Arc::new(Manager::generate_uuid()),
-                &video_and_stream_information,
-            )
-            .and_then(|sink| {
-                stream
-                    .pipeline
-                    .as_mut()
-                    .context("No Pileine")?
-                    .add_sink(sink)
-            }) {
-                return Err(anyhow!(
-                    "Failed to add Sink of type Image to the Pipeline. Reason: {reason}"
-                ));
-            }
-
-            // Start the pipeline. This will automatically start sinks with linked proxy-isolated pipelines
+        if let Err(reason) = create_image_sink(
+            Arc::new(Manager::generate_uuid()),
+            &video_and_stream_information,
+        )
+        .and_then(|sink| {
             stream
                 .pipeline
-                .as_ref()
-                .context("No Pipeline")?
-                .inner_state_as_ref()
-                .pipeline_runner
-                .start()?;
-
-            // Start all the sinks
-            for sink in stream
-                .pipeline
                 .as_mut()
-                .context("No Pipeline")?
-                .inner_state_mut()
-                .sinks
-                .values()
-            {
-                sink.start()?
-            }
+                .context("No Pileine")?
+                .add_sink(sink)
+        }) {
+            return Err(anyhow!(
+                "Failed to add Sink of type Image to the Pipeline. Reason: {reason}"
+            ));
+        }
+
+        // Start the pipeline. This will automatically start sinks with linked proxy-isolated pipelines
+        stream
+            .pipeline
+            .as_ref()
+            .context("No Pipeline")?
+            .inner_state_as_ref()
+            .pipeline_runner
+            .start()?;
+
+        // Start all the sinks
+        for sink in stream
+            .pipeline
+            .as_mut()
+            .context("No Pipeline")?
+            .inner_state_mut()
+            .sinks
+            .values()
+        {
+            sink.start()?
         }
 
         // Only create the MavlinkCamera when MAVLink is not disabled
