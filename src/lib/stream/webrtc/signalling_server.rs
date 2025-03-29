@@ -211,7 +211,7 @@ impl SignallingServer {
             Message::Question(question) => {
                 match question {
                     Question::PeerId => Some(Answer::PeerId(PeerIdAnswer {
-                        id: stream::Manager::generate_uuid(),
+                        id: stream::Manager::generate_uuid(None),
                     })),
                     Question::AvailableStreams => {
                         // This looks something dumb, but in fact, by keeping signalling_protocol::Stream and
