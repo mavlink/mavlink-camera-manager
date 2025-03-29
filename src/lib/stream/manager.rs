@@ -405,7 +405,7 @@ impl Manager {
 
         let producer_id = bind.producer_id;
         let consumer_id = bind.consumer_id;
-        let session_id = Self::generate_uuid();
+        let session_id = Self::generate_uuid(None);
 
         let stream = manager.streams.get_mut(&producer_id).context(format!(
             "Cannot find any stream with producer {producer_id:?}"
