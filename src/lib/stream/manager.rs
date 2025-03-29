@@ -630,7 +630,11 @@ impl Manager {
     }
 
     #[instrument(level = "debug")]
-    pub fn generate_uuid() -> uuid::Uuid {
-        uuid::Uuid::new_v4()
+    pub fn generate_uuid(data: Option<&str>) -> uuid::Uuid {
+        if let Some(data) = data {
+            uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, data.as_bytes())
+        } else {
+            uuid::Uuid::new_v4()
+        }
     }
 }
