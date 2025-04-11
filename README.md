@@ -58,9 +58,14 @@
 
 Download the mavlink-camera-manager binary for your architecture from our [releases](https://github.com/mavlink/mavlink-camera-manager/releases), or build it from sources as [described here](#how-to-build-it)
 
-### 2. Installing
+### 2. Installing:
 
-- First, install the required runtime dependencies (assuming a Ubuntu-based distro):
+_note: We recommend GStreamer `1.24.0` or above. Previous versions have thread leaks when using WebRTC. You can check it by running `gst-launch-1.0 --version`. If the required version is not available on your operating system from their official store, follow the recommendations from [here](https://gstreamer.freedesktop.org/download)_
+_note 2: for a docker-based installation, use can use [this folder](master/docker) as an example_
+
+**Linux (Ubuntu-based distros)**
+
+- Install the required runtime dependencies:
 
 ```Bash
 sudo apt update -y && \
@@ -73,10 +78,23 @@ sudo apt install -y --no-install-recommends \
    gstreamer1.0-nice
 ```
 
-_note: We recommend GStreamer `1.24.0` or above. Previous versions have thread leaks when using WebRTC. You can check it by running `gst-launch-1.0 --version`._
+- Optionally, put the folder to your Linux `PATH`
 
-- Extract the zip
-- optionally, put the folder to your Linux PATH
+**Windows**
+
+- Download the .zip release for Windows from the releases page
+- Install the Microsoft Visual C++ Redistributable for Visual Studio 2015–2022 ([official instructions here](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170))
+- Make sure gstreamer is installed and added to your PATH. You can download it from [their official website](https://gstreamer.freedesktop.org/download/#windows)
+- Optionally, add the mavlink-camera-manager folder to your system PATH
+
+**macOS**
+
+- Download the .zip release for macOS from the releases page
+- Install GStreamer using Homebrew:
+```
+brew install gstreamer gst-plugins-base gst-plugins-bad gst-plugins-good gst-rtsp-server
+```
+- Optionally, add the binary's folder to your `PATH`
 
 ### 3. Running
 
