@@ -55,7 +55,9 @@ pub struct StreamState {
 impl Stream {
     #[instrument(level = "debug")]
     pub async fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
-        let pipeline_id = Arc::new(Manager::generate_uuid());
+        let pipeline_id = Arc::new(Manager::generate_uuid(Some(
+            &video_and_stream_information.name,
+        )));
 
         // Replace Redirect with Video
         let video_and_stream_information = {
@@ -381,7 +383,7 @@ impl StreamState {
 
             if endpoints.iter().any(|endpoint| endpoint.scheme() == "udp") {
                 if let Err(reason) = create_udp_sink(
-                    Arc::new(Manager::generate_uuid()),
+                    Arc::new(Manager::generate_uuid(None)),
                     &video_and_stream_information,
                 )
                 .and_then(|sink| {
@@ -402,7 +404,7 @@ impl StreamState {
                 .any(|endpoint| RTSPScheme::try_from(endpoint.scheme()).is_ok())
             {
                 if let Err(reason) = create_rtsp_sink(
-                    Arc::new(Manager::generate_uuid()),
+                    Arc::new(Manager::generate_uuid(None)),
                     &video_and_stream_information,
                 )
                 .and_then(|sink| {
@@ -420,7 +422,7 @@ impl StreamState {
         }
 
         if let Err(reason) = create_image_sink(
-            Arc::new(Manager::generate_uuid()),
+            Arc::new(Manager::generate_uuid(None)),
             &video_and_stream_information,
         )
         .and_then(|sink| {
