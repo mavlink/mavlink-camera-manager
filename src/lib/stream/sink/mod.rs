@@ -1,3 +1,4 @@
+pub mod file_sink;
 pub mod image_sink;
 pub mod rtsp_sink;
 pub mod udp_sink;
@@ -11,6 +12,7 @@ use tracing::*;
 
 use crate::video_stream::types::VideoAndStreamInformation;
 
+use file_sink::FileSink;
 use image_sink::ImageSink;
 use rtsp_sink::RtspSink;
 use udp_sink::UdpSink;
@@ -53,6 +55,7 @@ pub enum Sink {
     Rtsp(RtspSink),
     WebRTC(WebRTCSink),
     Image(ImageSink),
+    File(FileSink),
 }
 
 #[instrument(level = "debug")]
@@ -98,6 +101,25 @@ pub fn create_image_sink(
         }
     };
     Ok(Sink::Image(ImageSink::try_new(id, encoding)?))
+}
+
+#[instrument(level = "debug")]
+pub fn create_file_sink(
+    id: Arc<uuid::Uuid>,
+    video_and_stream_information: &VideoAndStreamInformation,
+) -> Result<Sink> {
+    let encoding = match &video_and_stream_information
+        .stream_information
+        .configuration
+    {
+        super::types::CaptureConfiguration::Video(video_configuraiton) => {
+            video_configuraiton.encode.clone()
+        }
+        super::types::CaptureConfiguration::Redirect(_) => {
+            unreachable!("Redirect streams now use CaptureConfiguration::Video")
+        }
+    };
+    Ok(Sink::File(FileSink::try_new(id, encoding)?))
 }
 
 #[instrument(level = "debug")]
