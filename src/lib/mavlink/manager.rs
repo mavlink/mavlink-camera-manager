@@ -5,6 +5,7 @@ use std::{
 
 use mavlink::{common::MavMessage, MavConnection, MavHeader};
 
+use anyhow::{Context, Result};
 use tokio::sync::broadcast;
 use tracing::*;
 
@@ -188,20 +189,20 @@ impl Manager {
     }
 
     #[instrument(level = "debug")]
-    pub fn new_component_id() -> u8 {
+    pub fn new_component_id() -> Result<u8> {
         let manager = MANAGER.lock().unwrap();
 
-        // Cameras IDs from MAV_COMP_ID_CAMERA (100) to MAV_COMP_ID_CAMERA6 (105) are reserved for cameras proxied by the autopilot, so we start from ID 106
-        let mut id = (mavlink::common::MavComponent::MAV_COMP_ID_CAMERA6 as u8) + 1;
+        let ids_range = crate::cli::manager::mavlink_camera_component_id_range();
         let mut vector = manager.ids.write().unwrap();
 
         // Find the closest ID available
-        while vector.contains(&id) {
-            id += 1;
-        }
+        let id = ids_range
+            .into_iter()
+            .find(|id| !vector.contains(id))
+            .context("All available MAVLink componenet IDs are being used ({ids_range:?}). Relaunch MCM with a larger mavlink_camera_component_id_range")?;
 
         vector.push(id);
-        id
+        Ok(id)
     }
 
     #[instrument(level = "debug")]

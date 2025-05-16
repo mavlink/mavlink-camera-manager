@@ -93,7 +93,7 @@ impl MavlinkCameraInner {
 
         let video_source_type = video_and_stream_information.video_source.clone();
 
-        let component_id = super::manager::Manager::new_component_id();
+        let component_id = super::manager::Manager::new_component_id()?;
         let component =
             MavlinkCameraComponent::try_new(video_and_stream_information, component_id)?;
 
