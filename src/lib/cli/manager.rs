@@ -102,6 +102,18 @@ struct Args {
     #[arg(long, value_name = "SYSTEM_ID", default_value = "1")]
     mavlink_system_id: u8,
 
+    /// Sets the MAVLink Component ID range to assign to cameras (e.g. 100-105).
+    ///
+    /// Note: 100–105 are reserved for autopilot-proxied cameras.
+    /// QGroundControl expects cameras in that range, but 106+ is recommended.
+    #[arg(
+        long,
+        value_name = "FIRST_ID-LAST_ID",
+        default_value = "106-121",
+        value_parser = mavlink_camera_component_id_range_validator
+    )]
+    mavlink_camera_component_id_range: std::ops::RangeInclusive<u8>,
+
     /// Sets Onvif authentications. Alternatively, this can be passed as `MCM_ONVIF_AUTH` environment variable.
     #[clap(long, value_name = "onvif://<USERNAME>:<PASSWORD>@<HOST>", value_delimiter = ',', value_parser = onvif_auth_validator, env = "MCM_ONVIF_AUTH")]
     onvif_auth: Vec<String>,
@@ -223,6 +235,13 @@ pub fn mavlink_system_id() -> u8 {
     MANAGER.clap_matches.mavlink_system_id
 }
 
+pub fn mavlink_camera_component_id_range() -> std::ops::RangeInclusive<u8> {
+    MANAGER
+        .clap_matches
+        .mavlink_camera_component_id_range
+        .clone()
+}
+
 // Return the command line used to start this application
 pub fn command_line_string() -> String {
     std::env::args().collect::<Vec<String>>().join(" ")
@@ -319,6 +338,24 @@ fn onvif_auth_validator(val: &str) -> Result<String, String> {
     }
 
     Ok(val.to_owned())
+}
+
+fn mavlink_camera_component_id_range_validator(
+    val: &str,
+) -> Result<std::ops::RangeInclusive<u8>, String> {
+    let parts: Vec<_> = val.split('-').collect();
+    if parts.len() != 2 {
+        return Err("Expected format: <first>-<last>".into());
+    }
+
+    let first_id = parts[0].parse::<u8>().map_err(|_| "Invalid first ID")?;
+    let last_id = parts[1].parse::<u8>().map_err(|_| "Invalid last ID")?;
+
+    if first_id > last_id {
+        return Err("First ID must be smaller than the last ID".into());
+    }
+
+    Ok(first_id..=last_id)
 }
 
 #[cfg(test)]
