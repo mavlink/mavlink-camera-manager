@@ -466,9 +466,9 @@ impl StreamState {
                 disable_mavlink: false,
             })
         ) {
-            stream.mavlink_camera = MavlinkCamera::try_new(&video_and_stream_information)
-                .await
-                .ok();
+            let mavlink_camera = MavlinkCamera::try_new(&video_and_stream_information).await?;
+
+            stream.mavlink_camera.replace(mavlink_camera);
         }
 
         Ok(stream)
