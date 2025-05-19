@@ -78,7 +78,7 @@ onvif-schema = { git = "https://github.com/lumeohq/onvif-rs", rev = "8e2408db", 
 anyhow = "1"
 tokio = { version = "1.37", features = ["full"] }
 enum_dispatch = "0.3.13"
-uuid = { version = "1.8", features = ["v4", "serde"] }
+uuid = { version = "1.8", features = ["v4", "v5", "serde"] }
 ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat", "uuid-impl"] }
 cached = { version = "0.51", features = ["serde", "serde_json", "async_tokio_rt_multi_thread"] }
 
@@ -103,7 +103,7 @@ gst-webrtc = { package = "gstreamer-webrtc", version = "0.23", features = ["v1_1
 gst-rtsp = { package = "gstreamer-rtsp", version = "0.23", features = ["v1_16"] }
 gst-rtsp-server = { package = "gstreamer-rtsp-server", version = "0.23", features = ["v1_16"] }
 gst-video = { package = "gstreamer-video", version = "0.23", features = ["v1_16"] }
-webrtc-sdp = { git = "https://github.com/mozilla/webrtc-sdp", sha = "fc78607ac2fe0c7c978ca4630c2e1b937d7ff7c6" }
+webrtc-sdp = "0.3.13"
 constcat = "0.5.0"
 glib = "0.20.6"
 
