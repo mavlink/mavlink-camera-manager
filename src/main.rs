@@ -11,12 +11,13 @@ async fn main() -> Result<(), std::io::Error> {
     // Settings should start before everybody else to ensure that the CLI are stored
     settings::manager::init(Some(&cli::manager::settings_file())).await;
 
-    controls::onvif::manager::Manager::init().await;
-
     mavlink::manager::Manager::init();
 
     stream::manager::init();
     settings::manager::set_mavlink_endpoint(&cli::manager::mavlink_connection_string());
+
+    // Onvif should start after the stream manager
+    controls::onvif::manager::Manager::init().await;
 
     if cli::manager::enable_thread_counter() {
         helper::threads::start_thread_counter_thread();
