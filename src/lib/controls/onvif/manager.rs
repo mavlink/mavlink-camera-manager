@@ -344,6 +344,16 @@ impl Manager {
 
         Ok(())
     }
+
+    #[instrument(level = "debug")]
+    pub async fn reset() -> Result<()> {
+        let mut manager = MANAGER.write().await;
+        manager._task.abort();
+
+        *manager = Manager::default();
+
+        Ok(())
+    }
 }
 
 /// Address must be something like `urn:uuid:bc071801-c50f-8301-ac36-bc071801c50f`.
