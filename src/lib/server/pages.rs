@@ -263,6 +263,10 @@ pub async fn reset_settings(query: web::Query<ResetSettings>) -> Result<HttpResp
             .await
             .map_err(|error| Error::Internal(format!("{error:?}")))?;
 
+        crate::controls::onvif::manager::Manager::reset()
+            .await
+            .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
         return Ok(HttpResponse::Ok().finish());
     }
 
