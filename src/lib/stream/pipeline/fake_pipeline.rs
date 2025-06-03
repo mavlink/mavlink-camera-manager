@@ -88,7 +88,7 @@ impl FakePipeline {
                 let capsfilter_profile = ",profile=constrained-baseline";
 
                 #[cfg(target_os = "windows")]
-                let h264_encoder = " ! mfh264enc bitrate=5000";
+                let h264_encoder = " ! mfh264enc low-latency=true bitrate=5000";
 
                 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
                 let h264_encoder =
@@ -129,7 +129,7 @@ impl FakePipeline {
                 let h265_encoder = " ! vtenc_h265 allow-frame-reordering=false realtime=true quality=0.0 bitrate=5000";
 
                 #[cfg(target_os = "windows")]
-                let h265_encoder = " ! mfh265enc bitrate=5000";
+                let h265_encoder = " ! mfh265enc low-latency=true bitrate=5000";
 
                 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
                 let h265_encoder =
