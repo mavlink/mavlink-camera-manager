@@ -69,6 +69,12 @@ impl FakePipeline {
         // For more information: https://gstreamer.freedesktop.org/documentation/additional/design/mediatype-video-raw.html?gi-language=c#formats
         let description = match &configuration.encode {
             VideoEncodeType::H264 => {
+                #[cfg(not(target_os = "windows"))]
+                let format = "I420";
+
+                #[cfg(target_os = "windows")]
+                let format = "NV12";
+
                 #[cfg(target_os = "macos")]
                 let h264_encoder =
                     " ! vtenc_h264 allow-frame-reordering=false realtime=true bitrate=5000";
@@ -91,7 +97,7 @@ impl FakePipeline {
                 format!(concat!(
                         "videotestsrc pattern={pattern} is-live=true do-timestamp=true",
                         " ! timeoverlay",
-                        " ! video/x-raw,format=I420",
+                        " ! video/x-raw,format={format}",
                         "{h264_encoder}",
                         " ! h264parse",
                         " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}{profile}",
@@ -101,6 +107,7 @@ impl FakePipeline {
                     ),
                     h264_encoder = h264_encoder,
                     pattern = pattern,
+                    format = format,
                     profile = capsfilter_profile,
                     width = configuration.width,
                     height = configuration.height,
@@ -112,6 +119,12 @@ impl FakePipeline {
                 )
             }
             VideoEncodeType::H265 => {
+                #[cfg(not(target_os = "windows"))]
+                let format = "I420";
+
+                #[cfg(target_os = "windows")]
+                let format = "NV12";
+
                 #[cfg(target_os = "macos")]
                 let h265_encoder = " ! vtenc_h265 allow-frame-reordering=false realtime=true quality=0.0 bitrate=5000";
 
@@ -125,7 +138,7 @@ impl FakePipeline {
                 format!(concat!(
                         "videotestsrc pattern={pattern} is-live=true do-timestamp=true",
                         " ! timeoverlay",
-                        " ! video/x-raw,format=I420",
+                        " ! video/x-raw,format={format}",
                         "{h265_encoder}",
                         " ! h265parse",
                         " ! capsfilter name={filter_name} caps=video/x-h265,profile={profile},stream-format=byte-stream,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
@@ -135,6 +148,7 @@ impl FakePipeline {
                     ),
                     h265_encoder = h265_encoder,
                     pattern = pattern,
+                    format = format,
                     profile = "main",
                     width = configuration.width,
                     height = configuration.height,
