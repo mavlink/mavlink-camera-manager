@@ -253,9 +253,13 @@ impl Manager {
 
             let mut context = mcontext.write().await;
             for stream_information in streams_informations {
+                let mut unauthenticated_stream_uri = stream_information.stream_uri.clone();
+                unauthenticated_stream_uri.set_password(None).unwrap();
+                unauthenticated_stream_uri.set_username("").unwrap();
+
                 context
                     .cameras
-                    .entry(stream_information.stream_uri.to_string())
+                    .entry(unauthenticated_stream_uri.to_string())
                     .and_modify(|old_camera| *old_camera = camera.clone())
                     .or_insert_with(|| {
                         trace!("New stream inserted: {stream_information:?}");
