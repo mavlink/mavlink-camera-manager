@@ -161,15 +161,26 @@ impl Manager {
         let scan_duration = tokio::time::Duration::from_secs(20);
 
         loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
             trace!("Discovering onvif...");
 
             const MAX_CONCURRENT_JUMPERS: usize = 100;
 
-            onvif::discovery::DiscoveryBuilder::default()
+            let devices_found = match onvif::discovery::DiscoveryBuilder::default()
                 .listen_address(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
                 .duration(scan_duration)
                 .run()
-                .await?
+                .await
+            {
+                Ok(devices_stream) => devices_stream,
+                Err(error) => {
+                    warn!("Failed running onvif discovery: {error:?}, trying again in 1 second...");
+                    continue;
+                }
+            };
+
+            devices_found
                 .for_each_concurrent(MAX_CONCURRENT_JUMPERS, |device| {
                     let context = mcontext.clone();
 
