@@ -36,7 +36,7 @@ use self::{
 
 #[derive(Debug)]
 pub struct Stream {
-    state: Arc<RwLock<Option<StreamState>>>,
+    pub state: Arc<RwLock<Option<StreamState>>>,
     pipeline_id: Arc<PeerId>,
     video_and_stream_information: Arc<RwLock<VideoAndStreamInformation>>,
     error: Arc<RwLock<anyhow::Result<()>>>,
