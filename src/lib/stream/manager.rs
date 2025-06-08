@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::{anyhow, Context, Error, Result};
 use cached::proc_macro::cached;
 use futures::stream::StreamExt;
+use gst::{prelude::GstBinExtManual, DebugGraphDetails};
 use tokio::sync::RwLock;
 use tracing::*;
 
@@ -636,5 +637,46 @@ impl Manager {
         } else {
             uuid::Uuid::new_v4()
         }
+    }
+
+    pub async fn get_stream_dot_by_id(id: &uuid::Uuid) -> Option<(String, Vec<String>)> {
+        let manager = MANAGER.read().await;
+        let Some(stream) = manager.streams.get(id) else {
+            return None;
+        };
+
+        let state_guard = stream.state.read().await;
+        let Some(state) = state_guard.as_ref() else {
+            return None;
+        };
+
+        let Some(pipeline) = &state.pipeline else {
+            return None;
+        };
+
+        let dot_main = pipeline
+            .inner_state_as_ref()
+            .pipeline
+            .debug_to_dot_data(DebugGraphDetails::all())
+            .to_string();
+
+        let dot_children = pipeline
+            .inner_state_as_ref()
+            .sinks
+            .values()
+            .filter_map(|sink| {
+                let Some(pipeline) = sink.pipeline() else {
+                    return None;
+                };
+
+                Some(
+                    pipeline
+                        .debug_to_dot_data(DebugGraphDetails::all())
+                        .to_string(),
+                )
+            })
+            .collect::<Vec<String>>();
+
+        Some((dot_main, dot_children))
     }
 }
