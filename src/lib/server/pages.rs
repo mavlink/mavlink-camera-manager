@@ -6,8 +6,12 @@ use actix_web::{
     web::{self, Json},
     HttpRequest, HttpResponse,
 };
+use actix_ws::Message;
+use futures::StreamExt;
 use paperclip::actix::{api_v2_operation, Apiv2Schema, CreatedJson};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use tokio::time::Duration;
 use tracing::*;
 use validator::Validate;
 
@@ -540,4 +544,69 @@ pub async fn unauthenticate_onvif_device(
         .map_err(|error| Error::Internal(format!("{error:?}")))?;
 
     Ok(HttpResponse::Ok().finish())
+}
+
+#[api_v2_operation]
+/// WebSocket endpoint that streams the DOT representation of all running GStreamer pipelines in real time.
+pub async fn dot_stream(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse> {
+    let (response, mut session, mut msg_stream) =
+        actix_ws::handle(&req, stream).map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    rt::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(2));
+        let mut last_dots = std::collections::HashMap::new();
+
+        loop {
+            tokio::select! {
+                Some(msg) = msg_stream.next() => {
+                    match msg {
+                        Ok(Message::Ping(_)) | Ok(Message::Pong(_)) | Ok(Message::Text(_)) | Ok(Message::Binary(_)) | Ok(Message::Continuation(_)) | Ok(Message::Nop) => continue,
+                        Ok(Message::Close(_)) | Err(_) => break,
+                    }
+                }
+                _ = interval.tick() => {
+                    let mut dots = Vec::new();
+                    let mut changed = false;
+
+                    match crate::stream::manager::streams().await {
+                        Ok(streams) => {
+                            for stream_info in streams {
+                                if let Some((dot, children)) = crate::stream::manager::Manager::get_stream_dot_by_id(&stream_info.id).await {
+                                    let id = stream_info.id.to_string();
+                                    if last_dots.get(&id).map_or(true, |last_dot| last_dot != &dot) {
+                                        last_dots.insert(id.clone(), dot.clone());
+                                        changed = true;
+                                        dots.push(json!({
+                                            "id": id,
+                                            "dot": dot,
+                                            "children": children,
+                                        }));
+                                    }
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            warn!("Failed to get streams information: {error:?}");
+                        }
+                    }
+
+                    if changed {
+                        let msg = match serde_json::to_string(&dots) {
+                            Ok(msg) => msg,
+                            Err(error) => {
+                                warn!("Failed to serialize DOT data: {error:?}");
+                                "[]".to_string()
+                            }
+                        };
+
+                        if session.text(msg).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    Ok(response)
 }
