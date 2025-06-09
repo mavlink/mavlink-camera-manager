@@ -198,7 +198,7 @@ impl UdpSink {
 
         // Create the pipeline
         let pipeline = gst::Pipeline::builder()
-            .name(format!("pipeline-sink-{sink_id}"))
+            .name(format!("pipeline-udp-sink-{sink_id}"))
             .build();
 
         // Add Sink elements to the Sink's Pipeline
