@@ -132,6 +132,10 @@ impl SinkInterface for UdpSink {
             );
         }
     }
+
+    fn pipeline(&self) -> Option<&gst::Pipeline> {
+        Some(&self.pipeline)
+    }
 }
 
 impl UdpSink {

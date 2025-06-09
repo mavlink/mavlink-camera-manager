@@ -151,6 +151,10 @@ impl SinkInterface for WebRTCSink {
             );
         }
     }
+
+    fn pipeline(&self) -> Option<&gst::Pipeline> {
+        None
+    }
 }
 
 impl WebRTCSink {
