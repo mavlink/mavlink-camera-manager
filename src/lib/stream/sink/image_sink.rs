@@ -150,6 +150,10 @@ impl SinkInterface for ImageSink {
             );
         }
     }
+
+    fn pipeline(&self) -> Option<&gst::Pipeline> {
+        Some(&self.pipeline)
+    }
 }
 
 impl ImageSink {

@@ -80,6 +80,10 @@ impl SinkInterface for RtspSink {
 
     #[instrument(level = "debug", skip(self))]
     fn eos(&self) {}
+
+    fn pipeline(&self) -> Option<&gst::Pipeline> {
+        None
+    }
 }
 
 impl RtspSink {

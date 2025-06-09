@@ -44,6 +44,9 @@ pub trait SinkInterface {
 
     /// Terminates the Sink
     fn eos(&self);
+
+    // Get inner pipeline
+    fn pipeline(&self) -> Option<&gst::Pipeline>;
 }
 
 #[enum_dispatch(SinkInterface)]
