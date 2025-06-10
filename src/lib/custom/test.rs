@@ -11,7 +11,7 @@ pub fn take_webrtc_stream() -> Vec<VideoAndStreamInformation> {
     vec![VideoAndStreamInformation {
         name: "WebRTC fake stream for thread leak".to_string(),
         stream_information: StreamInformation {
-            endpoints: vec![Url::parse("udp://0.0.0.0:8554/test").unwrap()],
+            endpoints: vec![Url::parse("udp://0.0.0.0:8554/test").unwrap()].into(),
             configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
                 encode: VideoEncodeType::H264,
                 height: size.1,

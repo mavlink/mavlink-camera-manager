@@ -63,7 +63,7 @@ pub fn create_udp_sink(
     let addresses = video_and_stream_information
         .stream_information
         .endpoints
-        .clone();
+        .to_vec();
 
     Ok(Sink::Udp(UdpSink::try_new(id, addresses)?))
 }
@@ -76,7 +76,7 @@ pub fn create_rtsp_sink(
     let addresses = video_and_stream_information
         .stream_information
         .endpoints
-        .clone();
+        .to_vec();
 
     Ok(Sink::Rtsp(RtspSink::try_new(id, addresses)?))
 }
