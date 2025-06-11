@@ -58,6 +58,7 @@ impl V4lPipeline {
                     concat!(
                         "v4l2src device={device} do-timestamp=true",
                         " ! h264parse",  // Here we need the parse to help the stream-format and alignment part, which is being fixated here because avc/au seems to reduce the CPU usage in the RTP payloading part.
+                        " ! h264timestamper",
                         " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtph264pay aggregate-mode=zero-latency config-interval=-1 pt=96",
@@ -78,6 +79,7 @@ impl V4lPipeline {
                     concat!(
                         "v4l2src device={device} do-timestamp=true",
                         " ! h265parse",
+                        " ! h265timestamper",
                         " ! capsfilter name={filter_name} caps=video/x-h265,stream-format=byte-stream,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtph265pay aggregate-mode=zero-latency config-interval=-1 pt=96",
