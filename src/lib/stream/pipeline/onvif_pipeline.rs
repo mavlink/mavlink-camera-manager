@@ -71,7 +71,7 @@ impl OnvifPipeline {
             Some(VideoEncodeType::H264) => {
                 format!(
                     concat!(
-                        "rtspsrc location={location} is-live=true latency=0",
+                        "rtspsrc location={location} is-live=true latency=0 do-retransmission=true",
                         " ! application/x-rtp",
                         " ! rtph264depay",
                         " ! h264parse",
@@ -90,7 +90,7 @@ impl OnvifPipeline {
             Some(VideoEncodeType::H265) => {
                 format!(
                     concat!(
-                        "rtspsrc location={location} is-live=true latency=0",
+                        "rtspsrc location={location} is-live=true latency=0 do-retransmission=true",
                         " ! application/x-rtp",
                         " ! rtph265depay",
                         " ! h265parse",
