@@ -104,7 +104,7 @@ impl RedirectPipeline {
             Some(VideoEncodeType::H264) => {
                 format!(
                     concat!(
-                        " ! rtph264depay",
+                        " ! rtph264depay source-info=true",
                         " ! h264parse",
                         " ! h264timestamper",
                         " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au",
@@ -120,7 +120,7 @@ impl RedirectPipeline {
             Some(VideoEncodeType::H265) => {
                 format!(
                     concat!(
-                        " ! rtph265depay",
+                        " ! rtph265depay source-info=true",
                         " ! h265parse",
                         " ! h265timestamper",
                         " ! capsfilter name={filter_name} caps=video/x-h265,profile={profile},stream-format=byte-stream,alignment=au",

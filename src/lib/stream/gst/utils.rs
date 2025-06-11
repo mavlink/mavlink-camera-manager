@@ -256,8 +256,12 @@ async fn get_capture_configuration_using_encoding(
     description.push_str(" ! application/x-rtp ");
 
     match encode {
-        VideoEncodeType::H264 => description.push_str(" ! rtph264depay ! avdec_h264"),
-        VideoEncodeType::H265 => description.push_str(" ! rtph265depay ! avdec_h265"),
+        VideoEncodeType::H264 => {
+            description.push_str(" ! rtph265depay source-info=true ! avdec_h264")
+        }
+        VideoEncodeType::H265 => {
+            description.push_str(" ! rtph265depay source-info=true ! avdec_h265")
+        }
         _unsupported => unreachable!(),
     }
 
