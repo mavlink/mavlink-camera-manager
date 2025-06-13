@@ -257,7 +257,7 @@ async fn get_capture_configuration_using_encoding(
 
     match encode {
         VideoEncodeType::H264 => {
-            description.push_str(" ! rtph265depay source-info=true ! avdec_h264")
+            description.push_str(" ! rtph264depay source-info=true ! avdec_h264")
         }
         VideoEncodeType::H265 => {
             description.push_str(" ! rtph265depay source-info=true ! avdec_h265")
