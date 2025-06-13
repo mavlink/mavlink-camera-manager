@@ -75,8 +75,7 @@ impl OnvifPipeline {
                         " ! application/x-rtp",
                         " ! rtph264depay source-info=true",
                         " ! h264parse",
-                        " ! h264timestamper",
-                        " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au",
+                        " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=byte-stream,alignment=nal",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtph264pay aggregate-mode=zero-latency config-interval=-1 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
@@ -94,8 +93,7 @@ impl OnvifPipeline {
                         " ! application/x-rtp",
                         " ! rtph265depay source-info=true",
                         " ! h265parse",
-                        " ! h265timestamper",
-                        " ! capsfilter name={filter_name} caps=video/x-h265,profile={profile},stream-format=byte-stream,alignment=au",
+                        " ! capsfilter name={filter_name} caps=video/x-h265,profile={profile},stream-format=byte-stream,alignment=nal",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtph265pay aggregate-mode=zero-latency config-interval=-1 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
