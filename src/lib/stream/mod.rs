@@ -13,7 +13,7 @@ use anyhow::{anyhow, Context, Result};
 use gst::utils::get_capture_configuration_from_stream_uri;
 use manager::Manager;
 use pipeline::{Pipeline, PipelineGstreamerInterface};
-use sink::{create_image_sink, create_rtsp_sink, create_udp_sink};
+use sink::{create_image_sink, create_rtsp_sink, create_udp_sink, create_zenoh_sink};
 use tokio::sync::RwLock;
 use tracing::*;
 use types::*;
@@ -434,6 +434,23 @@ impl StreamState {
         }) {
             return Err(anyhow!(
                 "Failed to add Sink of type Image to the Pipeline. Reason: {reason}"
+            ));
+        }
+
+        if let Err(reason) = create_zenoh_sink(
+            Arc::new(Manager::generate_uuid(None)),
+            &video_and_stream_information,
+        )
+        .await
+        .and_then(|sink| {
+            stream
+                .pipeline
+                .as_mut()
+                .context("No Pileine")?
+                .add_sink(sink)
+        }) {
+            return Err(anyhow!(
+                "Failed to add Sink of type Zenoh to the Pipeline. Reason: {reason}"
             ));
         }
 
