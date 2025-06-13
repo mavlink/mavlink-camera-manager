@@ -2,6 +2,7 @@ pub mod image_sink;
 pub mod rtsp_sink;
 pub mod udp_sink;
 pub mod webrtc_sink;
+pub mod zenoh_sink;
 
 use anyhow::{Context, Result};
 use enum_dispatch::enum_dispatch;
@@ -15,6 +16,7 @@ use image_sink::ImageSink;
 use rtsp_sink::RtspSink;
 use udp_sink::UdpSink;
 use webrtc_sink::WebRTCSink;
+use zenoh_sink::ZenohSink;
 
 #[enum_dispatch]
 pub trait SinkInterface {
@@ -56,6 +58,7 @@ pub enum Sink {
     Rtsp(RtspSink),
     WebRTC(WebRTCSink),
     Image(ImageSink),
+    Zenoh(ZenohSink),
 }
 
 #[instrument(level = "debug")]
@@ -104,6 +107,34 @@ pub fn create_image_sink(
 }
 
 #[instrument(level = "debug")]
+pub async fn create_zenoh_sink(
+    id: Arc<uuid::Uuid>,
+    video_and_stream_information: &VideoAndStreamInformation,
+) -> Result<Sink> {
+    let encoding = match &video_and_stream_information
+        .stream_information
+        .configuration
+    {
+        super::types::CaptureConfiguration::Video(video_configuraiton) => {
+            video_configuraiton.encode.clone()
+        }
+        super::types::CaptureConfiguration::Redirect(_) => {
+            unreachable!("Redirect streams now use CaptureConfiguration::Video");
+        }
+    };
+
+    let topic_suffix = video_and_stream_information
+        .name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>();
+
+    Ok(Sink::Zenoh(
+        ZenohSink::try_new(id, encoding, topic_suffix).await?,
+    ))
+}
+
+#[instrument(level = "debug")]
 pub fn link_sink_to_tee(
     tee_src_pad: &gst::Pad,
     sink_pipeline: &gst::Pipeline,
@@ -124,9 +155,12 @@ pub fn link_sink_to_tee(
     };
 
     // Add all elements to the pipeline
-    sink_pipeline
-        .add_many(sink_elements)
-        .context("Failed adding elements to the pipeline")?;
+    for element in sink_elements {
+        let name = element.name();
+        if let Err(error) = sink_pipeline.add(*element) {
+            return Err(anyhow::anyhow!("Failed to add element '{name}': {error:?}"));
+        }
+    }
 
     // Link Queue to tee
     {
