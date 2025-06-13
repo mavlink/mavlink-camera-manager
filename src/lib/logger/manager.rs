@@ -302,4 +302,5 @@ fn filter_unwanted_crates(env_filter: EnvFilter) -> EnvFilter {
         .add_directive("ws_discovery=off".parse().unwrap())
         .add_directive("xml_xsd=off".parse().unwrap())
         .add_directive("onvif::discovery=off".parse().unwrap())
+        .add_directive("zenoh=off".parse().unwrap())
 }
