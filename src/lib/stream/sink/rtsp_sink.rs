@@ -103,7 +103,7 @@ impl RtspSink {
                     .scheme()
                     .starts_with("rtsp")
                     .then_some(RTSPScheme::try_from(address.scheme()).unwrap_or_default())
-                    .map(|scheme| (address.path().to_string(), scheme))
+                    .map(|scheme| (address.path().replace('/', "."), scheme))
             })
             .context(
                 "Failed to find RTSP compatible address. Example: \"rtsp://0.0.0.0:8554/test\"",
