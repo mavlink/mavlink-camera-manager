@@ -162,8 +162,10 @@ impl ZenohSink {
 
         let _parser;
         let caps;
+        let encode_type;
         match encoding {
             VideoEncodeType::H264 => {
+                encode_type = "h264";
                 _parser = gst::ElementFactory::make("h264parse").build()?;
                 caps = gst::Caps::builder("video/x-h264")
                     .field("stream-format", "byte-stream")
@@ -171,6 +173,7 @@ impl ZenohSink {
                     .build();
             }
             VideoEncodeType::H265 => {
+                encode_type = "h265";
                 _parser = gst::ElementFactory::make("h265parse").build()?;
                 caps = gst::Caps::builder("video/x-h265")
                     .field("stream-format", "byte-stream")
@@ -201,8 +204,19 @@ impl ZenohSink {
             let zenoh_session = zenoh_session.clone();
             async move {
                 while let Some(data) = rx.recv().await {
+                    // Create a foxglove json compatible message
+                    // https://docs.foxglove.dev/docs/visualization/message-schemas/compressed-video
+                    let message = serde_json::json!({
+                        "timestamp": serde_json::json!({
+                            "sec": chrono::Utc::now().timestamp(),
+                            "nsec": chrono::Utc::now().timestamp_subsec_nanos(),
+                        }),
+                        "frame_id": "vehicle",
+                        "data": data,
+                        "format": encode_type,
+                    });
                     if let Err(error) = zenoh_session
-                        .put(&format!("video/{topic_suffix}"), data)
+                        .put(&format!("video/{topic_suffix}"), message.to_string())
                         .await
                     {
                         error!("Error publishing data: {error:?}");
