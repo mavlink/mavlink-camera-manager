@@ -216,7 +216,7 @@ impl ZenohSink {
                         "format": encode_type,
                     });
                     if let Err(error) = zenoh_session
-                        .put(&format!("video/{topic_suffix}"), message.to_string())
+                        .put(&format!("video/{topic_suffix}/stream"), message.to_string())
                         .await
                     {
                         error!("Error publishing data: {error:?}");
