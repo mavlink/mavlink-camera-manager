@@ -117,6 +117,14 @@ struct Args {
     /// Sets Onvif authentications. Alternatively, this can be passed as `MCM_ONVIF_AUTH` environment variable.
     #[clap(long, value_name = "onvif://<USERNAME>:<PASSWORD>@<HOST>", value_delimiter = ',', value_parser = onvif_auth_validator, env = "MCM_ONVIF_AUTH")]
     onvif_auth: Vec<String>,
+
+    /// Enables the zenoh integration by default in client mode.
+    #[arg(long, value_name = "PATH")]
+    zenoh: bool,
+
+    /// Sets the zenoh configuration file path.
+    #[arg(long, value_name = "PATH")]
+    zenoh_config_file: Option<String>,
 }
 
 #[derive(Debug)]
@@ -307,6 +315,14 @@ pub fn onvif_auth() -> HashMap<std::net::Ipv4Addr, onvif::soap::client::Credenti
             Some((host, credentials))
         })
         .collect()
+}
+
+pub fn enable_zenoh() -> bool {
+    MANAGER.clap_matches.zenoh
+}
+
+pub fn zenoh_config_file() -> Option<String> {
+    MANAGER.clap_matches.zenoh_config_file.clone()
 }
 
 fn gst_feature_rank_validator(val: &str) -> Result<String, String> {
