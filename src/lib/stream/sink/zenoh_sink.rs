@@ -7,7 +7,10 @@ use gst::prelude::*;
 use tokio::sync::mpsc;
 use tracing::*;
 
-use crate::{stream::pipeline::runner::PipelineRunner, video::types::VideoEncodeType};
+use crate::{
+    cli::manager::zenoh_config_file, stream::pipeline::runner::PipelineRunner,
+    video::types::VideoEncodeType,
+};
 
 use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
 
@@ -189,7 +192,21 @@ impl ZenohSink {
 
         let mut zenoh_session_guard = ZENOH_SESSION.lock().await;
         if zenoh_session_guard.is_none() {
-            let session = zenoh::open(zenoh::Config::default())
+            let config = if let Some(zenoh_config_file) = zenoh_config_file() {
+                zenoh::Config::from_file(zenoh_config_file)
+                    .map_err(|error| anyhow!("Failed to load Zenoh config file: {error:?}"))?
+            } else {
+                let mut config = zenoh::Config::default();
+                config
+                    .insert_json5("mode", r#""client""#)
+                    .expect("Failed to insert client mode");
+                config
+                    .insert_json5("connect/endpoints", r#"["tcp/127.0.0.1:7447"]"#)
+                    .expect("Failed to insert endpoints");
+                config
+            };
+
+            let session = zenoh::open(config)
                 .await
                 .map_err(|error| anyhow!("Failed to open Zenoh session: {error:?}"))?;
             *zenoh_session_guard = Some(session);
