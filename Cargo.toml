@@ -41,6 +41,7 @@ actix-extensible-rate-limit = "0.3.1"
 actix-cors = "0.7.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_cbor = "0.10"
 validator = { version = "0.16", features = ["derive"] }
 thiserror = "2.0"
 
@@ -67,6 +68,7 @@ tracing-tracy = { version = "0.10.5", features = ["ondemand", "broadcast"] } # N
 ringbuffer = "0.15.0"
 scopeguard = "1.2.0"
 zenoh = "1.4.0"
+flatbuffers = { version = "25.2.10", features = ["serde", "serialize"] }
 
 # This is a custom revision adding file name suffix on top of tracing-appender-0.2.2" "0.2.2", but compatible with the current tracing version.
 # Reference: https://github.com/tokio-rs/tracing/issues/2441
@@ -123,3 +125,4 @@ ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat
 uuid = { version = "1.8", features = ["v4", "serde"] }
 serde = { version = "1.0", features = ["derive"] }
 regex = "1"
+flatc-rust = "0.2.0"

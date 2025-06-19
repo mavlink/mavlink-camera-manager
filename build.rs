@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use regex::Regex;
@@ -62,6 +62,10 @@ fn main() {
     if std::env::var("SKIP_WEB").is_err() {
         build_web();
     }
+
+    if std::env::var("SKIP_flatbuffers").is_err() {
+        generate_flatbuffers();
+    }
 }
 
 fn generate_typescript_bindings() {
@@ -97,6 +101,33 @@ fn generate_typescript_bindings() {
     let bindings_file_path = output_dir.join(Path::new("signalling_protocol.d.ts"));
     let mut bindings_file = fs::File::create(bindings_file_path).unwrap();
     bindings_file.write_all(bindings.as_bytes()).unwrap();
+}
+
+fn generate_flatbuffers() {
+    let foxglove_root_dir = Path::new("./src/lib/foxglove/");
+    let foxglove_input_dir = foxglove_root_dir.join("schemas/");
+    let foxglove_output_dir = Path::new("target/flatbuffers/");
+
+    if !foxglove_output_dir.exists() {
+        fs::create_dir_all(&foxglove_output_dir).unwrap();
+    }
+
+    let input_filenames = ["CompressedVideo.fbs"];
+    let input_files: Vec<PathBuf> = input_filenames
+        .iter()
+        .map(|f| foxglove_input_dir.join(f))
+        .collect();
+    let input_files: Vec<&Path> = input_files.iter().map(PathBuf::as_path).collect();
+
+    flatc_rust::run(flatc_rust::Args {
+        lang: "rust",
+        inputs: &input_files,
+        out_dir: foxglove_output_dir,
+        includes: &[&foxglove_input_dir],
+        extra: &["--gen-all", "--rust-module-root-file", "--rust-serialize"],
+        ..Default::default()
+    })
+    .unwrap();
 }
 
 fn build_web() {

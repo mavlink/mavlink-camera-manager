@@ -11,8 +11,9 @@ image = "joaoantoniocardoso/cross-rs:aarch64-unknown-linux-gnu-bullseye-slim-wit
 pre-build = [
     "apt-get update && apt-get --assume-yes install unzip",
     "curl -fsSL https://bun.sh/install | bash -s 'bun-v1.0.0'",
-    ". /root/.bashrc"
+    ". /root/.bashrc",
+    "git clone --depth 1 --branch v25.2.10 https://github.com/google/flatbuffers.git && cd flatbuffers && cmake -G \"Unix Makefiles\" && make -j install",
 ]
 
 [build.env]
-passthrough = ["SKIP_BINDINGS", "SKIP_BUN"]
+passthrough = ["SKIP_BINDINGS", "SKIP_WEB", "SKIP_FLATBUFFERS"]

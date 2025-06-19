@@ -9,6 +9,7 @@ pub mod helper;
 pub mod cli;
 pub mod controls;
 pub mod custom;
+pub mod foxglove;
 pub mod logger;
 pub mod mavlink;
 pub mod network;

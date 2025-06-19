@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use tracing::*;
 
 use crate::{
-    cli::manager::zenoh_config_file, stream::pipeline::runner::PipelineRunner,
+    cli::manager::zenoh_config_file, foxglove, stream::pipeline::runner::PipelineRunner,
     video::types::VideoEncodeType,
 };
 
@@ -213,7 +213,7 @@ impl ZenohSink {
         }
         let zenoh_session = zenoh_session_guard.as_ref().unwrap();
 
-        let (tx, mut rx) = mpsc::channel(100);
+        let (tx, mut rx) = mpsc::channel::<Vec<u8>>(100);
 
         // Spawn a task to handle the video data publishing
         tokio::spawn({
@@ -221,19 +221,34 @@ impl ZenohSink {
             let zenoh_session = zenoh_session.clone();
             async move {
                 while let Some(data) = rx.recv().await {
-                    // Create a foxglove json compatible message
-                    // https://docs.foxglove.dev/docs/visualization/message-schemas/compressed-video
-                    let message = serde_json::json!({
-                        "timestamp": serde_json::json!({
-                            "sec": chrono::Utc::now().timestamp(),
-                            "nsec": chrono::Utc::now().timestamp_subsec_nanos(),
-                        }),
-                        "frame_id": "vehicle",
-                        "data": data,
-                        "format": encode_type,
-                    });
+                    let compressed_video = foxglove::CompressedVideo {
+                        timestamp: foxglove::Time::default(),
+                        frame_id: "vehicle".to_string(),
+                        data: data.clone(),
+                        format: encode_type.to_string(),
+                    };
+
+                    let json = serde_json::to_string(&compressed_video).unwrap();
+                    let json_len = json.len();
+
+                    let cbor = compressed_video.to_cbor().unwrap();
+                    let cbor_len = cbor.len();
+
+                    let flatbuffer = compressed_video.to_flatbuffer().unwrap();
+                    let flatbuffers_len = flatbuffer.len();
+
+                    let data_len = data.len();
+
+                    println!(
+                        "LENGTHS: data: {} | JSON: {} ({:.2}x) | CBOR: {} ({:.2}x) | FlatBuffers: {} ({:.2}x)",
+                        data_len,
+                        json_len, json_len as f64 / data_len as f64,
+                        cbor_len, cbor_len as f64 / data_len as f64,
+                        flatbuffers_len, flatbuffers_len as f64 / data_len as f64
+                    );
                     if let Err(error) = zenoh_session
-                        .put(&format!("video/{topic_suffix}/stream"), message.to_string())
+                        .put(&format!("video/{topic_suffix}/stream"), flatbuffer)
+                        .encoding(zenoh::bytes::Encoding::APPLICATION_CBOR)
                         .await
                     {
                         error!("Error publishing data: {error:?}");
