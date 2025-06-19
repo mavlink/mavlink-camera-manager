@@ -437,21 +437,23 @@ impl StreamState {
             ));
         }
 
-        if let Err(reason) = create_zenoh_sink(
-            Arc::new(Manager::generate_uuid(None)),
-            &video_and_stream_information,
-        )
-        .await
-        .and_then(|sink| {
-            stream
-                .pipeline
-                .as_mut()
-                .context("No Pileine")?
-                .add_sink(sink)
-        }) {
-            return Err(anyhow!(
-                "Failed to add Sink of type Zenoh to the Pipeline. Reason: {reason}"
-            ));
+        if crate::cli::manager::enable_zenoh() {
+            if let Err(reason) = create_zenoh_sink(
+                Arc::new(Manager::generate_uuid(None)),
+                &video_and_stream_information,
+            )
+            .await
+            .and_then(|sink| {
+                stream
+                    .pipeline
+                    .as_mut()
+                    .context("No Pileine")?
+                    .add_sink(sink)
+            }) {
+                return Err(anyhow!(
+                    "Failed to add Sink of type Zenoh to the Pipeline. Reason: {reason}"
+                ));
+            }
         }
 
         // Start the pipeline. This will automatically start sinks with linked proxy-isolated pipelines
