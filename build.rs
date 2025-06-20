@@ -63,9 +63,16 @@ fn main() {
         build_web();
     }
 
-    if std::env::var("SKIP_flatbuffers").is_err() {
+    if std::env::var("SKIP_FLATBUFFERS").is_err() {
         generate_flatbuffers();
     }
+
+    std::env::set_var(
+        "ROSRUST_MSG_PATH",
+        &PathBuf::from("src/lib/foxglove/schemas")
+            .canonicalize()
+            .expect("Failed to canonicalize path"),
+    );
 }
 
 fn generate_typescript_bindings() {

@@ -237,18 +237,22 @@ impl ZenohSink {
                     let flatbuffer = compressed_video.to_flatbuffer().unwrap();
                     let flatbuffers_len = flatbuffer.len();
 
+                    let ros2 = compressed_video.to_ros2().unwrap();
+                    let ros2_len = ros2.len();
+
                     let data_len = data.len();
 
                     println!(
-                        "LENGTHS: data: {} | JSON: {} ({:.2}x) | CBOR: {} ({:.2}x) | FlatBuffers: {} ({:.2}x)",
+                        "LENGTHS: data: {} | JSON: {} ({:.2}x) | CBOR: {} ({:.2}x) | FlatBuffers: {} ({:.2}x) | ROS2: {} ({:.2}x)",
                         data_len,
                         json_len, json_len as f64 / data_len as f64,
                         cbor_len, cbor_len as f64 / data_len as f64,
-                        flatbuffers_len, flatbuffers_len as f64 / data_len as f64
+                        flatbuffers_len, flatbuffers_len as f64 / data_len as f64,
+                        ros2_len, ros2_len as f64 / data_len as f64,
                     );
                     if let Err(error) = zenoh_session
-                        .put(&format!("video/{topic_suffix}/stream"), flatbuffer)
-                        .encoding(zenoh::bytes::Encoding::APPLICATION_CBOR)
+                        .put(&format!("video/{topic_suffix}/stream"), ros2)
+                        .encoding(zenoh::bytes::Encoding::APPLICATION_CDR)
                         .await
                     {
                         error!("Error publishing data: {error:?}");

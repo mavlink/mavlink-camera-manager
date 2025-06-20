@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 #[path = "../../../target/flatbuffers/mod.rs"]
 mod flatbuffer_messages;
 
-use flatbuffer_messages::foxglove;
+pub mod ros2_messages {
+    #[rustfmt::skip]
+    rosrust::rosmsg_include!(foxglove_msgs/CompressedVideo);
+}
 
 // https://docs.foxglove.dev/docs/visualization/message-schemas/compressed-video
 #[derive(Debug, Serialize, Deserialize)]
@@ -33,12 +36,6 @@ impl Default for Time {
     }
 }
 
-impl From<Time> for foxglove::Time {
-    fn from(value: Time) -> Self {
-        Self::new(value.sec, value.nsec)
-    }
-}
-
 pub type Bytes = Vec<u8>;
 
 impl CompressedVideo {
@@ -47,9 +44,11 @@ impl CompressedVideo {
     }
 
     pub fn to_flatbuffer(&self) -> Result<Vec<u8>> {
+        use flatbuffer_messages::foxglove;
+
         let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(1024);
 
-        let timestamp = &self.timestamp.into();
+        let timestamp = &foxglove::Time::new(self.timestamp.sec, self.timestamp.nsec);
         let frame_id = builder.create_string(&self.frame_id);
         let data = builder.create_vector(&self.data);
         let format = builder.create_string(&self.format);
@@ -67,5 +66,22 @@ impl CompressedVideo {
         builder.finish(compressed_video, None);
 
         Ok(builder.finished_data().to_vec())
+    }
+
+    pub fn to_ros2(&self) -> Result<Vec<u8>> {
+        use ros2_messages::{builtin_interfaces, foxglove_msgs};
+        use rosrust::RosMsg;
+
+        let mut message = foxglove_msgs::CompressedVideo {
+            timestamp: builtin_interfaces::Time {
+                sec: self.timestamp.sec as i32,
+                nanosec: self.timestamp.nsec,
+            },
+            frame_id: self.frame_id.clone(),
+            data: self.data.clone(),
+            format: self.format.clone(),
+        };
+
+        message.encode_vec().map_err(anyhow::Error::msg)
     }
 }
