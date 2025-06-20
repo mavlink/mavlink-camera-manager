@@ -286,7 +286,7 @@ mod tests {
         let fake_streams = vec![VideoAndStreamInformation {
             name: "PotatoTestStream".into(),
             stream_information: StreamInformation {
-                endpoints: vec![Url::parse("udp://potatohost:4242").unwrap()],
+                endpoints: vec![Url::parse("udp://potatohost:4242").unwrap()].into(),
                 configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
                     encode: VideoEncodeType::H264,
                     height: 666,
