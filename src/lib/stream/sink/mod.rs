@@ -111,6 +111,7 @@ pub async fn create_zenoh_sink(
     id: Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
+    println!("create_zenoh_sink");
     let encoding = match &video_and_stream_information
         .stream_information
         .configuration

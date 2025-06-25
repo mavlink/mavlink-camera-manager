@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use anyhow::{anyhow, Result};
+use foxglove::{self, Encode};
 use gst::prelude::*;
 use tokio::sync::mpsc;
 use tracing::*;
@@ -124,6 +125,7 @@ impl ZenohSink {
         encoding: VideoEncodeType,
         topic_suffix: String,
     ) -> Result<Self> {
+        println!("zenoh sink try new");
         let queue = gst::ElementFactory::make("queue")
             .property_from_str("leaky", "downstream") // Throw away any data
             .property("silent", true)
@@ -201,7 +203,7 @@ impl ZenohSink {
                     .insert_json5("mode", r#""client""#)
                     .expect("Failed to insert client mode");
                 config
-                    .insert_json5("connect/endpoints", r#"["tcp/127.0.0.1:7447"]"#)
+                    .insert_json5("connect/endpoints", r#"["tcp/192.168.31.179:7447"]"#)
                     .expect("Failed to insert endpoints");
                 config
             };
@@ -220,7 +222,7 @@ impl ZenohSink {
         }
         let zenoh_session = zenoh_session_guard.as_ref().unwrap();
 
-        let (tx, mut rx) = mpsc::channel(100);
+        let (tx, mut rx) = mpsc::channel::<Vec<u8>>(100);
 
         // Spawn a task to handle the video data publishing
         tokio::spawn({
@@ -230,6 +232,7 @@ impl ZenohSink {
                 while let Some(data) = rx.recv().await {
                     // Create a foxglove json compatible message
                     // https://docs.foxglove.dev/docs/visualization/message-schemas/compressed-video
+                    /*
                     let message = serde_json::json!({
                         "timestamp": serde_json::json!({
                             "sec": chrono::Utc::now().timestamp(),
@@ -239,8 +242,18 @@ impl ZenohSink {
                         "data": data,
                         "format": encode_type,
                     });
+                    */
+                    let message = foxglove::schemas::CompressedVideo {
+                        timestamp: Some(foxglove::schemas::Timestamp::now()),
+                        frame_id: "vehicle".to_string(),
+                        data: data.into(),
+                        format: encode_type.to_string(),
+                    };
+                    let mut buffer = Vec::new();
+                    message.encode(&mut buffer).expect("Failed to encode message");
+                    info!("message: {:?}", foxglove::schemas::CompressedVideo::get_message_encoding());
                     if let Err(error) = zenoh_session
-                        .put(&format!("video/{topic_suffix}/stream"), message.to_string())
+                        .put(&format!("video/{topic_suffix}/stream"), buffer)
                         .await
                     {
                         error!("Error publishing data: {error:?}");
