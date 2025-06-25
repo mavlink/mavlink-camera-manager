@@ -12,7 +12,10 @@ use crate::{
     video::types::VideoEncodeType,
 };
 
-use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
+use super::{
+    link_sink_to_tee, types::zenoh_message::CompressedVideo, types::zenoh_message::Timestamp,
+    unlink_sink_from_tee, SinkInterface,
+};
 
 lazy_static! {
     static ref ZENOH_SESSION: Mutex<Option<zenoh::Session>> = Mutex::new(None);
@@ -230,17 +233,20 @@ impl ZenohSink {
                 while let Some(data) = rx.recv().await {
                     // Create a foxglove json compatible message
                     // https://docs.foxglove.dev/docs/visualization/message-schemas/compressed-video
-                    let message = serde_json::json!({
-                        "timestamp": serde_json::json!({
-                            "sec": chrono::Utc::now().timestamp(),
-                            "nsec": chrono::Utc::now().timestamp_subsec_nanos(),
-                        }),
-                        "frame_id": "vehicle",
-                        "data": data,
-                        "format": encode_type,
-                    });
+                    let message = CompressedVideo {
+                        timestamp: Timestamp::now(),
+                        frame_id: "vehicle".to_string(),
+                        data,
+                        format: encode_type.to_string(),
+                    };
+                    let encoded = cdr::serialize::<_, _, cdr::CdrLe>(&message, cdr::Infinite)
+                        .expect("Failed to serialize message");
                     if let Err(error) = zenoh_session
-                        .put(&format!("video/{topic_suffix}/stream"), message.to_string())
+                        .put(&format!("video/{topic_suffix}/stream"), encoded)
+                        .encoding(
+                            zenoh::bytes::Encoding::APPLICATION_CDR
+                                .with_schema("foxglove.CompressedVideo"),
+                        )
                         .await
                     {
                         error!("Error publishing data: {error:?}");
