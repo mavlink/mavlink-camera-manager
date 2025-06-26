@@ -21,7 +21,7 @@ pub struct CompressedVideo {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct Time {
-    pub sec: u32,
+    pub sec: i32,
     pub nsec: u32,
 }
 
@@ -30,7 +30,7 @@ impl Default for Time {
         let time = chrono::Utc::now();
 
         Self {
-            sec: time.timestamp() as u32, // note: this will wrap if timestamp exceeds u32::MAX
+            sec: time.timestamp() as i32, // note: this will wrap if timestamp exceeds u32::MAX
             nsec: time.timestamp_subsec_nanos(),
         }
     }
@@ -48,7 +48,8 @@ impl CompressedVideo {
 
         let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(1024);
 
-        let timestamp = &foxglove::Time::new(self.timestamp.sec, self.timestamp.nsec);
+        let timestamp =
+            &foxglove::Time::new(self.timestamp.sec.try_into().unwrap(), self.timestamp.nsec);
         let frame_id = builder.create_string(&self.frame_id);
         let data = builder.create_vector(&self.data);
         let format = builder.create_string(&self.format);
@@ -72,9 +73,9 @@ impl CompressedVideo {
         use ros2_messages::{builtin_interfaces, foxglove_msgs};
         use rosrust::RosMsg;
 
-        let mut message = foxglove_msgs::CompressedVideo {
+        let message = foxglove_msgs::CompressedVideo {
             timestamp: builtin_interfaces::Time {
-                sec: self.timestamp.sec as i32,
+                sec: self.timestamp.sec,
                 nanosec: self.timestamp.nsec,
             },
             frame_id: self.frame_id.clone(),
@@ -83,5 +84,9 @@ impl CompressedVideo {
         };
 
         message.encode_vec().map_err(anyhow::Error::msg)
+    }
+
+    pub fn to_cdr(&self) -> Result<Vec<u8>> {
+        cdr::serialize::<_, _, cdr::PlCdrLe>(&self, cdr::Infinite).map_err(anyhow::Error::msg)
     }
 }
