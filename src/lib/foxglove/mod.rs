@@ -1,4 +1,5 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
+use foxglove::Encode;
 use serde::{Deserialize, Serialize};
 
 #[allow(non_snake_case)]
@@ -88,5 +89,25 @@ impl CompressedVideo {
 
     pub fn to_cdr(&self) -> Result<Vec<u8>> {
         cdr::serialize::<_, _, cdr::PlCdrLe>(&self, cdr::Infinite).map_err(anyhow::Error::msg)
+    }
+
+    pub fn to_protobuf(&self) -> Result<Vec<u8>> {
+        use foxglove;
+
+        let data = foxglove::schemas::CompressedVideo {
+            timestamp: Some(foxglove::schemas::Timestamp::new(
+                self.timestamp.sec as u32,
+                self.timestamp.nsec,
+            )),
+            frame_id: self.frame_id.clone(),
+            data: self.data.clone().into(),
+            format: self.format.clone(),
+        };
+
+        let len = data.encoded_len().context("Unknown encoded size")?;
+        let mut buf: Vec<u8> = Vec::with_capacity(len);
+        data.encode(&mut buf)?;
+
+        Ok(buf)
     }
 }

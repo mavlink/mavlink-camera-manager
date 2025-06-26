@@ -243,24 +243,29 @@ impl ZenohSink {
                     let cdr = compressed_video.to_cdr().unwrap();
                     let cdr_len = cdr.len();
 
+                    let protobuf = compressed_video.to_protobuf().unwrap();
+                    let protobuf_len = protobuf.len();
+
                     let data_len = data.len();
 
                     println!(
-                        "LENGTHS: data: {} | JSON: {} ({:.2}x) | CBOR: {} ({:.2}x) | FlatBuffers: {} ({:.2}x) | ROS2: {} ({:.2}x) | CDR: {} ({:.2}x)",
+                        "LENGTHS: data: {} | JSON: {} ({:.2}x) | CBOR: {} ({:.2}x) | FlatBuffers: {} ({:.2}x) | ROS2: {} ({:.2}x) | CDR: {} ({:.2}x) | PROTOBUF: {} ({:.2}x)",
                         data_len,
                         json_len, json_len as f64 / data_len as f64,
                         cbor_len, cbor_len as f64 / data_len as f64,
                         flatbuffers_len, flatbuffers_len as f64 / data_len as f64,
                         ros2_len, ros2_len as f64 / data_len as f64,
                         cdr_len, cdr_len as f64 / data_len as f64,
+                        protobuf_len, protobuf_len as f64 / data_len as f64,
                     );
 
-                    println!("ros2: {:?}", &ros2[0..100]);
-                    println!("cdr: {:?}", &cdr[0..100]);
+                    // println!("ros2: {:?}", &ros2[0..100]);
+                    // println!("cdr: {:?}", &cdr[0..100]);
+                    // println!("protobuf: {:?}", &protobuf[0..100]);
 
                     if let Err(error) = zenoh_session
-                        .put(&format!("video/{topic_suffix}/stream"), cdr)
-                        .encoding(zenoh::bytes::Encoding::APPLICATION_CDR)
+                        .put(&format!("video/{topic_suffix}/stream"), protobuf)
+                        .encoding(zenoh::bytes::Encoding::APPLICATION_PROTOBUF)
                         .await
                     {
                         error!("Error publishing data: {error:?}");
