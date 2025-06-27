@@ -67,6 +67,7 @@ tracing-tracy = { version = "0.10.5", features = ["ondemand", "broadcast"] } # N
 ringbuffer = "0.15.0"
 scopeguard = "1.2.0"
 zenoh = "1.4.0"
+cdr = "0.2.4"
 
 # This is a custom revision adding file name suffix on top of tracing-appender-0.2.2" "0.2.2", but compatible with the current tracing version.
 # Reference: https://github.com/tokio-rs/tracing/issues/2441
@@ -107,6 +108,8 @@ gst-video = { package = "gstreamer-video", version = "0.23", features = ["v1_16"
 webrtc-sdp = "0.3.13"
 constcat = "0.5.0"
 glib = "0.20.6"
+cdr-encoding = "0.10.2"
+byteorder = "1.5.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 v4l = "0.14.0"

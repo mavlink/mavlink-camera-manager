@@ -1,5 +1,6 @@
 pub mod image_sink;
 pub mod rtsp_sink;
+pub mod types;
 pub mod udp_sink;
 pub mod webrtc_sink;
 pub mod zenoh_sink;
