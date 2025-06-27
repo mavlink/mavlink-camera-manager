@@ -240,6 +240,7 @@ impl ZenohSink {
                         format: encode_type.to_string(),
                     };
                     let encoded = cdr::serialize::<_, _, cdr::CdrLe>(&message, cdr::Infinite)
+                    //let encoded = cdr_encoding::to_vec::<CompressedVideo, byteorder::LittleEndian>(&message)
                         .expect("Failed to serialize message");
                     if let Err(error) = zenoh_session
                         .put(&format!("video/{topic_suffix}/stream"), encoded)
