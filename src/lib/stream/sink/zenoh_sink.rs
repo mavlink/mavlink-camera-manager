@@ -204,7 +204,7 @@ impl ZenohSink {
                     .insert_json5("mode", r#""client""#)
                     .expect("Failed to insert client mode");
                 config
-                    .insert_json5("connect/endpoints", r#"["tcp/127.0.0.1:7447"]"#)
+                    .insert_json5("connect/endpoints", r#"["tcp/192.168.31.179:7447"]"#)
                     .expect("Failed to insert endpoints");
                 config
             };
@@ -234,12 +234,12 @@ impl ZenohSink {
                     // Create a foxglove json compatible message
                     // https://docs.foxglove.dev/docs/visualization/message-schemas/compressed-video
                     let message = CompressedVideo {
-                        timestamp: Some(Timestamp::now()),
+                        timestamp: Timestamp::now(),
                         frame_id: "vehicle".to_string(),
                         data,
                         format: encode_type.to_string(),
                     };
-                    let encoded = cdr::serialize::<_, _, cdr::CdrBe>(&message, cdr::Infinite)
+                    let encoded = cdr::serialize::<_, _, cdr::CdrLe>(&message, cdr::Infinite)
                         .expect("Failed to serialize message");
                     if let Err(error) = zenoh_session
                         .put(&format!("video/{topic_suffix}/stream"), encoded)

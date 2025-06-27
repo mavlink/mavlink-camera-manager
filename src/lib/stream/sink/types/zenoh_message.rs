@@ -28,7 +28,7 @@ impl Timestamp {
 #[derive(Debug, Serialize)]
 pub struct CompressedVideo {
     /// Timestamp of video frame
-    pub timestamp: Option<Timestamp>,
+    pub timestamp: Timestamp,
     /// Frame of reference for the video.
     ///
     /// The origin of the frame is the optical center of the camera. +x points to the right in the video, +y points down, and +z points into the plane of the video.
