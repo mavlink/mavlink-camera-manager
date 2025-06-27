@@ -75,22 +75,12 @@ impl FakePipeline {
                 #[cfg(target_os = "windows")]
                 let format = "NV12";
 
-                #[cfg(target_os = "macos")]
-                let h264_encoder =
-                    " ! vtenc_h264 allow-frame-reordering=false realtime=true bitrate=5000";
-
-                // profile= is not supported by vtenc_h264
-                #[cfg(target_os = "macos")]
-                let capsfilter_profile = "";
-
-                // "constrained-baseline" for windows and linux.
-                #[cfg(not(target_os = "macos"))]
                 let capsfilter_profile = ",profile=constrained-baseline";
 
                 #[cfg(target_os = "windows")]
                 let h264_encoder = " ! mfh264enc low-latency=true bitrate=5000";
 
-                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                #[cfg(not(target_os = "windows"))]
                 let h264_encoder =
                     " ! x264enc tune=zerolatency speed-preset=ultrafast bitrate=5000";
 
