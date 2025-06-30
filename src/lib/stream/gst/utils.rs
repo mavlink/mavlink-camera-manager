@@ -121,7 +121,7 @@ pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Option<VideoEn
         "rtsp" => {
             format!(
                 concat!(
-                    "rtspsrc location={location} is-live=true latency=0",
+                    "rtspsrc location={location} is-live=true latency=0 do-retransmission=true",
                     " ! typefind name=typefinder minimum=1",
                     " ! fakesink name=fakesink sync=false"
                 ),
@@ -209,7 +209,9 @@ pub async fn get_capture_configuration_from_stream_uri(
     let description = match stream_uri.scheme() {
         "rtsp" => {
             format!(
-                concat!("rtspsrc location={location} is-live=true latency=0",),
+                concat!(
+                    "rtspsrc location={location} is-live=true latency=0 do-retransmission=true",
+                ),
                 location = stream_uri.to_string(),
             )
         }
@@ -254,8 +256,12 @@ async fn get_capture_configuration_using_encoding(
     description.push_str(" ! application/x-rtp ");
 
     match encode {
-        VideoEncodeType::H264 => description.push_str(" ! rtph264depay ! avdec_h264"),
-        VideoEncodeType::H265 => description.push_str(" ! rtph265depay ! avdec_h265"),
+        VideoEncodeType::H264 => {
+            description.push_str(" ! rtph264depay source-info=true ! avdec_h264")
+        }
+        VideoEncodeType::H265 => {
+            description.push_str(" ! rtph265depay source-info=true ! avdec_h265")
+        }
         _unsupported => unreachable!(),
     }
 
