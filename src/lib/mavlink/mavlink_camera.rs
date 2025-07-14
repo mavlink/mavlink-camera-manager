@@ -8,8 +8,8 @@ use url::Url;
 
 use crate::{
     cli, mavlink::mavlink_camera_component::MavlinkCameraComponent,
-    network::utils::get_visible_qgc_address, video::types::VideoSourceType,
-    video_stream::types::VideoAndStreamInformation,
+    network::utils::get_visible_qgc_address, stream::types::MavlinkComponent,
+    video::types::VideoSourceType, video_stream::types::VideoAndStreamInformation,
 };
 
 use super::{manager::Message, utils::*};
@@ -636,5 +636,14 @@ impl Drop for MavlinkCamera {
         super::manager::Manager::drop_id(self.inner.component.component_id);
 
         debug!("MavlinkCameraHandle Dropped!");
+    }
+}
+
+impl Into<MavlinkComponent> for &MavlinkCamera {
+    fn into(self) -> MavlinkComponent {
+        MavlinkComponent {
+            system_id: self.inner.component.system_id,
+            component_id: self.inner.component.component_id,
+        }
     }
 }

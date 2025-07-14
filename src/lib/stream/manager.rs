@@ -617,11 +617,17 @@ impl Manager {
 
                 let video_and_stream = stream.video_and_stream_information.read().await.clone();
 
+                let mavlink = state_guard
+                    .as_ref()
+                    .map(|state| state.mavlink_camera.as_ref().map(|m| m.into()))
+                    .unwrap_or_default();
+
                 Some(StreamStatus {
                     id,
                     running,
                     error,
                     video_and_stream,
+                    mavlink,
                 })
             })
             .collect()
