@@ -46,4 +46,11 @@ pub struct StreamStatus {
     pub running: bool,
     pub error: Option<String>,
     pub video_and_stream: VideoAndStreamInformation,
+    pub mavlink: Option<MavlinkComponent>,
+}
+
+#[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
+pub struct MavlinkComponent {
+    pub system_id: u8,
+    pub component_id: u8,
 }
