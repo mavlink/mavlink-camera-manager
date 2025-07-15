@@ -90,9 +90,9 @@ impl FakePipeline {
                         " ! video/x-raw,format={format}",
                         "{h264_encoder}",
                         " ! h264parse",
-                        " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}{profile}",
+                        " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=byte-stream,alignment=nal,width={width},height={height},framerate={interval_denominator}/{interval_numerator}{profile}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
-                        " ! rtph264pay aggregate-mode=zero-latency config-interval=10 pt=96",
+                        " ! rtph264pay aggregate-mode=zero-latency config-interval=-1 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     h264_encoder = h264_encoder,
@@ -131,9 +131,9 @@ impl FakePipeline {
                         " ! video/x-raw,format={format}",
                         "{h265_encoder}",
                         " ! h265parse",
-                        " ! capsfilter name={filter_name} caps=video/x-h265,profile={profile},stream-format=byte-stream,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
+                        " ! capsfilter name={filter_name} caps=video/x-h265,profile={profile},stream-format=byte-stream,alignment=nal,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
-                        " ! rtph265pay aggregate-mode=zero-latency config-interval=10 pt=96",
+                        " ! rtph265pay aggregate-mode=zero-latency config-interval=-1 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     h265_encoder = h265_encoder,
