@@ -891,7 +891,7 @@ mod device_identification_tests {
                         denominator: 1,
                     },
                 }),
-                endpoints: vec![url::Url::parse("udp://0.0.0.0:5600").unwrap()],
+                endpoints: vec![url::Url::parse("udp://0.0.0.0:5600").unwrap()].into(),
                 extended_configuration: None,
             },
             video_source: VideoSourceType::Local(VideoSourceLocal {
