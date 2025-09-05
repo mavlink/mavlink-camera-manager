@@ -1,6 +1,12 @@
-use std::{collections::HashMap, net::Ipv4Addr, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    net::{IpAddr, Ipv4Addr},
+    sync::Arc,
+    time::Duration,
+};
 
 use anyhow::{anyhow, Context, Result};
+use futures::StreamExt as _;
 use onvif::soap::client::Credentials;
 use serde::Serialize;
 use tokio::sync::RwLock;
@@ -155,87 +161,316 @@ impl Manager {
 
     #[instrument(level = "debug", skip(mcontext))]
     async fn discover_loop(mcontext: Arc<RwLock<ManagerContext>>) -> Result<()> {
-        use futures::stream::StreamExt;
-        use std::net::{IpAddr, Ipv4Addr};
-
-        let scan_duration = tokio::time::Duration::from_secs(20);
+        let scan_duration = Duration::from_secs(20);
+        let retry_delay = Duration::from_secs(1);
 
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
-            trace!("Discovering onvif...");
+            debug!("Starting ONVIF discovery cycle across all suitable interfaces...");
 
-            const MAX_CONCURRENT_JUMPERS: usize = 100;
+            // 1. Find suitable interfaces
+            let suitable_interfaces = Self::find_suitable_interfaces();
+            debug!(
+                "Found {} suitable interface(s) for ONVIF discovery.",
+                suitable_interfaces.len()
+            );
 
-            let devices_found = match onvif::discovery::DiscoveryBuilder::default()
-                .listen_address(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
-                .duration(scan_duration)
-                .run()
-                .await
-            {
-                Ok(devices_stream) => devices_stream,
-                Err(error) => {
-                    warn!("Failed running onvif discovery: {error:?}, trying again in 1 second...");
-                    continue;
-                }
-            };
+            if suitable_interfaces.is_empty() {
+                debug!("No suitable interfaces found. Sleeping before next cycle...");
+                tokio::time::sleep(retry_delay).await;
+                continue; // Skip to the next iteration of the loop
+            }
 
-            devices_found
-                .for_each_concurrent(MAX_CONCURRENT_JUMPERS, |device| {
-                    let context = mcontext.clone();
+            // 2. Spawn discovery tasks for each interface
+            let mut discovery_tasks = Vec::new();
+            for (iface_name, ip_addr) in suitable_interfaces {
+                debug!(
+                    "Spawning ONVIF discovery task for interface '{iface_name}' (IP: {ip_addr})..."
+                );
+
+                let task_handle = tokio::spawn({
+                    let mcontext = mcontext.clone();
 
                     async move {
-                        let device: OnvifDevice = match device.try_into() {
-                            Ok(onvif_device) => onvif_device,
-                            Err(error) => {
-                                error!("Failed parsing device: {error:?}");
-                                return;
+                        match Self::run_discovery_on_interface(ip_addr, scan_duration).await {
+                            Ok(devices_stream) => {
+                                debug!("Task result: ONVIF discovery on {ip_addr} successful.");
+                                // Process devices found on this interface within the task
+                                Self::process_discovered_devices(mcontext, devices_stream, ip_addr)
+                                    .await;
+                                debug!(
+                                    "Task finished: Processing devices from {ip_addr} completed."
+                                );
+                                Ok::<(), onvif::discovery::Error>(()) // Indicate success (discovery part)
                             }
-                        };
-
-                        // Transfer from url_credentials to credentials. Note that `url_credentials` should never overwrride `credentials`,
-                        // otherwise, the credentials set during runtime (via rest API) would not overwrride credentials passed via ENV/CLI.
-                        {
-                            let mut context = context.write().await;
-                            if let Some(credential) = context.url_credentials.remove(&device.ip) {
-                                trace!("Transferring credential: {credential:?}");
-                                let _ =
-                                    context.credentials.entry(device.uuid).or_insert(credential);
+                            Err(error) => {
+                                warn!("Task failed: ONVIF discovery failed on interface IP '{ip_addr}': {error:?}");
+                                Err(error)
                             }
                         }
-
-                        Self::handle_device(context, device).await;
                     }
-                })
-                .await;
+                });
+                discovery_tasks.push((iface_name, ip_addr, task_handle));
+            }
 
-            // Remove old cameras
-            let mut mcontext = mcontext.write().await;
-            mcontext.cameras.retain(|stream_uri, camera| {
-                if camera.last_update.elapsed() > 3 * scan_duration {
-                    debug!("Stream {stream_uri} removed after not being seen for too long");
+            // 3. Wait for all discovery tasks to complete
+            debug!(
+                "Waiting for {} discovery tasks to complete...",
+                discovery_tasks.len()
+            );
+            for (iface_name, ip_addr, task_handle) in discovery_tasks {
+                match task_handle.await {
+                    Ok(Ok(())) => {
+                        debug!("Discovery task for interface '{iface_name}' (IP: {ip_addr}) completed successfully.");
+                    }
+                    Ok(Err(discovery_error)) => {
+                        // The task ran, but the discovery itself failed
+                        warn!("Discovery task for interface '{iface_name}' (IP: {ip_addr}) reported failure: {discovery_error:?}");
+                    }
+                    Err(join_error) => {
+                        // The task itself panicked or was cancelled
+                        error!("Discovery task for interface '{iface_name}' (IP: {ip_addr}) panicked or was cancelled: {join_error:?}");
+                    }
+                }
+            }
+            debug!("All discovery tasks have completed.");
 
-                    return false;
+            // 4. Cleanup old cameras (once, after all discoveries)
+            Self::cleanup_old_cameras(mcontext.clone(), scan_duration).await;
+
+            debug!("Completed ONVIF discovery cycle. Sleeping before next cycle...");
+            tokio::time::sleep(retry_delay).await;
+        }
+    }
+
+    fn find_suitable_interfaces() -> Vec<(String, IpAddr)> {
+        let interfaces = pnet::datalink::interfaces();
+
+        debug!(
+            "Evaluating {} network interface(s) for suitability...",
+            interfaces.len()
+        );
+
+        let suitable_set: HashSet<(String, IpAddr)> = interfaces
+            .iter()
+            .filter_map(|interface| {
+                // Check basic interface state and capabilities
+                if !(interface.is_up() && !interface.is_loopback() && interface.is_multicast()) {
+                    trace!(
+                        "Skipping interface '{}': Up={}, Loopback={}, Multicast={}",
+                        interface.name,
+                        interface.is_up(),
+                        interface.is_loopback(),
+                        interface.is_multicast()
+                    );
+                    return None;
                 }
 
+                trace!(
+                    "Interface '{}' is suitable for ONVIF discovery, checking its addresses...",
+                    interface.name
+                );
+
+                // Create an iterator of (Name, IpAddr) tuples for each IPv4 address on this interface
+                let ipv4_tuples = interface.ips.iter().filter_map(|ip_network| {
+                    if let pnet::ipnetwork::IpNetwork::V4(ipv4_network) = ip_network {
+                        let ip_addr = IpAddr::V4(ipv4_network.ip());
+                        debug!(
+                            "Found suitable IPv4 address on interface '{}': {} (Subnet: {})",
+                            interface.name, ip_addr, ipv4_network
+                        );
+                        // Return Some tuple, which will be collected and deduplicated by the HashSet
+                        Some((interface.name.clone(), ip_addr))
+                    } else {
+                        None // Ignore non-IPv4 addresses
+                    }
+                });
+
+                Some(ipv4_tuples)
+            })
+            .flatten()
+            .collect();
+
+        if suitable_set.is_empty() {
+            warn!("No suitable network interfaces found for ONVIF discovery.");
+        } else {
+            debug!(
+                "Found {} unique suitable interface IP address(es) for ONVIF discovery.",
+                suitable_set.len()
+            );
+        }
+
+        suitable_set.into_iter().collect()
+    }
+
+    #[instrument(level = "debug", skip(scan_duration))]
+    async fn run_discovery_on_interface(
+        listen_ip: IpAddr,
+        scan_duration: tokio::time::Duration,
+    ) -> Result<
+        futures::stream::BoxStream<'static, onvif::discovery::Device>,
+        onvif::discovery::Error,
+    > {
+        debug!("Task started: Initiating ONVIF discovery on interface IP '{listen_ip}'...");
+
+        let devices_stream = onvif::discovery::DiscoveryBuilder::default()
+            .listen_address(listen_ip)
+            .duration(scan_duration)
+            .run()
+            .await?;
+
+        Ok(Box::pin(devices_stream))
+    }
+
+    #[instrument(level = "debug", skip(mcontext, devices_stream))]
+    async fn process_discovered_devices(
+        mcontext: Arc<RwLock<ManagerContext>>,
+        devices_stream: futures::stream::BoxStream<'static, onvif::discovery::Device>,
+        ip_addr: IpAddr,
+    ) {
+        const MAX_CONCURRENT_JUMPERS: usize = 100;
+        debug!(
+            "Collecting and processing discovered devices from stream for address {ip_addr:?}..."
+        );
+
+        let devices_vec: Vec<_> = devices_stream.collect().await;
+        debug!(
+            "Found {} raw device candidate(s) in this discovery cycle.",
+            devices_vec.len()
+        );
+
+        futures::stream::iter(devices_vec)
+            .for_each_concurrent(MAX_CONCURRENT_JUMPERS, |device| {
+                let context = mcontext.clone();
+                async move {
+                    debug!(
+                        "Processing discovered device candidate: {:?}",
+                        device.address
+                    );
+
+                    let device_address = device.address.clone(); // Save address for potential error logging
+                    let device = match <onvif::discovery::Device as TryInto<OnvifDevice>>::try_into(
+                        device,
+                    ) {
+                        Ok(onvif_device) => onvif_device,
+                        Err(error) => {
+                            error!(
+                                "Failed parsing device candidate (address: {:?}): {error:?}",
+                                device_address
+                            );
+                            return;
+                        }
+                    };
+
+                    let device_uuid = device.uuid.clone();
+                    let device_ip = device.ip.clone();
+                    debug!(
+                        "Successfully parsed device candidate into OnvifDevice: UUID={device_uuid:?}, IP={device_ip}"
+                    );
+
+                    {
+                        let mut context = context.write().await;
+                        if let Some(credential) = context.url_credentials.remove(&device_ip) {
+                            trace!(
+                                "Transferring credential for IP {}: {credential:?}",
+                                device_ip
+                            );
+                            let _ = context.credentials.entry(device_uuid).or_insert(credential);
+                        }
+                    }
+
+                    debug!(
+                        "Calling handle_device for parsed OnvifDevice UUID={device_uuid:?}, IP={device_ip}"
+                    );
+                    Self::handle_device(context, device).await;
+
+                    debug!(
+                        "Finished processing OnvifDevice UUID={device_uuid:?}, IP={device_ip}"
+                    );
+                }
+            })
+            .await;
+        debug!("Finished processing devices for this interface.");
+    }
+
+    #[instrument(level = "debug", skip(mcontext))]
+    async fn cleanup_old_cameras(
+        mcontext: Arc<RwLock<ManagerContext>>,
+        scan_duration: tokio::time::Duration,
+    ) {
+        debug!("Cleaning up old camera entries...");
+        let mut context = mcontext.write().await;
+        let initial_camera_count = context.cameras.len();
+        context.cameras.retain(|stream_uri, camera| {
+            let elapsed = camera.last_update.elapsed();
+            let threshold = 3 * scan_duration;
+            if elapsed > threshold {
+                debug!(
+                    "Removing stale stream {stream_uri} (last seen {elapsed:?} ago, threshold {threshold:?})"
+                );
+                false
+            } else {
                 true
-            });
+            }
+        });
+        let removed_count = initial_camera_count - context.cameras.len();
+        if removed_count > 0 {
+            debug!(
+                "Removed {removed_count} stale camera stream(s). Cameras map now has {} entries.",
+                context.cameras.len()
+            );
+        } else {
+            debug!(
+                "No stale camera streams removed. Cameras map has {} entries.",
+                context.cameras.len()
+            );
         }
     }
 
     #[instrument(level = "debug", skip(mcontext))]
     async fn handle_device(mcontext: Arc<RwLock<ManagerContext>>, device: OnvifDevice) {
-        let _ = mcontext
+        debug!(
+            "handle_device called for UUID={:?}, IP={}",
+            device.uuid, device.ip
+        );
+
+        let existing_entry = mcontext
             .write()
             .await
             .discovered_devices
             .insert(device.uuid, device.clone());
 
+        if existing_entry.is_some() {
+            debug!(
+                "Updated existing entry for discovered device UUID={:?}",
+                device.uuid
+            );
+        } else {
+            debug!(
+                "Added new entry for discovered device UUID={:?}",
+                device.uuid
+            );
+        }
+
         let credentials = mcontext.read().await.credentials.get(&device.uuid).cloned();
+        trace!(
+            "Device credentials lookup result for UUID={:?}: {:?}",
+            device.uuid,
+            credentials
+        );
 
-        trace!("Device found, using credentials: {credentials:?}");
+        // Iterate through the device's URLs (e.g., different service endpoints)
+        debug!("Attempting to create OnvifCamera instances for device UUID={:?}, IP={}, found {} URL(s)", device.uuid, device.ip, device.urls.len());
+        for (index, url) in device.urls.iter().enumerate() {
+            debug!(
+                "Processing URL {}/{} for device UUID={:?}: {}",
+                index + 1,
+                device.urls.len(),
+                device.uuid,
+                url
+            );
 
-        for url in &device.urls {
             let camera = match OnvifCamera::try_new(
                 &device,
                 &Auth {
@@ -245,40 +480,83 @@ impl Manager {
             )
             .await
             {
-                Ok(camera) => camera,
+                Ok(camera) => {
+                    debug!("Successfully created OnvifCamera instance from URL: {url}");
+                    camera
+                }
                 Err(error) => {
                     let cause = error.root_cause();
-                    error!("Failed creating OnvifCamera: {error}: {cause}");
-                    continue;
+                    warn!(
+                        "Failed creating OnvifCamera from URL {url}: {error} (Root cause: {cause})"
+                    );
+                    continue; // Try the next URL for this device
                 }
             };
 
-            let Some(streams_informations) =
-                &camera.context.read().await.streams_information.clone()
-            else {
-                error!("Failed getting stream information");
-                continue;
+            // Get stream information from the successfully created camera instance
+            let streams_information_option =
+                camera.context.read().await.streams_information.clone();
+            trace!(
+                "Retrieved streams_information for camera from URL {}: {:?}",
+                url,
+                streams_information_option
+            );
+
+            let Some(streams_informations) = streams_information_option else {
+                error!("Failed getting stream information (streams_information is None) for camera created from URL: {}", url);
+                continue; // Move to the next URL
             };
 
-            trace!("Stream found: {streams_informations:?}");
+            debug!(
+                "Found {} stream(s) for camera from URL {}",
+                streams_informations.len(),
+                url
+            );
 
+            // Update the manager's camera map with information from this camera instance
             let mut context = mcontext.write().await;
-            for stream_information in streams_informations {
+            for (stream_index, stream_information) in streams_informations.iter().enumerate() {
+                debug!(
+                    "Processing stream {}/{} from URL {}: {:?}",
+                    stream_index + 1,
+                    streams_informations.len(),
+                    url,
+                    stream_information.stream_uri
+                );
+
+                // Create an unauthenticated version of the stream URI for the map key
                 let mut unauthenticated_stream_uri = stream_information.stream_uri.clone();
                 unauthenticated_stream_uri.set_password(None).unwrap();
                 unauthenticated_stream_uri.set_username("").unwrap();
+                let unauth_uri_string = unauthenticated_stream_uri.to_string();
 
+                // Insert or update the camera in the map
+                let is_new_entry = !context.cameras.contains_key(&unauth_uri_string);
                 context
                     .cameras
-                    .entry(unauthenticated_stream_uri.to_string())
-                    .and_modify(|old_camera| *old_camera = camera.clone())
+                    .entry(unauth_uri_string.clone())
+                    .and_modify(|old_camera| {
+                        debug!(
+                            "Updating existing camera entry for stream URI: {unauth_uri_string}"
+                        );
+                        *old_camera = camera.clone()
+                    })
                     .or_insert_with(|| {
-                        trace!("New stream inserted: {stream_information:?}");
-
+                        debug!("Inserting new camera entry for stream URI: {unauth_uri_string}");
                         camera.clone()
                     });
+
+                if is_new_entry {
+                    info!("New ONVIF camera stream discovered and added: {unauth_uri_string}");
+                } else {
+                    debug!("ONVIF camera stream updated: {unauth_uri_string}");
+                }
             }
         }
+        debug!(
+            "handle_device finished for UUID={:?}, IP={}",
+            device.uuid, device.ip
+        );
     }
 
     #[instrument(level = "debug")]
