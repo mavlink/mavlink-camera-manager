@@ -109,7 +109,9 @@ impl RtspSink {
                 "Failed to find RTSP compatible address. Example: \"rtsp://0.0.0.0:8554/test\"",
             )?;
 
-        let socket_path = format!("/tmp/{id}");
+        let temp_file = tempfile::NamedTempFile::new()?;
+        let socket_path = temp_file.path().to_string_lossy().to_string();
+
         let sink = gst::ElementFactory::make("shmsink")
             .property_from_str("socket-path", &socket_path)
             .property("sync", false)
