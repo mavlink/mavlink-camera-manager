@@ -67,7 +67,8 @@ pub async fn udp() -> Vec<VideoAndStreamInformation> {
             continue;
         };
 
-        let endpoint = match Url::parse(&format!("udp://192.168.2.1:{}", 5600 + index)) {
+        let port = 5600 + 2 * index;
+        let endpoint = match Url::parse(&format!("udp://192.168.2.1:{port}")) {
             Ok(url) => url,
             Err(error) => {
                 warn!("Failed to parse URL: {error:?}");
