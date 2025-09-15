@@ -65,7 +65,7 @@ impl RedirectPipeline {
             "rtsp" => {
                 format!(
                     concat!(
-                        "rtspsrc location={location} is-live=true latency=0",
+                        "rtspsrc location={location} is-live=true latency=0 do-retransmission=true",
                         " ! application/x-rtp",
                     ),
                     location = url,
@@ -104,11 +104,11 @@ impl RedirectPipeline {
             Some(VideoEncodeType::H264) => {
                 format!(
                     concat!(
-                        " ! rtph264depay",
-                        // " ! h264parse", // we might want to add this in the future to expand the compatibility, since it can transform the stream format
-                        " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au",
+                        " ! rtph264depay source-info=true",
+                        " ! h264parse",
+                        " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=byte-stream,alignment=nal",
                         " ! tee name={video_tee_name} allow-not-linked=true",
-                        " ! rtph264pay aggregate-mode=zero-latency config-interval=10 pt=96",
+                        " ! rtph264pay aggregate-mode=zero-latency config-interval=-1 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     filter_name = filter_name,
@@ -119,11 +119,11 @@ impl RedirectPipeline {
             Some(VideoEncodeType::H265) => {
                 format!(
                     concat!(
-                        " ! rtph265depay",
-                        // " ! h265parse", // we might want to add this in the future to expand the compatibility, since it can transform the stream format
-                        " ! capsfilter name={filter_name} caps=video/x-h265,profile={profile},stream-format=byte-stream,alignment=au",
+                        " ! rtph265depay source-info=true",
+                        " ! h265parse",
+                        " ! capsfilter name={filter_name} caps=video/x-h265,profile={profile},stream-format=byte-stream,alignment=nal",
                         " ! tee name={video_tee_name} allow-not-linked=true",
-                        " ! rtph265pay aggregate-mode=zero-latency config-interval=10 pt=96",
+                        " ! rtph265pay aggregate-mode=zero-latency config-interval=-1 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     filter_name = filter_name,
