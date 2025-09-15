@@ -113,90 +113,100 @@ pub async fn wait_for_element_state_async(
     Ok(())
 }
 
-#[instrument(level = "debug")]
-pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Option<VideoEncodeType> {
-    use gst::prelude::*;
-
-    let description = match stream_uri.scheme() {
+fn make_source_description_from_stream_uri(stream_uri: &url::Url) -> Result<String> {
+    match stream_uri.scheme() {
         "rtsp" => {
-            format!(
-                concat!(
-                    "rtspsrc location={location} is-live=true latency=0",
-                    " ! typefind name=typefinder minimum=1",
-                    " ! fakesink name=fakesink sync=false"
-                ),
-                location = stream_uri.to_string(),
-            )
+            Ok(format!(
+                "rtspsrc name=source location={stream_uri} is-live=true latency=0"
+            ))
         }
         "udp" => {
-            format!(
-                concat!(
-                    "udpsrc address={address} port={port} close-socket=false auto-multicast=true do-timestamp=true",
-                    " ! typefind name=typefinder minimum=1",
-                    " ! fakesink name=fakesink sync=false"
-                ),
-                address = stream_uri.host()?,
-                port = stream_uri.port()?,
-            )
+            Ok(format!(
+                "udpsrc name=source address={address} port={port} close-socket=false auto-multicast=true do-timestamp=true",
+                address = stream_uri.host().context("URI without host")?,
+                port = stream_uri.port().context("URI without port")?,
+            ))
         }
         unsupported => {
-            warn!("Scheme {unsupported:#?} is not supported for Redirect Pipelines");
-            return None;
+            Err(anyhow!(
+                "Scheme {unsupported:#?} is not supported for Redirect Pipelines"
+            ))
         }
-    };
+    }
+}
+
+#[instrument(level = "debug")]
+pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Result<VideoEncodeType> {
+    let mut description = make_source_description_from_stream_uri(stream_uri)?;
+
+    description.push_str(" ! fakesink name=sink sync=false");
 
     let pipeline = gst::parse::launch(&description)
         .expect("Failed to create pipeline")
         .downcast::<gst::Pipeline>()
         .expect("Pipeline is not a valid gst::Pipeline");
 
-    let typefinder = pipeline.by_name("typefinder")?;
+    let source = pipeline
+        .by_name("source")
+        .expect("description without source");
+    let sink = pipeline.by_name("sink").expect("description without sink");
 
-    let (tx, rx) = mpsc::channel(10);
+    let (tx, rx) = mpsc::channel(100);
 
-    typefinder.connect("have-type", false, move |values| {
-        let _typefinder = values[0].get::<gst::Element>().expect("Invalid argument");
-        let _probability = values[1].get::<u32>().expect("Invalid argument");
-        let caps = values[2].get::<gst::Caps>().expect("Invalid argument");
-
-        if let Err(error) = tx.blocking_send(caps) {
-            error!("Failed sending caps from typefinder: {error:?}");
-        }
-
-        None
+    source.connect_pad_added(move |_src, pad| {
+        setup_pad_and_probe(pad, &sink, tx.clone());
     });
 
     pipeline
         .set_state(gst::State::Playing)
         .expect("Failed to set pipeline to Playing");
 
-    let encode = tokio::time::timeout(tokio::time::Duration::from_secs(15), wait_for_encode(rx))
-        .await
-        .ok()
-        .flatten();
+    let encode =
+        tokio::time::timeout(tokio::time::Duration::from_secs(15), wait_for_encode(rx)).await;
 
+    pipeline.send_event(gst::event::Eos::new());
     pipeline
         .set_state(gst::State::Null)
         .expect("Failed to set pipeline to Null");
 
-    encode
+    encode?.context("Not found")
 }
 
+#[instrument(level = "debug", skip_all)]
 async fn wait_for_encode(mut rx: mpsc::Receiver<gst::Caps>) -> Option<VideoEncodeType> {
-    if let Some(caps) = rx.recv().await {
-        let structure = caps.structure(0)?;
+    #[instrument(level = "debug", skip(structure))]
+    async fn parse_structure(structure: &gst::StructureRef) -> Result<VideoEncodeType> {
+        let media = structure.get::<String>("media")?;
+        if &media != "video" {
+            return Err(anyhow!("Not a video caps"));
+        }
 
-        let encoding_name = structure.get::<String>("encoding-name").ok()?;
+        let encoding_name = structure.get::<String>("encoding-name")?;
 
         let encoding = match encoding_name.to_ascii_uppercase().as_str() {
-            "H264" => Some(VideoEncodeType::H264),
-            "H265" => Some(VideoEncodeType::H265),
-            _unsupported => None,
+            "H264" => Ok(VideoEncodeType::H264),
+            "H265" => Ok(VideoEncodeType::H265),
+            other => Err(anyhow!("Unknown encoding: {other:?}")),
         };
 
-        trace!("Found encoding {encoding:?} from caps: {caps:?}");
-
         return encoding;
+    }
+
+    while let Some(caps) = rx.recv().await {
+        debug!("Received caps: {caps:#?}");
+
+        for structure in caps.iter() {
+            match parse_structure(&structure).await {
+                Ok(video_encode_type) => {
+                    trace!("Found encoding {video_encode_type:?} from caps: {caps:?}");
+
+                    return Some(video_encode_type);
+                }
+                Err(error) => {
+                    warn!("Failed getting video encode type from caps: {error:?}");
+                }
+            }
+        }
     }
 
     None
@@ -206,34 +216,21 @@ async fn wait_for_encode(mut rx: mpsc::Receiver<gst::Caps>) -> Option<VideoEncod
 pub async fn get_capture_configuration_from_stream_uri(
     stream_uri: &url::Url,
 ) -> Result<CaptureConfiguration> {
-    let description = match stream_uri.scheme() {
-        "rtsp" => {
-            format!(
-                concat!("rtspsrc location={location} is-live=true latency=0",),
-                location = stream_uri.to_string(),
-            )
-        }
-        "udp" => {
-            format!(
-                concat!(
-                    "udpsrc address={address} port={port} close-socket=false auto-multicast=true do-timestamp=true",
-                ),
-                address = stream_uri.host().context("URI without host")?,
-                port = stream_uri.port().context("URI without port")?,
-            )
-        }
-        unsupported => {
-            return Err(anyhow!(
-                "Scheme {unsupported:#?} is not supported for Redirect Pipelines"
-            ));
-        }
-    };
+    let encodes_to_try = get_encode_from_stream_uri(stream_uri)
+        .await
+        .map(|encode| vec![encode])
+        .unwrap_or_else(|error| {
+            warn!(
+                "Failed getting encode from URI: {error:?}. Trying brute-force with H264 and H265"
+            );
 
-    let known_encodings = [VideoEncodeType::H264, VideoEncodeType::H265];
-    for encode in known_encodings {
+            vec![VideoEncodeType::H264, VideoEncodeType::H265]
+        });
+
+    for encode in encodes_to_try {
         debug!("Trying the encoding {encode:?}...");
 
-        match get_capture_configuration_using_encoding(description.clone(), encode).await {
+        match get_capture_configuration_using_encoding(stream_uri, encode).await {
             video_capture_configuration @ Ok(_) => return video_capture_configuration,
             Err(error) => {
                 debug!("Failed getting capture configuration: {error:?}");
@@ -246,10 +243,10 @@ pub async fn get_capture_configuration_from_stream_uri(
 }
 
 async fn get_capture_configuration_using_encoding(
-    mut description: String,
+    stream_uri: &url::Url,
     encode: VideoEncodeType,
 ) -> Result<CaptureConfiguration> {
-    use gst::prelude::*;
+    let mut description = make_source_description_from_stream_uri(stream_uri)?;
 
     description.push_str(" ! application/x-rtp ");
 
@@ -259,32 +256,22 @@ async fn get_capture_configuration_using_encoding(
         _unsupported => unreachable!(),
     }
 
-    description.push_str(concat!(
-        " ! typefind name=typefinder minimum=99",
-        " ! fakesink name=fakesink sync=false",
-    ));
+    description.push_str(" ! fakesink name=sink sync=false");
 
     let pipeline = gst::parse::launch(&description)
         .expect("Failed to create pipeline")
         .downcast::<gst::Pipeline>()
         .expect("Pipeline is not a valid gst::Pipeline");
 
-    let typefinder = pipeline
-        .by_name("typefinder")
-        .context("Failed to get typefinder")?;
+    let source = pipeline
+        .by_name("source")
+        .expect("description without source");
+    let sink = pipeline.by_name("sink").expect("description without sink");
 
-    let (tx, rx) = mpsc::channel(10);
+    let (tx, rx) = mpsc::channel(100);
 
-    typefinder.connect("have-type", false, move |values| {
-        let _typefinder = values[0].get::<gst::Element>().expect("Invalid argument");
-        let _probability = values[1].get::<u32>().expect("Invalid argument");
-        let caps = values[2].get::<gst::Caps>().expect("Invalid argument");
-
-        if let Err(error) = tx.blocking_send(caps) {
-            error!("Failed sending caps from typefinder: {error:?}");
-        }
-
-        None
+    source.connect_pad_added(move |_src, pad| {
+        setup_pad_and_probe(pad, &sink, tx.clone());
     });
 
     pipeline
@@ -293,50 +280,94 @@ async fn get_capture_configuration_using_encoding(
 
     let video_capture_configuration = tokio::time::timeout(
         tokio::time::Duration::from_secs(15),
-        wait_for_video_capture_configuration(rx, encode),
+        wait_for_video_capture_configuration(rx, &encode),
     )
-    .await
-    .ok()
-    .context("Timeout");
+    .await;
 
+    pipeline.send_event(gst::event::Eos::new());
     pipeline
         .set_state(gst::State::Null)
         .expect("Failed to set pipeline to Null");
 
-    video_capture_configuration?
+    video_capture_configuration?.context("Not found")
 }
 
-async fn wait_for_video_capture_configuration(
-    mut rx: mpsc::Receiver<gst::Caps>,
-    encode: VideoEncodeType,
-) -> Result<CaptureConfiguration> {
-    let Some(caps) = rx.recv().await else {
-        return Err(anyhow!("No caps received"));
-    };
+fn setup_pad_and_probe(pad: &gst::Pad, sink: &gst::Element, tx: mpsc::Sender<gst::Caps>) {
+    if let Some(sink_pad) = sink.static_pad("sink") {
+        if !pad.is_linked() && !sink_pad.is_linked() {
+            if let Err(err) = pad.link(&sink_pad) {
+                warn!("Failed linking pad: {err:?}");
+            }
+        }
+    }
 
-    debug!("Received caps: {caps:#?}");
+    pad.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, {
+        let tx = tx.clone();
 
-    let structure = caps.structure(0).context("Empty structure")?;
+        move |_pad, info| {
+            if let Some(gst::PadProbeData::Event(ref ev)) = info.data {
+                if let gst::EventView::Caps(caps_event) = ev.view() {
+                    let caps = caps_event.caps();
 
-    let width = structure.get::<i32>("width").context("No width")? as u32;
-    let height = structure.get::<i32>("height").context("No height")? as u32;
-    let framerate = structure
-        .get::<gst::Fraction>("framerate")
-        .context("No framerate")?;
-
-    let frame_interval = FrameInterval {
-        numerator: framerate.denom() as u32,
-        denominator: framerate.numer() as u32,
-    };
-
-    let video_capture_configuration = CaptureConfiguration::Video(VideoCaptureConfiguration {
-        encode,
-        height,
-        width,
-        frame_interval,
+                    let _ = tx.try_send(caps.to_owned());
+                }
+            }
+            gst::PadProbeReturn::Ok
+        }
     });
 
-    trace!("Found video_capture_configuration {video_capture_configuration:?} from caps: {caps:?}");
+    if let Some(caps) = pad.current_caps() {
+        let _ = tx.try_send(caps);
+    }
+}
 
-    Ok(video_capture_configuration)
+#[instrument(level = "debug", skip_all)]
+async fn wait_for_video_capture_configuration(
+    mut rx: mpsc::Receiver<gst::Caps>,
+    encode: &VideoEncodeType,
+) -> Option<CaptureConfiguration> {
+    #[instrument(level = "debug", skip(structure))]
+    async fn parse_structure(
+        structure: &gst::StructureRef,
+        encode: &VideoEncodeType,
+    ) -> Result<CaptureConfiguration> {
+        let width = structure.get::<i32>("width").context("No width")? as u32;
+        let height = structure.get::<i32>("height").context("No height")? as u32;
+        let framerate = structure
+            .get::<gst::Fraction>("framerate")
+            .context("No framerate")?;
+
+        let video_capture_configuration = CaptureConfiguration::Video(VideoCaptureConfiguration {
+            encode: encode.clone(),
+            height,
+            width,
+            frame_interval: FrameInterval {
+                numerator: framerate.denom() as u32,
+                denominator: framerate.numer() as u32,
+            },
+        });
+
+        return Ok(video_capture_configuration);
+    }
+
+    while let Some(caps) = rx.recv().await {
+        debug!("Received caps: {caps:#?}");
+
+        for structure in caps.iter() {
+            match parse_structure(&structure, encode).await {
+                Ok(video_capture_configuration) => {
+                    trace!(
+                        "Found video_capture_configuration {video_capture_configuration:?} from caps: {caps:?}"
+                    );
+
+                    return Some(video_capture_configuration);
+                }
+                Err(error) => {
+                    warn!("Failed getting video encode type from caps: {error:?}");
+                }
+            }
+        }
+    }
+
+    None
 }
