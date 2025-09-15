@@ -68,6 +68,7 @@ ringbuffer = "0.15.0"
 scopeguard = "1.2.0"
 zenoh = "1.4.0"
 cdr = "0.2.4"
+tempfile = "3.22.0"
 
 # This is a custom revision adding file name suffix on top of tracing-appender-0.2.2" "0.2.2", but compatible with the current tracing version.
 # Reference: https://github.com/tokio-rs/tracing/issues/2441
