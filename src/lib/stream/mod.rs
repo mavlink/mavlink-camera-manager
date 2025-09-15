@@ -55,9 +55,23 @@ pub struct StreamState {
 impl Stream {
     #[instrument(level = "debug")]
     pub async fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
-        let pipeline_id = Arc::new(Manager::generate_uuid(Some(
-            &video_and_stream_information.name,
-        )));
+        let video_source_inner = video_and_stream_information.video_source.inner();
+
+        // To be DHCP-friendly, we ignore the address for IP-based sources
+        let source_string = match video_source_inner.source_string().parse::<url::Url>() {
+            Ok(mut url) => {
+                let _ = url.set_host(None);
+                let _ = url.set_port(None);
+                url.to_string()
+            }
+            Err(_) => video_source_inner.source_string().to_string(),
+        };
+
+        let pipeline_id = Arc::new(Manager::generate_uuid(Some(&format!(
+            "{}:{}",
+            video_source_inner.name(),
+            source_string,
+        ))));
 
         // Replace Redirect with Video
         let video_and_stream_information = {
