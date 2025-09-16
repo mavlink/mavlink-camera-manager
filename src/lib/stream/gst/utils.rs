@@ -146,16 +146,12 @@ pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Result<VideoEn
         .downcast::<gst::Pipeline>()
         .expect("Pipeline is not a valid gst::Pipeline");
 
-    let source = pipeline
-        .by_name("source")
-        .expect("description without source");
     let sink = pipeline.by_name("sink").expect("description without sink");
 
     let (tx, rx) = mpsc::channel(100);
 
-    source.connect_pad_added(move |_src, pad| {
-        setup_pad_and_probe(pad, &sink, tx.clone());
-    });
+    let sink_pad = sink.static_pad("sink").context("no sink pad")?;
+    setup_pad_and_probe(&sink_pad, tx.clone());
 
     pipeline
         .set_state(gst::State::Playing)
@@ -251,8 +247,8 @@ async fn get_capture_configuration_using_encoding(
     description.push_str(" ! application/x-rtp ");
 
     match encode {
-        VideoEncodeType::H264 => description.push_str(" ! rtph264depay ! avdec_h264"),
-        VideoEncodeType::H265 => description.push_str(" ! rtph265depay ! avdec_h265"),
+        VideoEncodeType::H264 => description.push_str(" ! rtph264depay ! h264parse ! avdec_h264"),
+        VideoEncodeType::H265 => description.push_str(" ! rtph265depay ! h265parse ! avdec_h265"),
         _unsupported => unreachable!(),
     }
 
@@ -263,16 +259,12 @@ async fn get_capture_configuration_using_encoding(
         .downcast::<gst::Pipeline>()
         .expect("Pipeline is not a valid gst::Pipeline");
 
-    let source = pipeline
-        .by_name("source")
-        .expect("description without source");
     let sink = pipeline.by_name("sink").expect("description without sink");
 
     let (tx, rx) = mpsc::channel(100);
 
-    source.connect_pad_added(move |_src, pad| {
-        setup_pad_and_probe(pad, &sink, tx.clone());
-    });
+    let sink_pad = sink.static_pad("sink").context("no sink pad")?;
+    setup_pad_and_probe(&sink_pad, tx.clone());
 
     pipeline
         .set_state(gst::State::Playing)
@@ -292,15 +284,7 @@ async fn get_capture_configuration_using_encoding(
     video_capture_configuration?.context("Not found")
 }
 
-fn setup_pad_and_probe(pad: &gst::Pad, sink: &gst::Element, tx: mpsc::Sender<gst::Caps>) {
-    if let Some(sink_pad) = sink.static_pad("sink") {
-        if !pad.is_linked() && !sink_pad.is_linked() {
-            if let Err(err) = pad.link(&sink_pad) {
-                warn!("Failed linking pad: {err:?}");
-            }
-        }
-    }
-
+fn setup_pad_and_probe(pad: &gst::Pad, tx: mpsc::Sender<gst::Caps>) {
     pad.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, {
         let tx = tx.clone();
 
