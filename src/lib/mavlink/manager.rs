@@ -233,7 +233,7 @@ impl Connection {
         loop {
             std::thread::sleep(std::time::Duration::from_secs(1));
 
-            debug!("Connecting...");
+            debug!("Connecting... ({address})");
 
             match mavlink::connect(address) {
                 Ok(connection) => {
