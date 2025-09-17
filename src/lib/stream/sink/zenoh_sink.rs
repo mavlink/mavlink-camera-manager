@@ -231,7 +231,7 @@ impl ZenohSink {
             let zenoh_session = zenoh_session.clone();
             async move {
                 while let Some(data) = rx.recv().await {
-                    // Create a foxglove json compatible message
+                    // Create a foxglove CDR compatible message
                     // https://docs.foxglove.dev/docs/visualization/message-schemas/compressed-video
                     let message = CompressedVideo {
                         timestamp: Timestamp::now(),
