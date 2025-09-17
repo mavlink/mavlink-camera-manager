@@ -118,20 +118,17 @@ impl PipelineRunner {
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<()> {
         let (finish_tx, mut finish) = tokio::sync::mpsc::channel(1);
+
         let pipeline = pipeline_weak
             .upgrade()
             .context("Unable to access the Pipeline from its weak reference")?;
 
+        let (bus_tx, bus_rx) = tokio::sync::mpsc::unbounded_channel::<gst::Message>();
         let bus = pipeline
             .bus()
             .context("Unable to access the pipeline bus")?;
-
-        // Send our bus messages via a futures channel to be handled asynchronously
-        let pipeline_weak_cloned = pipeline_weak.clone();
-        let (bus_tx, bus_rx) = tokio::sync::mpsc::unbounded_channel::<gst::Message>();
-        let bus_tx = std::sync::Mutex::new(bus_tx);
         bus.set_sync_handler(move |_, msg| {
-            let _ = bus_tx.lock().unwrap().send(msg.to_owned());
+            let _ = bus_tx.send(msg.to_owned());
             gst::BusSyncReply::Drop
         });
 
@@ -140,7 +137,7 @@ impl PipelineRunner {
          * get is if the user closes the output window */
         debug!("Starting BusWatcher task...");
         tokio::spawn(bus_watcher_task(
-            pipeline_weak_cloned,
+            pipeline_weak.clone(),
             pipeline_id.clone(),
             bus_rx,
             finish_tx,
