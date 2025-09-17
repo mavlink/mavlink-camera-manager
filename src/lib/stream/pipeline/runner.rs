@@ -150,34 +150,40 @@ impl PipelineRunner {
                 reason = finish.recv() => {
                     return Err(anyhow!("{reason:?}"));
                 }
-                _ = start.recv() => {
-                    debug!("PipelineRunner received start command");
+                start_cmd = start.recv() => {
+                    match start_cmd {
+                        Some(()) => {
+                            debug!("PipelineRunner received start command");
 
-                    let pipeline = pipeline_weak
-                        .upgrade()
-                        .context("Unable to access the Pipeline from its weak reference")?;
+                            let pipeline = pipeline_weak
+                                .upgrade()
+                                .context("Unable to access the Pipeline from its weak reference")?;
 
-                    if pipeline.current_state() != gst::State::Playing {
-                        if let Err(error) = pipeline.set_state(gst::State::Playing) {
-                            error!(
-                                "Failed setting Pipeline {} to Playing state. Reason: {:?}",
-                                pipeline_id, error
-                            );
-                            continue;
+                            if pipeline.current_state() != gst::State::Playing {
+                                if let Err(error) = pipeline.set_state(gst::State::Playing) {
+                                    error!(
+                                        "Failed setting Pipeline {pipeline_id} to Playing state. Reason: {error:?}"
+                                    );
+                                    continue;
+                                }
+                            }
+
+                            if let Err(error) = wait_for_element_state_async(
+                                pipeline_weak.clone(),
+                                gst::State::Playing,
+                                100,
+                                5,
+                            ).await {
+                                return Err(anyhow!("{error:?}"));
+                            }
+
+                            break;
+                        }
+                        None => {
+                            return Err(anyhow!("start channel closed before sending command"));
                         }
                     }
 
-                    if let Err(error) = wait_for_element_state_async(
-                        pipeline_weak.clone(),
-                        gst::State::Playing,
-                        100,
-                        5,
-                    ).await {
-
-                        return Err(anyhow!("{error:?}"));
-                    }
-
-                    break;
                 }
             };
         }
