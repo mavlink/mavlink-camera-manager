@@ -67,12 +67,10 @@ pub fn create_udp_sink(
     id: Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
-    let addresses = video_and_stream_information
-        .stream_information
-        .endpoints
-        .clone();
-
-    Ok(Sink::Udp(UdpSink::try_new(id, addresses)?))
+    Ok(Sink::Udp(UdpSink::try_new(
+        id,
+        video_and_stream_information,
+    )?))
 }
 
 #[instrument(level = "debug")]
@@ -93,18 +91,10 @@ pub fn create_image_sink(
     id: Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
-    let encoding = match &video_and_stream_information
-        .stream_information
-        .configuration
-    {
-        super::types::CaptureConfiguration::Video(video_configuraiton) => {
-            video_configuraiton.encode.clone()
-        }
-        super::types::CaptureConfiguration::Redirect(_) => {
-            unreachable!("Redirect streams now use CaptureConfiguration::Video")
-        }
-    };
-    Ok(Sink::Image(ImageSink::try_new(id, encoding)?))
+    Ok(Sink::Image(ImageSink::try_new(
+        id,
+        video_and_stream_information,
+    )?))
 }
 
 #[instrument(level = "debug")]
@@ -112,26 +102,8 @@ pub async fn create_zenoh_sink(
     id: Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
-    let encoding = match &video_and_stream_information
-        .stream_information
-        .configuration
-    {
-        super::types::CaptureConfiguration::Video(video_configuraiton) => {
-            video_configuraiton.encode.clone()
-        }
-        super::types::CaptureConfiguration::Redirect(_) => {
-            unreachable!("Redirect streams now use CaptureConfiguration::Video");
-        }
-    };
-
-    let topic_suffix = video_and_stream_information
-        .name
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect::<String>();
-
     Ok(Sink::Zenoh(
-        ZenohSink::try_new(id, encoding, topic_suffix).await?,
+        ZenohSink::try_new(id, video_and_stream_information).await?,
     ))
 }
 
