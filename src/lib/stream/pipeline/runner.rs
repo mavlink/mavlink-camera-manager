@@ -302,7 +302,7 @@ async fn bus_watcher_task(
             }
             MessageView::Latency(latency) => {
                 let current_latency = pipeline.latency();
-                trace!("Latency message: {latency:?}. Current latency: {latency:?}",);
+                trace!("Latency message: {latency:?}. Current latency: {current_latency:?}",);
                 if let Err(error) = pipeline.recalculate_latency() {
                     warn!("Failed to recalculate latency: {error:?}");
                 }
