@@ -4,7 +4,10 @@ use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use tracing::*;
 
-use crate::stream::gst::utils::wait_for_element_state_async;
+use crate::{
+    stream::gst::utils::wait_for_element_state_async,
+    video_stream::types::VideoAndStreamInformation,
+};
 
 #[derive(Debug)]
 pub struct PipelineRunner {
@@ -40,6 +43,7 @@ impl PipelineRunner {
         pipeline: &gst::Pipeline,
         pipeline_id: &Arc<uuid::Uuid>,
         allow_block: bool,
+        video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
         let pipeline_weak = pipeline.downgrade();
 
@@ -53,11 +57,20 @@ impl PipelineRunner {
             id = pipeline_id.to_string()
         );
         let task_handle = tokio::spawn({
+            let video_and_stream_information = video_and_stream_information.clone();
             let pipeline_id = pipeline_id.clone();
             async move {
                 debug!("task started!");
-                match Self::runner(pipeline_weak, pipeline_id, start_rx, allow_block).await {
-                    Ok(_) => debug!("task eneded with no errors"),
+                match Self::runner(
+                    pipeline_weak,
+                    pipeline_id,
+                    start_rx,
+                    allow_block,
+                    &video_and_stream_information,
+                )
+                .await
+                {
+                    Ok(_) => debug!("task ended with no errors"),
                     Err(error) => warn!("task ended with error: {error:#?}"),
                 };
             }
@@ -93,12 +106,16 @@ impl PipelineRunner {
             .unwrap_or(false)
     }
 
-    #[instrument(level = "debug", skip(pipeline_weak, start))]
+    #[instrument(
+        level = "debug",
+        skip(pipeline_weak, start, video_and_stream_information)
+    )]
     async fn runner(
         pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
         pipeline_id: Arc<uuid::Uuid>,
         mut start: tokio::sync::mpsc::Receiver<()>,
         allow_block: bool,
+        video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<()> {
         let (finish_tx, mut finish) = tokio::sync::mpsc::channel(1);
         let pipeline = pipeline_weak

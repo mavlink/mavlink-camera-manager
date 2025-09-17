@@ -9,7 +9,11 @@ use gst_video::VideoFrameExt;
 use image::FlatSamples;
 use tracing::*;
 
-use crate::{stream::pipeline::runner::PipelineRunner, video::types::VideoEncodeType};
+use crate::{
+    stream::{pipeline::runner::PipelineRunner, types::CaptureConfiguration},
+    video::types::VideoEncodeType,
+    video_stream::types::VideoAndStreamInformation,
+};
 
 use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
 
@@ -158,7 +162,10 @@ impl SinkInterface for ImageSink {
 
 impl ImageSink {
     #[instrument(level = "debug")]
-    pub fn try_new(sink_id: Arc<uuid::Uuid>, encoding: VideoEncodeType) -> Result<Self> {
+    pub fn try_new(
+        sink_id: Arc<uuid::Uuid>,
+        video_and_stream_information: &VideoAndStreamInformation,
+    ) -> Result<Self> {
         let queue = gst::ElementFactory::make("queue")
             .property_from_str("leaky", "downstream") // Throw away any data
             .property("silent", true)
@@ -196,6 +203,18 @@ impl ImageSink {
                 warn!("Failed to customize proxysrc's queue: Failed to downcast element to bin")
             }
         }
+
+        let encoding = match &video_and_stream_information
+            .stream_information
+            .configuration
+        {
+            CaptureConfiguration::Video(video_configuraiton) => video_configuraiton.encode.clone(),
+            CaptureConfiguration::Redirect(_) => {
+                return Err(anyhow!(
+                    "PipelineRunner aborted: Redirect CaptureConfiguration means the stream was not initialized yet"
+                ));
+            }
+        };
 
         // Depending of the sources' format we need different elements to transform it into a raw format
         let mut _transcoding_elements: Vec<gst::Element> = Default::default();
@@ -379,7 +398,8 @@ impl ImageSink {
             return Err(anyhow!("Failed linking ImageSink's elements: {link_err:?}"));
         }
 
-        let pipeline_runner = PipelineRunner::try_new(&pipeline, &sink_id, true)?;
+        let pipeline_runner =
+            PipelineRunner::try_new(&pipeline, &sink_id, true, &video_and_stream_information)?;
 
         // Start the pipeline in Pause, because we want to wait the snapshot
         if let Err(state_err) = pipeline.set_state(gst::State::Paused) {
