@@ -443,6 +443,14 @@ impl Manager {
     ) -> Result<()> {
         let mut manager = MANAGER.write().await;
 
+        if !manager.streams.contains_key(&bind.producer_id) {
+            debug!(
+                "Tried to remove session {:?}, but it was already removed",
+                bind.producer_id
+            );
+            return Ok(());
+        }
+
         let stream = manager
             .streams
             .get_mut(&bind.producer_id)
