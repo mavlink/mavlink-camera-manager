@@ -190,6 +190,29 @@ impl PipelineRunner {
 
         debug!("PipelineRunner started!");
 
+        let frame_duration = match &video_and_stream_information
+            .stream_information
+            .configuration
+        {
+            crate::stream::types::CaptureConfiguration::Video(video_capture_configuration) => {
+                let frame_interval = &video_capture_configuration.frame_interval;
+
+                if frame_interval.denominator > 0 && frame_interval.numerator > 0 {
+                    std::time::Duration::from_secs_f64(
+                        frame_interval.numerator as f64 / frame_interval.denominator as f64,
+                    )
+                } else {
+                    warn!("Invalid frame_interval {frame_interval:?}, using fallback of 1 FPS");
+                    std::time::Duration::from_secs(1)
+                }
+            }
+            crate::stream::types::CaptureConfiguration::Redirect(_) => {
+                return Err(anyhow!(
+                    "PipelineRunner aborted: Redirect CaptureConfiguration means the stream was not initialized yet"
+                ));
+            }
+        };
+
         // Check if we need to break external loop.
         // Some cameras have a duplicated timestamp when starting.
         // to avoid restarting the camera once and once again,
@@ -198,7 +221,7 @@ impl PipelineRunner {
         let mut lost_timestamps: usize = 0;
         let max_lost_timestamps: usize = 30;
 
-        let mut period = tokio::time::interval(tokio::time::Duration::from_millis(100));
+        let mut period = tokio::time::interval(frame_duration);
 
         loop {
             tokio::select! {
