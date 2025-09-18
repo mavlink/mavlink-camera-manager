@@ -142,11 +142,13 @@ pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Result<VideoEn
     description.push_str(" ! fakesink name=sink sync=false");
 
     let pipeline = gst::parse::launch(&description)
-        .expect("Failed to create pipeline")
+        .context("Failed to create pipeline")?
         .downcast::<gst::Pipeline>()
         .expect("Pipeline is not a valid gst::Pipeline");
 
-    let sink = pipeline.by_name("sink").expect("description without sink");
+    let sink = pipeline
+        .by_name("sink")
+        .context("description without sink")?;
 
     let (tx, rx) = mpsc::channel(100);
 
@@ -255,11 +257,13 @@ async fn get_capture_configuration_using_encoding(
     description.push_str(" ! fakesink name=sink sync=false");
 
     let pipeline = gst::parse::launch(&description)
-        .expect("Failed to create pipeline")
+        .context("Failed to create pipeline")?
         .downcast::<gst::Pipeline>()
         .expect("Pipeline is not a valid gst::Pipeline");
 
-    let sink = pipeline.by_name("sink").expect("description without sink");
+    let sink = pipeline
+        .by_name("sink")
+        .context("description without sink")?;
 
     let (tx, rx) = mpsc::channel(100);
 
