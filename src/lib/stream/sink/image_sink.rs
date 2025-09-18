@@ -260,8 +260,6 @@ impl ImageSink {
             .new_sample(move |appsink| {
                 // Only process if requested
                 if sender.receiver_count() == 0 || pending {
-                    // This is defines the maximum frequency of this loop, and also the delay between the request and the answer
-                    std::thread::sleep(std::time::Duration::from_millis(100));
                     return Ok(gst::FlowSuccess::Ok);
                 }
                 debug!("Starting a snapshot");
