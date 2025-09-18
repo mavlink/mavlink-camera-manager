@@ -379,7 +379,6 @@ impl StreamState {
         )?);
 
         // Do not add any Sink if it's a redirect Pipeline
-        // FIXME: RE-EVALUATE THIS!!!
         if !matches!(
             &video_and_stream_information.video_source,
             VideoSourceType::Redirect(_)
@@ -396,20 +395,24 @@ impl StreamState {
             }
 
             if endpoints.iter().any(|endpoint| endpoint.scheme() == "udp") {
-                if let Err(reason) = create_udp_sink(
-                    Arc::new(Manager::generate_uuid(None)),
-                    &video_and_stream_information,
-                )
-                .and_then(|sink| {
-                    stream
-                        .pipeline
-                        .as_mut()
-                        .context("No Pileine")?
-                        .add_sink(sink)
-                }) {
-                    return Err(anyhow!(
-                        "Failed to add Sink of type UDP to the Pipeline. Reason: {reason}"
-                    ));
+                let sink_id = Arc::new(Manager::generate_uuid(None));
+                match create_udp_sink(sink_id.clone(), &video_and_stream_information) {
+                    Ok(sink) => {
+                        if let Some(pipeline) = stream.pipeline.as_mut() {
+                            if let Err(reason) = pipeline.add_sink(sink).await {
+                                return Err(anyhow!(
+                                    "Failed to add Sink of type UDP to the Pipeline. Reason: {reason}"
+                                ));
+                            }
+                        } else {
+                            return Err(anyhow!("No Pipeline available to add UDP sink"));
+                        }
+                    }
+                    Err(reason) => {
+                        return Err(anyhow!(
+                            "Failed to create Sink of type UDP. Reason: {reason}"
+                        ));
+                    }
                 }
             }
 
@@ -417,56 +420,67 @@ impl StreamState {
                 .iter()
                 .any(|endpoint| RTSPScheme::try_from(endpoint.scheme()).is_ok())
             {
-                if let Err(reason) = create_rtsp_sink(
-                    Arc::new(Manager::generate_uuid(None)),
-                    &video_and_stream_information,
-                )
-                .and_then(|sink| {
-                    stream
-                        .pipeline
-                        .as_mut()
-                        .context("No Pileine")?
-                        .add_sink(sink)
-                }) {
-                    return Err(anyhow!(
-                        "Failed to add Sink of type RTSP to the Pipeline. Reason: {reason}"
-                    ));
+                let sink_id = Arc::new(Manager::generate_uuid(None));
+                match create_rtsp_sink(sink_id.clone(), &video_and_stream_information) {
+                    Ok(sink) => {
+                        if let Some(pipeline) = stream.pipeline.as_mut() {
+                            if let Err(reason) = pipeline.add_sink(sink).await {
+                                return Err(anyhow!(
+                                    "Failed to add Sink of type RTSP to the Pipeline. Reason: {reason}"
+                                ));
+                            }
+                        } else {
+                            return Err(anyhow!("No Pipeline available to add RTSP sink"));
+                        }
+                    }
+                    Err(reason) => {
+                        return Err(anyhow!(
+                            "Failed to create Sink of type RTSP. Reason: {reason}"
+                        ));
+                    }
                 }
             }
         }
 
-        if let Err(reason) = create_image_sink(
-            Arc::new(Manager::generate_uuid(None)),
-            &video_and_stream_information,
-        )
-        .and_then(|sink| {
-            stream
-                .pipeline
-                .as_mut()
-                .context("No Pileine")?
-                .add_sink(sink)
-        }) {
-            return Err(anyhow!(
-                "Failed to add Sink of type Image to the Pipeline. Reason: {reason}"
-            ));
+        let sink_id = Arc::new(Manager::generate_uuid(None));
+        match create_image_sink(sink_id.clone(), &video_and_stream_information) {
+            Ok(sink) => {
+                if let Some(pipeline) = stream.pipeline.as_mut() {
+                    if let Err(reason) = pipeline.add_sink(sink).await {
+                        return Err(anyhow!(
+                            "Failed to add Sink of type Image to the Pipeline. Reason: {reason}"
+                        ));
+                    }
+                } else {
+                    return Err(anyhow!("No Pipeline available to add Image sink"));
+                }
+            }
+            Err(reason) => {
+                return Err(anyhow!(
+                    "Failed to create Sink of type Image. Reason: {reason}"
+                ));
+            }
         }
 
         if crate::cli::manager::enable_zenoh() {
-            if let Err(reason) = create_zenoh_sink(
-                Arc::new(Manager::generate_uuid(None)),
-                &video_and_stream_information,
-            )
-            .await
-            .and_then(|sink| {
-                stream
-                    .pipeline
-                    .as_mut()
-                    .context("No Pileine")?
-                    .add_sink(sink)
-            }) {
-                return Err(anyhow!(
-                    "Failed to add Sink of type Zenoh to the Pipeline. Reason: {reason}"
-                ));
+            let sink_id = Arc::new(Manager::generate_uuid(None));
+            match create_zenoh_sink(sink_id.clone(), &video_and_stream_information).await {
+                Ok(sink) => {
+                    if let Some(pipeline) = stream.pipeline.as_mut() {
+                        if let Err(reason) = pipeline.add_sink(sink).await {
+                            return Err(anyhow!(
+                                "Failed to add Sink of type Zenoh to the Pipeline. Reason: {reason}"
+                            ));
+                        }
+                    } else {
+                        return Err(anyhow!("No Pipeline available to add Zenoh sink"));
+                    }
+                }
+                Err(reason) => {
+                    return Err(anyhow!(
+                        "Failed to create Sink of type Zenoh. Reason: {reason}"
+                    ));
+                }
             }
         }
 
@@ -480,15 +494,13 @@ impl StreamState {
             .start()?;
 
         // Start all the sinks
-        for sink in stream
-            .pipeline
-            .as_mut()
-            .context("No Pipeline")?
-            .inner_state_mut()
-            .sinks
-            .values()
-        {
-            sink.start()?
+        if let Some(pipeline) = stream.pipeline.as_mut() {
+            let pipeline_state = pipeline.inner_state_mut();
+            for sink in pipeline_state.sinks.values() {
+                if let Err(error) = sink.start() {
+                    warn!("Failed to start sink: {error:?}");
+                }
+            }
         }
 
         // Only create the MavlinkCamera when MAVLink is not disabled
@@ -501,9 +513,14 @@ impl StreamState {
                 disable_mavlink: false,
             })
         ) {
-            let mavlink_camera = MavlinkCamera::try_new(&video_and_stream_information).await?;
-
-            stream.mavlink_camera.replace(mavlink_camera);
+            match MavlinkCamera::try_new(&video_and_stream_information).await {
+                Ok(mavlink_camera) => {
+                    stream.mavlink_camera.replace(mavlink_camera);
+                }
+                Err(error) => {
+                    warn!("Failed to create MavlinkCamera: {error:?}");
+                }
+            }
         }
 
         Ok(stream)

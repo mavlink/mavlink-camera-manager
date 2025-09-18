@@ -15,7 +15,7 @@ use tracing::*;
 
 use crate::{
     stream::{
-        gst::utils::wait_for_element_state,
+        gst::utils::wait_for_element_state_async,
         rtsp::rtsp_server::RTSPServer,
         sink::{Sink, SinkInterface},
     },
@@ -108,13 +108,12 @@ impl Pipeline {
     }
 
     #[instrument(level = "debug", skip(self))]
-    pub fn add_sink(&mut self, sink: Sink) -> Result<()> {
-        self.inner_state_mut().add_sink(sink)
+    pub async fn add_sink(&mut self, sink: Sink) -> Result<()> {
+        self.inner_state_mut().add_sink(sink).await
     }
 
-    #[allow(dead_code)] // This functions is reserved here for when we start dynamically add/remove Sinks
     #[instrument(level = "debug", skip(self))]
-    pub fn remove_sink(&mut self, sink_id: &uuid::Uuid) -> Result<()> {
+    pub async fn remove_sink(&mut self, sink_id: &uuid::Uuid) -> Result<()> {
         self.inner_state_mut().remove_sink(sink_id)
     }
 }
@@ -188,7 +187,7 @@ impl PipelineState {
 
     /// Links the sink pad from the given Sink to this Pipeline's Tee element
     #[instrument(level = "debug", skip(self))]
-    pub fn add_sink(&mut self, mut sink: Sink) -> Result<()> {
+    pub async fn add_sink(&mut self, mut sink: Sink) -> Result<()> {
         let pipeline_id = &self.pipeline_id;
 
         // Request a new src pad for the used Tee
@@ -222,12 +221,14 @@ impl PipelineState {
             }
         }
 
-        if let Err(error) = wait_for_element_state(
+        if let Err(error) = wait_for_element_state_async(
             gst::prelude::ObjectExt::downgrade(pipeline),
             gst::State::Playing,
             100,
             2,
-        ) {
+        )
+        .await
+        {
             let _ = pipeline.set_state(gst::State::Null);
             sink.unlink(pipeline, pipeline_id)?;
             return Err(anyhow!(
