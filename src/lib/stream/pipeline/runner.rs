@@ -190,15 +190,39 @@ impl PipelineRunner {
 
         debug!("PipelineRunner started!");
 
+        let frame_duration = match &video_and_stream_information
+            .stream_information
+            .configuration
+        {
+            crate::stream::types::CaptureConfiguration::Video(video_capture_configuration) => {
+                let frame_interval = &video_capture_configuration.frame_interval;
+
+                if frame_interval.denominator > 0 && frame_interval.numerator > 0 {
+                    std::time::Duration::from_secs_f64(
+                        frame_interval.numerator as f64 / frame_interval.denominator as f64,
+                    )
+                } else {
+                    warn!("Invalid frame_interval {frame_interval:?}, using fallback of 1 FPS");
+                    std::time::Duration::from_secs(1)
+                }
+            }
+            crate::stream::types::CaptureConfiguration::Redirect(_) => {
+                return Err(anyhow!(
+                    "PipelineRunner aborted: Redirect CaptureConfiguration means the stream was not initialized yet"
+                ));
+            }
+        };
+
         // Check if we need to break external loop.
         // Some cameras have a duplicated timestamp when starting.
         // to avoid restarting the camera once and once again,
         // this checks for a maximum number of lost before restarting.
         let mut previous_position: Option<gst::ClockTime> = None;
-        let mut lost_timestamps: usize = 0;
-        let max_lost_timestamps: usize = 30;
+        let mut lost_ticks: usize = 0;
+        let max_lost_ticks: usize = 30;
+        let min_lost_ticks_before_considering_stuck = 3;
 
-        let mut period = tokio::time::interval(tokio::time::Duration::from_millis(100));
+        let mut period = tokio::time::interval(frame_duration);
 
         loop {
             tokio::select! {
@@ -214,27 +238,44 @@ impl PipelineRunner {
                             .context("Unable to access the Pipeline from its weak reference")?;
 
                         if let Some(position) = pipeline.query_position::<gst::ClockTime>() {
-                            previous_position = match previous_position {
-                                Some(current_previous_position) => {
-                                    if current_previous_position.nseconds() != 0
-                                        && current_previous_position == position
-                                    {
-                                        lost_timestamps += 1;
-                                    } else if lost_timestamps > 0 {
-                                        // We are back in track, erase lost timestamps
-                                        warn!("Position normalized, but didn't changed for {lost_timestamps} timestamps");
-                                        lost_timestamps = 0;
-                                    }
-                                    if lost_timestamps == 1 {
-                                        warn!("Position did not change for {lost_timestamps}, silently tracking until {max_lost_timestamps}, then the stream will be recreated");
-                                    } else if lost_timestamps > max_lost_timestamps {
-                                        return Err(anyhow!("Pipeline lost too many timestamps (max. was {max_lost_timestamps})"));
-                                    }
+                            match previous_position {
+                                Some(prev_pos) => {
+                                    if prev_pos == position {
+                                        lost_ticks += 1;
 
-                                    Some(position)
+                                        if lost_ticks == min_lost_ticks_before_considering_stuck {
+                                            warn!("Position unchanged for {min_lost_ticks_before_considering_stuck} consecutive ticks. Pipeline may be stuck.")
+                                        } else if lost_ticks > max_lost_ticks {
+                                            error!("Pipeline lost too many timestamps ({lost_ticks} > max {max_lost_ticks}). Last position: {position:?}");
+                                            return Err(anyhow!("Pipeline appears stuck — position unchanged for too long"));
+                                        }
+                                    } else {
+
+                                        let delta_ns = position.nseconds().saturating_sub(prev_pos.nseconds());
+                                        let delta_ms = delta_ns as f64 / 1_000_000.0;
+
+                                        if delta_ns > 1_000_000 || lost_ticks >= min_lost_ticks_before_considering_stuck {
+                                            trace!("Position advanced by {delta_ms:.2}ms ({prev_pos} -> {position})")
+                                        }
+
+                                        // We are back in track, erase lost timestamps
+                                        if delta_ns > 1_000_000 {
+                                            if lost_ticks >= min_lost_ticks_before_considering_stuck {
+                                                warn!("Position normalized — advanced by {delta_ms:.2}ms after {lost_ticks} lost ticks");
+                                            }
+                                            lost_ticks = 0;
+                                        }
+                                    }
                                 }
-                                None => Some(position),
+                                None => {
+                                    debug!("First position recorded: {position:?}");
+                                }
                             }
+
+                            previous_position = Some(position);
+
+                        } else {
+                            debug!("Failed to query position");
                         }
                     }
                 }
