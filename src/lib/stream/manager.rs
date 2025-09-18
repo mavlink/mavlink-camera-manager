@@ -428,7 +428,8 @@ impl Manager {
             .pipeline
             .as_mut()
             .context("No Pipeline")?
-            .add_sink(sink)?;
+            .add_sink(sink)
+            .await?;
 
         debug!("WebRTC session created: {session_id:?}");
 
@@ -456,6 +457,7 @@ impl Manager {
             .as_mut()
             .context("No Pipeline")?
             .remove_sink(&bind.session_id)
+            .await
             .context(format!("Cannot remove session {:?}", bind.session_id))?;
 
         info!("Session {:?} successfully removed!", bind.session_id);
