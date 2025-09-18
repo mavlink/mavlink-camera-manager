@@ -136,12 +136,23 @@ impl SignallingServer {
                         ws_sink.send(tungstenite::Message::Text(message)).await?
                     }
                     reason @ (Ok(Some(Err(_))) | Ok(None)) => {
+                        use std::io::ErrorKind;
+                        use tungstenite::Error;
+
                         if let Err(error) = ws_sink.send(tungstenite::Message::Close(None)).await {
-                            warn!("Failed sending Close message: {error}");
-                        }
+                            match error {
+                                Error::AlreadyClosed | Error::ConnectionClosed => {}
+                                Error::Io(io_err) if io_err.kind() == ErrorKind::BrokenPipe => {}
+                                other => warn!("Failed sending Close message: {other:?}"),
+                            }
+                        };
 
                         if let Err(error) = ws_sink.close().await {
-                            warn!("Failed closing the WebSocket: {error:#?}");
+                            match error {
+                                Error::AlreadyClosed | Error::ConnectionClosed => {}
+                                Error::Io(io_err) if io_err.kind() == ErrorKind::BrokenPipe => {}
+                                other => warn!("Failed closing WebSocket: {other:?}"),
+                            }
                         }
 
                         info!("WebSocket connection closed: {reason:?}");
