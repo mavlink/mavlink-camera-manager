@@ -79,7 +79,7 @@ pub async fn udp() -> Vec<VideoAndStreamInformation> {
         result.push(VideoAndStreamInformation {
             name: format!("UDP Stream {index}"),
             stream_information: StreamInformation {
-                endpoints: vec![endpoint],
+                endpoints: vec![endpoint].into(),
                 configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
                     encode: format.encode.clone(),
                     height: size.height,
@@ -138,7 +138,7 @@ pub async fn rtsp() -> Vec<VideoAndStreamInformation> {
         result.push(VideoAndStreamInformation {
             name: format!("RTSP Stream {index}"),
             stream_information: StreamInformation {
-                endpoints: vec![endpoint],
+                endpoints: vec![endpoint].into(),
                 configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
                     encode: format.encode.clone(),
                     height: size.height,
