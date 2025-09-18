@@ -4,7 +4,10 @@ use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use tracing::*;
 
-use crate::stream::gst::utils::wait_for_element_state_async;
+use crate::{
+    stream::gst::utils::wait_for_element_state_async,
+    video_stream::types::VideoAndStreamInformation,
+};
 
 #[derive(Debug)]
 pub struct PipelineRunner {
@@ -40,6 +43,7 @@ impl PipelineRunner {
         pipeline: &gst::Pipeline,
         pipeline_id: &Arc<uuid::Uuid>,
         allow_block: bool,
+        video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
         let pipeline_weak = pipeline.downgrade();
 
@@ -53,11 +57,20 @@ impl PipelineRunner {
             id = pipeline_id.to_string()
         );
         let task_handle = tokio::spawn({
+            let video_and_stream_information = video_and_stream_information.clone();
             let pipeline_id = pipeline_id.clone();
             async move {
                 debug!("task started!");
-                match Self::runner(pipeline_weak, pipeline_id, start_rx, allow_block).await {
-                    Ok(_) => debug!("task eneded with no errors"),
+                match Self::runner(
+                    pipeline_weak,
+                    pipeline_id,
+                    start_rx,
+                    allow_block,
+                    &video_and_stream_information,
+                )
+                .await
+                {
+                    Ok(_) => debug!("task ended with no errors"),
                     Err(error) => warn!("task ended with error: {error:#?}"),
                 };
             }
@@ -93,28 +106,29 @@ impl PipelineRunner {
             .unwrap_or(false)
     }
 
-    #[instrument(level = "debug", skip(pipeline_weak, start))]
+    #[instrument(
+        level = "debug",
+        skip(pipeline_weak, start, video_and_stream_information)
+    )]
     async fn runner(
         pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
         pipeline_id: Arc<uuid::Uuid>,
         mut start: tokio::sync::mpsc::Receiver<()>,
         allow_block: bool,
+        video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<()> {
         let (finish_tx, mut finish) = tokio::sync::mpsc::channel(1);
+
         let pipeline = pipeline_weak
             .upgrade()
             .context("Unable to access the Pipeline from its weak reference")?;
 
+        let (bus_tx, bus_rx) = tokio::sync::mpsc::unbounded_channel::<gst::Message>();
         let bus = pipeline
             .bus()
             .context("Unable to access the pipeline bus")?;
-
-        // Send our bus messages via a futures channel to be handled asynchronously
-        let pipeline_weak_cloned = pipeline_weak.clone();
-        let (bus_tx, bus_rx) = tokio::sync::mpsc::unbounded_channel::<gst::Message>();
-        let bus_tx = std::sync::Mutex::new(bus_tx);
         bus.set_sync_handler(move |_, msg| {
-            let _ = bus_tx.lock().unwrap().send(msg.to_owned());
+            let _ = bus_tx.send(msg.to_owned());
             gst::BusSyncReply::Drop
         });
 
@@ -123,7 +137,7 @@ impl PipelineRunner {
          * get is if the user closes the output window */
         debug!("Starting BusWatcher task...");
         tokio::spawn(bus_watcher_task(
-            pipeline_weak_cloned,
+            pipeline_weak.clone(),
             pipeline_id.clone(),
             bus_rx,
             finish_tx,
@@ -136,39 +150,68 @@ impl PipelineRunner {
                 reason = finish.recv() => {
                     return Err(anyhow!("{reason:?}"));
                 }
-                _ = start.recv() => {
-                    debug!("PipelineRunner received start command");
+                start_cmd = start.recv() => {
+                    match start_cmd {
+                        Some(()) => {
+                            debug!("PipelineRunner received start command");
 
-                    let pipeline = pipeline_weak
-                        .upgrade()
-                        .context("Unable to access the Pipeline from its weak reference")?;
+                            let pipeline = pipeline_weak
+                                .upgrade()
+                                .context("Unable to access the Pipeline from its weak reference")?;
 
-                    if pipeline.current_state() != gst::State::Playing {
-                        if let Err(error) = pipeline.set_state(gst::State::Playing) {
-                            error!(
-                                "Failed setting Pipeline {} to Playing state. Reason: {:?}",
-                                pipeline_id, error
-                            );
-                            continue;
+                            if pipeline.current_state() != gst::State::Playing {
+                                if let Err(error) = pipeline.set_state(gst::State::Playing) {
+                                    error!(
+                                        "Failed setting Pipeline {pipeline_id} to Playing state. Reason: {error:?}"
+                                    );
+                                    continue;
+                                }
+                            }
+
+                            if let Err(error) = wait_for_element_state_async(
+                                pipeline_weak.clone(),
+                                gst::State::Playing,
+                                100,
+                                5,
+                            ).await {
+                                return Err(anyhow!("{error:?}"));
+                            }
+
+                            break;
+                        }
+                        None => {
+                            return Err(anyhow!("start channel closed before sending command"));
                         }
                     }
 
-                    if let Err(error) = wait_for_element_state_async(
-                        pipeline_weak.clone(),
-                        gst::State::Playing,
-                        100,
-                        5,
-                    ).await {
-
-                        return Err(anyhow!("{error:?}"));
-                    }
-
-                    break;
                 }
             };
         }
 
         debug!("PipelineRunner started!");
+
+        let frame_duration = match &video_and_stream_information
+            .stream_information
+            .configuration
+        {
+            crate::stream::types::CaptureConfiguration::Video(video_capture_configuration) => {
+                let frame_interval = &video_capture_configuration.frame_interval;
+
+                if frame_interval.denominator > 0 && frame_interval.numerator > 0 {
+                    std::time::Duration::from_secs_f64(
+                        frame_interval.numerator as f64 / frame_interval.denominator as f64,
+                    )
+                } else {
+                    warn!("Invalid frame_interval {frame_interval:?}, using fallback of 1 FPS");
+                    std::time::Duration::from_secs(1)
+                }
+            }
+            crate::stream::types::CaptureConfiguration::Redirect(_) => {
+                return Err(anyhow!(
+                    "PipelineRunner aborted: Redirect CaptureConfiguration means the stream was not initialized yet"
+                ));
+            }
+        };
 
         // Check if we need to break external loop.
         // Some cameras have a duplicated timestamp when starting.
@@ -178,7 +221,7 @@ impl PipelineRunner {
         let mut lost_timestamps: usize = 0;
         let max_lost_timestamps: usize = 30;
 
-        let mut period = tokio::time::interval(tokio::time::Duration::from_millis(100));
+        let mut period = tokio::time::interval(frame_duration);
 
         loop {
             tokio::select! {
@@ -285,7 +328,7 @@ async fn bus_watcher_task(
             }
             MessageView::Latency(latency) => {
                 let current_latency = pipeline.latency();
-                trace!("Latency message: {latency:?}. Current latency: {latency:?}",);
+                trace!("Latency message: {latency:?}. Current latency: {current_latency:?}",);
                 if let Err(error) = pipeline.recalculate_latency() {
                     warn!("Failed to recalculate latency: {error:?}");
                 }

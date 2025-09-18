@@ -168,7 +168,8 @@ impl PipelineState {
 
         let rtp_tee = pipeline.by_name(&format!("{PIPELINE_RTP_TEE_NAME}-{pipeline_id}"));
 
-        let pipeline_runner = PipelineRunner::try_new(&pipeline, pipeline_id, false)?;
+        let pipeline_runner =
+            PipelineRunner::try_new(&pipeline, pipeline_id, false, &video_and_stream_information)?;
 
         pipeline.debug_to_dot_file_with_ts(
             gst::DebugGraphDetails::all(),

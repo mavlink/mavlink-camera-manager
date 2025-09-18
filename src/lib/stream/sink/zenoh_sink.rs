@@ -8,8 +8,10 @@ use tokio::sync::mpsc;
 use tracing::*;
 
 use crate::{
-    cli::manager::zenoh_config_file, stream::pipeline::runner::PipelineRunner,
+    cli::manager::zenoh_config_file,
+    stream::{pipeline::runner::PipelineRunner, types::CaptureConfiguration},
     video::types::VideoEncodeType,
+    video_stream::types::VideoAndStreamInformation,
 };
 
 use super::{
@@ -124,8 +126,7 @@ impl ZenohSink {
     #[instrument(level = "debug")]
     pub async fn try_new(
         sink_id: Arc<uuid::Uuid>,
-        encoding: VideoEncodeType,
-        topic_suffix: String,
+        video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
         let queue = gst::ElementFactory::make("queue")
             .property_from_str("leaky", "downstream") // Throw away any data
@@ -165,6 +166,18 @@ impl ZenohSink {
                 warn!("Failed to customize proxysrc's queue: Failed to downcast element to bin")
             }
         }
+
+        let encoding = match &video_and_stream_information
+            .stream_information
+            .configuration
+        {
+            CaptureConfiguration::Video(video_configuraiton) => video_configuraiton.encode.clone(),
+            CaptureConfiguration::Redirect(_) => {
+                return Err(anyhow!(
+                    "PipelineRunner aborted: Redirect CaptureConfiguration means the stream was not initialized yet"
+                ));
+            }
+        };
 
         let _parser;
         let caps;
@@ -224,6 +237,12 @@ impl ZenohSink {
         let zenoh_session = zenoh_session_guard.as_ref().unwrap();
 
         let (tx, mut rx) = mpsc::channel(100);
+
+        let topic_suffix = video_and_stream_information
+            .name
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect::<String>();
 
         // Spawn a task to handle the video data publishing
         tokio::spawn({
@@ -327,7 +346,8 @@ impl ZenohSink {
             return Err(anyhow!("Failed linking ImageSink's elements: {link_err:?}"));
         }
 
-        let pipeline_runner = PipelineRunner::try_new(&pipeline, &sink_id, false)?;
+        let pipeline_runner =
+            PipelineRunner::try_new(&pipeline, &sink_id, false, video_and_stream_information)?;
 
         if let Err(state_err) = pipeline.set_state(gst::State::Playing) {
             return Err(anyhow!(
