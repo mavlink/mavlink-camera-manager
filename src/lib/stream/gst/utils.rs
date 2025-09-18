@@ -155,14 +155,34 @@ pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Result<VideoEn
     let sink_pad = sink.static_pad("sink").context("no sink pad")?;
     let probe_id = setup_pad_and_probe(&sink_pad, tx.clone()).context("Failed to add probe")?;
 
-    pipeline
-        .set_state(gst::State::Playing)
-        .expect("Failed to set pipeline to Playing");
+    if let Err(error) = pipeline.set_state(gst::State::Playing) {
+        return Err(anyhow!(
+            "Failed setting Pipeline state to Playing. Reason: {error:?}"
+        ));
+    } else if let Err(error) =
+        wait_for_element_state_async(pipeline.downgrade(), ::gst::State::Playing, 100, 30).await
+    {
+        let _ = pipeline.set_state(::gst::State::Null);
+        error!("Failed setting Pipeline state to Playing. Reason: {error:?}");
+    }
 
     let encode =
         tokio::time::timeout(tokio::time::Duration::from_secs(15), wait_for_encode(rx)).await;
 
     sink_pad.remove_probe(probe_id);
+
+    if pipeline.current_state() == gst::State::Playing {
+        pipeline.send_event(gst::event::Eos::new());
+    }
+    if let Err(error) = pipeline.set_state(gst::State::Null) {
+        return Err(anyhow!(
+            "Failed setting Pipeline state to Null. Reason: {error:?}"
+        ));
+    } else if let Err(error) =
+        wait_for_element_state_async(pipeline.downgrade(), ::gst::State::Null, 100, 30).await
+    {
+        error!("Failed setting Pipeline state to Null. Reason: {error:?}");
+    }
 
     encode?.context("Not found")
 }
@@ -267,9 +287,16 @@ async fn get_capture_configuration_using_encoding(
     let sink_pad = sink.static_pad("sink").context("no sink pad")?;
     let probe_id = setup_pad_and_probe(&sink_pad, tx.clone()).context("Failed to add probe")?;
 
-    pipeline
-        .set_state(gst::State::Playing)
-        .expect("Failed to set pipeline to Playing");
+    if let Err(error) = pipeline.set_state(gst::State::Playing) {
+        return Err(anyhow!(
+            "Failed setting Pipeline state to Playing. Reason: {error:?}"
+        ));
+    } else if let Err(error) =
+        wait_for_element_state_async(pipeline.downgrade(), ::gst::State::Playing, 100, 30).await
+    {
+        let _ = pipeline.set_state(::gst::State::Null);
+        error!("Failed setting Pipeline state to Playing. Reason: {error:?}");
+    }
 
     let video_capture_configuration = tokio::time::timeout(
         tokio::time::Duration::from_secs(15),
@@ -278,6 +305,19 @@ async fn get_capture_configuration_using_encoding(
     .await;
 
     sink_pad.remove_probe(probe_id);
+
+    if pipeline.current_state() == gst::State::Playing {
+        pipeline.send_event(gst::event::Eos::new());
+    }
+    if let Err(error) = pipeline.set_state(gst::State::Null) {
+        return Err(anyhow!(
+            "Failed setting Pipeline state to Null. Reason: {error:?}"
+        ));
+    } else if let Err(error) =
+        wait_for_element_state_async(pipeline.downgrade(), ::gst::State::Null, 100, 30).await
+    {
+        error!("Failed setting Pipeline state to Null. Reason: {error:?}");
+    }
 
     video_capture_configuration?.context("Not found")
 }
