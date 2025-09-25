@@ -194,8 +194,8 @@ pub fn init() {
         "{}, version: {}-{}, build date: {}",
         env!("CARGO_PKG_NAME"),
         env!("CARGO_PKG_VERSION"),
-        env!("VERGEN_GIT_SHA_SHORT"),
-        env!("VERGEN_BUILD_DATE")
+        option_env!("VERGEN_GIT_SHA").unwrap_or("?"),
+        env!("VERGEN_BUILD_TIMESTAMP")
     );
     info!(
         "Starting at {}",

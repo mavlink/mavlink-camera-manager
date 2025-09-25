@@ -111,9 +111,9 @@ impl Info {
     pub fn new() -> Self {
         Self {
             name: env!("CARGO_PKG_NAME").into(),
-            version: env!("VERGEN_GIT_SEMVER").into(),
-            sha: env!("VERGEN_GIT_SHA_SHORT").into(),
-            build_date: env!("VERGEN_BUILD_DATE").into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            sha: option_env!("VERGEN_GIT_SHA").unwrap_or("?").into(),
+            build_date: env!("VERGEN_BUILD_TIMESTAMP").into(),
             authors: env!("CARGO_PKG_AUTHORS").into(),
             development: Development {
                 number_of_tasks: helper::threads::process_task_counter(),
