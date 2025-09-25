@@ -4,8 +4,8 @@ use std::path::Path;
 use std::process::Command;
 
 use regex::Regex;
-
 use ts_rs::TS;
+use vergen_gix::{BuildBuilder, CargoBuilder, DependencyKind, GixBuilder};
 
 #[path = "src/lib/stream/webrtc/signalling_protocol.rs"]
 mod signalling_protocol;
@@ -36,17 +36,10 @@ fn print_link_search_path() {
 #[cfg(not(windows))]
 fn print_link_search_path() {}
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_link_search_path();
 
-    // Configure vergen
-    let mut config = vergen::Config::default();
-    *config.build_mut().semver_mut() = true;
-    *config.build_mut().timestamp_mut() = true;
-    *config.build_mut().kind_mut() = vergen::TimestampKind::DateOnly;
-    *config.git_mut().sha_kind_mut() = vergen::ShaKind::Short;
-
-    vergen::vergen(config).expect("Unable to generate the cargo keys!");
+    generate_build_details()?;
 
     file_download(
         "https://unpkg.com/vue@3.0.5/dist/vue.global.js",
@@ -62,6 +55,8 @@ fn main() {
     if std::env::var("SKIP_WEB").is_err() {
         build_web();
     }
+
+    Ok(())
 }
 
 fn generate_typescript_bindings() {
@@ -155,4 +150,21 @@ fn build_web() {
     if !build.success() {
         panic!("{program} build failed!");
     }
+}
+
+fn generate_build_details() -> Result<(), Box<dyn std::error::Error>> {
+    let mut emitter = vergen_gix::Emitter::default();
+
+    emitter.add_instructions(&BuildBuilder::all_build()?)?;
+    emitter.add_instructions(
+        CargoBuilder::all_cargo()?.set_dep_kind_filter(Some(DependencyKind::Normal)),
+    )?;
+
+    if std::path::Path::new("pottato.git").is_dir() {
+        emitter.add_instructions(&GixBuilder::all_git()?)?;
+    }
+
+    emitter.emit()?;
+
+    Ok(())
 }
