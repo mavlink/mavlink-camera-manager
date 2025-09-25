@@ -94,7 +94,7 @@ impl SinkInterface for UdpSink {
             Some(&format!(
                 "{} - {}",
                 env!("CARGO_PKG_NAME"),
-                env!("VERGEN_GIT_SHA_SHORT")
+                option_env!("VERGEN_GIT_SHA").unwrap_or("?")
             )),
         );
         sdp.add_attribute("type", Some("broadcast"));

@@ -45,8 +45,8 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
                     version: format!(
                         "{}-{} ({})",
                         env!("CARGO_PKG_VERSION"),
-                        env!("VERGEN_GIT_SHA_SHORT"),
-                        env!("VERGEN_BUILD_DATE")
+                        option_env!("VERGEN_GIT_SHA").unwrap_or("?"),
+                        env!("VERGEN_BUILD_TIMESTAMP"),
                     ),
                     title: env!("CARGO_PKG_NAME").to_string(),
                     ..Default::default()
