@@ -35,9 +35,42 @@ pub struct ExtendedConfiguration {
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Apiv2Schema)]
 pub struct StreamInformation {
-    pub endpoints: Vec<Url>,
+    pub endpoints: Endpoints,
     pub configuration: CaptureConfiguration,
     pub extended_configuration: Option<ExtendedConfiguration>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Apiv2Schema)]
+#[serde(untagged)]
+pub enum Endpoints {
+    Array(Vec<Url>),
+    Object {
+        origin: Option<Url>,
+        destination: Vec<Url>,
+    },
+}
+
+impl std::ops::Deref for Endpoints {
+    type Target = Vec<Url>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Endpoints::Array(array) => &array,
+            Endpoints::Object {
+                origin: _,
+                destination,
+            } => &destination,
+        }
+    }
+}
+
+impl From<Vec<Url>> for Endpoints {
+    fn from(destination: Vec<Url>) -> Self {
+        Endpoints::Object {
+            origin: None,
+            destination,
+        }
+    }
 }
 
 #[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
