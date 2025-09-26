@@ -319,7 +319,13 @@ async fn bus_watcher_task(
     mut bus_rx: tokio::sync::mpsc::UnboundedReceiver<gst::Message>,
     finish_tx: tokio::sync::mpsc::Sender<String>,
 ) {
-    debug!("BusWatcher task started!");
+    let Some(pipeline) = pipeline_weak.upgrade() else {
+        return;
+    };
+
+    let pipeline_name = pipeline.name();
+
+    debug!("BusWatcher task started for Pipeline {pipeline_name:?}!");
 
     while let Some(message) = bus_rx.recv().await {
         use gst::MessageView;
@@ -328,68 +334,228 @@ async fn bus_watcher_task(
             break;
         };
 
-        let pipeline_name = pipeline.name();
-
         match message.view() {
             MessageView::Eos(eos) => {
                 pipeline.debug_to_dot_file_with_ts(
                     gst::DebugGraphDetails::all(),
                     format!("pipeline-{pipeline_id}-eos"),
                 );
-                let msg = format!("Received EndOfStream: {eos:?}");
-                trace!(msg);
+
+                let msg = format!("Received EndOfStream: {eos:?} for Pipeline {pipeline_name:?}");
+
+                debug!(msg);
                 let _ = finish_tx.send(msg).await;
                 break;
             }
             MessageView::Error(error) => {
+                pipeline.debug_to_dot_file_with_ts(
+                    gst::DebugGraphDetails::all(),
+                    format!("pipeline-{pipeline_id}-error"),
+                );
+
                 let msg = format!(
                     "Error from {:?} for Pipeline {pipeline_name:?}: {} ({:?})",
                     error.src().map(|s| s.path_string()),
                     error.error(),
                     error.debug()
                 );
-                pipeline.debug_to_dot_file_with_ts(
-                    gst::DebugGraphDetails::all(),
-                    format!("pipeline-{pipeline_id}-error"),
-                );
-                trace!(msg);
+
+                debug!(msg);
                 let _ = finish_tx.send(msg).await;
                 break;
             }
             MessageView::StateChanged(state) => {
-                pipeline.debug_to_dot_file_with_ts(
-                    gst::DebugGraphDetails::all(),
-                    format!(
-                        "pipeline-{pipeline_id}-{:?}-to-{:?}",
-                        state.old(),
-                        state.current()
-                    ),
-                );
+                let current = state.current();
+                let previous = state.old();
 
-                trace!(
-                    "Pipeline {pipeline_name:?} State changed from {:?}: {:?} to {:?} ({:?})",
-                    state.src().map(|s| s.path_string()),
-                    state.old(),
-                    state.current(),
-                    state.pending()
-                );
+                if current != previous {
+                    pipeline.debug_to_dot_file_with_ts(
+                        gst::DebugGraphDetails::all(),
+                        format!("pipeline-{pipeline_id}-{previous:?}-to-{current:?}"),
+                    );
+
+                    trace!(
+                        "Pipeline {pipeline_name:?} State changed from {:?}: {previous:?} to {current:?} ({:?})",
+                        state.src().map(|s| s.path_string()),
+                        state.pending()
+                    );
+
+                    if current == gst::State::Playing
+                        && state
+                            .src()
+                            .map_or(false, |s| s.downcast_ref::<gst::Pipeline>().is_some())
+                    {
+                        debug!("Pipeline {pipeline_name:?} reached PLAYING state");
+                    }
+                }
             }
             MessageView::Latency(latency) => {
+                let source_name = latency
+                    .src()
+                    .map(|s| s.path_string().to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                debug!(
+                    "Latency message received from {source_name} for Pipeline {pipeline_name:?}"
+                );
+
                 let current_latency = pipeline.latency();
-                trace!("Latency message: {latency:?}. Current latency: {current_latency:?}",);
-                if let Err(error) = pipeline.recalculate_latency() {
-                    warn!(
-                        "Failed to recalculate latency for Pipeline {pipeline_name:?}: {error:?}"
-                    );
+
+                if let Some(time) = current_latency {
+                    let latency_ms = time.nseconds() as f64 / 1_000_000.0;
+
+                    if latency_ms > 100.0 {
+                        warn!("High latency detected for Pipeline {pipeline_name:?}: {latency_ms:.2}ms - may cause noticeable delay");
+                    } else {
+                        debug!("Current Pipeline ({pipeline_name:?}) latency: {latency_ms:.2}ms");
+                    }
                 }
-                let new_latency = pipeline.latency();
-                if current_latency != new_latency {
-                    debug!("New latency for Pipeline {pipeline_name:?}: {new_latency:?}");
+
+                // Recalculate latency to ensure it's up to date
+                match pipeline.recalculate_latency() {
+                    Ok(_) => {
+                        let new_latency = pipeline.latency();
+                        match (current_latency, new_latency) {
+                            (Some(old), Some(new)) if old != new => {
+                                let old_ms = old.nseconds() as f64 / 1_000_000.0;
+                                let new_ms = new.nseconds() as f64 / 1_000_000.0;
+                                debug!(
+                                    "Latency updated for Pipeline {pipeline_name:?}: {old_ms:.2}ms -> {new_ms:.2}ms ({:+.2}ms change)",
+                                    new_ms - old_ms
+                                );
+                            }
+                            (None, Some(new)) => {
+                                let new_ms = new.nseconds() as f64 / 1_000_000.0;
+                                debug!("Latency established for Pipeline {pipeline_name:?}: {new_ms:.2}ms"                                    );
+                                if new_ms > 100.0 {
+                                    warn!("High latency detected for Pipeline {pipeline_name:?}: {:.2}ms - may cause noticeable delay", new_ms);
+                                }
+                            }
+                            _ => {
+                                debug!("Latency recalculation completed for Pipeline {pipeline_name:?}, no change in value");
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        warn!("Failed to recalculate latency for Pipeline {pipeline_name:?}: {error:?}");
+                    }
                 }
             }
-            other_message => trace!("{other_message:#?}"),
+            MessageView::Qos(qos) => {
+                let (live, running_time, stream_time, timestamp, duration) = qos.get();
+                let (jitter, proportion, quality) = qos.values();
+                let (processed, dropped) = {
+                    let stats = qos.stats();
+                    (stats.0.value(), stats.1.value())
+                };
+
+                debug!(
+                    concat!(
+                        "QoS from {qos_src:?}:",
+                        " live={live}",
+                        " proportion={proportion:.2}",
+                        " jitter={jitter:?}",
+                        " quality={quality}",
+                        " running_time={running_time:?}",
+                        " stream_time={stream_time:?}",
+                        " timestamp={timestamp:?}",
+                        " duration={duration:?}",
+                        " processed={processed}",
+                        " dropped={dropped}",
+                    ),
+                    qos_src = qos.src().map(|s| s.path_string()),
+                    live = live,
+                    proportion = proportion,
+                    jitter = jitter,
+                    quality = quality,
+                    running_time = running_time,
+                    stream_time = stream_time,
+                    timestamp = timestamp,
+                    duration = duration,
+                    processed = processed,
+                    dropped = dropped
+                );
+
+                // Analyze QoS metrics for potential issues
+                let mut issue_detected = false;
+                let mut issue_reasons = Vec::new();
+
+                // Check for low proportion (downstream is struggling)
+                if proportion < 0.7 {
+                    issue_reasons.push(format!("low proportion ({proportion:.2})",));
+                    issue_detected = true;
+                }
+
+                // Check for high jitter (timing instability)
+                if jitter < 0 && jitter.abs() > 50_000_000 {
+                    // More than 50ms of negative jitter
+                    issue_reasons.push(format!("high negative jitter ({jitter:?})",));
+                    issue_detected = true;
+                }
+
+                // Check for frame drops
+                if dropped > 0 {
+                    issue_reasons.push(format!("{dropped} frames dropped"));
+                    issue_detected = true;
+                }
+
+                // Check for quality degradation
+                if quality < 0 {
+                    issue_reasons.push(format!("quality degradation (quality={quality})"));
+                    issue_detected = true;
+                }
+
+                // Log comprehensive QoS analysis
+                if issue_detected {
+                    warn!(
+                        "QoS performance issue detected - Potential causes: {}",
+                        issue_reasons.join(", ")
+                    );
+                }
+
+                // Monitor trends over time
+                if dropped > 0 {
+                    let percentage = if processed > 0 {
+                        (dropped as f64 / processed as f64) * 100.0
+                    } else {
+                        0.0
+                    };
+                    debug!(
+                        "Frame drop rate: {dropped} frames dropped out of {processed} processed ({percentage:.1}%)",
+                    );
+                }
+            }
+            MessageView::NewClock(new_clock) => {
+                if let Some(clock) = new_clock.clock() {
+                    debug!(
+                        "New clock selected: {:?} from {:?}",
+                        clock.type_().name(),
+                        new_clock.src().map(|s| s.path_string())
+                    );
+                } else {
+                    debug!(
+                        "New clock selected (clock not available) from {:?}",
+                        new_clock.src().map(|s| s.path_string())
+                    );
+                }
+            }
+            MessageView::ClockLost(_) | MessageView::ClockProvide(_) => {
+                warn!(
+                    "Clock message received: {:?} - potential sync issues",
+                    message.view()
+                );
+                // Force a new clock
+                let _ = pipeline.set_state(gst::State::Paused);
+                let _ = pipeline.set_state(gst::State::Playing);
+            }
+            // Ignored
+            MessageView::Tag(_)
+            | MessageView::AsyncDone(_)
+            | MessageView::StreamStart(_)
+            | MessageView::StreamStatus(_) => (),
+            other_message => debug!("{other_message:#?}"),
         }
     }
 
-    debug!("BusWatcher task ended!");
+    debug!("BusWatcher task ended for Pipeline {pipeline_name:?}!");
 }
