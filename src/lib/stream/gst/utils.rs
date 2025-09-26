@@ -135,7 +135,7 @@ fn make_source_description_from_stream_uri(stream_uri: &url::Url) -> Result<Stri
     }
 }
 
-#[instrument(level = "debug")]
+#[instrument(level = "debug", fields(stream_uri = %stream_uri))]
 pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Result<VideoEncodeType> {
     let mut description = make_source_description_from_stream_uri(stream_uri)?;
 
@@ -227,7 +227,7 @@ async fn wait_for_encode(mut rx: mpsc::Receiver<gst::Caps>) -> Option<VideoEncod
     None
 }
 
-#[instrument(level = "debug")]
+#[instrument(level = "debug", fields(stream_uri = %stream_uri))]
 pub async fn get_capture_configuration_from_stream_uri(
     stream_uri: &url::Url,
 ) -> Result<CaptureConfiguration> {

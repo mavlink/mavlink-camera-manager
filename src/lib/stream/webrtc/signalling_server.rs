@@ -60,7 +60,7 @@ impl Default for SignallingServer {
 }
 
 impl SignallingServer {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", fields(endpoint = %endpoint))]
     async fn runner(endpoint: url::Url) -> Result<()> {
         let host = endpoint
             .host()
