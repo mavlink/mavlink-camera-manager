@@ -97,7 +97,7 @@ impl TurnServer {
             });
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", fields(endpoint = %endpoint))]
     async fn runner(
         endpoint: url::Url,
         realm: String,
