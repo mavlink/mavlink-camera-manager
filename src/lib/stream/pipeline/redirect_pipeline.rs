@@ -147,6 +147,11 @@ impl RedirectPipeline {
             .downcast::<gst::Pipeline>()
             .expect("Couldn't downcast pipeline");
 
+        crate::stream::gst::utils::set_pipeline_name(
+            &pipeline,
+            &format!("pipeline-redirect-{pipeline_id}"),
+        );
+
         Ok(pipeline)
     }
 }
