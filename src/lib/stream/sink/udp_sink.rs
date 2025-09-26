@@ -234,13 +234,6 @@ impl UdpSink {
         let pipeline_runner =
             PipelineRunner::try_new(&pipeline, &sink_id, true, video_and_stream_information)?;
 
-        // Start the pipeline
-        if let Err(state_err) = pipeline.set_state(gst::State::Playing) {
-            return Err(anyhow!(
-                "Failed starting UdpSink's pipeline: {state_err:#?}"
-            ));
-        }
-
         Ok(Self {
             sink_id: sink_id.clone(),
             pipeline,
