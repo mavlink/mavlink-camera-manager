@@ -208,7 +208,7 @@ async fn wait_for_encode(mut rx: mpsc::Receiver<gst::Caps>) -> Option<VideoEncod
     }
 
     while let Some(caps) = rx.recv().await {
-        debug!("Received caps: {caps:#?}");
+        trace!("Received caps: {caps:#?}");
 
         for structure in caps.iter() {
             match parse_structure(&structure).await {
@@ -243,12 +243,12 @@ pub async fn get_capture_configuration_from_stream_uri(
         });
 
     for encode in encodes_to_try {
-        debug!("Trying the encoding {encode:?}...");
+        trace!("Trying the encoding {encode:?}...");
 
         match get_capture_configuration_using_encoding(stream_uri, encode).await {
             video_capture_configuration @ Ok(_) => return video_capture_configuration,
             Err(error) => {
-                debug!("Failed getting capture configuration: {error:?}");
+                trace!("Failed getting capture configuration: {error:?}");
                 continue;
             }
         };
@@ -375,7 +375,7 @@ async fn wait_for_video_capture_configuration(
     }
 
     while let Some(caps) = rx.recv().await {
-        debug!("Received caps: {caps:#?}");
+        trace!("Received caps: {caps:#?}");
 
         for structure in caps.iter() {
             match parse_structure(&structure, encode).await {
