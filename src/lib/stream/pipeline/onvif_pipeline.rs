@@ -118,6 +118,11 @@ impl OnvifPipeline {
             .downcast::<gst::Pipeline>()
             .expect("Couldn't downcast pipeline");
 
+        crate::stream::gst::utils::set_pipeline_name(
+            &pipeline,
+            &format!("pipeline-onvif-{pipeline_id}"),
+        );
+
         Ok(pipeline)
     }
 }

@@ -117,6 +117,11 @@ impl QrPipeline {
             .downcast::<gst::Pipeline>()
             .expect("Couldn't downcast pipeline");
 
+        crate::stream::gst::utils::set_pipeline_name(
+            &pipeline,
+            &format!("pipeline-qr-{pipeline_id}"),
+        );
+
         Ok(pipeline)
     }
 }

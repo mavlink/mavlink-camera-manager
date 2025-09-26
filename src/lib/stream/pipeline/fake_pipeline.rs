@@ -208,6 +208,11 @@ impl FakePipeline {
             .downcast::<gst::Pipeline>()
             .expect("Couldn't downcast pipeline");
 
+        crate::stream::gst::utils::set_pipeline_name(
+            &pipeline,
+            &format!("pipeline-fake-{pipeline_id}"),
+        );
+
         Ok(pipeline)
     }
 }
