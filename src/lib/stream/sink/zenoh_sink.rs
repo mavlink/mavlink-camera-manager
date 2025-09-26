@@ -349,12 +349,6 @@ impl ZenohSink {
         let pipeline_runner =
             PipelineRunner::try_new(&pipeline, &sink_id, false, video_and_stream_information)?;
 
-        if let Err(state_err) = pipeline.set_state(gst::State::Playing) {
-            return Err(anyhow!(
-                "Failed starting ZenohSink's pipeline: {state_err:#?}"
-            ));
-        }
-
         Ok(Self {
             sink_id,
             pipeline,
