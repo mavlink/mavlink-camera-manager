@@ -129,9 +129,33 @@ impl PipelineRunner {
         let bus = pipeline
             .bus()
             .context("Unable to access the pipeline bus")?;
-        bus.set_sync_handler(move |_, msg| {
-            let _ = bus_tx.send(msg.to_owned());
-            gst::BusSyncReply::Drop
+        bus.set_sync_handler({
+            let pipeline_name = pipeline_name.clone();
+
+            move |_, msg| {
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                if let gst::MessageView::StreamStatus(status) = msg.view() {
+                    let (status_type, element) = status.get();
+                    if matches!(status_type, gst::StreamStatusType::Enter) {
+                        if let Err(error) = thread_priority::set_thread_priority_and_policy(
+                            thread_priority::thread_native_id(),
+                            thread_priority::ThreadPriority::Max,
+                            thread_priority::ThreadSchedulePolicy::Realtime(
+                                thread_priority::RealtimeThreadSchedulePolicy::RoundRobin,
+                            ),
+                        ) {
+                            warn!("Failed configuring GStreamer stream thread: {error:}.");
+                        } else {
+                            let priority = thread_priority::get_current_thread_priority();
+                            let scheduler = thread_priority::get_thread_scheduling_attributes();
+                            info!("GStreamer stream thread sucessfully configured to MAX priority ({priority:?}) and real-time round robyn ({scheduler:?}). From element {:?}, from Pipeline {pipeline_name:?}", element.name());
+                        }
+                    }
+                }
+
+                let _ = bus_tx.send(msg.to_owned());
+                gst::BusSyncReply::Drop
+            }
         });
 
         /* Iterate messages on the bus until an error or EOS occurs,
