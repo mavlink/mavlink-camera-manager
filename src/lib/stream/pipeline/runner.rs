@@ -240,7 +240,7 @@ impl PipelineRunner {
                         if let Some(position) = pipeline.query_position::<gst::ClockTime>() {
                             match previous_position {
                                 Some(prev_pos) => {
-                                    if prev_pos == position {
+                                    if prev_pos == position && prev_pos != gst::ClockTime::ZERO {
                                         lost_ticks += 1;
 
                                         if lost_ticks == min_lost_ticks_before_considering_stuck {
