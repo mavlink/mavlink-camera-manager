@@ -573,7 +573,7 @@ pub async fn dot_stream(req: HttpRequest, stream: web::Payload) -> Result<HttpRe
                             for stream_info in streams {
                                 if let Some((dot, children)) = crate::stream::manager::Manager::get_stream_dot_by_id(&stream_info.id).await {
                                     let id = stream_info.id.to_string();
-                                    if last_dots.get(&id).map_or(true, |last_dot| last_dot != &dot) {
+                                    if last_dots.get(&id) != Some(&dot) {
                                         last_dots.insert(id.clone(), dot.clone());
                                         changed = true;
                                         dots.push(json!({
