@@ -379,7 +379,7 @@ async fn bus_watcher_task(
                     if current == gst::State::Playing
                         && state
                             .src()
-                            .map_or(false, |s| s.downcast_ref::<gst::Pipeline>().is_some())
+                            .is_some_and(|s| s.downcast_ref::<gst::Pipeline>().is_some())
                     {
                         debug!("Pipeline {pipeline_name:?} reached PLAYING state");
                     }
