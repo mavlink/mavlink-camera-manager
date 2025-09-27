@@ -397,7 +397,7 @@ impl ImageSink {
         }
 
         let pipeline_runner =
-            PipelineRunner::try_new(&pipeline, &sink_id, true, &video_and_stream_information)?;
+            PipelineRunner::try_new(&pipeline, &sink_id, true, video_and_stream_information)?;
 
         Ok(Self {
             sink_id: sink_id.clone(),
