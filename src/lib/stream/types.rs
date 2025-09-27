@@ -31,6 +31,8 @@ pub enum CaptureConfiguration {
 pub struct ExtendedConfiguration {
     pub thermal: bool,
     pub disable_mavlink: bool,
+    pub disable_zenoh: bool,
+    pub disable_thumbnails: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Apiv2Schema)]
