@@ -123,7 +123,7 @@ impl SinkInterface for ZenohSink {
 }
 
 impl ZenohSink {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip_all)]
     pub async fn try_new(
         sink_id: Arc<uuid::Uuid>,
         video_and_stream_information: &VideoAndStreamInformation,

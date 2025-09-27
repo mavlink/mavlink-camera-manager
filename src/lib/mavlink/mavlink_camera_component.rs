@@ -23,7 +23,7 @@ pub struct MavlinkCameraComponent {
 }
 
 impl MavlinkCameraComponent {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip_all)]
     pub fn try_new(
         video_and_stream_information: &VideoAndStreamInformation,
         component_id: u8,

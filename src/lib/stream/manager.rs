@@ -341,7 +341,7 @@ pub async fn get_jpeg_thumbnail_from_source(
     }
 }
 
-#[instrument(level = "debug")]
+#[instrument(level = "debug", skip_all)]
 pub async fn add_stream_and_start(
     video_and_stream_information: VideoAndStreamInformation,
 ) -> Result<()> {
@@ -549,7 +549,7 @@ impl Manager {
         session.handle_ice(&sdp_m_line_index, candidate)
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip_all)]
     pub async fn add_stream(stream: Stream) -> Result<()> {
         let mut manager = MANAGER.write().await;
 

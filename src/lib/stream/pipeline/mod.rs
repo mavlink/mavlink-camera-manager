@@ -71,7 +71,7 @@ impl Pipeline {
         }
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip_all)]
     pub fn try_new(
         video_and_stream_information: &VideoAndStreamInformation,
         pipeline_id: &Arc<uuid::Uuid>,
@@ -133,7 +133,7 @@ pub const PIPELINE_VIDEO_TEE_NAME: &str = "VideoTee";
 pub const PIPELINE_FILTER_NAME: &str = "Filter";
 
 impl PipelineState {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip_all)]
     pub fn try_new(
         video_and_stream_information: &VideoAndStreamInformation,
         pipeline_id: &Arc<uuid::Uuid>,
@@ -187,7 +187,7 @@ impl PipelineState {
     }
 
     /// Links the sink pad from the given Sink to this Pipeline's Tee element
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip_all)]
     pub async fn add_sink(&mut self, mut sink: Sink) -> Result<()> {
         let pipeline_id = &self.pipeline_id;
 
@@ -273,7 +273,7 @@ impl PipelineState {
     /// Unlinks the src pad from this Sink from the given sink pad of a Tee element
     ///
     /// Important notes about pad unlinking: [here](https://gstreamer.freedesktop.org/documentation/application-development/advanced/pipeline-manipulation.html?gi-language=c#dynamically-changing-the-pipeline)
-    #[instrument(level = "info", skip(self))]
+    #[instrument(level = "info", skip_all)]
     pub fn remove_sink(&mut self, sink_id: &uuid::Uuid) -> Result<()> {
         let pipeline_id = &self.pipeline_id;
 
