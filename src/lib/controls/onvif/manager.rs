@@ -633,7 +633,7 @@ impl Manager {
 fn device_address_to_uuid(device_address: &str) -> Result<uuid::Uuid> {
     device_address
         .split(':')
-        .last()
+        .next_back()
         .context("Failed to parse device address into a UUID")?
         .parse()
         .map_err(anyhow::Error::msg)
