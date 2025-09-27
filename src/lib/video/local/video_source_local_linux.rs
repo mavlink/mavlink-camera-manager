@@ -594,8 +594,7 @@ impl VideoSource for VideoSourceLocal {
         match control.value {
             v4l::control::Value::Integer(value) => Ok(value),
             v4l::control::Value::Boolean(value) => Ok(value as i64),
-            unsupported_type => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            unsupported_type => Err(std::io::Error::other(
                 format!("Control type {unsupported_type:?} is not supported.").as_str(),
             )),
         }
