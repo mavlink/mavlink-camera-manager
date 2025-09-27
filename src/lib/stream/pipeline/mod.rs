@@ -107,7 +107,7 @@ impl Pipeline {
         })
     }
 
-    #[instrument(level = "debug", skip(self))]
+    #[instrument(level = "debug", skip(self), fields(sink = %sink))]
     pub async fn add_sink(&mut self, sink: Sink) -> Result<()> {
         self.inner_state_mut().add_sink(sink).await
     }
