@@ -504,15 +504,13 @@ impl StreamState {
         }
 
         // Only create the MavlinkCamera when MAVLink is not disabled
-        if matches!(
-            video_and_stream_information
-                .stream_information
-                .extended_configuration,
-            Some(ExtendedConfiguration {
-                thermal: _,
-                disable_mavlink: false,
-            })
-        ) {
+        if video_and_stream_information
+            .stream_information
+            .extended_configuration
+            .as_ref()
+            .map(|e| !e.disable_mavlink)
+            .unwrap_or_default()
+        {
             match MavlinkCamera::try_new(&video_and_stream_information).await {
                 Ok(mavlink_camera) => {
                     stream.mavlink_camera.replace(mavlink_camera);
