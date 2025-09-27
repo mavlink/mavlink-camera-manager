@@ -299,7 +299,7 @@ impl PipelineRunner {
                             previous_position = Some(position);
 
                         } else {
-                            debug!("Failed to query position for Pipeline {pipeline_name:?}");
+                            trace!("Failed to query position for Pipeline {pipeline_name:?}");
                         }
                     }
                 }
