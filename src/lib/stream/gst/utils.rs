@@ -211,7 +211,7 @@ async fn wait_for_encode(mut rx: mpsc::Receiver<gst::Caps>) -> Option<VideoEncod
         trace!("Received caps: {caps:#?}");
 
         for structure in caps.iter() {
-            match parse_structure(&structure).await {
+            match parse_structure(structure).await {
                 Ok(video_encode_type) => {
                     trace!("Found encoding {video_encode_type:?} from caps: {caps:?}");
 
@@ -378,7 +378,7 @@ async fn wait_for_video_capture_configuration(
         trace!("Received caps: {caps:#?}");
 
         for structure in caps.iter() {
-            match parse_structure(&structure, encode).await {
+            match parse_structure(structure, encode).await {
                 Ok(video_capture_configuration) => {
                     trace!(
                         "Found video_capture_configuration {video_capture_configuration:?} from caps: {caps:?}"
