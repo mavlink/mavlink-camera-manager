@@ -443,26 +443,41 @@ impl StreamState {
         }
 
         let sink_id = Arc::new(Manager::generate_uuid(None));
-        match create_image_sink(sink_id.clone(), &video_and_stream_information) {
-            Ok(sink) => {
-                if let Some(pipeline) = stream.pipeline.as_mut() {
-                    if let Err(reason) = pipeline.add_sink(sink).await {
-                        return Err(anyhow!(
+        if !video_and_stream_information
+            .stream_information
+            .extended_configuration
+            .as_ref()
+            .map(|e| e.disable_thumbnails)
+            .unwrap_or_default()
+        {
+            match create_image_sink(sink_id.clone(), &video_and_stream_information) {
+                Ok(sink) => {
+                    if let Some(pipeline) = stream.pipeline.as_mut() {
+                        if let Err(reason) = pipeline.add_sink(sink).await {
+                            return Err(anyhow!(
                             "Failed to add Sink of type Image to the Pipeline. Reason: {reason}"
                         ));
+                        }
+                    } else {
+                        return Err(anyhow!("No Pipeline available to add Image sink"));
                     }
-                } else {
-                    return Err(anyhow!("No Pipeline available to add Image sink"));
                 }
-            }
-            Err(reason) => {
-                return Err(anyhow!(
-                    "Failed to create Sink of type Image. Reason: {reason}"
-                ));
+                Err(reason) => {
+                    return Err(anyhow!(
+                        "Failed to create Sink of type Image. Reason: {reason}"
+                    ));
+                }
             }
         }
 
-        if crate::cli::manager::enable_zenoh() {
+        if !video_and_stream_information
+            .stream_information
+            .extended_configuration
+            .as_ref()
+            .map(|e| e.disable_zenoh)
+            .unwrap_or_default()
+            && crate::cli::manager::enable_zenoh()
+        {
             let sink_id = Arc::new(Manager::generate_uuid(None));
             match create_zenoh_sink(sink_id.clone(), &video_and_stream_information).await {
                 Ok(sink) => {
