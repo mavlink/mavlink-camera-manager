@@ -639,11 +639,11 @@ impl Drop for MavlinkCamera {
     }
 }
 
-impl Into<MavlinkComponent> for &MavlinkCamera {
-    fn into(self) -> MavlinkComponent {
+impl From<&MavlinkCamera> for MavlinkComponent {
+    fn from(val: &MavlinkCamera) -> Self {
         MavlinkComponent {
-            system_id: self.inner.component.system_id,
-            component_id: self.inner.component.component_id,
+            system_id: val.inner.component.system_id,
+            component_id: val.inner.component.component_id,
         }
     }
 }
