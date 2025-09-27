@@ -141,7 +141,7 @@ impl SinkInterface for UdpSink {
 }
 
 impl UdpSink {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip_all)]
     pub fn try_new(
         sink_id: Arc<uuid::Uuid>,
         video_and_stream_information: &VideoAndStreamInformation,

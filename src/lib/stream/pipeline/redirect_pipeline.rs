@@ -21,7 +21,7 @@ pub struct RedirectPipeline {
 }
 
 impl RedirectPipeline {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip_all)]
     pub fn try_new(
         pipeline_id: &Arc<uuid::Uuid>,
         video_and_stream_information: &VideoAndStreamInformation,

@@ -31,7 +31,7 @@ struct MavlinkCameraInner {
 }
 
 impl MavlinkCamera {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip_all)]
     pub async fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
         let inner = Arc::new(MavlinkCameraInner::try_new(video_and_stream_information)?);
 
@@ -70,7 +70,7 @@ impl MavlinkCamera {
 }
 
 impl MavlinkCameraInner {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip_all)]
     pub fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
         let video_stream_uri = video_and_stream_information
             .stream_information

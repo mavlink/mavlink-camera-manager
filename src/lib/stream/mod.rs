@@ -53,7 +53,7 @@ pub struct StreamState {
 }
 
 impl Stream {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip_all)]
     pub async fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
         let video_source_inner = video_and_stream_information.video_source.inner();
 
@@ -141,7 +141,7 @@ impl Stream {
         })
     }
 
-    #[instrument(level = "debug", skip(video_and_stream_information, state, terminated))]
+    #[instrument(level = "debug", skip(state, terminated))]
     async fn watcher(
         video_and_stream_information: Arc<RwLock<VideoAndStreamInformation>>,
         pipeline_id: Arc<uuid::Uuid>,
@@ -346,7 +346,7 @@ impl Drop for Stream {
 }
 
 impl StreamState {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip_all)]
     pub async fn try_default(
         video_and_stream_information: Arc<RwLock<VideoAndStreamInformation>>,
         pipeline_id: Arc<uuid::Uuid>,
@@ -363,7 +363,7 @@ impl StreamState {
         })
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip_all)]
     pub async fn try_new(
         video_and_stream_information: Arc<RwLock<VideoAndStreamInformation>>,
         pipeline_id: Arc<uuid::Uuid>,
@@ -574,7 +574,7 @@ impl Drop for StreamState {
     }
 }
 
-#[instrument(level = "debug")]
+#[instrument(level = "debug", skip_all)]
 fn validate_endpoints(video_and_stream_information: &VideoAndStreamInformation) -> Result<()> {
     let endpoints = &video_and_stream_information.stream_information.endpoints;
 

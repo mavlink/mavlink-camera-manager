@@ -73,7 +73,7 @@ pub fn create_udp_sink(
     )?))
 }
 
-#[instrument(level = "debug")]
+#[instrument(level = "debug", skip_all)]
 pub fn create_rtsp_sink(
     id: Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
@@ -86,7 +86,7 @@ pub fn create_rtsp_sink(
     Ok(Sink::Rtsp(RtspSink::try_new(id, addresses)?))
 }
 
-#[instrument(level = "debug")]
+#[instrument(level = "debug", skip_all)]
 pub fn create_image_sink(
     id: Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
@@ -97,7 +97,7 @@ pub fn create_image_sink(
     )?))
 }
 
-#[instrument(level = "debug")]
+#[instrument(level = "debug", skip_all)]
 pub async fn create_zenoh_sink(
     id: Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
@@ -107,7 +107,7 @@ pub async fn create_zenoh_sink(
     ))
 }
 
-#[instrument(level = "debug")]
+#[instrument(level = "debug", skip_all)]
 pub fn link_sink_to_tee(
     tee_src_pad: &gst::Pad,
     sink_pipeline: &gst::Pipeline,
@@ -172,7 +172,7 @@ pub fn link_sink_to_tee(
     Ok(())
 }
 
-#[instrument(level = "debug")]
+#[instrument(level = "debug", skip_all)]
 pub fn link_and_add_all_elements(
     pipeline: &gst::Pipeline,
     elements: &[&gst::Element],
@@ -200,7 +200,7 @@ pub fn link_and_add_all_elements(
     Ok(())
 }
 
-#[instrument(level = "debug")]
+#[instrument(level = "debug", skip_all)]
 pub fn unlink_sink_from_tee(
     tee_src_pad: &gst::Pad,
     sink_pipeline: &gst::Pipeline,
@@ -248,7 +248,7 @@ pub fn unlink_sink_from_tee(
     Ok(())
 }
 
-#[instrument(level = "debug")]
+#[instrument(level = "debug", skip_all)]
 pub fn unlink_and_remove_all_elements(
     pipeline: &gst::Pipeline,
     elements: &[&gst::Element],

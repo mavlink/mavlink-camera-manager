@@ -38,7 +38,7 @@ impl Drop for PipelineRunner {
 }
 
 impl PipelineRunner {
-    #[instrument(level = "debug", skip(pipeline))]
+    #[instrument(level = "debug", skip_all)]
     pub fn try_new(
         pipeline: &gst::Pipeline,
         pipeline_id: &Arc<uuid::Uuid>,
@@ -51,11 +51,7 @@ impl PipelineRunner {
 
         debug!("Starting PipelineRunner task...");
 
-        let span = span!(
-            Level::DEBUG,
-            "PipelineRunner task",
-            id = pipeline_id.to_string()
-        );
+        let span = span!(Level::DEBUG, "PipelineRunner task");
         let task_handle = tokio::spawn({
             let video_and_stream_information = video_and_stream_information.clone();
             let pipeline_id = pipeline_id.clone();
@@ -108,7 +104,7 @@ impl PipelineRunner {
 
     #[instrument(
         level = "debug",
-        skip(pipeline_weak, start, video_and_stream_information)
+        skip(pipeline_weak, pipeline_id, start, video_and_stream_information)
     )]
     async fn runner(
         pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
