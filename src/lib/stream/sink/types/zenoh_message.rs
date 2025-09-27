@@ -19,7 +19,7 @@ impl Timestamp {
         let now = chrono::Utc::now();
         Self {
             sec: now.timestamp() as u32,
-            nsec: now.timestamp_subsec_nanos() as u32,
+            nsec: now.timestamp_subsec_nanos(),
         }
     }
 }
