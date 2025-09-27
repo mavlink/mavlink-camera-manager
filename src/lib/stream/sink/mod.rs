@@ -8,7 +8,7 @@ pub mod zenoh_sink;
 use anyhow::{Context, Result};
 use enum_dispatch::enum_dispatch;
 use gst::prelude::*;
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 use tracing::*;
 
 use crate::video_stream::types::VideoAndStreamInformation;
@@ -62,7 +62,21 @@ pub enum Sink {
     Zenoh(ZenohSink),
 }
 
-#[instrument(level = "debug")]
+impl std::fmt::Display for Sink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let sink_id = self.get_id();
+        let sink_id = sink_id.deref();
+        match self {
+            Sink::Udp(_) => write!(f, "UdpSink sink_id={sink_id}"),
+            Sink::Rtsp(_) => write!(f, "RtspSink sink_id={sink_id}"),
+            Sink::WebRTC(_) => write!(f, "WebRTCSink sink_id={sink_id}"),
+            Sink::Image(_) => write!(f, "ImageSink sink_id={sink_id}"),
+            Sink::Zenoh(_) => write!(f, "ZenohSink sink_id={sink_id}"),
+        }
+    }
+}
+
+#[instrument(level = "debug", skip_all)]
 pub fn create_udp_sink(
     id: Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
