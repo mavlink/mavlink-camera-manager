@@ -52,6 +52,10 @@ jobs:
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain stable --profile minimal --target ${{ matrix.TARGET }} -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
+    - name: Generate bindings
+      run: |
+        cargo run --package=bindings --release --locked
+
     - name: Install build dependencies - Cross
       if: ${{ contains(matrix.TARGET, 'linux') }}
       run: cargo install cross
