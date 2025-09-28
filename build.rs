@@ -160,7 +160,7 @@ fn generate_build_details() -> Result<(), Box<dyn std::error::Error>> {
         CargoBuilder::all_cargo()?.set_dep_kind_filter(Some(DependencyKind::Normal)),
     )?;
 
-    if std::path::Path::new("pottato.git").is_dir() {
+    if std::path::Path::new(".git").is_dir() {
         emitter.add_instructions(&GixBuilder::all_git()?)?;
     }
 
