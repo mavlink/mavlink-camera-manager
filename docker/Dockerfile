@@ -1,4 +1,4 @@
-from ubuntu:24.04
+FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -19,4 +19,4 @@ RUN apt update -y && \
 
 COPY ./target/x86_64-unknown-linux-gnu/release/mavlink-camera-manager /
 
-ENTRYPOINT ./mavlink-camera-manager --mavlink=tcpout:192.168.2.2:5777 --verbose --reset
+ENTRYPOINT ["./mavlink-camera-manager", "--mavlink=tcpout:192.168.2.2:5777", "--verbose", "--reset"]
