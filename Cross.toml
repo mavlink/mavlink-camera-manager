@@ -15,4 +15,4 @@ pre-build = [
 ]
 
 [build.env]
-passthrough = ["SKIP_BINDINGS", "SKIP_WEB"]
+passthrough = ["SKIP_WEB"]
