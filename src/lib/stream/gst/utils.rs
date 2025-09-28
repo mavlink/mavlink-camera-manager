@@ -14,8 +14,124 @@ pub struct PluginRankConfig {
     pub rank: gst::Rank,
 }
 
-#[allow(dead_code)] // TODO: Use this to check all used plugins are available
-pub fn is_gst_plugin_available(plugin_name: &str, min_version: Option<&str>) -> bool {
+#[derive(Debug, Clone)]
+pub struct PluginRequirement {
+    pub name: String,
+    pub min_version: Option<String>,
+    pub required: bool,
+}
+
+impl PluginRequirement {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_owned(),
+            min_version: None,
+            required: false,
+        }
+    }
+
+    pub fn new_with_version(name: &str, min_version: Option<&str>, required: bool) -> Self {
+        Self {
+            name: name.to_owned(),
+            min_version: min_version.map(str::to_owned),
+            required,
+        }
+    }
+}
+
+pub fn check_all_plugins() -> Result<()> {
+    let plugins_requirements = vec![
+        // Basics
+        PluginRequirement::new("capsfilter"),
+        PluginRequirement::new("videoconvert"),
+        PluginRequirement::new("timeoverlay"),
+        PluginRequirement::new("queue"),
+        PluginRequirement::new("tee"),
+        PluginRequirement::new("identity"),
+        // Parsers
+        PluginRequirement::new("h264parse"),
+        PluginRequirement::new("h265parse"),
+        // RTP
+        PluginRequirement::new("rtph264pay"),
+        PluginRequirement::new("rtph265pay"),
+        PluginRequirement::new("rtpvrawpay"),
+        PluginRequirement::new("rtpjpegpay"),
+        // Encoders
+        PluginRequirement::new("jpegenc"),
+        #[cfg(target_os = "windows")]
+        PluginRequirement::new("mfh264enc"),
+        #[cfg(not(target_os = "windows"))]
+        PluginRequirement::new("x264enc"),
+        #[cfg(target_os = "macos")]
+        PluginRequirement::new("vtenc_h265"),
+        #[cfg(target_os = "windows")]
+        PluginRequirement::new("mfh265enc"),
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        PluginRequirement::new("x265enc"),
+        // Decoders
+        PluginRequirement::new("avdec_h264"),
+        PluginRequirement::new("avdec_h265"),
+        PluginRequirement::new("jpegdec"),
+        // Sources
+        PluginRequirement::new("proxysrc"),
+        PluginRequirement::new("shmsrc"),
+        PluginRequirement::new("v4l2src"),
+        PluginRequirement::new("videotestsrc"),
+        PluginRequirement::new("qrtimestampsrc"), // Skipping this one as it is checked in runtime when required
+        PluginRequirement::new("rtspsrc"),
+        // Sinks
+        PluginRequirement::new("proxysink"),
+        PluginRequirement::new("shmsink"),
+        PluginRequirement::new("multiudpsink"),
+        PluginRequirement::new("appsink"),
+        PluginRequirement::new("webrtcbin"),
+    ];
+
+    let mut missing_required = Vec::new();
+
+    for plugin_requirement in &plugins_requirements {
+        let PluginRequirement {
+            name,
+            min_version,
+            required,
+        } = plugin_requirement;
+
+        let requirement_display = format!(
+            "{name}{}",
+            min_version
+                .as_ref()
+                .map_or(String::new(), |v| format!(">={v}"))
+        );
+
+        let available = is_gst_plugin_available(plugin_requirement);
+
+        match (available, *required) {
+            (false, true) => {
+                missing_required.push(requirement_display);
+            }
+            (false, false) => {
+                warn!("Optional GStreamer plugin requirement {requirement_display} is not met: Some features may not be available");
+            }
+            _ => (),
+        }
+    }
+
+    if !missing_required.is_empty() {
+        return Err(anyhow!(
+            "The following GStreamer plugin requirements are not met: {missing_required:#?}"
+        ));
+    }
+
+    Ok(())
+}
+
+pub fn is_gst_plugin_available(
+    PluginRequirement {
+        name,
+        min_version,
+        required: _,
+    }: &PluginRequirement,
+) -> bool {
     // reference: https://github.com/GStreamer/gst/blob/b4ca58df7624b005a33e182a511904d7cceea890/tools/gst-inspect.c#L2148
 
     if let Err(error) = gst::init() {
@@ -25,13 +141,13 @@ pub fn is_gst_plugin_available(plugin_name: &str, min_version: Option<&str>) -> 
     if let Some(min_version) = min_version {
         let version = semver::Version::parse(min_version).unwrap();
         gst::Registry::get().check_feature_version(
-            plugin_name,
+            name,
             version.major.try_into().unwrap(),
             version.minor.try_into().unwrap(),
             version.patch.try_into().unwrap(),
         )
     } else {
-        gst::Registry::get().lookup_feature(plugin_name).is_some()
+        gst::Registry::get().lookup_feature(name).is_some()
     }
 }
 
