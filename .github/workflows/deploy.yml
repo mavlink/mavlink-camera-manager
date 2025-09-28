@@ -56,7 +56,8 @@ jobs:
       if: ${{ contains(matrix.TARGET, 'linux') }}
       run: cargo install cross
 
-    - uses: oven-sh/setup-bun@v2
+    - name: Install build dependencies - Bun
+      uses: oven-sh/setup-bun@v2
       with:
         bun-version: 1.2.22
 
