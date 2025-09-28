@@ -148,10 +148,7 @@ impl V4lPipeline {
             .downcast::<gst::Pipeline>()
             .expect("Couldn't downcast pipeline");
 
-        crate::stream::gst::utils::set_pipeline_name(
-            &pipeline,
-            &format!("pipeline-v4l2-{pipeline_id}"),
-        );
+        pipeline.set_property("name", format!("pipeline-v4l2-{pipeline_id}"));
 
         Ok(pipeline)
     }
