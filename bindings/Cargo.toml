@@ -1,0 +1,14 @@
+[package]
+name = "bindings"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+regex = { workspace = true }
+serde = { workspace = true }
+ts-rs = { workspace = true }
+uuid = { workspace = true }
+
+[[bin]]
+name = "bindings"
+path = "main.rs"
