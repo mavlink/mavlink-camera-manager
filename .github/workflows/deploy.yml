@@ -65,6 +65,10 @@ jobs:
       with:
         bun-version: 1.2.22
 
+    - name: Build frontend
+      run: |
+        cd src/lib/stream/webrtc/frontend && bun install && bun run build && cd -
+
     - name: Building for ${{ matrix.os }} ${{ matrix.target }} (${{ matrix.SUFFIX }})
       if: ${{ contains(matrix.TARGET, 'linux') }}
       run: |
