@@ -395,20 +395,3 @@ async fn wait_for_video_capture_configuration(
 
     None
 }
-
-/// TODO: get rid of this once the safe API gets implemented: https://gitlab.freedesktop.org/gstreamer/gstreamer-rs/-/issues/566
-pub fn set_pipeline_name(pipeline: &gst::Pipeline, name: &str) {
-    use gst::ffi as gst_ffi;
-    use gst::prelude::ObjectType;
-    use std::ffi::CString;
-    use std::os::raw::c_char;
-
-    let name = CString::new(name).unwrap();
-
-    unsafe {
-        gst_ffi::gst_object_set_name(
-            pipeline.as_ptr() as *mut gst_ffi::GstObject,
-            name.as_ptr() as *const c_char,
-        );
-    }
-}
