@@ -71,9 +71,10 @@ jobs:
 
     - name: Building for ${{ matrix.os }} ${{ matrix.target }} (${{ matrix.SUFFIX }})
       if: ${{ contains(matrix.TARGET, 'linux') }}
+      env:
+        SKIP_WEB: 1
       run: |
-        cd src/lib/stream/webrtc/frontend && bun install && bun run build && cd -
-        SKIP_BUN=1 cross build --release --locked --target ${{matrix.target}} --verbose
+        cross build --release --locked --target ${{matrix.target}} --verbose
 
     - name: Install gstreamer
       if: ${{ !contains(matrix.TARGET, 'linux') }}
@@ -91,7 +92,10 @@ jobs:
 
     - name: Building for ${{ matrix.os }} ${{ matrix.target }} (${{ matrix.SUFFIX }})
       if: ${{ !contains(matrix.TARGET, 'linux') }}
-      run: cargo build --release --locked --target ${{matrix.target}} --verbose
+      env:
+        SKIP_WEB: 1
+      run: |
+        cargo build --release --locked --target ${{matrix.target}} --verbose
 
     - name: Prepare files
       run: |
