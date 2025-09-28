@@ -1,7 +1,10 @@
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 
-use crate::{controls::types::Control, stream::gst::utils::is_gst_plugin_available};
+use crate::{
+    controls::types::Control,
+    stream::gst::utils::{is_gst_plugin_available, PluginRequirement},
+};
 
 use super::{
     types::*,
@@ -188,7 +191,7 @@ impl VideoSourceAvailable for VideoSourceGst {
             name: "Fake source".into(),
             source: VideoSourceGstType::Fake("ball".into()),
         })];
-        if is_gst_plugin_available("qrtimestampsrc", None) {
+        if is_gst_plugin_available(&PluginRequirement::new("qrtimestampsrc")) {
             sources.push(VideoSourceType::Gst(VideoSourceGst {
                 name: "QR".into(),
                 source: VideoSourceGstType::QR("QRTimeStamp".into()),
