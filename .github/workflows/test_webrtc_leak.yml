@@ -60,6 +60,10 @@ jobs:
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
         apt-get install -y unzip
 
+    - name: Generate bindings
+      run: |
+        cargo run --package=bindings --verbose --locked
+
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest

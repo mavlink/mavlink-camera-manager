@@ -61,6 +61,10 @@ jobs:
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain stable -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
+    - name: Generate bindings
+      run: |
+        cargo run --package=bindings --verbose --locked
+
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
