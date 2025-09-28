@@ -657,18 +657,12 @@ impl Manager {
 
     pub async fn get_stream_dot_by_id(id: &uuid::Uuid) -> Option<(String, Vec<String>)> {
         let manager = MANAGER.read().await;
-        let Some(stream) = manager.streams.get(id) else {
-            return None;
-        };
+        let stream = manager.streams.get(id)?;
 
         let state_guard = stream.state.read().await;
-        let Some(state) = state_guard.as_ref() else {
-            return None;
-        };
+        let state = state_guard.as_ref()?;
 
-        let Some(pipeline) = &state.pipeline else {
-            return None;
-        };
+        let pipeline = state.pipeline.as_ref()?;
 
         let dot_main = pipeline
             .inner_state_as_ref()
@@ -681,15 +675,11 @@ impl Manager {
             .sinks
             .values()
             .filter_map(|sink| {
-                let Some(pipeline) = sink.pipeline() else {
-                    return None;
-                };
-
-                Some(
+                sink.pipeline().map(|pipeline| {
                     pipeline
                         .debug_to_dot_data(DebugGraphDetails::all())
-                        .to_string(),
-                )
+                        .to_string()
+                })
             })
             .collect::<Vec<String>>();
 
