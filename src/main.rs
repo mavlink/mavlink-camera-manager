@@ -11,6 +11,8 @@ async fn main() -> Result<(), std::io::Error> {
     // Settings should start before everybody else to ensure that the CLI are stored
     settings::manager::init(Some(&cli::manager::settings_file())).await;
 
+    mavlink_camera_manager::video::gst_device_monitor::init().unwrap();
+
     mavlink::manager::Manager::init();
 
     stream::manager::init();
