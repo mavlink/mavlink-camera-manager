@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
-use lazy_static::lazy_static;
+use gst::prelude::*;
 use paperclip::actix::Apiv2Schema;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -731,70 +731,24 @@ impl VideoSource for VideoSourceLocal {
 impl VideoSourceAvailable for VideoSourceLocal {
     #[instrument(level = "debug")]
     async fn cameras_available() -> Vec<VideoSourceType> {
-        let mut cameras: Vec<VideoSourceType> = vec![];
+        gst_device_monitor::v4l_devices()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|device_weak| {
+                let device = device_weak.upgrade()?;
+                let name = device.display_name().to_string();
+                let properties = device.properties()?;
+                let device_path = properties.get::<String>("device.path").ok()?;
+                let bus = properties.get::<String>("v4l2.device.bus_info").ok()?;
 
-        let cameras_path = {
-            let read_dir = match std::fs::read_dir("/dev/") {
-                Ok(cameras_path) => cameras_path,
-                Err(error) => {
-                    error!("Failed to get cameras from \"/dev/\": {error:?}");
-                    return cameras;
-                }
-            };
-
-            read_dir
-                .filter_map(|dir_entry| {
-                    let dir_entry = match dir_entry {
-                        Ok(dir_entry) => dir_entry,
-                        Err(error) => {
-                            info!("Failed reading a device: {error:?}");
-                            return None;
-                        }
-                    };
-
-                    dir_entry.path().to_str().map(String::from)
-                })
-                .filter(|entry_str| entry_str.starts_with("/dev/video"))
-                .collect::<Vec<String>>()
-        };
-
-        for camera_path in &cameras_path {
-            let Ok(caps) = unpanic({
-                use v4l::video::Capture;
-
-                let camera_path = camera_path.clone();
-                move || {
-                    let v4l_device = v4l::Device::with_path(&camera_path).inspect_err(|error| {
-                        trace!("Failed to get device {camera_path:?}. Reason: {error:?}")
-                    })?;
-
-                    let caps = v4l_device.query_caps().inspect_err(|error| {
-                        trace!(
-                            "Failed to capture caps for device: {camera_path:?}. Reason: {error:?}"
-                        )
-                    })?;
-
-                    v4l_device.format().inspect_err(|error| {
-                        trace!("Failed to capture formats for device: {camera_path:?}. Reason: {error:?}")
-                    })?;
-
-                    Ok::<_, std::io::Error>(caps)
-                }
-            }) else {
-                continue;
-            };
-
-            let typ = VideoSourceLocalType::from_str(&caps.bus);
-
-            let source = VideoSourceLocal {
-                name: caps.card,
-                device_path: camera_path.to_string(),
-                typ,
-            };
-            cameras.push(VideoSourceType::Local(source));
-        }
-
-        cameras
+                let typ = VideoSourceLocalType::Usb(bus.to_string());
+                Some(VideoSourceType::Local(VideoSourceLocal {
+                    name,
+                    device_path,
+                    typ,
+                }))
+            })
+            .collect()
     }
 }
 
