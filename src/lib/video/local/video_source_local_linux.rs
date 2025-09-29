@@ -18,10 +18,6 @@ use crate::{
     },
 };
 
-lazy_static! {
-    static ref VIDEO_FORMATS: Arc<Mutex<HashMap<String, Vec<Format>>>> = Default::default();
-}
-
 /// Helper function to wrap calls from v4l that can cause panic, returning an error instead
 fn unpanic<T, F>(body: F) -> T
 where
@@ -826,6 +822,9 @@ mod tests {
 
 #[cfg(test)]
 mod device_identification_tests {
+    use std::sync::{Arc, Mutex};
+
+    use lazy_static::lazy_static;
     use serial_test::serial;
     use tracing_test::traced_test;
 
@@ -835,6 +834,10 @@ mod device_identification_tests {
         video_stream::types::VideoAndStreamInformation,
     };
     use VideoEncodeType::*;
+
+    lazy_static! {
+        static ref VIDEO_FORMATS: Arc<Mutex<HashMap<String, Vec<Format>>>> = Default::default();
+    }
 
     #[instrument(level = "debug")]
     fn add_available_camera(
@@ -867,7 +870,7 @@ mod device_identification_tests {
         VideoSourceType::Local(VideoSourceLocal {
             name: name.into(),
             device_path: device_path.into(),
-            typ: VideoSourceLocalType::Usb(usb_bus.into()),
+            typ: VideoSourceLocalType::Usb((&*usb_bus).into()),
         })
     }
 
