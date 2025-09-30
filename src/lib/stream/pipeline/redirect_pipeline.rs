@@ -66,7 +66,7 @@ impl RedirectPipeline {
                 format!(
                     concat!(
                         "rtspsrc location={location} is-live=true latency=0 do-retransmission=true",
-                        " ! application/x-rtp",
+                        " ! application/x-rtp, media=(string)video",
                     ),
                     location = url,
                 )
@@ -75,7 +75,7 @@ impl RedirectPipeline {
                 format!(
                         concat!(
                             "udpsrc address={address} port={port} close-socket=false auto-multicast=true",
-                            " ! application/x-rtp",
+                            " ! application/x-rtp, media=(string)video",
                         ),
                         address = url.host().context("UDP URL without host")?,
                         port = url.port().context("UDP URL without port")?,
