@@ -74,10 +74,10 @@ impl OnvifPipeline {
                         "rtspsrc location={location} is-live=true latency=0",
                         " ! application/x-rtp",
                         " ! rtph264depay",
-                        // " ! h264parse", // we might want to add this in the future to expand the compatibility, since it can transform the stream format
+                        " ! h264parse config-interval=-1",
                         " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au",
                         " ! tee name={video_tee_name} allow-not-linked=true",
-                        " ! rtph264pay aggregate-mode=zero-latency config-interval=10 pt=96",
+                        " ! rtph264pay aggregate-mode=zero-latency config-interval=-1 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     location = location,
@@ -92,10 +92,10 @@ impl OnvifPipeline {
                         "rtspsrc location={location} is-live=true latency=0",
                         " ! application/x-rtp",
                         " ! rtph265depay",
-                        // " ! h265parse", // we might want to add this in the future to expand the compatibility, since it can transform the stream format
+                        " ! h265parse config-interval=-1",
                         " ! capsfilter name={filter_name} caps=video/x-h265,profile={profile},stream-format=byte-stream,alignment=au",
                         " ! tee name={video_tee_name} allow-not-linked=true",
-                        " ! rtph265pay aggregate-mode=zero-latency config-interval=10 pt=96",
+                        " ! rtph265pay aggregate-mode=zero-latency config-interval=-1 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
                     location = location,
