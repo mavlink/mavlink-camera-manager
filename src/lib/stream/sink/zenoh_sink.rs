@@ -186,6 +186,7 @@ impl ZenohSink {
             VideoEncodeType::H264 => {
                 encode_type = "h264";
                 _parser = gst::ElementFactory::make("h264parse").build()?;
+                _parser.set_property("config-interval", -1i32);
                 caps = gst::Caps::builder("video/x-h264")
                     .field("stream-format", "byte-stream")
                     .field("alignment", "au")
@@ -194,6 +195,7 @@ impl ZenohSink {
             VideoEncodeType::H265 => {
                 encode_type = "h265";
                 _parser = gst::ElementFactory::make("h265parse").build()?;
+                _parser.set_property("config-interval", -1i32);
                 caps = gst::Caps::builder("video/x-h265")
                     .field("stream-format", "byte-stream")
                     .field("alignment", "au")
