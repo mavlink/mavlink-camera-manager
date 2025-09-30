@@ -117,7 +117,7 @@ fn make_source_description_from_stream_uri(stream_uri: &url::Url) -> Result<Stri
     match stream_uri.scheme() {
         "rtsp" => {
             Ok(format!(
-                "rtspsrc name=source location={stream_uri} is-live=true latency=0"
+                "rtspsrc name=source location={stream_uri} is-live=true latency=0 do-retransmission=true"
             ))
         }
         "udp" => {
