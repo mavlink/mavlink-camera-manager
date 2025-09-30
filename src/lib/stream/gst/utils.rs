@@ -255,7 +255,10 @@ fn make_source_description_from_stream_uri(stream_uri: &url::Url) -> Result<Stri
 pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Result<VideoEncodeType> {
     let mut description = make_source_description_from_stream_uri(stream_uri)?;
 
-    description.push_str(" ! fakesink name=sink sync=false");
+    description.push_str(concat!(
+        " ! application/x-rtp, media=(string)video",
+        " ! fakesink name=sink sync=false",
+    ));
 
     let pipeline = gst::parse::launch(&description)
         .context("Failed to create pipeline")?
@@ -379,7 +382,7 @@ async fn get_capture_configuration_using_encoding(
 ) -> Result<CaptureConfiguration> {
     let mut description = make_source_description_from_stream_uri(stream_uri)?;
 
-    description.push_str(" ! application/x-rtp ");
+    description.push_str(" ! application/x-rtp, media=(string)video");
 
     match encode {
         VideoEncodeType::H264 => description.push_str(" ! rtph264depay ! h264parse ! avdec_h264"),

@@ -72,7 +72,7 @@ impl OnvifPipeline {
                 format!(
                     concat!(
                         "rtspsrc location={location} is-live=true latency=0 do-retransmission=true",
-                        " ! application/x-rtp",
+                        " ! application/x-rtp, media=(string)video",
                         " ! rtph264depay",
                         " ! h264parse config-interval=-1",
                         " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au",
@@ -90,7 +90,7 @@ impl OnvifPipeline {
                 format!(
                     concat!(
                         "rtspsrc location={location} is-live=true latency=0 do-retransmission=true",
-                        " ! application/x-rtp",
+                        " ! application/x-rtp, media=(string)video",
                         " ! rtph265depay",
                         " ! h265parse config-interval=-1",
                         " ! capsfilter name={filter_name} caps=video/x-h265,profile={profile},stream-format=byte-stream,alignment=au",
