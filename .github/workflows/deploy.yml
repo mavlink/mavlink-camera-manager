@@ -52,19 +52,29 @@ jobs:
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain stable --profile minimal --target ${{ matrix.TARGET }} -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
+    - name: Generate bindings
+      run: |
+        cargo run --package=bindings --release --locked
+
     - name: Install build dependencies - Cross
       if: ${{ contains(matrix.TARGET, 'linux') }}
       run: cargo install cross
 
-    - uses: oven-sh/setup-bun@v2
+    - name: Install build dependencies - Bun
+      uses: oven-sh/setup-bun@v2
       with:
         bun-version: 1.2.22
 
-    - name: Building for ${{ matrix.os }} ${{ matrix.target }} (${{ matrix.SUFFIX }})
-      if: ${{ contains(matrix.TARGET, 'linux') }}
+    - name: Build frontend
       run: |
         cd src/lib/stream/webrtc/frontend && bun install && bun run build && cd -
-        SKIP_BUN=1 cross build --release --locked --target ${{matrix.target}} --verbose
+
+    - name: Building for ${{ matrix.os }} ${{ matrix.target }} (${{ matrix.SUFFIX }})
+      if: ${{ contains(matrix.TARGET, 'linux') }}
+      env:
+        SKIP_WEB: 1
+      run: |
+        cross build --release --locked --target ${{matrix.target}} --verbose
 
     - name: Install gstreamer
       if: ${{ !contains(matrix.TARGET, 'linux') }}
@@ -82,7 +92,10 @@ jobs:
 
     - name: Building for ${{ matrix.os }} ${{ matrix.target }} (${{ matrix.SUFFIX }})
       if: ${{ !contains(matrix.TARGET, 'linux') }}
-      run: cargo build --release --locked --target ${{matrix.target}} --verbose
+      env:
+        SKIP_WEB: 1
+      run: |
+        cargo build --release --locked --target ${{matrix.target}} --verbose
 
     - name: Prepare files
       run: |

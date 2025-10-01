@@ -210,11 +210,10 @@ git clone https://github.com/mavlink/mavlink-camera-manager.git &&\
 cd mavlink-camera-manager
 ```
 
-5. Build it with cargo:
+5. Build it using the helper bash script:
 
 ```Bash
-cargo build --release
-
+./build.sh --release
 ```
 
 _note: If the compilation fails to find one of these packages, make sure that they are visible for `pkg-config`, which may be necessary to set `PKG_CONFIG_PATH` environment variable._
