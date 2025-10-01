@@ -304,7 +304,7 @@ impl ZenohSink {
                     }
                 };
 
-                let data = map.as_slice().to_vec();
+                let data = map.to_vec();
                 trace!("Publishing H.264 frame with size: {}", data.len());
 
                 // Only send if we have valid data
