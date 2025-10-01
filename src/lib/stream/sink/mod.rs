@@ -1,3 +1,4 @@
+pub mod file_sink;
 pub mod image_sink;
 pub mod rtsp_sink;
 pub mod types;
@@ -11,7 +12,7 @@ use gst::prelude::*;
 use std::{ops::Deref, sync::Arc};
 use tracing::*;
 
-use crate::video_stream::types::VideoAndStreamInformation;
+use crate::{stream::sink::file_sink::FileSink, video_stream::types::VideoAndStreamInformation};
 
 use image_sink::ImageSink;
 use rtsp_sink::RtspSink;
@@ -60,6 +61,7 @@ pub enum Sink {
     WebRTC(WebRTCSink),
     Image(ImageSink),
     Zenoh(ZenohSink),
+    File(FileSink),
 }
 
 impl std::fmt::Display for Sink {
@@ -72,6 +74,7 @@ impl std::fmt::Display for Sink {
             Sink::WebRTC(_) => write!(f, "WebRTCSink sink_id={sink_id}"),
             Sink::Image(_) => write!(f, "ImageSink sink_id={sink_id}"),
             Sink::Zenoh(_) => write!(f, "ZenohSink sink_id={sink_id}"),
+            Sink::File(_) => write!(f, "FileSink sink_id={sink_id}"),
         }
     }
 }
@@ -119,6 +122,17 @@ pub async fn create_zenoh_sink(
     Ok(Sink::Zenoh(
         ZenohSink::try_new(id, video_and_stream_information).await?,
     ))
+}
+
+#[instrument(level = "debug")]
+pub fn create_file_sink(
+    id: Arc<uuid::Uuid>,
+    video_and_stream_information: &VideoAndStreamInformation,
+) -> Result<Sink> {
+    Ok(Sink::File(FileSink::try_new(
+        id,
+        video_and_stream_information,
+    )?))
 }
 
 #[instrument(level = "debug", skip_all)]

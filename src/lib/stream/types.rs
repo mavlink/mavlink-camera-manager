@@ -27,6 +27,12 @@ pub enum CaptureConfiguration {
     Redirect(RedirectCaptureConfiguration),
 }
 
+pub enum TriggerKind {
+    Manual,
+    Arm,
+    Always,
+}
+
 #[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize, Default)]
 #[serde(default)]
 pub struct ExtendedConfiguration {
