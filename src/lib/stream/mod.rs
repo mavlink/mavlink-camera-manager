@@ -21,6 +21,7 @@ use webrtc::signalling_protocol::PeerId;
 
 use crate::{
     mavlink::mavlink_camera::MavlinkCamera,
+    stream::sink::create_file_sink,
     video::{
         types::{FrameInterval, VideoEncodeType, VideoSourceType},
         video_source::cameras_available,
@@ -494,6 +495,35 @@ impl StreamState {
                 Err(reason) => {
                     return Err(anyhow!(
                         "Failed to create Sink of type Zenoh. Reason: {reason}"
+                    ));
+                }
+            }
+        }
+
+        if !video_and_stream_information
+            .stream_information
+            .extended_configuration
+            .as_ref()
+            .map(|e| e.disable_recording)
+            .unwrap_or_default()
+            && crate::cli::manager::enable_zenoh()
+        {
+            let sink_id = Arc::new(Manager::generate_uuid(None));
+            match create_file_sink(sink_id.clone(), &video_and_stream_information) {
+                Ok(sink) => {
+                    if let Some(pipeline) = stream.pipeline.as_mut() {
+                        if let Err(reason) = pipeline.add_sink(sink).await {
+                            return Err(anyhow!(
+                                "Failed to add Sink of type File to the Pipeline. Reason: {reason}"
+                            ));
+                        }
+                    } else {
+                        return Err(anyhow!("No Pipeline available to add File sink"));
+                    }
+                }
+                Err(reason) => {
+                    return Err(anyhow!(
+                        "Failed to create Sink of type File. Reason: {reason}"
                     ));
                 }
             }
