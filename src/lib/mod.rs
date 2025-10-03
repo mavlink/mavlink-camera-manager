@@ -17,3 +17,4 @@ pub mod settings;
 pub mod stream;
 pub mod video;
 pub mod video_stream;
+pub mod zenoh;
