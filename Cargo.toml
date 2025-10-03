@@ -66,7 +66,7 @@ tracing-gstreamer = "0.7.0"
 tracing-tracy = { version = "0.10.5", features = ["ondemand", "broadcast"] } # Note that these features defines the tracy client behavior.
 ringbuffer = "0.15.0"
 scopeguard = "1.2.0"
-zenoh = "1.4.0"
+zenoh = "1.5.1"
 cdr = "0.2.4"
 tempfile = "3.22.0"
 thread-priority = "3.0.0"
