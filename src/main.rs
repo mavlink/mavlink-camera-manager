@@ -1,4 +1,6 @@
-use mavlink_camera_manager::{cli, controls, helper, logger, mavlink, server, settings, stream};
+use mavlink_camera_manager::{
+    cli, controls, helper, logger, mavlink, server, settings, stream, zenoh,
+};
 
 use tracing::*;
 
@@ -20,6 +22,10 @@ async fn main() -> Result<(), std::io::Error> {
 
     // Onvif should start after the stream manager
     controls::onvif::manager::Manager::init().await;
+
+    if cli::manager::enable_zenoh() {
+        zenoh::init().await.unwrap();
+    }
 
     if cli::manager::enable_thread_counter() {
         helper::threads::start_thread_counter_thread();
