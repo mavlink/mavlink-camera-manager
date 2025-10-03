@@ -1,14 +1,11 @@
-use lazy_static::lazy_static;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
-use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tracing::*;
 
 use crate::{
-    cli::manager::zenoh_config_file,
     stream::{pipeline::runner::PipelineRunner, types::CaptureConfiguration},
     video::types::VideoEncodeType,
     video_stream::types::VideoAndStreamInformation,
@@ -19,10 +16,6 @@ use super::{
     unlink_sink_from_tee, SinkInterface,
 };
 
-lazy_static! {
-    static ref ZENOH_SESSION: Mutex<Option<zenoh::Session>> = Mutex::new(None);
-}
-
 #[derive(Debug)]
 pub struct ZenohSink {
     sink_id: Arc<uuid::Uuid>,
@@ -31,10 +24,17 @@ pub struct ZenohSink {
     proxysink: gst::Element,
     _proxysrc: gst::Element,
     _parser: gst::Element,
-    appsink: gst_app::AppSink,
+    _appsink: gst_app::AppSink,
     tee_src_pad: Option<gst::Pad>,
     pipeline_runner: PipelineRunner,
-    topic_suffix: String,
+    _topic: String,
+    _publisher_task_handle: JoinHandle<()>,
+}
+
+impl Drop for ZenohSink {
+    fn drop(&mut self) {
+        self._publisher_task_handle.abort();
+    }
 }
 
 impl SinkInterface for ZenohSink {
@@ -208,120 +208,112 @@ impl ZenohSink {
             }
         }
 
-        let mut zenoh_session_guard = ZENOH_SESSION.lock().await;
-        if zenoh_session_guard.is_none() {
-            let mut config = if let Some(zenoh_config_file) = zenoh_config_file() {
-                zenoh::Config::from_file(zenoh_config_file)
-                    .map_err(|error| anyhow!("Failed to load Zenoh config file: {error:?}"))?
-            } else {
-                let mut config = zenoh::Config::default();
-                config
-                    .insert_json5("mode", r#""client""#)
-                    .expect("Failed to insert client mode");
-                config
-                    .insert_json5("connect/endpoints", r#"["tcp/127.0.0.1:7447"]"#)
-                    .expect("Failed to insert endpoints");
-                config
-            };
-
-            config
-                .insert_json5("adminspace", r#"{"enabled": true}"#)
-                .expect("Failed to insert adminspace");
-            config
-                .insert_json5("metadata", r#"{"name": "mavlink-camera-manager"}"#)
-                .expect("Failed to insert metadata");
-
-            let session = zenoh::open(config)
-                .await
-                .map_err(|error| anyhow!("Failed to open Zenoh session: {error:?}"))?;
-            *zenoh_session_guard = Some(session);
-        }
-        let zenoh_session = zenoh_session_guard.as_ref().unwrap();
-
-        let (tx, mut rx) = mpsc::channel(100);
-
-        let topic_suffix = video_and_stream_information
+        let video_source_name = video_and_stream_information
             .name
             .chars()
             .filter(|c| c.is_ascii_alphanumeric())
             .collect::<String>();
+        let _topic = format!("video/{video_source_name}/stream");
 
-        // Spawn a task to handle the video data publishing
-        tokio::spawn({
-            let topic_suffix = topic_suffix.clone();
-            let zenoh_session = zenoh_session.clone();
-            async move {
-                while let Some(data) = rx.recv().await {
-                    // Create a foxglove CDR compatible message
-                    // https://docs.foxglove.dev/docs/visualization/message-schemas/compressed-video
-                    let message = CompressedVideo {
-                        timestamp: Timestamp::now(),
-                        frame_id: "vehicle".to_string(),
-                        data,
-                        format: encode_type.to_string(),
-                    };
-                    let encoded = cdr::serialize::<_, _, cdr::CdrLe>(&message, cdr::Infinite)
-                        .expect("Failed to serialize message");
-                    if let Err(error) = zenoh_session
-                        .put(&format!("video/{topic_suffix}/stream"), encoded)
-                        .encoding(
-                            zenoh::bytes::Encoding::APPLICATION_CDR
-                                .with_schema("foxglove.CompressedVideo"),
-                        )
-                        .await
-                    {
-                        error!("Error publishing data: {error:?}");
+        let (sender, _publisher_task_handle) = {
+            let session = crate::zenoh::get().context("No Zenoh Session found")?;
+            let zenoh_topic = session
+                .declare_keyexpr(_topic.clone())
+                .await
+                .map_err(anyhow::Error::msg)?;
+            let zenoh_encoding =
+                zenoh::bytes::Encoding::APPLICATION_CDR.with_schema("foxglove.CompressedVideo");
+            let publisher = session
+                .declare_publisher(zenoh_topic)
+                .encoding(zenoh_encoding)
+                .await
+                .map_err(anyhow::Error::msg)?;
+
+            let (sender, mut receiver) = tokio::sync::mpsc::channel::<CompressedVideo>(100);
+            let publisher_task_handle = tokio::spawn(async move {
+                let topic = publisher.key_expr().to_string();
+
+                while let Some(message) = receiver.recv().await {
+                    let encoded_data =
+                        match cdr::serialize::<_, _, cdr::CdrLe>(&message, cdr::Infinite) {
+                            Ok(encoded) => encoded,
+                            Err(error) => {
+                                error!("Failed to serialize message: {error:?}");
+                                continue;
+                            }
+                        };
+
+                    if let Err(error) = publisher.put(encoded_data).await {
+                        error!("Failed sending frame to zenoh topic {topic:?}: {error:?}");
                     }
                 }
-            }
-        });
+
+                if let Err(error) = publisher.undeclare().await {
+                    error!("Failed undeclaring zenoh publisher {topic:?}: {error:?}");
+                }
+            });
+
+            (sender, publisher_task_handle)
+        };
 
         // Create the appsink callbacks
-        let tx_clone = tx.clone();
         let appsink_callbacks = gst_app::AppSinkCallbacks::builder()
-            .new_sample(move |appsink| {
-                let sample = match appsink.pull_sample() {
-                    Ok(sample) => sample,
-                    Err(error) => {
-                        error!("Error pulling sample: {error:?}");
-                        return Ok(gst::FlowSuccess::Ok);
-                    }
-                };
+            .new_sample({
+                let frame_id = "vehicle".to_string();
+                let format = encode_type.to_string();
+                let sender = sender.clone();
 
-                let buffer = match sample.buffer() {
-                    Some(buffer) => buffer,
-                    None => {
-                        error!("No buffer in sample");
-                        return Ok(gst::FlowSuccess::Ok);
-                    }
-                };
+                move |appsink| {
+                    let sample = match appsink.pull_sample() {
+                        Ok(sample) => sample,
+                        Err(error) => {
+                            error!("Error pulling sample: {error:?}");
+                            return Ok(gst::FlowSuccess::Ok);
+                        }
+                    };
 
-                let map = match buffer.map_readable() {
-                    Ok(map) => map,
-                    Err(error) => {
-                        error!("Error mapping buffer: {error:?}");
-                        return Ok(gst::FlowSuccess::Ok);
-                    }
-                };
+                    let buffer = match sample.buffer() {
+                        Some(buffer) => buffer,
+                        None => {
+                            error!("No buffer in sample");
+                            return Ok(gst::FlowSuccess::Ok);
+                        }
+                    };
 
-                let data = map.as_slice().to_vec();
-                trace!("Publishing H.264 frame with size: {}", data.len());
+                    let buffer_map = match buffer.map_readable() {
+                        Ok(map) => map,
+                        Err(error) => {
+                            error!("Error mapping buffer: {error:?}");
+                            return Ok(gst::FlowSuccess::Ok);
+                        }
+                    };
+                    let buffer_map_len = buffer_map.len();
 
-                // Only send if we have valid data
-                if !data.is_empty() && data.len() < 1024 * 1024 {
-                    // 1MB limit
-                    if let Err(error) = tx_clone.blocking_send(data) {
-                        error!("Error sending data through channel: {error}");
+                    // Only send if we have valid data (1MB limit)
+                    if !buffer_map.is_empty() && buffer_map_len < 1024 * 1024 {
+                        trace!("Publishing {format:?} frame with size: {buffer_map_len:?}");
+
+                        // https://docs.foxglove.dev/docs/visualization/message-schemas/compressed-video
+                        let message = CompressedVideo {
+                            timestamp: Timestamp::now(),
+                            frame_id: frame_id.clone(),
+                            data: buffer_map.to_vec(),
+                            format: format.clone(),
+                        };
+
+                        if let Err(error) = sender.blocking_send(message) {
+                            error!("Error sending data through channel: {error}");
+                        }
+                    } else {
+                        warn!("Skipping invalid frame: size={buffer_map_len:?}");
                     }
-                } else {
-                    warn!("Skipping invalid frame: size={}", data.len());
+
+                    Ok(gst::FlowSuccess::Ok)
                 }
-
-                Ok(gst::FlowSuccess::Ok)
             })
             .build();
 
-        let appsink = gst_app::AppSink::builder()
+        let _appsink = gst_app::AppSink::builder()
             .name(format!("AppSink-{sink_id}"))
             .sync(false)
             .max_buffers(1u32)
@@ -334,7 +326,7 @@ impl ZenohSink {
             .name(format!("pipeline-zenoh-sink-{sink_id}"))
             .build();
 
-        let elements = &vec![&_proxysrc, &_parser, &appsink.upcast_ref()];
+        let elements = &vec![&_proxysrc, &_parser, &_appsink.upcast_ref()];
         if let Err(add_err) = pipeline.add_many(elements) {
             return Err(anyhow!(
                 "Failed adding ZenohSink's elements to Pipeline: {add_err:?}"
@@ -358,10 +350,11 @@ impl ZenohSink {
             proxysink,
             _proxysrc,
             _parser,
-            appsink,
+            _appsink,
             tee_src_pad: Default::default(),
             pipeline_runner,
-            topic_suffix,
+            _topic,
+            _publisher_task_handle,
         })
     }
 }
