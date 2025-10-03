@@ -167,14 +167,14 @@ impl ZenohSink {
             }
         }
 
-        let encoding = match &video_and_stream_information
+        let video_encoding = match &video_and_stream_information
             .stream_information
             .configuration
         {
             CaptureConfiguration::Video(video_configuraiton) => video_configuraiton.encode.clone(),
             CaptureConfiguration::Redirect(_) => {
                 return Err(anyhow!(
-                    "PipelineRunner aborted: Redirect CaptureConfiguration means the stream was not initialized yet"
+                    "Redirect CaptureConfiguration means the stream was not initialized yet"
                 ));
             }
         };
@@ -182,7 +182,7 @@ impl ZenohSink {
         let _parser;
         let caps;
         let encode_type;
-        match encoding {
+        match video_encoding {
             VideoEncodeType::H264 => {
                 encode_type = "h264";
                 _parser = gst::ElementFactory::make("h264parse").build()?;
@@ -203,8 +203,8 @@ impl ZenohSink {
             }
             _ => {
                 return Err(anyhow!(
-                "Unsupported video encoding for ImageSink: {encoding:?}. The supported are: H264 and H265"
-            ))
+                    "Unsupported video encoding for ZenohSink: {video_encoding:?}. The supported are: H264 and H265"
+                ))
             }
         }
 
@@ -343,9 +343,9 @@ impl ZenohSink {
 
         if let Err(link_err) = gst::Element::link_many(elements) {
             if let Err(remove_err) = pipeline.remove_many(elements) {
-                warn!("Failed removing elements from ImageSink Pipeline: {remove_err:?}")
+                warn!("Failed removing elements from ZenohSink Pipeline: {remove_err:?}")
             };
-            return Err(anyhow!("Failed linking ImageSink's elements: {link_err:?}"));
+            return Err(anyhow!("Failed linking ZenohSink's elements: {link_err:?}"));
         }
 
         let pipeline_runner =
