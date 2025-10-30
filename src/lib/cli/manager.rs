@@ -116,7 +116,7 @@ struct Args {
     onvif_auth: Vec<String>,
 
     /// Enables the zenoh integration by default in client mode.
-    #[arg(long, value_name = "PATH")]
+    #[arg(long)]
     zenoh: bool,
 
     /// Sets the zenoh configuration file path.
