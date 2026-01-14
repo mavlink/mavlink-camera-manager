@@ -99,27 +99,16 @@ pub fn init() {
         }
     }));
 
+    // Optinal tracy layer
+    let tracy_layer = cli::manager::is_tracy().then_some(tracing_tracy::TracyLayer::default());
+
     // Configure the default subscriber
-    match cli::manager::is_tracy() {
-        true => {
-            let tracy_layer = tracing_tracy::TracyLayer::default();
-            let subscriber = tracing_subscriber::registry()
-                .with(console_layer)
-                .with(file_layer)
-                .with(server_layer)
-                .with(tracy_layer);
-            tracing::subscriber::set_global_default(subscriber)
-                .expect("Unable to set a global subscriber");
-        }
-        false => {
-            let subscriber = tracing_subscriber::registry()
-                .with(console_layer)
-                .with(file_layer)
-                .with(server_layer);
-            tracing::subscriber::set_global_default(subscriber)
-                .expect("Unable to set a global subscriber");
-        }
-    };
+    let subscriber = tracing_subscriber::registry()
+        .with(console_layer)
+        .with(file_layer)
+        .with(server_layer)
+        .with(tracy_layer);
+    tracing::subscriber::set_global_default(subscriber).expect("Unable to set a global subscriber");
 
     // Configure GSTreamer logs integration
     gst::log::remove_default_log_function();
