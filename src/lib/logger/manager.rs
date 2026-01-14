@@ -1,85 +1,26 @@
-use std::{
-    io::{self, Write},
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
-use ringbuffer::{AllocRingBuffer, RingBuffer};
-use tokio::sync::broadcast::{Receiver, Sender};
 use tracing::{metadata::LevelFilter, *};
 use tracing_log::LogTracer;
 use tracing_subscriber::{
-    fmt::{self, MakeWriter},
+    fmt::{self},
     layer::SubscriberExt,
     EnvFilter, Layer,
 };
 
-use crate::cli;
+use crate::{
+    cli,
+    logger::history::{BroadcastWriter, History},
+};
 
-struct BroadcastWriter {
-    sender: Sender<String>,
-}
-
-impl Write for BroadcastWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let message = String::from_utf8_lossy(buf).to_string();
-        let _ = self.sender.send(message);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-struct BroadcastMakeWriter {
-    sender: Sender<String>,
-}
-
-impl<'a> MakeWriter<'a> for BroadcastMakeWriter {
-    type Writer = BroadcastWriter;
-
-    fn make_writer(&'a self) -> Self::Writer {
-        BroadcastWriter {
-            sender: self.sender.clone(),
-        }
-    }
+lazy_static! {
+    static ref MANAGER: Arc<Mutex<Manager>> = Default::default();
+    pub static ref HISTORY: Arc<Mutex<History>> = Default::default();
 }
 
 #[derive(Debug, Default)]
 pub struct Manager {
     pub process: Option<tokio::task::JoinHandle<()>>,
-}
-
-pub struct History {
-    pub history: AllocRingBuffer<String>,
-    pub sender: Sender<String>,
-}
-
-impl Default for History {
-    fn default() -> Self {
-        let (sender, _receiver) = tokio::sync::broadcast::channel(100);
-        Self {
-            history: AllocRingBuffer::new(10 * 1024),
-            sender,
-        }
-    }
-}
-
-impl History {
-    pub fn push(&mut self, message: String) {
-        self.history.push(message.clone());
-        let _ = self.sender.send(message);
-    }
-
-    pub fn subscribe(&self) -> (Receiver<String>, Vec<String>) {
-        let reader = self.sender.subscribe();
-        (reader, self.history.to_vec())
-    }
-}
-
-lazy_static! {
-    static ref MANAGER: Arc<Mutex<Manager>> = Default::default();
-    pub static ref HISTORY: Arc<Mutex<History>> = Default::default();
 }
 
 // Start logger, should be done inside main
@@ -134,7 +75,7 @@ pub fn init() {
     };
     let (tx, mut rx) = tokio::sync::broadcast::channel(100);
     let server_layer = fmt::Layer::new()
-        .with_writer(BroadcastMakeWriter { sender: tx.clone() })
+        .with_writer(BroadcastWriter::new(tx))
         .with_ansi(false)
         .with_file(true)
         .with_line_number(true)
