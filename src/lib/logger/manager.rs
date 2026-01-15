@@ -99,7 +99,7 @@ pub fn init() {
         }
     }));
 
-    // Optinal tracy layer
+    // Optional tracy layer
     let tracy_layer = cli::manager::is_tracy().then_some(tracing_tracy::TracyLayer::default());
 
     // Configure the default subscriber
