@@ -10,7 +10,11 @@ use tracing_subscriber::{
 
 use crate::{
     cli,
-    logger::history::{BroadcastWriter, History},
+    logger::{
+        foxglove_layer::FoxgloveLayer,
+        history::{BroadcastWriter, History},
+        zenoh_log_publisher::ZenohLogPublisher,
+    },
 };
 
 lazy_static! {
@@ -102,11 +106,22 @@ pub fn init() {
     // Optional tracy layer
     let tracy_layer = cli::manager::is_tracy().then_some(tracing_tracy::TracyLayer::default());
 
+    // Configure the zenoh log
+    let zenoh_log_publisher = ZenohLogPublisher::new("services/mavlink-camera-manager/log", true);
+    let zenoh_env_filter = if cli::manager::is_tracing() {
+        EnvFilter::new(LevelFilter::TRACE.to_string())
+    } else {
+        EnvFilter::new(LevelFilter::DEBUG.to_string())
+    };
+    let zenoh_layer = FoxgloveLayer::new(zenoh_log_publisher.sender())
+        .with_filter(filter_unwanted_crates(zenoh_env_filter));
+
     // Configure the default subscriber
     let subscriber = tracing_subscriber::registry()
         .with(console_layer)
         .with(file_layer)
         .with(server_layer)
+        .with(zenoh_layer)
         .with(tracy_layer);
     tracing::subscriber::set_global_default(subscriber).expect("Unable to set a global subscriber");
 
