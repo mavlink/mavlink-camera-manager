@@ -1,3 +1,5 @@
+pub mod foxglove_messages;
+
 use anyhow::{anyhow, Result};
 use tokio::sync::OnceCell;
 use tracing::*;
