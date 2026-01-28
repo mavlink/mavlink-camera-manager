@@ -57,6 +57,16 @@ pub struct RemoveStream {
 }
 
 #[derive(Apiv2Schema, Debug, Deserialize)]
+pub struct BlockSource {
+    source_string: String,
+}
+
+#[derive(Apiv2Schema, Debug, Deserialize)]
+pub struct UnblockSource {
+    source_string: String,
+}
+
+#[derive(Apiv2Schema, Debug, Deserialize)]
 pub struct ResetSettings {
     all: Option<bool>,
 }
@@ -350,6 +360,54 @@ pub fn remove_stream(query: web::Query<RemoveStream>) -> Result<HttpResponse> {
     Ok(HttpResponse::Ok()
         .content_type("application/json")
         .body(json))
+}
+
+#[api_v2_operation]
+/// Blocks a video source and removes all streams using it
+pub async fn block_source(query: web::Query<BlockSource>) -> Result<HttpResponse> {
+    stream_manager::block_source(&query.source_string)
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    let blocked_sources = stream_manager::blocked_sources();
+
+    let json = serde_json::to_string_pretty(&blocked_sources)
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(json))
+}
+
+#[api_v2_operation]
+/// Unblocks a video source
+pub async fn unblock_source(query: web::Query<UnblockSource>) -> Result<HttpResponse> {
+    stream_manager::unblock_source(&query.source_string)
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    let blocked_sources = stream_manager::blocked_sources();
+
+    let json = serde_json::to_string_pretty(&blocked_sources)
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(json))
+}
+
+#[api_v2_operation]
+/// Returns the list of blocked video sources
+pub async fn blocked_sources() -> Result<Json<Vec<String>>> {
+    let blocked_sources = stream_manager::blocked_sources();
+    Ok(Json(blocked_sources))
+}
+
+#[api_v2_operation]
+/// Clears all blocked video sources
+pub async fn clear_blocked_sources() -> Result<HttpResponse> {
+    stream_manager::clear_blocked_sources().await;
+    Ok(HttpResponse::Ok().finish())
 }
 
 #[api_v2_operation]
