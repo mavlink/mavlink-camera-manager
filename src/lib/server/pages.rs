@@ -35,6 +35,7 @@ pub struct ApiVideoSource {
     source: String,
     formats: Vec<Format>,
     controls: Vec<Control>,
+    blocked: bool,
 }
 
 #[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
@@ -219,36 +220,47 @@ pub async fn info() -> Result<CreatedJson<Info>> {
 /// Provides list of all video sources, with controls and formats
 pub async fn v4l() -> Result<Json<Vec<ApiVideoSource>>> {
     let cameras = video_source::cameras_available().await;
+    let blocked_sources = stream_manager::blocked_sources();
 
     use futures::stream::{self, StreamExt};
 
     let cameras: Vec<ApiVideoSource> = stream::iter(cameras)
-        .then(|cam| async {
-            match cam {
-                VideoSourceType::Local(local) => ApiVideoSource {
-                    name: local.name().clone(),
-                    source: local.source_string().to_string(),
-                    formats: local.formats().await,
-                    controls: local.controls(),
-                },
-                VideoSourceType::Gst(gst) => ApiVideoSource {
-                    name: gst.name().clone(),
-                    source: gst.source_string().to_string(),
-                    formats: gst.formats().await,
-                    controls: gst.controls(),
-                },
-                VideoSourceType::Onvif(onvif) => ApiVideoSource {
-                    name: onvif.name().clone(),
-                    source: onvif.source_string().to_string(),
-                    formats: onvif.formats().await,
-                    controls: onvif.controls(),
-                },
-                VideoSourceType::Redirect(redirect) => ApiVideoSource {
-                    name: redirect.name().clone(),
-                    source: redirect.source_string().to_string(),
-                    formats: redirect.formats().await,
-                    controls: redirect.controls(),
-                },
+        .then(|cam| {
+            let blocked_sources = &blocked_sources;
+            async move {
+                let source_string = cam.inner().source_string();
+                let blocked = blocked_sources.iter().any(|s| s == source_string);
+
+                match cam {
+                    VideoSourceType::Local(local) => ApiVideoSource {
+                        name: local.name().clone(),
+                        source: local.source_string().to_string(),
+                        formats: local.formats().await,
+                        controls: local.controls(),
+                        blocked,
+                    },
+                    VideoSourceType::Gst(gst) => ApiVideoSource {
+                        name: gst.name().clone(),
+                        source: gst.source_string().to_string(),
+                        formats: gst.formats().await,
+                        controls: gst.controls(),
+                        blocked,
+                    },
+                    VideoSourceType::Onvif(onvif) => ApiVideoSource {
+                        name: onvif.name().clone(),
+                        source: onvif.source_string().to_string(),
+                        formats: onvif.formats().await,
+                        controls: onvif.controls(),
+                        blocked,
+                    },
+                    VideoSourceType::Redirect(redirect) => ApiVideoSource {
+                        name: redirect.name().clone(),
+                        source: redirect.source_string().to_string(),
+                        formats: redirect.formats().await,
+                        controls: redirect.controls(),
+                        blocked,
+                    },
+                }
             }
         })
         .collect()
