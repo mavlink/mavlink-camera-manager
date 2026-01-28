@@ -345,6 +345,17 @@ pub async fn get_jpeg_thumbnail_from_source(
 pub async fn add_stream_and_start(
     video_and_stream_information: VideoAndStreamInformation,
 ) -> Result<()> {
+    // Check if source is blocked
+    let source_string = video_and_stream_information
+        .video_source
+        .inner()
+        .source_string();
+    if is_source_blocked(&source_string) {
+        return Err(anyhow!(
+            "Source {source_string:?} needs to be unblocked to be used"
+        ));
+    }
+
     {
         let manager = MANAGER.read().await;
         for stream in manager.streams.values() {
@@ -394,6 +405,56 @@ pub async fn remove_stream_by_name(stream_name: &str) -> Result<()> {
     Manager::remove_stream(&stream_id, true).await?;
 
     Ok(())
+}
+
+#[instrument(level = "debug")]
+pub async fn block_source(source_string: &str) -> Result<()> {
+    // Add to blocked list
+    settings::manager::add_blocked_source(source_string);
+
+    // Remove all streams using this source
+    let streams_to_remove = {
+        let manager = MANAGER.read().await;
+        let mut ids = vec![];
+
+        for (id, stream) in manager.streams.iter() {
+            let video_and_stream_info = stream.video_and_stream_information.read().await;
+            if video_and_stream_info.video_source.inner().source_string() == source_string {
+                ids.push(*id);
+            }
+        }
+
+        ids
+    };
+
+    for stream_id in streams_to_remove {
+        if let Err(error) = Manager::remove_stream(&stream_id, true).await {
+            warn!("Failed removing stream {stream_id:?} while blocking source: {error:?}");
+        }
+    }
+
+    Ok(())
+}
+
+#[instrument(level = "debug")]
+pub async fn unblock_source(source_string: &str) -> Result<()> {
+    settings::manager::remove_blocked_source(source_string);
+    Ok(())
+}
+
+#[instrument(level = "debug")]
+pub async fn clear_blocked_sources() {
+    settings::manager::clear_blocked_sources();
+}
+
+#[instrument(level = "debug")]
+pub fn blocked_sources() -> Vec<String> {
+    settings::manager::blocked_sources()
+}
+
+#[instrument(level = "debug")]
+pub fn is_source_blocked(source_string: &str) -> bool {
+    settings::manager::is_source_blocked(source_string)
 }
 
 impl Manager {
