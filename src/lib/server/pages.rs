@@ -35,6 +35,7 @@ pub struct ApiVideoSource {
     source: String,
     formats: Vec<Format>,
     controls: Vec<Control>,
+    blocked: bool,
 }
 
 #[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
@@ -54,6 +55,16 @@ pub struct PostStream {
 #[derive(Apiv2Schema, Debug, Deserialize)]
 pub struct RemoveStream {
     name: String,
+}
+
+#[derive(Apiv2Schema, Debug, Deserialize)]
+pub struct BlockSource {
+    source_string: String,
+}
+
+#[derive(Apiv2Schema, Debug, Deserialize)]
+pub struct UnblockSource {
+    source_string: String,
 }
 
 #[derive(Apiv2Schema, Debug, Deserialize)]
@@ -209,36 +220,47 @@ pub async fn info() -> Result<CreatedJson<Info>> {
 /// Provides list of all video sources, with controls and formats
 pub async fn v4l() -> Result<Json<Vec<ApiVideoSource>>> {
     let cameras = video_source::cameras_available().await;
+    let blocked_sources = stream_manager::blocked_sources();
 
     use futures::stream::{self, StreamExt};
 
     let cameras: Vec<ApiVideoSource> = stream::iter(cameras)
-        .then(|cam| async {
-            match cam {
-                VideoSourceType::Local(local) => ApiVideoSource {
-                    name: local.name().clone(),
-                    source: local.source_string().to_string(),
-                    formats: local.formats().await,
-                    controls: local.controls(),
-                },
-                VideoSourceType::Gst(gst) => ApiVideoSource {
-                    name: gst.name().clone(),
-                    source: gst.source_string().to_string(),
-                    formats: gst.formats().await,
-                    controls: gst.controls(),
-                },
-                VideoSourceType::Onvif(onvif) => ApiVideoSource {
-                    name: onvif.name().clone(),
-                    source: onvif.source_string().to_string(),
-                    formats: onvif.formats().await,
-                    controls: onvif.controls(),
-                },
-                VideoSourceType::Redirect(redirect) => ApiVideoSource {
-                    name: redirect.name().clone(),
-                    source: redirect.source_string().to_string(),
-                    formats: redirect.formats().await,
-                    controls: redirect.controls(),
-                },
+        .then(|cam| {
+            let blocked_sources = &blocked_sources;
+            async move {
+                let source_string = cam.inner().source_string();
+                let blocked = blocked_sources.iter().any(|s| s == source_string);
+
+                match cam {
+                    VideoSourceType::Local(local) => ApiVideoSource {
+                        name: local.name().clone(),
+                        source: local.source_string().to_string(),
+                        formats: local.formats().await,
+                        controls: local.controls(),
+                        blocked,
+                    },
+                    VideoSourceType::Gst(gst) => ApiVideoSource {
+                        name: gst.name().clone(),
+                        source: gst.source_string().to_string(),
+                        formats: gst.formats().await,
+                        controls: gst.controls(),
+                        blocked,
+                    },
+                    VideoSourceType::Onvif(onvif) => ApiVideoSource {
+                        name: onvif.name().clone(),
+                        source: onvif.source_string().to_string(),
+                        formats: onvif.formats().await,
+                        controls: onvif.controls(),
+                        blocked,
+                    },
+                    VideoSourceType::Redirect(redirect) => ApiVideoSource {
+                        name: redirect.name().clone(),
+                        source: redirect.source_string().to_string(),
+                        formats: redirect.formats().await,
+                        controls: redirect.controls(),
+                        blocked,
+                    },
+                }
             }
         })
         .collect()
@@ -350,6 +372,54 @@ pub fn remove_stream(query: web::Query<RemoveStream>) -> Result<HttpResponse> {
     Ok(HttpResponse::Ok()
         .content_type("application/json")
         .body(json))
+}
+
+#[api_v2_operation]
+/// Blocks a video source and removes all streams using it
+pub async fn block_source(query: web::Query<BlockSource>) -> Result<HttpResponse> {
+    stream_manager::block_source(&query.source_string)
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    let blocked_sources = stream_manager::blocked_sources();
+
+    let json = serde_json::to_string_pretty(&blocked_sources)
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(json))
+}
+
+#[api_v2_operation]
+/// Unblocks a video source
+pub async fn unblock_source(query: web::Query<UnblockSource>) -> Result<HttpResponse> {
+    stream_manager::unblock_source(&query.source_string)
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    let blocked_sources = stream_manager::blocked_sources();
+
+    let json = serde_json::to_string_pretty(&blocked_sources)
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(json))
+}
+
+#[api_v2_operation]
+/// Returns the list of blocked video sources
+pub async fn blocked_sources() -> Result<Json<Vec<String>>> {
+    let blocked_sources = stream_manager::blocked_sources();
+    Ok(Json(blocked_sources))
+}
+
+#[api_v2_operation]
+/// Clears all blocked video sources
+pub async fn clear_blocked_sources() -> Result<HttpResponse> {
+    stream_manager::clear_blocked_sources().await;
+    Ok(HttpResponse::Ok().finish())
 }
 
 #[api_v2_operation]

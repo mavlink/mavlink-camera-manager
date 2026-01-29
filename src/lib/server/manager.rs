@@ -65,6 +65,13 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
             .route("/gst_info", web::get().to(pages::gst_info))
             .route("/info", web::get().to(pages::info))
             .route("/delete_stream", web::delete().to(pages::remove_stream))
+            .route("/block_source", web::post().to(pages::block_source))
+            .route("/unblock_source", web::post().to(pages::unblock_source))
+            .route("/blocked_sources", web::get().to(pages::blocked_sources))
+            .route(
+                "/blocked_sources",
+                web::delete().to(pages::clear_blocked_sources),
+            )
             .route("/reset_settings", web::post().to(pages::reset_settings))
             .route("/restart_streams", web::post().to(pages::restart_streams))
             .route("/streams", web::get().to(pages::streams))

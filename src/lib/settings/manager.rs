@@ -22,6 +22,8 @@ pub struct SettingsStruct {
     pub header: HeaderSettingsFile,
     pub mavlink_endpoint: String, //TODO: Move to URL
     pub streams: Vec<VideoAndStreamInformation>,
+    #[serde(default)]
+    pub blocked_sources: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -47,6 +49,7 @@ impl SettingsStruct {
             },
             mavlink_endpoint: cli::manager::mavlink_connection_string(),
             streams: custom::create_default_streams().await,
+            blocked_sources: Vec::new(),
         }
     }
 }
@@ -225,6 +228,56 @@ pub fn set_streams(streams: &[VideoAndStreamInformation]) {
             .append(&mut streams.to_owned());
     }
     save();
+}
+
+pub fn blocked_sources() -> Vec<String> {
+    let manager = MANAGER.read().unwrap();
+    let content = manager.content.as_ref();
+    content.unwrap().config.blocked_sources.clone()
+}
+
+pub fn set_blocked_sources(sources: &[String]) {
+    {
+        let mut manager = MANAGER.write().unwrap();
+        let content = manager.content.as_mut().unwrap();
+        content.config.blocked_sources = sources.to_vec();
+    }
+    save();
+}
+
+pub fn add_blocked_source(source: &str) {
+    {
+        let mut manager = MANAGER.write().unwrap();
+        let content = manager.content.as_mut().unwrap();
+        if !content.config.blocked_sources.contains(&source.to_string()) {
+            content.config.blocked_sources.push(source.to_string());
+        }
+    }
+    save();
+}
+
+pub fn remove_blocked_source(source: &str) {
+    {
+        let mut manager = MANAGER.write().unwrap();
+        let content = manager.content.as_mut().unwrap();
+        content.config.blocked_sources.retain(|s| s != source);
+    }
+    save();
+}
+
+pub fn clear_blocked_sources() {
+    {
+        let mut manager = MANAGER.write().unwrap();
+        let content = manager.content.as_mut().unwrap();
+        content.config.blocked_sources.clear();
+    }
+    save();
+}
+
+pub fn is_source_blocked(source: &str) -> bool {
+    let manager = MANAGER.read().unwrap();
+    let content = manager.content.as_ref().unwrap();
+    content.config.blocked_sources.contains(&source.to_string())
 }
 
 pub async fn reset() {
