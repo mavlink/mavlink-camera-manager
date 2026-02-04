@@ -1,3 +1,4 @@
+pub mod blueos_messages;
 pub mod manager;
 
 mod foxglove_layer;
