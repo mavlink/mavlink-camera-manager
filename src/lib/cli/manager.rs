@@ -92,6 +92,7 @@ struct Args {
     enable_thread_counter: bool,
 
     /// Enable webrtc thread test with limit of child tasks (can use port for webdriver as parameter).
+    #[cfg(feature = "webrtc-test")]
     #[arg(long, value_name = "PORT", num_args = 0..=1, default_missing_value = "9515")]
     enable_webrtc_task_test: Option<u16>,
 
@@ -232,6 +233,7 @@ pub fn enable_thread_counter() -> bool {
     MANAGER.clap_matches.enable_thread_counter
 }
 
+#[cfg(feature = "webrtc-test")]
 pub fn enable_webrtc_task_test() -> Option<u16> {
     MANAGER.clap_matches.enable_webrtc_task_test
 }

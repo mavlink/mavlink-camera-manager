@@ -31,6 +31,7 @@ async fn main() -> Result<(), std::io::Error> {
         helper::threads::start_thread_counter_thread();
     }
 
+    #[cfg(feature = "webrtc-test")]
     if cli::manager::enable_webrtc_task_test().is_some() {
         helper::develop::start_check_tasks_on_webrtc_reconnects();
     }
