@@ -144,3 +144,8 @@ ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat
 uuid = { version = "1.8", default-features = false, features = ["v4", "serde"] }
 serde = { version = "1.0", default-features = false, features = ["derive", "std"] }
 regex = { version = "1", default-features = false }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
