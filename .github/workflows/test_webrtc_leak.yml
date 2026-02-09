@@ -69,7 +69,7 @@ jobs:
         bun-version: latest
 
     - name: Build
-      run: cargo build --verbose --locked
+      run: cargo build --verbose --locked --features webrtc-test
 
     - name: Install runtime dependencies
       run: |
@@ -102,5 +102,5 @@ jobs:
 
     - name: Run test
       run: |
-        RUST_BACKTRACE=1 timeout 300 cargo run --verbose -- \
+        RUST_BACKTRACE=1 timeout 300 cargo run --verbose --features webrtc-test -- \
           --mavlink udpin:0.0.0.0:6666 --verbose --default-settings WebRTCTest --enable-webrtc-task-test 6666
