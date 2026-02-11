@@ -45,12 +45,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn build_web() {
-    // Note that as we are not waching all files, sometimes we'd need to force this build
-    println!("cargo:rerun-if-changed=./src/lib/stream/webrtc/frontend/index.html");
-    println!("cargo:rerun-if-changed=./src/lib/stream/webrtc/frontend/package.json");
-    println!("cargo:rerun-if-changed=./src/lib/stream/webrtc/frontend/src");
+    // Note that as we are not watching all files, sometimes we'd need to force this build
+    println!("cargo:rerun-if-changed=./frontend/index.html");
+    println!("cargo:rerun-if-changed=./frontend/package.json");
+    println!("cargo:rerun-if-changed=./frontend/vite.config.ts");
+    println!("cargo:rerun-if-changed=./frontend/tsconfig.json");
+    println!("cargo:rerun-if-changed=./frontend/tsconfig.config.json");
+    println!("cargo:rerun-if-changed=./frontend/src");
 
-    let frontend_dir = Path::new("./src/lib/stream/webrtc/frontend");
+    let frontend_dir = Path::new("./frontend");
     frontend_dir.try_exists().unwrap();
 
     let program = if Command::new("bun")
