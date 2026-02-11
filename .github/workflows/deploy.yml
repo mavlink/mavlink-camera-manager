@@ -67,7 +67,7 @@ jobs:
 
     - name: Build frontend
       run: |
-        cd src/lib/stream/webrtc/frontend && bun install && bun run build && cd -
+        cd frontend && bun install && bun run build && cd -
 
     - name: Building for ${{ matrix.OS }} ${{ matrix.TARGET }} (${{ matrix.SUFFIX }})
       if: ${{ contains(matrix.TARGET, 'linux') }}
