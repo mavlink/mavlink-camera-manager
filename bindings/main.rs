@@ -36,7 +36,7 @@ fn main() {
     bindings.insert_str(0, custom_notice_str);
 
     // Export to file
-    let output_dir = Path::new("./src/lib/stream/webrtc/frontend/bindings/");
+    let output_dir = Path::new("./frontend/bindings/");
     if !output_dir.exists() {
         std::fs::create_dir_all(output_dir).unwrap();
     }
