@@ -41,7 +41,7 @@ jobs:
       with:
         node-version: '20'
         # cache: 'yarn'
-        # cache-dependency-path: 'src/lib/stream/webrtc/frontend'
+        # cache-dependency-path: 'frontend'
 
     - name: Install build dependencies - Install Yarn
       run: npm install --global yarn
