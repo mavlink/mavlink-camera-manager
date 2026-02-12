@@ -1,6 +1,7 @@
 [workspace]
 members = [
     ".",
+    "api",
     "bindings"
 ]
 
@@ -102,6 +103,7 @@ tokio = { version = "1.37", default-features = false, features = ["rt-multi-thre
 enum_dispatch = { version = "0.3.13", default-features = false }
 uuid = { workspace = true }
 ts-rs = { workspace = true }
+mcm-api = { path = "api", features = ["paperclip"] }
 cached = { version = "0.51", default-features = false, features = ["proc_macro", "serde", "serde_json", "async_tokio_rt_multi_thread"] }
 
 ## Mavlink (only common dialect used)
