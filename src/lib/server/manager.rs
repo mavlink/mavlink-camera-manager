@@ -49,11 +49,6 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
             .with_json_spec_at("/docs.json")
             .with_swagger_ui_at("/docs")
             .app_data(web::JsonConfig::default().error_handler(json_error_handler))
-            .route("/", web::get().to(pages::root))
-            .route(
-                r"/{filename:.*(\.html|\.js|\.css)}",
-                web::get().to(pages::root),
-            )
             .route("/gst_info", web::get().to(pages::gst_info))
             .route("/info", web::get().to(pages::info))
             .route("/delete_stream", web::delete().to(pages::remove_stream))
@@ -101,6 +96,9 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
                 "/onvif/authentication",
                 web::delete().to(pages::unauthenticate_onvif_device),
             )
+            // Static file serving (catch-all, must be last so API routes match first)
+            .route("/", web::get().to(pages::root))
+            .route(r"/{filename:.+}", web::get().to(pages::root))
             .build()
     })
     .bind(server_address)
