@@ -101,35 +101,45 @@
 
 <script lang="ts">
 import { defineComponent } from "vue";
+import type {
+  ApiVideoSource,
+  StreamStatus,
+  Format,
+  Size,
+  FrameInterval,
+  VideoEncodeType,
+} from "@/api";
 
 export default defineComponent({
   name: "StreamForm",
   props: {
     device: {
-      type: Object,
+      type: Object as () => ApiVideoSource,
       required: true,
     },
     streams: {
-      type: Object,
+      type: Array as () => StreamStatus[],
       required: true,
     },
   },
   emits: ["onconfigure"],
   mounted() {
-    this.stream_options.encoders = this.device.formats.map((format: any) =>
+    this.stream_options.encoders = this.device.formats.map((format: Format) =>
       this.encodeToStr(format.encode)
     );
   },
   watch: {
     streams: {
-      handler(streams: any[]) {
+      handler(streams: StreamStatus[]) {
+        const sourceVariant = (source: Record<string, any>, key: string) =>
+          (source as Record<string, any>)[key];
         this.stream = streams.filter(
-          (stream: any) =>
-            (stream.video_and_stream.video_source.Local &&
-              stream.video_and_stream.video_source.Local.device_path ==
+          (stream: StreamStatus) =>
+            (sourceVariant(stream.video_and_stream.video_source, 'Local') &&
+              sourceVariant(stream.video_and_stream.video_source, 'Local').device_path ==
                 this.device.source) ||
-            (stream.video_and_stream.video_source.Gst &&
-              stream.video_and_stream.video_source.Gst.source.Fake ==
+            (sourceVariant(stream.video_and_stream.video_source, 'Gst') &&
+              sourceVariant(stream.video_and_stream.video_source, 'Gst').source.Fake ==
                 this.device.source)
         )[0];
         if (!this.stream) {
@@ -189,19 +199,19 @@ export default defineComponent({
             break;
           default: {
             this.stream_options.encoders = this.device.formats.map(
-              (format: any) => this.encodeToStr(format.encode)
+              (format: Format) => this.encodeToStr(format.encode)
             );
 
             this.stream_options.sizes = this.device.formats
               .filter(
-                (format: any) =>
+                (format: Format) =>
                   this.encodeToStr(format.encode) ==
                   stream_setting.configuration.encode
               )
-              .map((format: any) => format.sizes)[0]
+              .map((format: Format) => format.sizes)[0]
               // Sort width by preference
               ?.sort(
-                (size1: any, size2: any) =>
+                (size1: Size, size2: Size) =>
                   10 * size2.width +
                   size2.height -
                   (10 * size1.width + size1.height)
@@ -215,7 +225,7 @@ export default defineComponent({
             }
 
             this.stream_options.intervals = this.stream_options.sizes?.filter(
-              (size: any) =>
+              (size: Size) =>
                 size.width == chosen_size.width &&
                 size.height == chosen_size.height
             )[0]?.intervals;
@@ -226,7 +236,7 @@ export default defineComponent({
     },
   },
   methods: {
-    encodeToStr(encode: any): string {
+    encodeToStr(encode: VideoEncodeType): string {
       return typeof encode == "object"
         ? (Object.values(encode)[0] as string)
         : encode;
@@ -252,10 +262,10 @@ export default defineComponent({
       },
       stream_options: {
         encoders: undefined as string[] | undefined,
-        sizes: undefined as any[] | undefined,
-        intervals: undefined as any[] | undefined,
+        sizes: undefined as Size[] | undefined,
+        intervals: undefined as FrameInterval[] | undefined,
       },
-      stream: undefined as any,
+      stream: undefined as StreamStatus | undefined,
     };
   },
 });
