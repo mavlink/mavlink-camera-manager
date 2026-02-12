@@ -7,11 +7,12 @@ use anyhow::{anyhow, Error, Result};
 use gst::prelude::*;
 use tracing::*;
 
-use crate::{
-    stream::{pipeline::runner::PipelineRunner, types::CaptureConfiguration},
-    video::types::VideoEncodeType,
-    video_stream::types::VideoAndStreamInformation,
+use mcm_api::v1::{
+    stream::{CaptureConfiguration, VideoAndStreamInformation},
+    video::VideoEncodeType,
 };
+
+use crate::stream::pipeline::runner::PipelineRunner;
 
 use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
 

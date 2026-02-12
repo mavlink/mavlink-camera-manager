@@ -12,9 +12,13 @@ use tokio::{
 };
 use tracing::*;
 
-use crate::{cli, stream};
+use mcm_api::v1::{
+    signalling::*,
+    stream::{CaptureConfiguration, StreamStatusState},
+    video::VideoEncodeType,
+};
 
-use super::signalling_protocol::*;
+use crate::{cli, stream, video::types::VideoSourceTypeExt};
 
 #[derive(Debug)]
 pub struct SignallingServer {
@@ -342,7 +346,7 @@ impl SignallingServer {
 
         let streams = streams
             .iter()
-            .filter(|stream| stream.state != crate::stream::types::StreamStatusState::Stopped)
+            .filter(|stream| stream.state != StreamStatusState::Stopped)
             .collect::<Vec<_>>();
 
         Ok(streams
@@ -350,9 +354,9 @@ impl SignallingServer {
             .filter_map(|stream| {
                 let (height, width, encode, interval) =
                     match &stream.video_and_stream.stream_information.configuration {
-                        crate::stream::types::CaptureConfiguration::Video(configuration) => {
+                        CaptureConfiguration::Video(configuration) => {
                             // Filter out non-H264/h265 local streams
-                            if !matches!(configuration.encode, crate::video::types::VideoEncodeType::H264 | crate::video::types::VideoEncodeType::H265) {
+                            if !matches!(configuration.encode, VideoEncodeType::H264 | VideoEncodeType::H265) {
                                 trace!("Stream {:?} will not be listed in available streams because it's encoding isn't H264 or H265 (it's {:?} instead)", stream.video_and_stream.name, configuration.encode);
                                 return None;
                             }
@@ -367,7 +371,7 @@ impl SignallingServer {
                                 ),
                             )
                         }
-                        crate::stream::types::CaptureConfiguration::Redirect(_) => {
+                        CaptureConfiguration::Redirect(_) => {
                             // Filter out non RTSP redirect streams
                             let scheme = stream.video_and_stream.stream_information.endpoints.first()?.scheme();
                             if scheme != "rtsp" {

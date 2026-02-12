@@ -34,6 +34,7 @@ pub struct ExtendedConfiguration {
     pub disable_mavlink: bool,
     pub disable_zenoh: bool,
     pub disable_thumbnails: bool,
+    pub disable_lazy: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
@@ -44,11 +45,21 @@ pub struct StreamInformation {
     pub extended_configuration: Option<ExtendedConfiguration>,
 }
 
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
+#[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
+#[serde(rename_all = "lowercase")]
+pub enum StreamStatusState {
+    Running,
+    Idle,
+    Stopped,
+}
+
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 pub struct StreamStatus {
     pub id: uuid::Uuid,
     pub running: bool,
+    pub state: StreamStatusState,
     pub error: Option<String>,
     pub video_and_stream: VideoAndStreamInformation,
     pub mavlink: Option<MavlinkComponent>,

@@ -10,23 +10,20 @@ use gst::{
 use tokio::sync::RwLock;
 use tracing::*;
 
-use crate::{
-    settings,
-    stream::{
-        sink::{rtp_queue_max_time_ns, webrtc_sink::WebRTCSink, Sink, SinkInterface},
-        types::CaptureConfiguration,
-        webrtc::signalling_protocol::BindAnswer,
-    },
-    video::{types::VideoSourceType, video_source},
-    video_stream::types::VideoAndStreamInformation,
+use mcm_api::v1::{
+    signalling,
+    stream::{CaptureConfiguration, StreamStatus, StreamStatusState, VideoAndStreamInformation},
+    video::VideoSourceType,
 };
 
-use super::{
-    pipeline::PipelineGstreamerInterface,
-    types::StreamStatus,
-    webrtc::{self, signalling_protocol::RTCSessionDescription},
-    Stream,
+use crate::{
+    settings,
+    stream::sink::{rtp_queue_max_time_ns, webrtc_sink::WebRTCSink, Sink, SinkInterface},
+    video::{types::VideoSourceTypeExt, video_source, video_source_local::VideoSourceLocalExt},
+    video_stream::types::VideoAndStreamInformationExt,
 };
+
+use super::{pipeline::PipelineGstreamerInterface, Stream};
 
 type ClonableResult<T> = Result<T, Arc<Error>>;
 
@@ -490,9 +487,9 @@ pub fn is_source_blocked(source_string: &str) -> bool {
 impl Manager {
     #[instrument(level = "debug", skip(sender))]
     pub async fn add_session(
-        bind: &webrtc::signalling_protocol::BindOffer,
-        sender: tokio::sync::mpsc::UnboundedSender<Result<webrtc::signalling_protocol::Message>>,
-    ) -> Result<webrtc::signalling_protocol::SessionId> {
+        bind: &signalling::BindOffer,
+        sender: tokio::sync::mpsc::UnboundedSender<Result<signalling::Message>>,
+    ) -> Result<signalling::SessionId> {
         use std::sync::atomic::Ordering;
 
         let producer_id = bind.producer_id;
@@ -562,7 +559,7 @@ impl Manager {
         let consumer_count = stream.consumer_count.clone();
         let idle = stream.idle.clone();
 
-        let bind = BindAnswer {
+        let bind = signalling::BindAnswer {
             producer_id,
             consumer_id,
             session_id,
@@ -595,10 +592,7 @@ impl Manager {
     }
 
     #[instrument(level = "debug")]
-    pub async fn remove_session(
-        bind: &webrtc::signalling_protocol::BindAnswer,
-        _reason: String,
-    ) -> Result<()> {
+    pub async fn remove_session(bind: &signalling::BindAnswer, _reason: String) -> Result<()> {
         use std::sync::atomic::Ordering;
 
         let mut manager = MANAGER.write().await;
@@ -646,8 +640,8 @@ impl Manager {
 
     #[instrument(level = "debug")]
     pub async fn handle_sdp(
-        bind: &webrtc::signalling_protocol::BindAnswer,
-        sdp: &webrtc::signalling_protocol::RTCSessionDescription,
+        bind: &signalling::BindAnswer,
+        sdp: &signalling::RTCSessionDescription,
     ) -> Result<()> {
         let manager = MANAGER.read().await;
 
@@ -678,10 +672,10 @@ impl Manager {
         };
 
         let (sdp, sdp_type) = match sdp {
-            RTCSessionDescription::Answer(answer) => {
+            signalling::RTCSessionDescription::Answer(answer) => {
                 (answer.sdp.clone(), gst_webrtc::WebRTCSDPType::Answer)
             }
-            RTCSessionDescription::Offer(offer) => {
+            signalling::RTCSessionDescription::Offer(offer) => {
                 (offer.sdp.clone(), gst_webrtc::WebRTCSDPType::Offer)
             }
         };
@@ -693,7 +687,7 @@ impl Manager {
 
     #[instrument(level = "debug")]
     pub async fn handle_ice(
-        bind: &webrtc::signalling_protocol::BindAnswer,
+        bind: &signalling::BindAnswer,
         sdp_m_line_index: u32,
         candidate: &str,
     ) -> Result<()> {
@@ -745,10 +739,7 @@ impl Manager {
     }
 
     #[instrument(level = "debug")]
-    pub async fn remove_stream(
-        stream_id: &webrtc::signalling_protocol::PeerId,
-        rewrite_config: bool,
-    ) -> Result<()> {
+    pub async fn remove_stream(stream_id: &signalling::PeerId, rewrite_config: bool) -> Result<()> {
         let mut manager = MANAGER.write().await;
 
         if !manager.streams.contains_key(stream_id) {
@@ -794,11 +785,11 @@ impl Manager {
                 let is_idle = stream.idle.load(Ordering::Relaxed);
 
                 let state = if is_idle {
-                    super::types::StreamStatusState::Idle
+                    StreamStatusState::Idle
                 } else if running {
-                    super::types::StreamStatusState::Running
+                    StreamStatusState::Running
                 } else {
-                    super::types::StreamStatusState::Stopped
+                    StreamStatusState::Stopped
                 };
 
                 let running = running && !is_idle;

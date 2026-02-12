@@ -1,16 +1,17 @@
 use std::sync::Arc;
 
+use anyhow::{anyhow, Context, Result};
 use onvif::soap;
 use onvif_schema::transport;
-
-use anyhow::{anyhow, Context, Result};
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tracing::*;
 
-use crate::{stream::gst::utils::get_encode_from_stream_uri, video::types::Format};
+use mcm_api::v1::{
+    server::OnvifDevice,
+    video::{Format, OnvifDeviceInformation},
+};
 
-use super::manager::OnvifDevice;
+use crate::stream::gst::utils::get_encode_from_stream_uri;
 
 #[derive(Clone)]
 pub struct OnvifCamera {
@@ -42,15 +43,6 @@ pub struct Auth {
 pub struct OnvifStreamInformation {
     pub stream_uri: url::Url,
     pub format: Format,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct OnvifDeviceInformation {
-    pub manufacturer: String,
-    pub model: String,
-    pub firmware_version: String,
-    pub serial_number: String,
-    pub hardware_id: String,
 }
 
 impl OnvifCamera {
@@ -260,12 +252,12 @@ impl OnvifCamera {
                 })
                 .unwrap_or_default();
 
-            let intervals = vec![crate::video::types::FrameInterval {
+            let intervals = vec![mcm_api::v1::video::FrameInterval {
                 numerator: 1,
                 denominator: video_rate,
             }];
 
-            let sizes = vec![crate::video::types::Size {
+            let sizes = vec![mcm_api::v1::video::Size {
                 width: video_encoder_configuration.resolution.width.max(0) as u32,
                 height: video_encoder_configuration.resolution.height.max(0) as u32,
                 intervals,

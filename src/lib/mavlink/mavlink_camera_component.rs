@@ -3,7 +3,9 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use anyhow::Result;
 use tracing::*;
 
-use crate::video_stream::types::VideoAndStreamInformation;
+use mcm_api::v1::stream::{CaptureConfiguration, VideoAndStreamInformation};
+
+use crate::video::types::VideoSourceTypeExt;
 
 #[derive(Debug)]
 pub struct MavlinkCameraComponent {
@@ -37,12 +39,12 @@ impl MavlinkCameraComponent {
             .stream_information
             .configuration
         {
-            crate::stream::types::CaptureConfiguration::Video(cfg) => {
+            CaptureConfiguration::Video(cfg) => {
                 let framerate =
                     cfg.frame_interval.denominator as f32 / cfg.frame_interval.numerator as f32;
                 (cfg.height as u16, cfg.width as u16, framerate)
             }
-            crate::stream::types::CaptureConfiguration::Redirect(_) => {
+            CaptureConfiguration::Redirect(_) => {
                 unreachable!("Redirect streams now use CaptureConfiguration::Video")
             }
         };

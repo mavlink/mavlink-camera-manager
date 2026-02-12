@@ -13,14 +13,12 @@ use enum_dispatch::enum_dispatch;
 use gst::prelude::*;
 use tracing::*;
 
-use crate::{
-    stream::{
-        gst::utils::wait_for_element_state_async,
-        rtsp::rtsp_server::RTSPServer,
-        sink::{Sink, SinkInterface},
-    },
-    video::types::VideoSourceType,
-    video_stream::types::VideoAndStreamInformation,
+use mcm_api::v1::{stream::VideoAndStreamInformation, video::VideoSourceType};
+
+use crate::stream::{
+    gst::utils::wait_for_element_state_async,
+    rtsp::rtsp_server::RTSPServer,
+    sink::{Sink, SinkInterface},
 };
 
 use fake_pipeline::FakePipeline;
@@ -80,17 +78,13 @@ impl Pipeline {
             PipelineState::try_new(video_and_stream_information, pipeline_id)?;
         Ok(match &video_and_stream_information.video_source {
             VideoSourceType::Gst(video_source_gst) => match video_source_gst.source {
-                crate::video::video_source_gst::VideoSourceGstType::Local(_) => todo!(),
-                crate::video::video_source_gst::VideoSourceGstType::Fake(_) => {
-                    Pipeline::Fake(FakePipeline {
-                        state: pipeline_state,
-                    })
-                }
-                crate::video::video_source_gst::VideoSourceGstType::QR(_) => {
-                    Pipeline::QR(QrPipeline {
-                        state: pipeline_state,
-                    })
-                }
+                mcm_api::v1::video::VideoSourceGstType::Local(_) => todo!(),
+                mcm_api::v1::video::VideoSourceGstType::Fake(_) => Pipeline::Fake(FakePipeline {
+                    state: pipeline_state,
+                }),
+                mcm_api::v1::video::VideoSourceGstType::QR(_) => Pipeline::QR(QrPipeline {
+                    state: pipeline_state,
+                }),
             },
             #[cfg(target_os = "linux")]
             VideoSourceType::Local(_) => Pipeline::V4l(V4lPipeline {
@@ -140,11 +134,11 @@ impl PipelineState {
     ) -> Result<Self> {
         let pipeline = match &video_and_stream_information.video_source {
             VideoSourceType::Gst(video) => match video.source {
-                crate::video::video_source_gst::VideoSourceGstType::Local(_) => todo!(),
-                crate::video::video_source_gst::VideoSourceGstType::Fake(_) => {
+                mcm_api::v1::video::VideoSourceGstType::Local(_) => todo!(),
+                mcm_api::v1::video::VideoSourceGstType::Fake(_) => {
                     FakePipeline::try_new(pipeline_id, video_and_stream_information)
                 }
-                crate::video::video_source_gst::VideoSourceGstType::QR(_) => {
+                mcm_api::v1::video::VideoSourceGstType::QR(_) => {
                     QrPipeline::try_new(pipeline_id, video_and_stream_information)
                 }
             },

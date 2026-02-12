@@ -1,21 +1,18 @@
 use std::collections::HashSet;
 
 use anyhow::{anyhow, Result};
-use paperclip::actix::Apiv2Schema;
-use serde::{Deserialize, Serialize};
 
-use crate::{stream::types::StreamInformation, video::types::VideoSourceType};
+use mcm_api::v1::stream::VideoAndStreamInformation;
+
+use crate::video::types::VideoSourceTypeExt;
 
 //TODO: move to stream ?
-#[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
-pub struct VideoAndStreamInformation {
-    pub name: String,
-    pub stream_information: StreamInformation,
-    pub video_source: VideoSourceType,
+pub trait VideoAndStreamInformationExt {
+    fn conflicts_with(&self, other: &VideoAndStreamInformation) -> Result<()>;
 }
 
-impl VideoAndStreamInformation {
-    pub fn conflicts_with(&self, other: &VideoAndStreamInformation) -> Result<()> {
+impl VideoAndStreamInformationExt for VideoAndStreamInformation {
+    fn conflicts_with(&self, other: &VideoAndStreamInformation) -> Result<()> {
         if self.name == other.name {
             return Err(anyhow!(
                 "Stream ({other_name:#?} - {other_source:#?}) is already using the name {name:#?}.",

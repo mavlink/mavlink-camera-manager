@@ -3,7 +3,6 @@ pub mod manager;
 pub mod pipeline;
 pub mod rtsp;
 pub mod sink;
-pub mod types;
 pub mod webrtc;
 
 use std::sync::{
@@ -13,28 +12,28 @@ use std::sync::{
 
 use ::gst::prelude::*;
 use anyhow::{anyhow, Context, Result};
-use gst::utils::get_capture_configuration_from_stream_uri;
-use manager::Manager;
-use pipeline::{Pipeline, PipelineGstreamerInterface};
-use sink::{create_image_sink, create_rtsp_sink, create_udp_sink, create_zenoh_sink};
 use tokio::sync::RwLock;
 use tracing::*;
-use types::*;
-use webrtc::signalling_protocol::PeerId;
+
+use mcm_api::v1::{
+    signalling::PeerId,
+    stream::*,
+    video::{FrameInterval, VideoEncodeType, VideoSourceType},
+};
 
 use crate::{
     mavlink::mavlink_camera::MavlinkCamera,
-    video::{
-        types::{FrameInterval, VideoEncodeType, VideoSourceType},
-        video_source::cameras_available,
-    },
-    video_stream::types::VideoAndStreamInformation,
+    video::{types::VideoSourceTypeExt, video_source::cameras_available},
 };
 
 use self::{
-    gst::utils::wait_for_element_state,
+    gst::utils::{get_capture_configuration_from_stream_uri, wait_for_element_state},
+    manager::Manager,
+    pipeline::{Pipeline, PipelineGstreamerInterface},
     rtsp::{rtsp_scheme::RTSPScheme, rtsp_server::RTSP_SERVER_PORT},
-    sink::SinkInterface,
+    sink::{
+        create_image_sink, create_rtsp_sink, create_udp_sink, create_zenoh_sink, SinkInterface,
+    },
 };
 
 #[derive(Debug)]
