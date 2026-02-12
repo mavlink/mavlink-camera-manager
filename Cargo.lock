@@ -4108,6 +4108,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "mavlink",
+ "mcm-api",
  "onvif",
  "paperclip",
  "pnet",
@@ -4170,6 +4171,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.113",
+]
+
+[[package]]
+name = "mcm-api"
+version = "0.1.0"
+dependencies = [
+ "paperclip",
+ "serde",
+ "serde_json",
+ "ts-rs",
+ "url",
+ "uuid 1.19.0",
 ]
 
 [[package]]
