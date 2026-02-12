@@ -113,7 +113,7 @@ async fn prepare() -> Result<ChromeWebDriver> {
     let webdriver = ChromeWebDriver::new().await.unwrap();
 
     let frontend_address = cli::manager::server_address();
-    let webrtc_frontend_url = format!("http://{frontend_address}/webrtc/index.html");
+    let webrtc_frontend_url = format!("http://{frontend_address}/webrtc");
 
     while let Err(error) = webdriver.goto(&webrtc_frontend_url).await {
         error!("Failed to connect: {error}");
