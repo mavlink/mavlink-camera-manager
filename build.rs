@@ -2,15 +2,6 @@ use std::{path::Path, process::Command};
 
 use vergen_gix::{BuildBuilder, CargoBuilder, DependencyKind, GixBuilder};
 
-fn file_download(url: &str, output: &str) {
-    let mut resp =
-        reqwest::blocking::get(url).unwrap_or_else(|_| panic!("Failed to download file: {url}"));
-    let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(output);
-    let mut output_file = std::fs::File::create(&file_path)
-        .unwrap_or_else(|_| panic!("Failed to create file: {file_path:?}"));
-    std::io::copy(&mut resp, &mut output_file).expect("Failed to copy content.");
-}
-
 #[cfg(windows)]
 fn print_link_search_path() {
     use std::env;
@@ -30,11 +21,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     print_link_search_path();
 
     generate_build_details()?;
-
-    file_download(
-        "https://unpkg.com/vue@3.0.5/dist/vue.global.js",
-        "src/html/vue.js",
-    );
 
     // set SKIP_WEB=1 to skip
     if std::env::var("SKIP_WEB").is_err() {
