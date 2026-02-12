@@ -138,7 +138,6 @@ serial_test = { version = "0.10", default-features = false, features = ["async"]
 tracing-test = { version = "0.2", default-features = false }
 
 [build-dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 vergen-gix = { version = "1.0.9", default-features = false, features = ["build", "cargo"] }
 ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat", "uuid-impl"] }
 uuid = { version = "1.8", default-features = false, features = ["v4", "serde"] }
