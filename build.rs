@@ -38,12 +38,12 @@ fn build_web() {
     println!("cargo:rerun-if-changed=./frontend/tsconfig.json");
     println!("cargo:rerun-if-changed=./frontend/tsconfig.config.json");
     println!("cargo:rerun-if-changed=./frontend/src");
-    println!("cargo:rerun-if-changed=./frontend/bindings/signalling_protocol.d.ts");
+    println!("cargo:rerun-if-changed=./frontend/bindings/v1/signalling_protocol.d.ts");
 
     let frontend_dir = Path::new("./frontend");
     frontend_dir.try_exists().unwrap();
 
-    let bindings_file = Path::new("./frontend/bindings/signalling_protocol.d.ts");
+    let bindings_file = Path::new("./frontend/bindings/v1/signalling_protocol.d.ts");
     if !bindings_file.exists() {
         panic!(
             "\n\n\
