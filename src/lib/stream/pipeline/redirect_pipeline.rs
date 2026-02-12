@@ -4,10 +4,9 @@ use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use tracing::*;
 
-use crate::{
-    stream::types::CaptureConfiguration,
-    video::types::{VideoEncodeType, VideoSourceType},
-    video_stream::types::VideoAndStreamInformation,
+use mcm_api::v1::{
+    stream::{CaptureConfiguration, VideoAndStreamInformation},
+    video::{VideoEncodeType, VideoSourceType},
 };
 
 use super::{

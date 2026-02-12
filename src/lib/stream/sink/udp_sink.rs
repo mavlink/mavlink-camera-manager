@@ -4,9 +4,9 @@ use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use tracing::*;
 
-use crate::{
-    stream::pipeline::runner::PipelineRunner, video_stream::types::VideoAndStreamInformation,
-};
+use mcm_api::v1::stream::VideoAndStreamInformation;
+
+use crate::stream::pipeline::runner::PipelineRunner;
 
 use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
 
