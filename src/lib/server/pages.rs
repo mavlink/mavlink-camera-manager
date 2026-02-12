@@ -1,5 +1,3 @@
-use std::io::prelude::*;
-
 use actix_web::{
     http::header,
     rt,
@@ -153,59 +151,44 @@ use std::{ffi::OsStr, path::Path};
 
 use include_dir::{include_dir, Dir};
 
-static WEBRTC_DIST: Dir<'_> = include_dir!("frontend/dist");
+static DIST: Dir<'_> = include_dir!("frontend/dist");
 
-fn load_file(file_name: &str) -> String {
-    if file_name.starts_with("webrtc/") {
-        return load_webrtc(file_name);
-    }
-
-    // Load files at runtime only in debug builds
-    if cfg!(debug_assertions) {
-        let html_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/html/");
-        let mut file = std::fs::File::open(html_path.join(file_name)).unwrap();
-        let mut contents = String::new();
-        file.read_to_string(&mut contents).unwrap();
-        return contents;
-    }
-
-    match file_name {
-        "" | "index.html" => std::include_str!("../../html/index.html").into(),
-        "vue.js" => std::include_str!("../../html/vue.js").into(),
-        _ => format!("File not found: {file_name:?}"),
-    }
-}
-
-fn load_webrtc(filename: &str) -> String {
-    let filename = filename.trim_start_matches("webrtc/");
-    let file = WEBRTC_DIST.get_file(filename).unwrap();
-    let content = file.contents_utf8().unwrap();
-    content.into()
+fn load_file(file_name: &str) -> Option<&'static str> {
+    DIST.get_file(file_name)
+        .and_then(|file| file.contents_utf8())
 }
 
 #[api_v2_operation]
 pub fn root(req: HttpRequest) -> Result<HttpResponse> {
-    let filename = match req.match_info().query("filename") {
-        "" | "index.html" => "index.html",
-        "vue.js" => "vue.js",
+    let raw = req.match_info().get("filename").unwrap_or("");
+    let filename = if raw.is_empty() { "index.html" } else { raw };
 
-        webrtc_file if webrtc_file.starts_with("webrtc/") => webrtc_file,
+    // Try exact file match
+    if let Some(content) = load_file(filename) {
+        let extension = Path::new(filename)
+            .extension()
+            .and_then(OsStr::to_str)
+            .unwrap_or("");
+        let mime = actix_files::file_extension_to_mime(extension).to_string();
+        return Ok(HttpResponse::Ok().content_type(mime).body(content));
+    }
 
-        something => {
-            //TODO: do that in load_file
-            return Err(Error::NotFound(format!(
-                "Page does not exist: {something:?}"
-            )));
-        }
-    };
-    let content = load_file(filename);
-    let extension = Path::new(&filename)
-        .extension()
-        .and_then(OsStr::to_str)
-        .unwrap_or("");
-    let mime = actix_files::file_extension_to_mime(extension).to_string();
+    // Try directory index: {path}/index.html
+    let dir_index = format!("{}/index.html", filename.trim_end_matches('/'));
+    if let Some(content) = load_file(&dir_index) {
+        let mime = actix_files::file_extension_to_mime("html").to_string();
+        return Ok(HttpResponse::Ok().content_type(mime).body(content));
+    }
 
-    Ok(HttpResponse::Ok().content_type(mime).body(content))
+    // SPA fallback: serve index.html for client-side routing
+    if let Some(content) = load_file("index.html") {
+        let mime = actix_files::file_extension_to_mime("html").to_string();
+        return Ok(HttpResponse::Ok().content_type(mime).body(content));
+    }
+
+    Err(Error::NotFound(format!(
+        "Page does not exist: {filename:?}"
+    )))
 }
 
 #[api_v2_operation]
