@@ -1,8 +1,8 @@
 import { Result } from "@badrap/result";
 
-import { Consumer } from "@/consumer";
-import { Signaller } from "@/signaller";
-import { Session } from "@/session";
+import { Consumer } from "./consumer";
+import { Signaller } from "./signaller";
+import { Session } from "./session";
 
 export class Manager {
   public status: string;
