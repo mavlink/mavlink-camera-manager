@@ -4,10 +4,9 @@ use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use tracing::*;
 
-use crate::{
-    stream::gst::utils::wait_for_element_state_async,
-    video_stream::types::VideoAndStreamInformation,
-};
+use mcm_api::v1::stream::VideoAndStreamInformation;
+
+use crate::stream::gst::utils::wait_for_element_state_async;
 
 #[derive(Debug)]
 pub struct PipelineRunner {
@@ -216,7 +215,7 @@ impl PipelineRunner {
             .stream_information
             .configuration
         {
-            crate::stream::types::CaptureConfiguration::Video(video_capture_configuration) => {
+            mcm_api::v1::stream::CaptureConfiguration::Video(video_capture_configuration) => {
                 let frame_interval = &video_capture_configuration.frame_interval;
 
                 if frame_interval.denominator > 0 && frame_interval.numerator > 0 {
@@ -228,7 +227,7 @@ impl PipelineRunner {
                     std::time::Duration::from_secs(1)
                 }
             }
-            crate::stream::types::CaptureConfiguration::Redirect(_) => {
+            mcm_api::v1::stream::CaptureConfiguration::Redirect(_) => {
                 return Err(anyhow!(
                     "PipelineRunner aborted for Pipeline {pipeline_name:?}: Redirect CaptureConfiguration means the stream was not initialized yet"
                 ));

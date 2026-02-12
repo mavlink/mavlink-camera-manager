@@ -5,11 +5,12 @@ use gst::prelude::*;
 use tokio::task::JoinHandle;
 use tracing::*;
 
-use crate::{
-    stream::{pipeline::runner::PipelineRunner, types::CaptureConfiguration},
-    video::types::VideoEncodeType,
-    video_stream::types::VideoAndStreamInformation,
+use mcm_api::v1::{
+    stream::{CaptureConfiguration, VideoAndStreamInformation},
+    video::VideoEncodeType,
 };
+
+use crate::stream::pipeline::runner::PipelineRunner;
 
 use super::{
     link_sink_to_tee, types::zenoh_message::CompressedVideo, types::zenoh_message::Timestamp,

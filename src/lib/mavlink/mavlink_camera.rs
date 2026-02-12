@@ -6,10 +6,14 @@ use tokio::sync::broadcast;
 use tracing::*;
 use url::Url;
 
+use mcm_api::v1::{
+    stream::{MavlinkComponent, VideoAndStreamInformation},
+    video::VideoSourceType,
+};
+
 use crate::{
     cli, mavlink::mavlink_camera_component::MavlinkCameraComponent,
-    network::utils::get_visible_qgc_address, stream::types::MavlinkComponent,
-    video::types::VideoSourceType, video_stream::types::VideoAndStreamInformation,
+    network::utils::get_visible_qgc_address, video::types::VideoSourceTypeExt,
 };
 
 use super::{manager::Message, utils::*};

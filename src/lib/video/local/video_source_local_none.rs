@@ -1,30 +1,18 @@
 use anyhow::Result;
-use paperclip::actix::Apiv2Schema;
-use serde::{Deserialize, Serialize};
 
-use crate::{
-    controls::types::Control,
-    stream::types::VideoCaptureConfiguration,
-    video::{
-        types::*,
-        video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats},
-    },
+use mcm_api::v1::{controls::Control, stream::VideoCaptureConfiguration, video::*};
+
+use crate::video::{
+    types::VideoSourceTypeExt,
+    video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats},
+    video_source_local::{VideoSourceLocal, VideoSourceLocalExt, VideoSourceLocalType},
 };
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum VideoSourceLocalType {}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct VideoSourceLocal {
-    pub name: String,
-    pub device_path: String,
-}
-
-impl VideoSourceLocal {
-    pub async fn try_identify_device(
+impl VideoSourceLocalExt for VideoSourceLocal {
+    async fn try_identify_device(
         &mut self,
-        capture_configuration: &VideoCaptureConfiguration,
-        candidates: &[VideoSourceType],
+        _capture_configuration: &VideoCaptureConfiguration,
+        _candidates: &[VideoSourceType],
     ) -> Result<Option<String>> {
         Ok(None)
     }

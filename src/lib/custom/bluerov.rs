@@ -1,21 +1,23 @@
 use tracing::*;
 use url::Url;
 
+use mcm_api::v1::{
+    stream::{
+        CaptureConfiguration, StreamInformation, VideoAndStreamInformation,
+        VideoCaptureConfiguration,
+    },
+    video::{Size, VideoEncodeType, VideoSourceLocal, VideoSourceType},
+};
+
 use crate::{
     network::utils::get_visible_qgc_address,
-    stream::types::*,
-    video::{
-        self,
-        types::*,
-        video_source::{VideoSourceAvailable, VideoSourceFormats},
-    },
-    video_stream::types::VideoAndStreamInformation,
+    video::video_source::{VideoSourceAvailable, VideoSourceFormats},
 };
 
 async fn get_cameras_with_encode_type(encode: VideoEncodeType) -> Vec<VideoSourceType> {
     let mut result = Vec::new();
 
-    let cameras = video::video_source_local::VideoSourceLocal::cameras_available().await;
+    let cameras = VideoSourceLocal::cameras_available().await;
 
     for camera in cameras.iter() {
         if camera
