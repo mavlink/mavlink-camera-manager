@@ -4,10 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+mcm-api = { path = "../api" }
 regex = { workspace = true }
-serde = { workspace = true }
 ts-rs = { workspace = true }
-uuid = { workspace = true }
 
 [[bin]]
 name = "bindings"
