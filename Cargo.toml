@@ -41,6 +41,7 @@ regex = { version = "1.10.4", default-features = false }
 ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat", "uuid-impl"] }
 uuid = { version = "1.8", default-features = false, features = ["v4", "v5", "serde"] }
 serde = { version = "1.0", default-features = false, features = ["derive", "std"] }
+url = { version = "2.5.0", default-features = false, features = ["serde"] }
 
 [dependencies]
 clap = { version = "4.5", default-features = false, features = ["std", "derive", "env", "help", "usage", "error-context", "suggestions", "color"] }
@@ -69,7 +70,7 @@ include_dir = { version = "0.7.3", default-features = false }
 paperclip = { version = "0.8", default-features = false, features = ["paperclip-actix", "actix4", "swagger-ui", "url", "uuid"] }
 #TODO: Replace it with yaserde
 quick-xml = { version = "0.31.0", default-features = false, features = ["serialize"] }
-url = { version = "2.5.0", default-features = false, features = ["serde"] }
+url = { workspace = true }
 directories = { version = "5.0.1", default-features = false }
 pnet = { version = "0.34.0", default-features = false, features = ["std"] }
 semver = { version = "1.0", default-features = false }
