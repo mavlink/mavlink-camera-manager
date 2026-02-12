@@ -1,21 +1,19 @@
-use std::cmp::max;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::{
+    cmp::max,
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
-use paperclip::actix::Apiv2Schema;
 use regex::Regex;
-use serde::{Deserialize, Serialize};
 use tracing::*;
 
-use crate::{
-    controls::types::*,
-    stream::types::VideoCaptureConfiguration,
-    video::{
-        types::*,
-        video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats},
-    },
+use mcm_api::v1::{controls::*, stream::VideoCaptureConfiguration, video::*};
+
+use crate::video::{
+    types::{VideoSourceTypeExt, STANDARD_SIZES},
+    video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats},
 };
 
 lazy_static! {
@@ -37,23 +35,13 @@ where
         .unwrap()
 }
 
-//TODO: Move to types
-#[derive(Apiv2Schema, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub enum VideoSourceLocalType {
-    Unknown(String),
-    Usb(String),
-    LegacyRpiCam(String),
+use super::super::video_source_local::VideoSourceLocalExt;
+
+pub trait VideoSourceLocalTypeExt {
+    fn from_str(description: &str) -> VideoSourceLocalType;
 }
 
-#[derive(Apiv2Schema, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct VideoSourceLocal {
-    pub name: String,
-    pub device_path: String,
-    #[serde(rename = "type")]
-    pub typ: VideoSourceLocalType,
-}
-
-impl VideoSourceLocalType {
+impl VideoSourceLocalTypeExt for VideoSourceLocalType {
     // For PCI:
     // https://wiki.xenproject.org/wiki/Bus:Device.Function_(BDF)_Notation
     // description should follow: <domain>:<bus>:<device>.<first_function>-<last_function>
@@ -68,12 +56,12 @@ impl VideoSourceLocalType {
     // https://www.kernel.org/doc/html/v4.9/media/uapi/v4l/vidioc-querycap.html#:~:text=__u8-,bus_info,-%5B32%5D
 
     #[instrument(level = "debug")]
-    pub fn from_str(description: &str) -> Self {
-        if let Some(result) = VideoSourceLocalType::usb_from_str(description) {
+    fn from_str(description: &str) -> VideoSourceLocalType {
+        if let Some(result) = usb_from_str(description) {
             return result;
         }
 
-        if let Some(result) = VideoSourceLocalType::v4l2_from_str(description) {
+        if let Some(result) = v4l2_from_str(description) {
             return result;
         }
 
@@ -86,51 +74,51 @@ impl VideoSourceLocalType {
         }
         VideoSourceLocalType::Unknown(description.into())
     }
-
-    #[instrument(level = "debug")]
-    fn usb_from_str(description: &str) -> Option<Self> {
-        let regex = match Regex::new(
-            r"usb-(?P<interface>(([0-9a-fA-F]{2}){1,2}:?){4})?\.(usb-)?(?P<device>.*)",
-        ) {
-            Ok(regex) => regex,
-            Err(error) => {
-                error!("Failed to construct regex: {error:?}");
-                return None;
-            }
-        };
-
-        if regex.is_match(description) {
-            return Some(VideoSourceLocalType::Usb(description.into()));
-        }
-        None
-    }
-
-    #[instrument(level = "debug")]
-    fn v4l2_from_str(description: &str) -> Option<Self> {
-        let regex = match Regex::new(r"platform:(?P<device>\S+)-v4l2-[0-9]") {
-            Ok(regex) => regex,
-            Err(error) => {
-                error!("Failed to construct regex: {error:?}");
-                return None;
-            }
-        };
-
-        if regex.is_match(description) {
-            return Some(VideoSourceLocalType::LegacyRpiCam(description.into()));
-        }
-        None
-    }
 }
 
-impl VideoSourceLocal {
+#[instrument(level = "debug")]
+fn usb_from_str(description: &str) -> Option<VideoSourceLocalType> {
+    let regex = match Regex::new(
+        r"usb-(?P<interface>(([0-9a-fA-F]{2}){1,2}:?){4})?\.(usb-)?(?P<device>.*)",
+    ) {
+        Ok(regex) => regex,
+        Err(error) => {
+            error!("Failed to construct regex: {error:?}");
+            return None;
+        }
+    };
+
+    if regex.is_match(description) {
+        return Some(VideoSourceLocalType::Usb(description.into()));
+    }
+    None
+}
+
+#[instrument(level = "debug")]
+fn v4l2_from_str(description: &str) -> Option<VideoSourceLocalType> {
+    let regex = match Regex::new(r"platform:(?P<device>\S+)-v4l2-[0-9]") {
+        Ok(regex) => regex,
+        Err(error) => {
+            error!("Failed to construct regex: {error:?}");
+            return None;
+        }
+    };
+
+    if regex.is_match(description) {
+        return Some(VideoSourceLocalType::LegacyRpiCam(description.into()));
+    }
+    None
+}
+
+impl VideoSourceLocalExt for VideoSourceLocal {
     #[instrument(level = "debug")]
-    pub async fn try_identify_device(
+    async fn try_identify_device(
         &mut self,
         capture_configuration: &VideoCaptureConfiguration,
         candidates: &[VideoSourceType],
     ) -> Result<Option<String>> {
         // Rule n.1 - All candidates must share the same camera name
-        let candidates = Self::get_cameras_with_same_name(candidates, &self.name);
+        let candidates = get_cameras_with_same_name(candidates, &self.name);
 
         let len = candidates.len();
         if len == 0 {
@@ -141,7 +129,7 @@ impl VideoSourceLocal {
 
         // Rule n.2 - All candidates must share the same encode
         let candidates =
-            Self::get_cameras_with_same_encode(&candidates, &capture_configuration.encode).await;
+            get_cameras_with_same_encode(&candidates, &capture_configuration.encode).await;
 
         let len = candidates.len();
         if len == 0 {
@@ -166,7 +154,7 @@ impl VideoSourceLocal {
         }
 
         // Rule n.3 - Same name, same encode, same USB port.
-        let candidates = Self::get_cameras_with_same_bus(&candidates, &self.typ);
+        let candidates = get_cameras_with_same_bus(&candidates, &self.typ);
 
         let len = candidates.len();
         if len == 1 {
@@ -187,62 +175,59 @@ impl VideoSourceLocal {
         warn!("There is more than one camera with the same name and encode, which means that their identification/configurations could have been swaped");
         Ok(None)
     }
+}
 
-    #[instrument(level = "debug")]
-    fn get_cameras_with_same_name(
-        candidates: &[VideoSourceType],
-        name: &str,
-    ) -> Vec<VideoSourceType> {
-        candidates
+#[instrument(level = "debug")]
+fn get_cameras_with_same_name(candidates: &[VideoSourceType], name: &str) -> Vec<VideoSourceType> {
+    candidates
+        .iter()
+        .filter(|candidate| {
+            let VideoSourceType::Local(camera) = candidate else {
+                return false;
+            };
+
+            camera.name == name
+        })
+        .cloned()
+        .collect()
+}
+
+#[instrument(level = "debug")]
+async fn get_cameras_with_same_encode(
+    candidates: &[VideoSourceType],
+    encode: &VideoEncodeType,
+) -> Vec<VideoSourceType> {
+    let mut result = Vec::new();
+
+    for candidate in candidates.iter() {
+        if candidate
+            .formats()
+            .await
             .iter()
-            .filter(|candidate| {
-                let VideoSourceType::Local(camera) = candidate else {
-                    return false;
-                };
-
-                camera.name == name
-            })
-            .cloned()
-            .collect()
-    }
-
-    #[instrument(level = "debug")]
-    async fn get_cameras_with_same_encode(
-        candidates: &[VideoSourceType],
-        encode: &VideoEncodeType,
-    ) -> Vec<VideoSourceType> {
-        let mut result = Vec::new();
-
-        for candidate in candidates.iter() {
-            if candidate
-                .formats()
-                .await
-                .iter()
-                .any(|format| &format.encode == encode)
-            {
-                result.push(candidate.clone());
-            }
+            .any(|format| &format.encode == encode)
+        {
+            result.push(candidate.clone());
         }
-
-        result
     }
 
-    #[instrument(level = "debug")]
-    fn get_cameras_with_same_bus(
-        candidates: &[VideoSourceType],
-        typ: &VideoSourceLocalType,
-    ) -> Vec<VideoSourceType> {
-        candidates
-            .iter()
-            .filter(|candidate| {
-                let VideoSourceType::Local(camera) = candidate else {
-                    return false;
-                };
-                &camera.typ == typ
-            })
-            .cloned()
-            .collect()
-    }
+    result
+}
+
+#[instrument(level = "debug")]
+fn get_cameras_with_same_bus(
+    candidates: &[VideoSourceType],
+    typ: &VideoSourceLocalType,
+) -> Vec<VideoSourceType> {
+    candidates
+        .iter()
+        .filter(|candidate| {
+            let VideoSourceType::Local(camera) = candidate else {
+                return false;
+            };
+            &camera.typ == typ
+        })
+        .cloned()
+        .collect()
 }
 
 #[instrument(level = "debug")]
@@ -829,12 +814,11 @@ mod device_identification_tests {
     use serial_test::serial;
     use tracing_test::traced_test;
 
-    use super::*;
-    use crate::{
-        stream::types::{CaptureConfiguration, StreamInformation},
-        video_stream::types::VideoAndStreamInformation,
-    };
+    use mcm_api::v1::stream::{CaptureConfiguration, StreamInformation, VideoAndStreamInformation};
+
     use VideoEncodeType::*;
+
+    use super::*;
 
     #[instrument(level = "debug")]
     fn add_available_camera(
@@ -916,7 +900,7 @@ mod device_identification_tests {
             add_available_camera("B", "/dev/video5", "usb_port_2", vec![Yuyv, Mjpg]),
         ];
 
-        let same_name_candidates = VideoSourceLocal::get_cameras_with_same_name(&candidates, "A");
+        let same_name_candidates = get_cameras_with_same_name(&candidates, "A");
         assert_eq!(candidates[..4].to_vec(), same_name_candidates);
 
         VIDEO_FORMATS.lock().unwrap().clear();
@@ -935,8 +919,7 @@ mod device_identification_tests {
             add_available_camera("D", "/dev/video3", "usb_port_1", vec![Yuyv, Mjpg]),
         ];
 
-        let same_encode_candidates =
-            VideoSourceLocal::get_cameras_with_same_encode(&candidates, &H264).await;
+        let same_encode_candidates = get_cameras_with_same_encode(&candidates, &H264).await;
         assert_eq!(candidates[..2].to_vec(), same_encode_candidates);
 
         VIDEO_FORMATS.lock().unwrap().clear();
@@ -955,10 +938,8 @@ mod device_identification_tests {
             add_available_camera("D", "/dev/video3", "usb_port_1", vec![Yuyv, Mjpg]),
         ];
 
-        let same_encode_candidates = VideoSourceLocal::get_cameras_with_same_bus(
-            &candidates,
-            &VideoSourceLocalType::Usb("usb_port_0".into()),
-        );
+        let same_encode_candidates =
+            get_cameras_with_same_bus(&candidates, &VideoSourceLocalType::Usb("usb_port_0".into()));
         assert_eq!(candidates[..2].to_vec(), same_encode_candidates);
 
         VIDEO_FORMATS.lock().unwrap().clear();

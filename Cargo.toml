@@ -1,6 +1,7 @@
 [workspace]
 members = [
     ".",
+    "api",
     "bindings"
 ]
 
@@ -38,9 +39,10 @@ path = "src/main.rs"
 
 [workspace.dependencies]
 regex = { version = "1.10.4", default-features = false }
-ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat", "uuid-impl"] }
+ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat", "uuid-impl", "url-impl"] }
 uuid = { version = "1.8", default-features = false, features = ["v4", "v5", "serde"] }
 serde = { version = "1.0", default-features = false, features = ["derive", "std"] }
+url = { version = "2.5.0", default-features = false, features = ["serde"] }
 
 [dependencies]
 clap = { version = "4.5", default-features = false, features = ["std", "derive", "env", "help", "usage", "error-context", "suggestions", "color"] }
@@ -69,7 +71,7 @@ include_dir = { version = "0.7.3", default-features = false }
 paperclip = { version = "0.8", default-features = false, features = ["paperclip-actix", "actix4", "swagger-ui", "url", "uuid"] }
 #TODO: Replace it with yaserde
 quick-xml = { version = "0.31.0", default-features = false, features = ["serialize"] }
-url = { version = "2.5.0", default-features = false, features = ["serde"] }
+url = { workspace = true }
 directories = { version = "5.0.1", default-features = false }
 pnet = { version = "0.34.0", default-features = false, features = ["std"] }
 semver = { version = "1.0", default-features = false }
@@ -101,6 +103,7 @@ tokio = { version = "1.37", default-features = false, features = ["rt-multi-thre
 enum_dispatch = { version = "0.3.13", default-features = false }
 uuid = { workspace = true }
 ts-rs = { workspace = true }
+mcm-api = { path = "api", features = ["paperclip"] }
 cached = { version = "0.51", default-features = false, features = ["proc_macro", "serde", "serde_json", "async_tokio_rt_multi_thread"] }
 
 ## Mavlink (only common dialect used)
@@ -138,7 +141,6 @@ serial_test = { version = "0.10", default-features = false, features = ["async"]
 tracing-test = { version = "0.2", default-features = false }
 
 [build-dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 vergen-gix = { version = "1.0.9", default-features = false, features = ["build", "cargo"] }
 ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat", "uuid-impl"] }
 uuid = { version = "1.8", default-features = false, features = ["v4", "serde"] }

@@ -11,7 +11,7 @@ use gst::prelude::*;
 use std::{ops::Deref, sync::Arc};
 use tracing::*;
 
-use crate::video_stream::types::VideoAndStreamInformation;
+use mcm_api::v1::stream::VideoAndStreamInformation;
 
 use image_sink::ImageSink;
 use rtsp_sink::RtspSink;
