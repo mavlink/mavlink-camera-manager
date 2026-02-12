@@ -7,23 +7,20 @@ use gst::{prelude::GstBinExtManual, DebugGraphDetails};
 use tokio::sync::RwLock;
 use tracing::*;
 
-use crate::{
-    settings,
-    stream::{
-        sink::{webrtc_sink::WebRTCSink, Sink, SinkInterface},
-        types::CaptureConfiguration,
-        webrtc::signalling_protocol::BindAnswer,
-    },
-    video::{types::VideoSourceType, video_source},
-    video_stream::types::VideoAndStreamInformation,
+use mcm_api::v1::{
+    signalling,
+    stream::{CaptureConfiguration, StreamStatus, VideoAndStreamInformation},
+    video::VideoSourceType,
 };
 
-use super::{
-    pipeline::PipelineGstreamerInterface,
-    types::StreamStatus,
-    webrtc::{self, signalling_protocol::RTCSessionDescription},
-    Stream,
+use crate::{
+    settings,
+    stream::sink::{webrtc_sink::WebRTCSink, Sink, SinkInterface},
+    video::{types::VideoSourceTypeExt, video_source, video_source_local::VideoSourceLocalExt},
+    video_stream::types::VideoAndStreamInformationExt,
 };
+
+use super::{pipeline::PipelineGstreamerInterface, Stream};
 
 type ClonableResult<T> = Result<T, Arc<Error>>;
 
@@ -460,9 +457,9 @@ pub fn is_source_blocked(source_string: &str) -> bool {
 impl Manager {
     #[instrument(level = "debug", skip(sender))]
     pub async fn add_session(
-        bind: &webrtc::signalling_protocol::BindOffer,
-        sender: tokio::sync::mpsc::UnboundedSender<Result<webrtc::signalling_protocol::Message>>,
-    ) -> Result<webrtc::signalling_protocol::SessionId> {
+        bind: &signalling::BindOffer,
+        sender: tokio::sync::mpsc::UnboundedSender<Result<signalling::Message>>,
+    ) -> Result<signalling::SessionId> {
         let mut manager = MANAGER.write().await;
 
         let producer_id = bind.producer_id;
@@ -473,7 +470,7 @@ impl Manager {
             "Cannot find any stream with producer {producer_id:?}"
         ))?;
 
-        let bind = BindAnswer {
+        let bind = signalling::BindAnswer {
             producer_id,
             consumer_id,
             session_id,
@@ -498,10 +495,7 @@ impl Manager {
     }
 
     #[instrument(level = "debug")]
-    pub async fn remove_session(
-        bind: &webrtc::signalling_protocol::BindAnswer,
-        _reason: String,
-    ) -> Result<()> {
+    pub async fn remove_session(bind: &signalling::BindAnswer, _reason: String) -> Result<()> {
         let mut manager = MANAGER.write().await;
 
         if !manager.streams.contains_key(&bind.producer_id) {
@@ -536,8 +530,8 @@ impl Manager {
 
     #[instrument(level = "debug")]
     pub async fn handle_sdp(
-        bind: &webrtc::signalling_protocol::BindAnswer,
-        sdp: &webrtc::signalling_protocol::RTCSessionDescription,
+        bind: &signalling::BindAnswer,
+        sdp: &signalling::RTCSessionDescription,
     ) -> Result<()> {
         let manager = MANAGER.read().await;
 
@@ -568,10 +562,10 @@ impl Manager {
         };
 
         let (sdp, sdp_type) = match sdp {
-            RTCSessionDescription::Answer(answer) => {
+            signalling::RTCSessionDescription::Answer(answer) => {
                 (answer.sdp.clone(), gst_webrtc::WebRTCSDPType::Answer)
             }
-            RTCSessionDescription::Offer(offer) => {
+            signalling::RTCSessionDescription::Offer(offer) => {
                 (offer.sdp.clone(), gst_webrtc::WebRTCSDPType::Offer)
             }
         };
@@ -583,7 +577,7 @@ impl Manager {
 
     #[instrument(level = "debug")]
     pub async fn handle_ice(
-        bind: &webrtc::signalling_protocol::BindAnswer,
+        bind: &signalling::BindAnswer,
         sdp_m_line_index: u32,
         candidate: &str,
     ) -> Result<()> {
@@ -635,10 +629,7 @@ impl Manager {
     }
 
     #[instrument(level = "debug")]
-    pub async fn remove_stream(
-        stream_id: &webrtc::signalling_protocol::PeerId,
-        rewrite_config: bool,
-    ) -> Result<()> {
+    pub async fn remove_stream(stream_id: &signalling::PeerId, rewrite_config: bool) -> Result<()> {
         let mut manager = MANAGER.write().await;
 
         if !manager.streams.contains_key(stream_id) {
