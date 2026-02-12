@@ -39,7 +39,7 @@ path = "src/main.rs"
 
 [workspace.dependencies]
 regex = { version = "1.10.4", default-features = false }
-ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat", "uuid-impl"] }
+ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat", "uuid-impl", "url-impl"] }
 uuid = { version = "1.8", default-features = false, features = ["v4", "v5", "serde"] }
 serde = { version = "1.0", default-features = false, features = ["derive", "std"] }
 url = { version = "2.5.0", default-features = false, features = ["serde"] }
