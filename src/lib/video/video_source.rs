@@ -1,11 +1,11 @@
 use tracing::*;
 
-use crate::controls::types::{Control, ControlType};
-
-use super::{
-    types::*, video_source_gst::VideoSourceGst, video_source_local::VideoSourceLocal,
-    video_source_onvif::VideoSourceOnvif, video_source_redirect::VideoSourceRedirect,
+use mcm_api::v1::{
+    controls::{Control, ControlType},
+    video::{VideoSourceGst, VideoSourceLocal, VideoSourceOnvif, VideoSourceRedirect, *},
 };
+
+use super::types::VideoSourceTypeExt;
 
 pub trait VideoSource {
     fn name(&self) -> &String;
