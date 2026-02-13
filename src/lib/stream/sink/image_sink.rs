@@ -1,6 +1,9 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
 use anyhow::{anyhow, Context, Error, Result};
@@ -64,16 +67,17 @@ impl CachedThumbnails {
 pub struct ImageSink {
     sink_id: Arc<uuid::Uuid>,
     pipeline: gst::Pipeline,
-    queue: gst::Element,
-    proxysink: gst::Element,
-    _proxysrc: gst::Element,
+    // Elements in the main (source) pipeline: [queue, (h264parse, capsfilter)?, shmsink]
+    main_pipeline_elements: Vec<gst::Element>,
+    _shmsrc: gst::Element,
     _transcoding_elements: Vec<gst::Element>,
     appsink: gst_app::AppSink,
     tee_src_pad: Option<gst::Pad>,
     flat_samples_sender: tokio::sync::broadcast::Sender<ClonableResult<FlatSamples<Vec<u8>>>>,
-    pad_blocker: Arc<Mutex<Option<gst::PadProbeId>>>,
+    pending: Arc<AtomicBool>,
     pipeline_runner: PipelineRunner,
     thumbnails: Arc<Mutex<CachedThumbnails>>,
+    socket_path: String,
 }
 impl SinkInterface for ImageSink {
     #[instrument(level = "debug", skip(self, pipeline))]
@@ -94,8 +98,8 @@ impl SinkInterface for ImageSink {
             unreachable!()
         };
 
-        let elements = &[&self.queue, &self.proxysink];
-        link_sink_to_tee(tee_src_pad, pipeline, elements)?;
+        let elements: Vec<&gst::Element> = self.main_pipeline_elements.iter().collect();
+        link_sink_to_tee(tee_src_pad, pipeline, &elements)?;
 
         Ok(())
     }
@@ -107,11 +111,15 @@ impl SinkInterface for ImageSink {
             return Ok(());
         };
 
-        let elements = &[&self.queue, &self.proxysink];
-        unlink_sink_from_tee(tee_src_pad, pipeline, elements)?;
+        let elements: Vec<&gst::Element> = self.main_pipeline_elements.iter().collect();
+        unlink_sink_from_tee(tee_src_pad, pipeline, &elements)?;
 
         if let Err(error) = self.pipeline.set_state(::gst::State::Null) {
             warn!("Failed setting sink Pipeline state to Null: {error:?}");
+        }
+
+        if let Err(error) = std::fs::remove_file(&self.socket_path) {
+            warn!("Failed removing ImageSink socket file: {error:?}");
         }
 
         Ok(())
@@ -131,7 +139,13 @@ impl SinkInterface for ImageSink {
 
     #[instrument(level = "debug", skip(self))]
     fn start(&self) -> Result<()> {
-        self.pipeline_runner.start()
+        // Start the shmsrc pipeline immediately and keep it Playing permanently.
+        // The identity filter drops non-keyframes before the decoder, so CPU usage
+        // is minimal even with the pipeline always running.
+        self.pipeline
+            .set_state(gst::State::Playing)
+            .map_err(|e| anyhow!("Failed to set ImageSink pipeline to Playing: {e:?}"))?;
+        Ok(())
     }
 
     #[instrument(level = "debug", skip(self))]
@@ -173,36 +187,28 @@ impl ImageSink {
             .property("max-size-buffers", 0u32) // Disable buffers
             .build()?;
 
-        // Create a pair of proxies. The proxysink will be used in the source's pipeline,
-        // while the proxysrc will be used in this sink's pipeline
-        let proxysink = gst::ElementFactory::make("proxysink").build()?;
-        let _proxysrc = gst::ElementFactory::make("proxysrc")
-            .property("proxysink", &proxysink)
+        // Create a shmsink/shmsrc pair. The shmsink will be used in the source's pipeline,
+        // while the shmsrc will be used in this sink's pipeline. Data is passed through
+        // shared memory, avoiding the CPU overhead of proxysink/proxysrc's internal thread.
+        let temp_file = tempfile::NamedTempFile::new()?;
+        let socket_path = temp_file.path().to_string_lossy().to_string();
+        drop(temp_file);
+
+        let shmsink = gst::ElementFactory::make("shmsink")
+            .name(format!("shmsink-img-{sink_id}"))
+            .property_from_str("socket-path", &socket_path)
+            .property("sync", false)
+            .property("wait-for-connection", false)
+            .property("shm-size", 10_000_000u32)
+            .property("enable-last-sample", false)
             .build()?;
 
-        // Configure proxysrc's queue, skips if fails
-        match _proxysrc.downcast_ref::<gst::Bin>() {
-            Some(bin) => {
-                let elements = bin.children();
-                match elements
-                    .iter()
-                    .find(|element| element.name().starts_with("queue"))
-                {
-                    Some(element) => {
-                        element.set_property_from_str("leaky", "downstream"); // Throw away any data
-                        element.set_property("silent", true);
-                        element.set_property("flush-on-eos", true);
-                        element.set_property("max-size-buffers", 0u32); // Disable buffers
-                    }
-                    None => {
-                        warn!("Failed to customize proxysrc's queue: Failed to find queue in proxysrc");
-                    }
-                }
-            }
-            None => {
-                warn!("Failed to customize proxysrc's queue: Failed to downcast element to bin")
-            }
-        }
+        let _shmsrc = gst::ElementFactory::make("shmsrc")
+            .name(format!("shmsrc-img-{sink_id}"))
+            .property_from_str("socket-path", &socket_path)
+            .property("is-live", true)
+            .property("do-timestamp", true)
+            .build()?;
 
         let encoding = match &video_and_stream_information
             .stream_information
@@ -216,10 +222,53 @@ impl ImageSink {
             }
         };
 
+        // Build the main pipeline elements: [queue, (h264parse, capsfilter)?, shmsink]
+        //
+        // shmsink/shmsrc passes raw bytes without caps. For H264/H265, we convert
+        // to byte-stream format before shmsink so that h264parse on the shmsrc side
+        // can auto-detect the stream from start codes and extract SPS/PPS.
+        let mut main_pipeline_elements: Vec<gst::Element> = vec![queue];
+        match encoding {
+            VideoEncodeType::H264 => {
+                let parser = gst::ElementFactory::make("h264parse")
+                    .property("config-interval", -1i32)
+                    .build()?;
+                let capsfilter = gst::ElementFactory::make("capsfilter")
+                    .property(
+                        "caps",
+                        gst::Caps::builder("video/x-h264")
+                            .field("stream-format", "byte-stream")
+                            .build(),
+                    )
+                    .build()?;
+                main_pipeline_elements.push(parser);
+                main_pipeline_elements.push(capsfilter);
+            }
+            VideoEncodeType::H265 => {
+                let parser = gst::ElementFactory::make("h265parse")
+                    .property("config-interval", -1i32)
+                    .build()?;
+                let capsfilter = gst::ElementFactory::make("capsfilter")
+                    .property(
+                        "caps",
+                        gst::Caps::builder("video/x-h265")
+                            .field("stream-format", "byte-stream")
+                            .build(),
+                    )
+                    .build()?;
+                main_pipeline_elements.push(parser);
+                main_pipeline_elements.push(capsfilter);
+            }
+            _ => {}
+        }
+        main_pipeline_elements.push(shmsink);
+
         // Depending of the sources' format we need different elements to transform it into a raw format
         let mut _transcoding_elements: Vec<gst::Element> = Default::default();
         match encoding {
             VideoEncodeType::H264 => {
+                // h264parse re-establishes caps from the byte-stream received via shmsrc
+                let parser = gst::ElementFactory::make("h264parse").build()?;
                 // For h264, we need to filter-out unwanted non-key frames here, before decoding it.
                 let filter = gst::ElementFactory::make("identity")
                     .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
@@ -229,10 +278,12 @@ impl ImageSink {
                     .property_from_str("lowres", "2") // (0) is 'full'; (1) is '1/2-size'; (2) is '1/4-size'
                     .build()?;
                 decoder.has_property("discard-corrupted-frames", None).then(|| decoder.set_property("discard-corrupted-frames", true));
+                _transcoding_elements.push(parser);
                 _transcoding_elements.push(filter);
                 _transcoding_elements.push(decoder);
             }
             VideoEncodeType::H265 => {
+                let parser = gst::ElementFactory::make("h265parse").build()?;
                 // For h265, we need to filter-out unwanted non-key frames here, before decoding it.
                 let filter = gst::ElementFactory::make("identity")
                 .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
@@ -243,6 +294,7 @@ impl ImageSink {
                     .build()?;
                 decoder.has_property("discard-corrupted-frames", None).then(|| decoder.set_property("discard-corrupted-frames", true));
                 decoder.has_property("std-compliance", None).then(|| decoder.set_property_from_str("std-compliance", "normal"));
+                _transcoding_elements.push(parser);
                 _transcoding_elements.push(filter);
                 _transcoding_elements.push(decoder);
             }
@@ -264,25 +316,23 @@ impl ImageSink {
             .field("format", gst_video::VideoFormat::Rgbx.to_str())
             .build();
 
-        let pad_blocker: Arc<Mutex<Option<gst::PadProbeId>>> = Default::default();
-        let pad_blocker_clone = pad_blocker.clone();
-        let queue_src_pad = queue.static_pad("src").expect("No src pad found on Queue");
+        let pending = Arc::new(AtomicBool::new(false));
+        let pending_clone = pending.clone();
 
         // To get data out of the callback, we'll be using this arc mutex
         let (sender, _) = tokio::sync::broadcast::channel(1);
         let flat_samples_sender = sender.clone();
-        let mut pending = false;
 
         // The appsink will then call those handlers, as soon as data is available.
         let appsink_callbacks = gst_app::AppSinkCallbacks::builder()
             // Add a handler to the "new-sample" signal.
             .new_sample(move |appsink| {
                 // Only process if requested
-                if sender.receiver_count() == 0 || pending {
+                if sender.receiver_count() == 0 || pending_clone.load(Ordering::Relaxed) {
                     return Ok(gst::FlowSuccess::Ok);
                 }
                 debug!("Starting a snapshot");
-                pending = true;
+                pending_clone.store(true, Ordering::Relaxed);
 
                 // Pull the sample in question out of the appsink's buffer
                 let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
@@ -291,27 +341,15 @@ impl ImageSink {
                     gst::element_error!(appsink, gst::ResourceError::Failed, ("{reason:?}"));
 
                     let _ = sender.send(Err(Arc::new(anyhow!(reason))));
-                    pending = false;
+                    pending_clone.store(false, Ordering::Relaxed);
 
                     gst::FlowError::Error
                 })?;
 
                 // Drop non-key frames
                 if buffer.flags().contains(gst::BufferFlags::DELTA_UNIT) {
-                    let _ = sender.send(Err(Arc::new(anyhow!("Not a valid frame"))));
-                    pending = false;
-
+                    pending_clone.store(false, Ordering::Relaxed);
                     return Ok(gst::FlowSuccess::Ok);
-                }
-
-                // Got a valid frame, block any further frame until next request
-                if let Some(old_blocker) = queue_src_pad
-                    .add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, |_pad, _info| {
-                        gst::PadProbeReturn::Ok
-                    })
-                    .and_then(|blocker| pad_blocker_clone.lock().unwrap().replace(blocker))
-                {
-                    queue_src_pad.remove_probe(old_blocker);
                 }
 
                 let caps = sample.caps().expect("Sample without caps");
@@ -330,7 +368,7 @@ impl ImageSink {
                         gst::element_error!(appsink, gst::ResourceError::Failed, ("{reason:?}"));
 
                         let _ = sender.send(Err(Arc::new(anyhow!(reason))));
-                        pending = false;
+                        pending_clone.store(false, Ordering::Relaxed);
 
                         gst::FlowError::Error
                     })?;
@@ -356,7 +394,6 @@ impl ImageSink {
 
                 // Send the data
                 let _ = sender.send(Ok(frame));
-                pending = false;
                 debug!("Finished the snapshot");
 
                 Ok(gst::FlowSuccess::Ok)
@@ -378,7 +415,7 @@ impl ImageSink {
             .build();
 
         // Add Sink elements to the Sink's Pipeline
-        let mut elements = vec![&_proxysrc];
+        let mut elements = vec![&_shmsrc];
         elements.extend(_transcoding_elements.iter().collect::<Vec<&gst::Element>>());
         elements.push(appsink.upcast_ref());
         let elements = &elements;
@@ -402,41 +439,40 @@ impl ImageSink {
         Ok(Self {
             sink_id: sink_id.clone(),
             pipeline,
-            queue,
-            proxysink,
-            _proxysrc,
+            main_pipeline_elements,
+            _shmsrc,
             _transcoding_elements,
             appsink,
             tee_src_pad: Default::default(),
             flat_samples_sender,
-            pad_blocker,
+            pending,
             pipeline_runner,
             thumbnails: Default::default(),
+            socket_path,
         })
     }
 
     #[instrument(level = "debug", skip(self))]
     async fn try_get_flat_sample(&self) -> Result<FlatSamples<Vec<u8>>> {
-        // Play the pipeline if it's not playing yet.
-        // Here we can ignore the result because we have a timeout when waiting for the snapshot
-        if self.pipeline.current_state() != gst::State::Playing {
-            let _ = self.pipeline.set_state(gst::State::Playing);
-        }
-
-        // Unblock the data from entering the ProxySink
-        if let Some(blocker) = self.pad_blocker.lock().unwrap().take() {
-            self.queue
-                .static_pad("src")
-                .expect("No src pad found on Queue")
-                .remove_probe(blocker);
-        }
+        self.pending.store(false, Ordering::Relaxed);
 
         // Trigger the snapshot
         let mut receiver = self.flat_samples_sender.subscribe();
 
+        // Request an immediate keyframe from the encoder so we don't have to
+        // wait for the natural keyframe interval (which can be >8s).
+        if let Some(queue) = self.main_pipeline_elements.first() {
+            let event = gst_video::UpstreamForceKeyUnitEvent::builder()
+                .all_headers(true)
+                .build();
+            if !queue.send_event(event) {
+                warn!("Failed to send force-keyframe event upstream");
+            }
+        }
+
         // Wait for the snapshot to be taken, with a timeout
         // Here we'd have the raw snapshot, we just need to convert it to the final format/size
-        tokio::time::timeout(tokio::time::Duration::from_secs(2), receiver.recv())
+        tokio::time::timeout(tokio::time::Duration::from_secs(10), receiver.recv())
             .await??
             .map_err(|e| anyhow!(e.to_string()))
     }
