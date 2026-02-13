@@ -99,6 +99,13 @@ struct Args {
     #[arg(long)]
     enable_thread_counter: bool,
 
+    /// Run the internal stats snapshot benchmark and exit.
+    /// Waits for pipelines to start, calls full_snapshot() in a tight loop
+    /// (bypassing the snapshot cache), then terminates. Use with cargo flamegraph.
+    #[cfg(feature = "bench-internal")]
+    #[arg(long)]
+    bench_stats_snapshot: bool,
+
     /// Sets the MAVLink System ID.
     #[arg(long, value_name = "SYSTEM_ID", default_value = "1")]
     mavlink_system_id: u8,
@@ -166,6 +173,31 @@ struct Args {
     /// Recorder).
     #[arg(long, value_name = "external")]
     recorder: Option<RecorderMode>,
+
+    /// Sets the pipeline analysis stats level. "lite" uses O(1) atomic
+    /// accumulators (mean/min/max/std). "full" uses an O(window) ring buffer
+    /// (adds percentiles, distributions, scatter data). "off" disables.
+    /// Results available at /stats/pipeline-analysis.
+    #[arg(
+        long,
+        value_name = "off|lite|full",
+        default_value = "lite",
+        env = "MCM_PIPELINE_ANALYSIS_LEVEL"
+    )]
+    pipeline_analysis_level: String,
+
+    /// Sets the rolling window size (number of buffers) for pipeline analysis
+    /// ring buffers (used when stats level is "full"). Larger values retain
+    /// more history for percentiles/distributions but use more memory.
+    /// Each slot costs 16 bytes per probed pad.
+    #[arg(
+        long,
+        value_name = "NUM_BUFFERS",
+        value_parser = pipeline_analysis_window_size_validator,
+        default_value_t = crate::stream::stats::pipeline_analysis::DEFAULT_WINDOW_SIZE,
+        env = "MCM_PIPELINE_ANALYSIS_WINDOW_SIZE"
+    )]
+    pipeline_analysis_window_size: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -294,6 +326,11 @@ pub fn default_settings() -> Option<custom::CustomEnvironment> {
 
 pub fn enable_thread_counter() -> bool {
     MANAGER.clap_matches.enable_thread_counter
+}
+
+#[cfg(feature = "bench-internal")]
+pub fn bench_stats_snapshot() -> bool {
+    MANAGER.clap_matches.bench_stats_snapshot
 }
 
 pub fn mavlink_system_id() -> u8 {
@@ -512,6 +549,16 @@ fn expand_tilde(value: &str) -> String {
     shellexpand::tilde(value).into_owned()
 }
 
+/// Returns the configured pipeline analysis level ("off", "lite", or "full").
+pub fn pipeline_analysis_level() -> String {
+    MANAGER.clap_matches.pipeline_analysis_level.clone()
+}
+
+/// Returns the configured pipeline analysis window size.
+pub fn pipeline_analysis_window_size() -> usize {
+    MANAGER.clap_matches.pipeline_analysis_window_size
+}
+
 fn gst_feature_rank_validator(val: &str) -> Result<String, String> {
     if let Some((_key, value_str)) = val.split_once('=') {
         if value_str.parse::<i32>().is_err() {
@@ -552,6 +599,19 @@ fn stream_recreation_failure_timeout_validator(
         .parse::<u64>()
         .map_err(|_| "Expected a non-negative integer number of seconds or \"none\"".to_string())?;
     Ok(StreamRecreationFailureTimeoutArg::Seconds(secs))
+}
+
+fn pipeline_analysis_window_size_validator(val: &str) -> Result<usize, String> {
+    let size = val
+        .parse::<usize>()
+        .map_err(|_| "window size must be an unsigned integer".to_string())?;
+    if !crate::stream::stats::pipeline_analysis::is_valid_window_size(size) {
+        return Err(format!(
+            "window size must be between 1 and {}",
+            crate::stream::stats::pipeline_analysis::MAX_WINDOW_SIZE
+        ));
+    }
+    Ok(size)
 }
 
 #[cfg(test)]
