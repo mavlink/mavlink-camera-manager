@@ -163,16 +163,19 @@ impl RTSPServer {
         };
 
         let rtp_caps = rtp_caps.to_string();
+        // Sanitize path for use as GStreamer element name (remove leading slash, replace special chars)
+        let path_slug = path.trim_start_matches('/').replace(['/', '.', ' '], "-");
         let description = match encode.as_str() {
             "H264" => {
                 format!(
                     concat!(
-                        "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
-                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0",
+                        "shmsrc name=shmsrc-srv-{path_slug} socket-path={socket_path} do-timestamp=true is-live=false",
+                        " ! queue name=q-srv-{path_slug} leaky=downstream flush-on-eos=true silent=true max-size-buffers=0",
                         " ! capsfilter caps={rtp_caps:?}",
                         " ! rtph264depay",
                         " ! rtph264pay name=pay0 aggregate-mode=zero-latency config-interval=-1 pt=96",
                     ),
+                    path_slug = path_slug,
                     socket_path = socket_path,
                     rtp_caps = rtp_caps,
                 )
@@ -180,12 +183,13 @@ impl RTSPServer {
             "H265" => {
                 format!(
                     concat!(
-                        "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
-                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0",
+                        "shmsrc name=shmsrc-srv-{path_slug} socket-path={socket_path} do-timestamp=true is-live=false",
+                        " ! queue name=q-srv-{path_slug} leaky=downstream flush-on-eos=true silent=true max-size-buffers=0",
                         " ! capsfilter caps={rtp_caps:?}",
                         " ! rtph265depay",
                         " ! rtph265pay name=pay0 aggregate-mode=zero-latency config-interval=-1 pt=96",
                     ),
+                    path_slug = path_slug,
                     socket_path = socket_path,
                     rtp_caps = rtp_caps,
                 )
@@ -193,12 +197,13 @@ impl RTSPServer {
             "RAW" => {
                 format!(
                     concat!(
-                        "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
-                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0",
+                        "shmsrc name=shmsrc-srv-{path_slug} socket-path={socket_path} do-timestamp=true is-live=false",
+                        " ! queue name=q-srv-{path_slug} leaky=downstream flush-on-eos=true silent=true max-size-buffers=0",
                         " ! capsfilter caps={rtp_caps:?}",
                         " ! rtpvrawdepay",
                         " ! rtpvrawpay name=pay0 pt=96",
                     ),
+                    path_slug = path_slug,
                     socket_path = socket_path,
                     rtp_caps = rtp_caps,
                 )
@@ -206,12 +211,13 @@ impl RTSPServer {
             "JPEG" => {
                 format!(
                     concat!(
-                        "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
-                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=10",
+                        "shmsrc name=shmsrc-srv-{path_slug} socket-path={socket_path} do-timestamp=true is-live=false",
+                        " ! queue name=q-srv-{path_slug} leaky=downstream flush-on-eos=true silent=true max-size-buffers=10",
                         " ! capsfilter caps={rtp_caps:?}",
                         " ! rtpjpegdepay",
                         " ! rtpjpegpay name=pay0 pt=96",
                     ),
+                    path_slug = path_slug,
                     socket_path = socket_path,
                     rtp_caps = rtp_caps,
                 )

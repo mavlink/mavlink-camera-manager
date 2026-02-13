@@ -147,6 +147,7 @@ impl UdpSink {
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
         let queue = gst::ElementFactory::make("queue")
+            .name(format!("q-udp-{sink_id}"))
             .property_from_str("leaky", "downstream") // Throw away any data
             .property("silent", true)
             .property("flush-on-eos", true)
@@ -155,8 +156,11 @@ impl UdpSink {
 
         // Create a pair of proxies. The proxysink will be used in the source's pipeline,
         // while the proxysrc will be used in this sink's pipeline
-        let proxysink = gst::ElementFactory::make("proxysink").build()?;
+        let proxysink = gst::ElementFactory::make("proxysink")
+            .name(format!("psink-udp-{sink_id}"))
+            .build()?;
         let _proxysrc = gst::ElementFactory::make("proxysrc")
+            .name(format!("psrc-udp-{sink_id}"))
             .property("proxysink", &proxysink)
             .build()?;
 
@@ -169,6 +173,7 @@ impl UdpSink {
                     .find(|element| element.name().starts_with("queue"))
                 {
                     Some(element) => {
+                        element.set_property("name", format!("qi-udp-{sink_id}").as_str());
                         element.set_property_from_str("leaky", "downstream"); // Throw away any data
                         element.set_property("flush-on-eos", true);
                         element.set_property("max-size-buffers", 0u32); // Disable buffers

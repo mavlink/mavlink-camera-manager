@@ -90,6 +90,7 @@ impl RtspSink {
     #[instrument(level = "debug", skip_all)]
     pub fn try_new(id: Arc<uuid::Uuid>, addresses: Vec<url::Url>) -> Result<Self> {
         let queue = gst::ElementFactory::make("queue")
+            .name(format!("q-rtsp-{id}"))
             .property_from_str("leaky", "downstream") // Throw away any data
             .property("silent", true)
             .property("flush-on-eos", true)
@@ -113,6 +114,7 @@ impl RtspSink {
         let socket_path = temp_file.path().to_string_lossy().to_string();
 
         let sink = gst::ElementFactory::make("shmsink")
+            .name(format!("shmsink-rtsp-{id}"))
             .property_from_str("socket-path", &socket_path)
             .property("sync", false)
             .property("wait-for-connection", false)
