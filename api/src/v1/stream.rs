@@ -66,7 +66,7 @@ pub struct StreamStatus {
     pub mavlink: Option<MavlinkComponent>,
 }
 
-#[derive(Debug, Deserialize, Serialize, TS)]
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 pub struct MavlinkComponent {
     pub system_id: u8,
