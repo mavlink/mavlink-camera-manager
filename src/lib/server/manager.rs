@@ -92,6 +92,31 @@ fn configure_api_routes(cfg: &mut web::ServiceConfig) {
         .route("/sdp", web::get().to(pages::sdp))
         .route("/log", web::get().to(pages::log))
         .route("/dot", web::get().to(pages::dot_stream))
+        .route(
+            "/stats/streams/snapshot",
+            web::get().to(pages::streams_snapshot_get),
+        )
+        .route(
+            "/stats/streams/snapshot/ws",
+            web::get().to(pages::streams_snapshot_ws),
+        )
+        .route("/stats/streams/reset", web::post().to(pages::streams_reset))
+        .route(
+            "/stats/streams/level",
+            web::get().to(pages::streams_level_get),
+        )
+        .route(
+            "/stats/streams/level",
+            web::post().to(pages::streams_level_set),
+        )
+        .route(
+            "/stats/streams/window-size",
+            web::get().to(pages::streams_window_size_get),
+        )
+        .route(
+            "/stats/streams/window-size",
+            web::post().to(pages::streams_window_size_set),
+        )
         .service(
             web::scope("/thumbnail")
                 // Add a rate limiter to prevent flood
