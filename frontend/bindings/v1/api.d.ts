@@ -135,3 +135,260 @@ export type UnauthenticateOnvifDeviceRequest = {
 device_uuid: string, };
 
 export type OnvifDevice = { uuid: string, ip: string, types: Array<string>, hardware: string | null, name: string | null, urls: Array<string>, };
+
+export type StatsLevel = "lite" | "full";
+
+/**
+ * A raw record from the Full ring buffer (exposed for scatter plots, etc.).
+ */
+export type RawRecord = { wall_ns: number, 
+/**
+ * Buffer PTS in nanoseconds when available.
+ */
+pts_ns: number, size: number, is_keyframe: boolean, };
+
+/**
+ * Snapshot of accumulated values from the Lite backend.
+ * To compute rates, differentiate two successive snapshots.
+ */
+export type AccumulatorSnapshot = { sum_interval_ns: number, 
+/**
+ * Sum of (interval_us)^2 — microseconds squared to avoid u64 overflow.
+ */
+sum_interval_sq_us: number, sum_size_bytes: number, 
+/**
+ * Sum of (size_bytes / 1024)^2 — coarsened to avoid u64 overflow with large frames.
+ */
+sum_size_sq_units: number, interval_count: number, 
+/**
+ * Pre-computed from accumulators for convenience.
+ */
+mean_interval_ms: number, std_interval_ms: number, min_interval_ms: number, max_interval_ms: number, mean_size_bytes: number, std_size_bytes: number, };
+
+/**
+ * Statistical distribution summary.
+ */
+export type Distribution = { count: number, min: number, max: number, mean: number, std: number, median: number, p95: number, p99: number, };
+
+/**
+ * Full distribution statistics (from Full backend).
+ */
+export type DistributionSnapshot = { interval: Distribution, i_interval: Distribution, p_interval: Distribution, size: Distribution, i_size: Distribution, p_size: Distribution, };
+
+/**
+ * Simple distribution for system metrics.
+ */
+export type SystemDistribution = { count: number, min: number, max: number, mean: number, std: number, };
+
+/**
+ * System metrics snapshot.
+ */
+export type SystemSnapshot = { sample_count: number, current_cpu_pct: number, current_load_1m: number, current_mem_used_pct: number, current_temperature_c: number, cpu_stats: SystemDistribution, load_stats: SystemDistribution, mem_stats: SystemDistribution, temp_stats: SystemDistribution, };
+
+/**
+ * Pipeline restart/uptime statistics.
+ */
+export type RestartSnapshot = { 
+/**
+ * Total number of times this pipeline has been started (1 = first start, never restarted).
+ */
+start_count: number, 
+/**
+ * Number of restarts (start_count - 1).
+ */
+restart_count: number, 
+/**
+ * Seconds since the most recent start.
+ */
+current_uptime_secs: number, 
+/**
+ * Seconds since the very first start (total tracking time).
+ */
+total_tracked_secs: number, 
+/**
+ * Average seconds between restarts.
+ */
+avg_restart_interval_secs: number, 
+/**
+ * Minimum seconds between restarts (fastest crash loop).
+ */
+min_restart_interval_secs: number, 
+/**
+ * Seconds between the two most recent starts.
+ */
+last_restart_interval_secs: number, };
+
+export type HealthStatus = "good" | "degraded" | "bad" | "unknown";
+
+export type IssueKind = "cpu_saturation" | "freeze_risk" | "latency_spike" | "causal_match_low" | "unknown";
+
+export type CausalConfidence = "low" | "medium" | "high";
+
+export type RootCauseCandidate = { cause: IssueKind, score: number, };
+
+export type ThreadBottleneck = { thread_id: number, thread_name: string | null, cpu_pct: number, elements: Array<string>, latency_impact_ms: number, };
+
+/**
+ * Aggregate pipeline health summary.
+ */
+export type PipelineSummary = { 
+/**
+ * Total frames observed at the most-active element.
+ */
+total_frames: number, 
+/**
+ * Estimated throughput (frames/sec) from the most-active element.
+ */
+throughput_fps: number, 
+/**
+ * Sum of all inter-element freshness deltas (ms).
+ */
+total_pipeline_freshness_delay_ms: number, 
+/**
+ * Sum of per-edge causal latency along the pipeline's edges.
+ * Provides a stable pipeline-wide latency metric based on PTS-matched
+ * measurements rather than instantaneous freshness deltas.
+ * Only present when at least one edge has causal latency data.
+ *
+ * **Note on interpretation:** `mean` is exact (expectation of a sum = sum
+ * of expectations). `p95` and `p99` are conservative upper bounds (sum of
+ * per-edge percentiles >= true pipeline percentile). `min`/`max` are
+ * likewise sum-of-per-edge extremes. `count` is the minimum per-edge
+ * sample count (bottleneck edge), not the total. `std` is set to 0
+ * (computing it requires cross-edge covariance data we don't have).
+ */
+total_pipeline_causal_latency_ms: Distribution | null, 
+/**
+ * Aggregated confidence of causal edge latency measurements across
+ * this pipeline.
+ */
+causal_latency_health: CausalConfidence | null, 
+/**
+ * Human-readable health verdict.
+ */
+verdict: string, };
+
+/**
+ * Consolidated snapshot of all streams.
+ */
+export type StreamsSnapshot = { timestamp_ns: number, stats: FleetStats, streams: Array<StreamSnapshot>, };
+
+/**
+ * Fleet-level aggregate health statistics.
+ */
+export type FleetStats = { overall_health: HealthStatus, streams_total: number, streams_good: number, streams_degraded: number, streams_bad: number, total_cpu_pct: number, total_throughput_fps: number, dominant_issue: IssueKind, };
+
+/**
+ * Per-stream snapshot (aggregates across its pipelines).
+ */
+export type StreamSnapshot = { id: string, name: string, running: boolean, error: string | null, video_and_stream: VideoAndStreamInformation, mavlink: MavlinkComponent | null, stats: StreamStats, pipelines: Array<PipelineSnapshot>, };
+
+/**
+ * Stream-level aggregate statistics.
+ */
+export type StreamStats = { health: HealthStatus, dominant_issue: IssueKind, throughput_fps: number, cpu_pct: number, freshness_delay_ms: number, root_cause_candidates: Array<RootCauseCandidate>, };
+
+/**
+ * Per-pipeline snapshot.
+ */
+export type PipelineSnapshot = { name: string, stats: PipelineStats, connections: Array<PipelineConnection>, 
+/**
+ * Top-level elements (bins have their children nested inside).
+ */
+elements: Array<ElementSnapshot>, 
+/**
+ * Flat thread summary (elements reference threads via `thread_id`).
+ */
+threads: Array<ThreadSummary>, };
+
+/**
+ * Pipeline-level statistics.
+ */
+export type PipelineStats = { level: StatsLevel, window_size: number, expected_interval_ms: number, uptime_secs: number, health: HealthStatus, dominant_issue: IssueKind, cpu_pct: number | null, cpu_stats: SystemDistribution | null, summary: PipelineSummary, system: SystemSnapshot, restarts: RestartSnapshot, root_cause_candidates: Array<RootCauseCandidate>, thread_bottlenecks: Array<ThreadBottleneck>, };
+
+/**
+ * Connection from one pipeline to another (e.g. proxy bridge).
+ */
+export type PipelineConnection = { to_pipeline: string, bridge_type: string, from_element: string, to_element: string, };
+
+/**
+ * Per-thread summary. Elements reference their thread via `ElementSnapshot.thread_id`.
+ */
+export type ThreadSummary = { id: number, name: string | null, stats: ThreadStats, connections: Array<ThreadConnection>, };
+
+/**
+ * Thread-level statistics.
+ */
+export type ThreadStats = { name: string | null, cpu_pct: number, cpu_stats: SystemDistribution | null, };
+
+/**
+ * Connection from one thread to another (via a queue element).
+ */
+export type ThreadConnection = { to_thread: number, via_element: string, };
+
+/**
+ * Per-element snapshot. When `is_bin` is true, this represents a GStreamer bin
+ * and `children` contains its direct child elements (which may themselves be bins).
+ */
+export type ElementSnapshot = { name: string, element_type: string, is_bin: boolean, children: Array<ElementSnapshot>, thread_id: number | null, state: string | null, properties: Array<ElementProperty> | null, stats: ElementStats, connections: Array<ElementConnection>, pads: Array<PadSnapshot>, };
+
+/**
+ * Element-level statistics (includes inlined diagnostics).
+ */
+export type ElementStats = { processing_time_us: number | null, processing_time_stats: Distribution | null, 
+/**
+ * `true` if the element's sink and src pads are driven by different
+ * threads (e.g. `queue`, `queue2`). When cross-thread, processing time
+ * includes queuing delay.
+ */
+is_cross_thread: boolean | null, cpu_pct: number | null, cpu_stats: Distribution | null, health: HealthStatus, stutter_events: number, freeze_events: number, max_freeze_ms: number, stutter_ratio: number, queue_stats: QueueStats | null, };
+
+/**
+ * Connection from one element to an adjacent downstream element.
+ */
+export type ElementConnection = { to_element: string, freshness_delay_ms: number, causal_latency_ms: Distribution | null, causal_match_rate: number | null, causal_matched_samples: number, causal_confidence: CausalConfidence | null, };
+
+export type PadDirection = "sink" | "src";
+
+/**
+ * Per-pad snapshot.
+ */
+export type PadSnapshot = { name: string, direction: PadDirection, caps: string | null, stats: PadStats, 
+/**
+ * Raw records from the ring buffer (Full mode only).
+ */
+buffer: Array<RawRecord>, connections: Array<PadConnection>, };
+
+/**
+ * Pad-level statistics.
+ */
+export type PadStats = { level: StatsLevel, total_buffers: number, total_keyframes: number, total_delta_frames: number, total_dropped: number, drop_ratio: number, bitrate_bps: number | null, avg_gop_size: number | null, keyframe_interval_ms: Distribution | null, last_wall_ns: number, accumulators: AccumulatorSnapshot | null, distribution: DistributionSnapshot | null, };
+
+/**
+ * Connection from one pad to its peer pad on an adjacent element.
+ */
+export type PadConnection = { peer_element: string, peer_pad: string, media_type: string | null, };
+
+/**
+ * Request body for setting the analysis level.
+ */
+export type SetLevelRequest = { level: string, };
+
+/**
+ * Request body for setting the window size.
+ */
+export type SetWindowSizeRequest = { 
+/**
+ * Allowed range is implementation-defined by server-side limits.
+ */
+window_size: number, };
+
+/**
+ * A single element property (name-value pair from GObject introspection).
+ */
+export type ElementProperty = { name: string, value: string, };
+
+/**
+ * Fill-level statistics for GStreamer queue/queue2 elements.
+ */
+export type QueueStats = { current_level_buffers: number, current_level_bytes: number, current_level_time_ns: number, max_level_buffers: number, max_level_bytes: number, max_level_time_ns: number, fill_pct: number, };
