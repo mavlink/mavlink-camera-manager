@@ -39,22 +39,19 @@ pub(crate) fn pipeline_health(snapshot: &PipelineSnapshot) -> (HealthStatus, Iss
         .any(|r| r < 0.4);
 
     let expected = snapshot.stats.expected_interval_ms;
-    let freeze_risk = elements
-        .iter()
-        .flat_map(|e| &e.pads)
-        .any(|pad| {
-            pad.stats
-                .accumulators
+    let freeze_risk = elements.iter().flat_map(|e| &e.pads).any(|pad| {
+        pad.stats
+            .accumulators
+            .as_ref()
+            .map(|a| a.max_interval_ms > expected * 10.0)
+            .unwrap_or(false)
+            || pad
+                .stats
+                .distribution
                 .as_ref()
-                .map(|a| a.max_interval_ms > expected * 10.0)
+                .map(|d| d.interval.max > expected * 10.0)
                 .unwrap_or(false)
-                || pad
-                    .stats
-                    .distribution
-                    .as_ref()
-                    .map(|d| d.interval.max > expected * 10.0)
-                    .unwrap_or(false)
-        });
+    });
 
     if cpu > 95.0 {
         (HealthStatus::Bad, IssueKind::CpuSaturation)

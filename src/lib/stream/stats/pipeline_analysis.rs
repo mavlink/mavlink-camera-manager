@@ -50,11 +50,12 @@ use tracing::*;
 
 use mcm_api::v1::{
     stats::{
-        CausalConfidence, Distribution, ElementConnection, ElementSnapshot,
-        ElementStats, HealthStatus, IssueKind, PadConnection, PadDirection, PadSnapshot, PadStats,
+        CausalConfidence, Distribution, ElementConnection, ElementSnapshot, ElementStats,
+        HealthStatus, IssueKind, PadConnection, PadDirection, PadSnapshot, PadStats,
         PipelineConnection, PipelineSnapshot, PipelineStats, PipelineSummary, RawRecord,
         RestartSnapshot, StatsLevel, StreamSnapshot, StreamsSnapshot, SystemDistribution,
-        SystemDistributionAccumulator, SystemSnapshot, ThreadConnection, ThreadSummary, ThreadStats,
+        SystemDistributionAccumulator, SystemSnapshot, ThreadConnection, ThreadStats,
+        ThreadSummary,
     },
     stream::StreamStatus,
 };
@@ -636,7 +637,11 @@ impl PipelineAnalysis {
     /// and `deep-element-added` on the pipeline for dynamically added elements
     /// at any depth (e.g. rtspsrc internals, WebRTC sink queue + webrtcbin).
     pub fn install_probes(self: &Arc<Self>, pipeline: &gst::Pipeline) {
-        for el in pipeline.iterate_recurse().into_iter().filter_map(Result::ok) {
+        for el in pipeline
+            .iterate_recurse()
+            .into_iter()
+            .filter_map(Result::ok)
+        {
             self.install_element_probe(&el);
         }
 
@@ -956,8 +961,7 @@ impl PipelineAnalysis {
         {
             let elements_map = self.elements.lock().ok();
             let elem_count = elements_map.as_ref().map(|e| e.len()).unwrap_or(0);
-            element_snapshots =
-                FxHashMap::with_capacity_and_hasher(elem_count, Default::default());
+            element_snapshots = FxHashMap::with_capacity_and_hasher(elem_count, Default::default());
             if let Some(ref elems) = elements_map {
                 for (name, probe) in elems.iter() {
                     element_snapshots.insert(name.clone(), probe.snapshot());
@@ -2507,18 +2511,14 @@ fn add_stub_pads_recursive(elements: &mut [ElementSnapshot], topo_edges: &[Topol
             let mut connections = Vec::new();
             for e in topo_edges {
                 match direction {
-                    PadDirection::Src
-                        if e.from_node == elem.name && e.from_pad == *pad_name =>
-                    {
+                    PadDirection::Src if e.from_node == elem.name && e.from_pad == *pad_name => {
                         connections.push(PadConnection {
                             peer_element: e.to_node.clone(),
                             peer_pad: e.to_pad.clone(),
                             media_type: e.media_type.clone(),
                         });
                     }
-                    PadDirection::Sink
-                        if e.to_node == elem.name && e.to_pad == *pad_name =>
-                    {
+                    PadDirection::Sink if e.to_node == elem.name && e.to_pad == *pad_name => {
                         connections.push(PadConnection {
                             peer_element: e.from_node.clone(),
                             peer_pad: e.from_pad.clone(),

@@ -4,9 +4,18 @@ use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use tracing::*;
 
-use mcm_api::v1::stream::VideoAndStreamInformation;
+use mcm_api::v1::{stats::StatsLevel, stream::VideoAndStreamInformation};
 
-use crate::stream::gst::utils::wait_for_element_state_async;
+use crate::stream::stats::pipeline_analysis::{PipelineTopology, TopologyEdge, TopologyNode};
+
+use crate::stream::{gst::utils::wait_for_element_state_async, stats::pipeline_analysis};
+
+/// In-memory pipeline analysis: level from --pipeline-analysis-level or MCM_PIPELINE_ANALYSIS_LEVEL env.
+/// "off" means disabled, "lite" or "full" means enabled with the corresponding stats level.
+static ANALYSIS_LEVEL: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(crate::cli::manager::pipeline_analysis_level);
+static ANALYSIS_ENABLED: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| *ANALYSIS_LEVEL != "off");
 
 #[derive(Debug)]
 pub struct PipelineRunner {
@@ -281,6 +290,51 @@ impl PipelineRunner {
             }
         };
 
+        // ── Pipeline Analysis: generalized per-element instrumentation ──
+        // Set the global stats level and window size from CLI on first pipeline creation only,
+        // so that later API changes are not overwritten on pipeline restarts.
+        static INIT_ANALYSIS_DEFAULTS: std::sync::Once = std::sync::Once::new();
+        INIT_ANALYSIS_DEFAULTS.call_once(|| {
+            match ANALYSIS_LEVEL.as_str() {
+                "full" => pipeline_analysis::set_global_stats_level(StatsLevel::Full),
+                "lite" => pipeline_analysis::set_global_stats_level(StatsLevel::Lite),
+                _ => {} // "off" — leave default (Lite, but we won't create analyses)
+            }
+            pipeline_analysis::set_global_window_size(
+                crate::cli::manager::pipeline_analysis_window_size(),
+            );
+        });
+
+        let _pa = if *ANALYSIS_ENABLED {
+            let pipeline = pipeline_weak
+                .upgrade()
+                .context("Unable to access Pipeline for analysis probes")?;
+
+            // Extract stream_id from pipeline name: "pipeline-{type}-{uuid}"
+            let stream_id = pipeline_name
+                .splitn(3, '-')
+                .nth(2)
+                .unwrap_or("")
+                .to_string();
+            let pa = Arc::new(pipeline_analysis::PipelineAnalysis::new(
+                pipeline_name.clone(),
+                stream_id,
+                frame_duration.as_secs_f64() * 1000.0,
+            ));
+            pa.install_probes(&pipeline);
+            pipeline_analysis::register(&pa);
+            info!(
+                "Pipeline analysis enabled (level={}) for Pipeline {pipeline_name:?}",
+                *ANALYSIS_LEVEL
+            );
+            pipeline_analysis::ensure_global_system_sampler_started();
+
+            Some(pa)
+        } else {
+            None
+        };
+
+        // ── Tick-based position monitoring loop ──
         // Check if we need to break external loop.
         // Some cameras have a duplicated timestamp when starting.
         // to avoid restarting the camera once and once again,
@@ -318,7 +372,7 @@ impl PipelineRunner {
                                         lost_ticks += 1;
 
                                         if lost_ticks == min_lost_ticks_before_considering_stuck {
-                                            warn!("Position unchanged for {min_lost_ticks_before_considering_stuck} consecutive ticks. Pipeline {pipeline_name:?} may be stuck.")
+                                            warn!("Position unchanged for {min_lost_ticks_before_considering_stuck} consecutive ticks. Pipeline {pipeline_name:?} may be stuck.");
                                         } else if lost_ticks > max_lost_ticks {
                                             error!("Pipeline {pipeline_name:?} lost too many timestamps ({lost_ticks} > max {max_lost_ticks}). Last position: {position:?}");
                                             return Err(anyhow!("Pipeline {pipeline_name:?} appears stuck — position unchanged for too long"));
@@ -472,7 +526,7 @@ async fn bus_watcher_task(
                             }
                             (None, Some(new)) => {
                                 let new_ms = new.nseconds() as f64 / 1_000_000.0;
-                                debug!("Latency established for Pipeline {pipeline_name:?}: {new_ms:.2}ms"                                    );
+                                debug!("Latency established for Pipeline {pipeline_name:?}: {new_ms:.2}ms");
                                 if new_ms > 100.0 {
                                     warn!("High latency detected for Pipeline {pipeline_name:?}: {:.2}ms - may cause noticeable delay", new_ms);
                                 }
@@ -604,4 +658,67 @@ async fn bus_watcher_task(
     }
 
     debug!("BusWatcher task ended for Pipeline {pipeline_name:?}!");
+}
+
+/// Extract the element topology from a running GStreamer pipeline as a directed graph.
+///
+/// Uses `iterate_recurse()` to include elements inside bins (e.g. rtspsrc,
+/// webrtcbin internals). Each node records its parent bin and whether it is
+/// itself a bin, enabling clients to reconstruct the structural hierarchy.
+pub(crate) fn extract_topology(pipeline: &gst::Pipeline) -> PipelineTopology {
+    let elements: Vec<gst::Element> = pipeline
+        .iterate_recurse()
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect();
+
+    let mut nodes = Vec::with_capacity(elements.len());
+    let mut edges = Vec::new();
+
+    for el in &elements {
+        let name = el.name().to_string();
+        let type_name = el
+            .factory()
+            .map(|f| f.name().to_string())
+            .unwrap_or_default();
+
+        let parent_bin: Option<String> = el
+            .parent()
+            .and_then(|p| p.downcast::<gst::Element>().ok())
+            .filter(|p| !p.is::<gst::Pipeline>())
+            .map(|p| p.name().to_string());
+
+        let is_bin = el.downcast_ref::<gst::Bin>().is_some();
+
+        nodes.push(TopologyNode {
+            name: name.clone(),
+            type_name,
+            parent_bin,
+            is_bin,
+        });
+
+        for pad in el.src_pads() {
+            if let Some(peer) = pad.peer() {
+                if let Some(peer_el) = peer.parent_element() {
+                    let media_type = pad
+                        .current_caps()
+                        .and_then(|caps| caps.structure(0).map(|s| s.name().to_string()));
+
+                    edges.push(TopologyEdge {
+                        from_node: name.clone(),
+                        from_pad: pad.name().to_string(),
+                        to_node: peer_el.name().to_string(),
+                        to_pad: peer.name().to_string(),
+                        media_type,
+                    });
+                }
+            }
+        }
+    }
+
+    PipelineTopology {
+        nodes,
+        edges,
+        sinks: Vec::new(),
+    }
 }
