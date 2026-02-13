@@ -4,6 +4,7 @@ pub mod manager;
 pub mod pipeline;
 pub mod rtsp;
 pub mod sink;
+pub mod stats;
 pub mod webrtc;
 
 use std::{
