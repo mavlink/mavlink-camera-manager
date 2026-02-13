@@ -3,7 +3,7 @@ use std::{fs, io::Write, path::Path};
 use regex::Regex;
 use ts_rs::TS;
 
-use mcm_api::v1::{controls::*, server::*, signalling::*, stream::*, video::*};
+use mcm_api::v1::{controls::*, server::*, signalling::*, stats::*, stream::*, video::*};
 
 fn generate_bindings(types: &[String]) -> String {
     // Remove all typescript "import type" because all types are going to live in the same typescript file
@@ -100,6 +100,43 @@ fn main() {
         AuthenticateOnvifDeviceRequest::export_to_string().unwrap(),
         UnauthenticateOnvifDeviceRequest::export_to_string().unwrap(),
         OnvifDevice::export_to_string().unwrap(),
+        // Stats / Pipeline Analysis types — new hierarchical model
+        StatsLevel::export_to_string().unwrap(),
+        RawRecord::export_to_string().unwrap(),
+        AccumulatorSnapshot::export_to_string().unwrap(),
+        Distribution::export_to_string().unwrap(),
+        DistributionSnapshot::export_to_string().unwrap(),
+        SystemDistribution::export_to_string().unwrap(),
+        SystemSnapshot::export_to_string().unwrap(),
+        RestartSnapshot::export_to_string().unwrap(),
+        HealthStatus::export_to_string().unwrap(),
+        IssueKind::export_to_string().unwrap(),
+        CausalConfidence::export_to_string().unwrap(),
+        RootCauseCandidate::export_to_string().unwrap(),
+        ThreadBottleneck::export_to_string().unwrap(),
+        PipelineSummary::export_to_string().unwrap(),
+        // New hierarchical types
+        StreamsSnapshot::export_to_string().unwrap(),
+        FleetStats::export_to_string().unwrap(),
+        StreamSnapshot::export_to_string().unwrap(),
+        StreamStats::export_to_string().unwrap(),
+        PipelineSnapshot::export_to_string().unwrap(),
+        PipelineStats::export_to_string().unwrap(),
+        PipelineConnection::export_to_string().unwrap(),
+        ThreadSummary::export_to_string().unwrap(),
+        ThreadStats::export_to_string().unwrap(),
+        ThreadConnection::export_to_string().unwrap(),
+        ElementSnapshot::export_to_string().unwrap(),
+        ElementStats::export_to_string().unwrap(),
+        ElementConnection::export_to_string().unwrap(),
+        PadDirection::export_to_string().unwrap(),
+        PadSnapshot::export_to_string().unwrap(),
+        PadStats::export_to_string().unwrap(),
+        PadConnection::export_to_string().unwrap(),
+        SetLevelRequest::export_to_string().unwrap(),
+        SetWindowSizeRequest::export_to_string().unwrap(),
+        ElementProperty::export_to_string().unwrap(),
+        QueueStats::export_to_string().unwrap(),
     ];
     let api_bindings = generate_bindings(&api_types);
     write_bindings(output_dir, "api.d.ts", &api_bindings);
