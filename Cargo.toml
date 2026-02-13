@@ -37,113 +37,112 @@ name = "mavlink-camera-manager"
 path = "src/main.rs"
 
 [workspace.dependencies]
-regex = { version = "1.10.4", default-features = false }
+regex = "1.10.4"
 ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat", "uuid-impl"] }
-uuid = { version = "1.8", default-features = false, features = ["v4", "v5", "serde"] }
-serde = { version = "1.0", default-features = false, features = ["derive", "std"] }
+uuid = { version = "1.8", features = ["v4", "v5", "serde"] }
+serde = { version = "1.0", features = ["derive"] }
 
 [dependencies]
-clap = { version = "4.5", default-features = false, features = ["std", "derive", "env", "help", "usage", "error-context", "suggestions", "color"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 regex = { workspace = true }
 
 #TODO: Investigate rweb to use openapi spec for free
 # https://github.com/kdy1/rweb
-async-trait = { version = "0.1.41", default-features = false }
-actix-files = { version = "0.6.5", default-features = false }
+async-trait = "0.1.41"
+actix-files = "0.6.5"
 actix-web = { version = "4.6.0", features = ["rustls"] }
-actix-web-validator = { version = "5.0.1", default-features = false }
-actix-ws = { version = "0.3.0", default-features = false }
-actix-service = { version = "2.0.2", default-features = false }
-actix-extensible-rate-limit = { version = "0.3.1", default-features = false, features = ["dashmap"] }
-actix-cors = { version = "0.7.0", default-features = false }
+actix-web-validator = "5.0.1"
+actix-ws = "0.3.0"
+actix-service = "2.0.2"
+actix-extensible-rate-limit = "0.3.1"
+actix-cors = "0.7.0"
 serde = { workspace = true }
-serde_json = { version = "1.0", default-features = false, features = ["std"] }
-validator = { version = "0.16", default-features = false, features = ["derive"] }
-thiserror = { version = "2.0", default-features = false }
+serde_json = "1.0"
+validator = { version = "0.16", features = ["derive"] }
+thiserror = "2.0"
 
 ## FINAL
-sysinfo = { version = "0.29", default-features = false }
-chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
-lazy_static = { version = "1.4.0", default-features = false }
-include_dir = { version = "0.7.3", default-features = false }
-paperclip = { version = "0.8", default-features = false, features = ["paperclip-actix", "actix4", "swagger-ui", "url", "uuid"] }
+sysinfo = "0.29"
+chrono = "0.4"
+lazy_static = "1.4.0"
+include_dir = "0.7.3"
+paperclip = { version = "0.8", features = ["paperclip-actix", "actix4",  "swagger-ui", "url", "uuid"] }
 #TODO: Replace it with yaserde
-quick-xml = { version = "0.31.0", default-features = false, features = ["serialize"] }
-url = { version = "2.5.0", default-features = false, features = ["serde"] }
-directories = { version = "5.0.1", default-features = false }
-pnet = { version = "0.34.0", default-features = false, features = ["std"] }
-semver = { version = "1.0", default-features = false }
-thirtyfour = { version = "0.32", optional = true, default-features = false, features = ["reqwest"] }
-shellexpand = { version = "3.1", default-features = false }
-tracing = { version = "0.1.40", default-features = false, features = ["std", "log", "async-await"] }
-tracing-subscriber = { version = "0.3.18", default-features = false, features = ["std", "env-filter", "fmt", "registry", "ansi", "smallvec", "tracing-log"] }
-tracing-log = { version = "0.2.0", default-features = false }
-tracing-actix-web = { version = "0.7.10", default-features = false }
-tracing-gstreamer = { version = "0.7.0", default-features = false }
-tracing-tracy = { version = "0.10.5", default-features = false, features = ["ondemand", "broadcast"] }  # Note that these features define the tracy client behavior.
-ringbuffer = { version = "0.15.0", default-features = false, features = ["alloc"] }
-scopeguard = { version = "1.2.0", default-features = false }
-zenoh = { version = "1.5.1", default-features = false }
-cdr = { version = "0.2.4", default-features = false }
-tempfile = { version = "3.22.0", default-features = false }
-thread-priority = { version = "3.0.0", default-features = false }
+quick-xml = { version = "0.31.0", features = ["serialize"] }
+url = { version = "2.5.0", features = ["serde"] }
+directories = "5.0.1"
+pnet = { version = "0.34.0", features = ["std"] }
+semver = "1.0"
+thirtyfour = { version = "0.32", optional = true }
+shellexpand = "3.1"
+tracing = { version = "0.1.40", features = ["log", "async-await"] }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing-log = "0.2.0"
+tracing-actix-web = "0.7.10"
+tracing-gstreamer = "0.7.0"
+tracing-tracy = { version = "0.10.5", features = ["ondemand", "broadcast"] } # Note that these features defines the tracy client behavior.
+ringbuffer = "0.15.0"
+scopeguard = "1.2.0"
+zenoh = "1.5.1"
+cdr = "0.2.4"
+tempfile = "3.22.0"
+thread-priority = "3.0.0"
 
 # This is a custom revision adding file name suffix on top of tracing-appender-0.2.2" "0.2.2", but compatible with the current tracing version.
 # Reference: https://github.com/tokio-rs/tracing/issues/2441
-tracing-appender = { git = "https://github.com/joaoantoniocardoso/tracing", branch = "tracing-appender-0.2.2-with-filename-suffix", default-features = false }
+tracing-appender = { git = "https://github.com/joaoantoniocardoso/tracing", branch = "tracing-appender-0.2.2-with-filename-suffix" }
 
 # Onvif
-onvif = { git = "https://github.com/lumeohq/onvif-rs", rev = "8e2408db", default-features = false }
-onvif-schema = { git = "https://github.com/lumeohq/onvif-rs", rev = "8e2408db", package = "schema", default-features = false, features = ["analytics", "devicemgmt", "event", "media", "ptz"] }
+onvif = { git = "https://github.com/lumeohq/onvif-rs", rev = "8e2408db" }
+onvif-schema = { git = "https://github.com/lumeohq/onvif-rs", rev = "8e2408db", package = "schema", features = ["analytics", "devicemgmt", "event", "media", "ptz"] }
 
-anyhow = { version = "1", default-features = false }
-tokio = { version = "1.37", default-features = false, features = ["rt-multi-thread", "sync", "net", "time", "macros", "io-util"] }
-enum_dispatch = { version = "0.3.13", default-features = false }
+anyhow = "1"
+tokio = { version = "1.37", features = ["full"] }
+enum_dispatch = "0.3.13"
 uuid = { workspace = true }
 ts-rs = { workspace = true }
-cached = { version = "0.51", default-features = false, features = ["proc_macro", "serde", "serde_json", "async_tokio_rt_multi_thread"] }
+cached = { version = "0.51", features = ["serde", "serde_json", "async_tokio_rt_multi_thread"] }
 
-## Mavlink (only common dialect used)
-mavlink = { version = "0.13.1", default-features = false, features = ["std", "tcp", "udp", "direct-serial", "serde", "common", "emit-extensions", "format-generated-code"] }
+## Mavlink
+mavlink = { version = "0.13.1", features = ["default", "emit-extensions"] }
 
 ## WebRTC
-async-tungstenite = { version = "0.25", default-features = false, features = ["tokio-runtime"] }
-# Required by turn/webrtc stack; not used directly in this repo
-async-std = { version = "1.12", default-features = false, features = ["tokio1"] }
-futures = { version = "0.3", default-features = false, features = ["std", "async-await"] }
+async-tungstenite = { version = "0.25", features = ["tokio-runtime"] }
+async-std = { version = "1.12", features =  ["tokio1"] }
+futures = "0.3"
 webrtc-util = { version = "0.8.1", default-features = false, features = ["vnet"] }
-turn = { version = "0.7", default-features = false }
+turn = "0.7"
 
-## Image/Thumbnail (only jpeg for thumbnails)
-image = { version = "0.24", default-features = false, features = ["jpeg"] }
+## Image/Thumbnail
+image = "0.24"
 
 ## GSTREAMER
-gst = { package = "gstreamer", version = "0.23", default-features = false, features = ["v1_16"] }
-gst-app = { package = "gstreamer-app", version = "0.23", default-features = false, features = ["v1_16"] }
-gst-sdp = { package = "gstreamer-sdp", version = "0.23", default-features = false, features = ["v1_16"] }
-gst-webrtc = { package = "gstreamer-webrtc", version = "0.23", default-features = false, features = ["v1_16"] }
-gst-rtsp = { package = "gstreamer-rtsp", version = "0.23", default-features = false, features = ["v1_16"] }
-gst-rtsp-server = { package = "gstreamer-rtsp-server", version = "0.23", default-features = false, features = ["v1_16"] }
-gst-video = { package = "gstreamer-video", version = "0.23", default-features = false, features = ["v1_16"] }
-webrtc-sdp = { version = "0.3.13", default-features = false }
-constcat = { version = "0.5.0", default-features = false }
-glib = { version = "0.20.6", default-features = false }
+gst = { package = "gstreamer", version = "0.23", features = ["v1_16"] }
+gst-app = { package = "gstreamer-app", version = "0.23", features = ["v1_16"] }
+gst-sdp = { package = "gstreamer-sdp", version = "0.23", features=["v1_16"] }
+gst-webrtc = { package = "gstreamer-webrtc", version = "0.23", features = ["v1_16"] }
+gst-rtsp = { package = "gstreamer-rtsp", version = "0.23", features = ["v1_16"] }
+gst-rtsp-server = { package = "gstreamer-rtsp-server", version = "0.23", features = ["v1_16"] }
+gst-video = { package = "gstreamer-video", version = "0.23", features = ["v1_16"] }
+webrtc-sdp = "0.3.13"
+constcat = "0.5.0"
+glib = "0.20.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-v4l = { version = "0.14.0", default-features = false, features = ["v4l2-sys"] }
+v4l = "0.14.0"
 
 [dev-dependencies]
-rand = { version = "0.8.5", default-features = false }
-serial_test = { version = "0.10", default-features = false, features = ["async"] }
-tracing-test = { version = "0.2", default-features = false }
+rand = "0.8.5"
+serial_test = "0.10"
+tracing-test = "0.2"
 
 [build-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 vergen-gix = { version = "1.0.9", default-features = false, features = ["build", "cargo"] }
 ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat", "uuid-impl"] }
-uuid = { version = "1.8", default-features = false, features = ["v4", "serde"] }
-serde = { version = "1.0", default-features = false, features = ["derive", "std"] }
-regex = { version = "1", default-features = false }
+uuid = { version = "1.8", features = ["v4", "serde"] }
+serde = { version = "1.0", features = ["derive"] }
+regex = "1"
 
 [profile.release]
 lto = true
