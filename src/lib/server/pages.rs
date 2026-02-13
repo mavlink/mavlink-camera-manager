@@ -1,3 +1,5 @@
+use std::{ffi::OsStr, path::Path};
+
 use actix_web::{
     http::header,
     rt,
@@ -17,15 +19,16 @@ use mcm_api::v1::{
         RemoveStream, ResetCameraControls, ResetSettings, SdpFileRequest, ThumbnailFileRequest,
         UnauthenticateOnvifDeviceRequest, UnblockSource, V4lControl, XmlFileRequest,
     },
+    stats::{SetLevelRequest, SetWindowSizeRequest, SnapshotQuery, SnapshotWsQuery},
     stream::VideoAndStreamInformation,
     video::VideoSourceType,
 };
 
 use crate::{
-    helper,
+    helper::{self, threads::lower_thread_priority},
     server::error::{Error, Result},
     settings,
-    stream::{gst as gst_stream, manager as stream_manager},
+    stream::{gst as gst_stream, manager as stream_manager, stats::pipeline_analysis},
     video::{
         types::VideoSourceTypeExt,
         video_source::{self, VideoSource, VideoSourceFormats},
@@ -45,8 +48,6 @@ pub fn new_info() -> Info {
         },
     }
 }
-
-use std::{ffi::OsStr, path::Path};
 
 use include_dir::{include_dir, Dir};
 
@@ -578,4 +579,157 @@ pub async fn dot_stream(req: HttpRequest, stream: web::Payload) -> Result<HttpRe
     });
 
     Ok(response)
+}
+
+/// Consolidated snapshot of all streams.
+pub async fn streams_snapshot_get(query: web::Query<SnapshotQuery>) -> Result<HttpResponse> {
+    let buffer_limit = query.into_inner().buffer_limit;
+    let streams_info = stream_manager::streams()
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+    let json_bytes = tokio::task::spawn_blocking(move || {
+        lower_thread_priority();
+        pipeline_analysis::full_snapshot_json(buffer_limit, &streams_info)
+    })
+    .await
+    .map_err(|error| Error::Internal(format!("{error:?}")))?;
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(json_bytes.as_ref().clone()))
+}
+
+/// WebSocket endpoint that streams snapshots at a configurable interval.
+pub async fn streams_snapshot_ws(
+    req: HttpRequest,
+    stream: web::Payload,
+    query: web::Query<SnapshotWsQuery>,
+) -> Result<HttpResponse> {
+    let query = query.into_inner();
+    let interval_ms = query.interval_ms.max(500);
+    let buffer_limit = query.buffer_limit;
+    let (response, mut session, mut msg_stream) =
+        actix_ws::handle(&req, stream).map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    rt::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_millis(interval_ms));
+        loop {
+            tokio::select! {
+                Some(msg) = msg_stream.next() => {
+                    match msg {
+                        Ok(Message::Ping(_)) | Ok(Message::Pong(_)) |
+                        Ok(Message::Text(_)) | Ok(Message::Binary(_)) |
+                        Ok(Message::Continuation(_)) | Ok(Message::Nop) => continue,
+                        Ok(Message::Close(_)) | Err(_) => break,
+                    }
+                }
+                _ = interval.tick() => {
+                    let streams_info = match stream_manager::streams().await {
+                        Ok(info) => info,
+                        Err(error) => {
+                            warn!("Failed to get streams info for WS snapshot: {error:?}");
+                            continue;
+                        }
+                    };
+                    let json_bytes = match tokio::task::spawn_blocking(move || {
+                        lower_thread_priority();
+                        pipeline_analysis::full_snapshot_json(buffer_limit, &streams_info)
+                    }).await {
+                        Ok(bytes) => bytes,
+                        Err(_) => continue,
+                    };
+                    // Safety: serde_json always produces valid UTF-8.
+                    let json_str = unsafe { std::str::from_utf8_unchecked(&json_bytes) };
+                    if session.text(json_str).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    Ok(response)
+}
+
+#[api_v2_operation]
+/// Reset all stream statistics (clears rolling windows and counters).
+pub async fn streams_reset() -> Result<HttpResponse> {
+    pipeline_analysis::reset_all();
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body("{\"status\":\"reset\"}"))
+}
+
+#[api_v2_operation]
+/// Get the stats level (lite/full).
+pub async fn streams_level_get() -> Result<HttpResponse> {
+    let level = pipeline_analysis::global_stats_level();
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(format!("{{\"level\":\"{level}\"}}")))
+}
+
+#[api_v2_operation]
+/// Set the stats level. Body: {"level": "lite"} or {"level": "full"}.
+/// Note: changing the level only affects newly created pipelines. Existing
+/// probes keep their original level until the pipeline restarts.
+pub async fn streams_level_set(json: web::Json<SetLevelRequest>) -> Result<HttpResponse> {
+    use mcm_api::v1::stats::StatsLevel;
+
+    let level = match json.level.as_str() {
+        "lite" => StatsLevel::Lite,
+        "full" => StatsLevel::Full,
+        other => {
+            return Err(Error::BadRequest(format!(
+                "Invalid level: {other:?}. Must be \"lite\" or \"full\"."
+            )));
+        }
+    };
+    pipeline_analysis::set_global_stats_level(level);
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(format!("{{\"level\":\"{}\"}}", json.level)))
+}
+
+#[api_v2_operation]
+/// Get the current window size.
+pub async fn streams_window_size_get() -> Result<HttpResponse> {
+    let size = pipeline_analysis::global_window_size();
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(serde_json::json!({"window_size": size}).to_string()))
+}
+
+#[api_v2_operation]
+/// Set the window size. Body: {"window_size": 900}.
+/// Note: changing the window size only affects newly created pipelines.
+/// Existing probes keep their original window size until the pipeline restarts.
+pub async fn streams_window_size_set(
+    json: web::Json<SetWindowSizeRequest>,
+) -> Result<HttpResponse> {
+    if !pipeline_analysis::is_valid_window_size(json.window_size) {
+        return Err(Error::BadRequest(format!(
+            "window_size must be between 1 and {}",
+            pipeline_analysis::MAX_WINDOW_SIZE
+        )));
+    }
+    pipeline_analysis::set_global_window_size(json.window_size);
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(serde_json::json!({"window_size": json.window_size}).to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::http::StatusCode;
+    use actix_web::ResponseError;
+
+    #[actix_web::test]
+    async fn window_size_set_rejects_zero() {
+        let result =
+            streams_window_size_set(web::Json(SetWindowSizeRequest { window_size: 0 })).await;
+
+        let err = result.expect_err("expected bad request");
+        assert_eq!(err.status_code(), StatusCode::BAD_REQUEST);
+    }
 }

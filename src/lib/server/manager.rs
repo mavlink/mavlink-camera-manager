@@ -3,11 +3,7 @@ use actix_extensible_rate_limit::{
     backend::{memory::InMemoryBackend, SimpleInputFunctionBuilder},
     RateLimiter,
 };
-use actix_web::{error::JsonPayloadError, App, HttpRequest, HttpServer};
-use paperclip::{
-    actix::{web, OpenApiExt},
-    v2::models::{Api, Info},
-};
+use actix_web::{error::JsonPayloadError, web, App, HttpRequest, HttpServer};
 use tracing::*;
 use tracing_actix_web::TracingLogger;
 
@@ -33,21 +29,6 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
                     .max_age(3600),
             )
             .wrap(TracingLogger::default())
-            .wrap_api_with_spec(Api {
-                info: Info {
-                    version: format!(
-                        "{}-{} ({})",
-                        env!("CARGO_PKG_VERSION"),
-                        option_env!("VERGEN_GIT_SHA").unwrap_or("?"),
-                        env!("VERGEN_BUILD_TIMESTAMP"),
-                    ),
-                    title: env!("CARGO_PKG_NAME").to_string(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
-            .with_json_spec_at("/docs.json")
-            .with_swagger_ui_at("/docs")
             .app_data(web::JsonConfig::default().error_handler(json_error_handler))
             // Versioned API routes (canonical)
             .service(web::scope("/v1").configure(configure_api_routes))
@@ -56,7 +37,6 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
             // Static file serving (catch-all, must be last so API routes match first)
             .route("/", web::get().to(pages::root))
             .route(r"/{filename:.+}", web::get().to(pages::root))
-            .build()
     })
     .bind(server_address)
     .expect("Failed starting web API")
@@ -91,6 +71,31 @@ fn configure_api_routes(cfg: &mut web::ServiceConfig) {
         .route("/sdp", web::get().to(pages::sdp))
         .route("/log", web::get().to(pages::log))
         .route("/dot", web::get().to(pages::dot_stream))
+        .route(
+            "/stats/streams/snapshot",
+            web::get().to(pages::streams_snapshot_get),
+        )
+        .route(
+            "/stats/streams/snapshot/ws",
+            web::get().to(pages::streams_snapshot_ws),
+        )
+        .route("/stats/streams/reset", web::post().to(pages::streams_reset))
+        .route(
+            "/stats/streams/level",
+            web::get().to(pages::streams_level_get),
+        )
+        .route(
+            "/stats/streams/level",
+            web::post().to(pages::streams_level_set),
+        )
+        .route(
+            "/stats/streams/window-size",
+            web::get().to(pages::streams_window_size_get),
+        )
+        .route(
+            "/stats/streams/window-size",
+            web::post().to(pages::streams_window_size_set),
+        )
         .service(
             web::scope("/thumbnail")
                 // Add a rate limiter to prevent flood
