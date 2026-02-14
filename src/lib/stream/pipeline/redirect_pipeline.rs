@@ -65,7 +65,7 @@ impl RedirectPipeline {
             "rtsp" => {
                 format!(
                     concat!(
-                        "rtspsrc location={location} is-live=true latency=0 do-retransmission=true protocols=tcp",
+                        "rtspsrc location={location} is-live=true latency=0 do-retransmission=false protocols=tcp",
                         " ! application/x-rtp, media=(string)video",
                     ),
                     location = url,
