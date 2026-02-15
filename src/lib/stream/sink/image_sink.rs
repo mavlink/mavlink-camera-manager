@@ -206,7 +206,7 @@ impl ImageSink {
                         element.set_property_from_str("leaky", "downstream"); // Throw away any data
                         element.set_property("silent", true);
                         element.set_property("flush-on-eos", true);
-                        element.set_property("max-size-buffers", 0u32); // Disable buffers
+                        element.set_property("max-size-buffers", 1u32); // Keep only the latest buffer
                     }
                     None => {
                         warn!("Failed to customize proxysrc's queue: Failed to find queue in proxysrc");
