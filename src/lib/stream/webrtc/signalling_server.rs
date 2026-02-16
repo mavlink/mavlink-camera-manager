@@ -9,9 +9,13 @@ use tokio::{
 };
 use tracing::*;
 
-use crate::{cli, stream};
+use mcm_api::v1::{
+    signalling::{self as signalling_protocol, *},
+    stream::CaptureConfiguration,
+    video::VideoEncodeType,
+};
 
-use super::signalling_protocol::{self, *};
+use crate::{cli, stream, video::types::VideoSourceTypeExt};
 
 #[derive(Debug)]
 pub struct SignallingServer {
@@ -307,9 +311,9 @@ impl SignallingServer {
             .filter_map(|stream| {
                 let (height, width, encode, interval) =
                     match &stream.video_and_stream.stream_information.configuration {
-                        crate::stream::types::CaptureConfiguration::Video(configuration) => {
+                        CaptureConfiguration::Video(configuration) => {
                             // Filter out non-H264/h265 local streams
-                            if !matches!(configuration.encode, crate::video::types::VideoEncodeType::H264 | crate::video::types::VideoEncodeType::H265) {
+                            if !matches!(configuration.encode, VideoEncodeType::H264 | VideoEncodeType::H265) {
                                 trace!("Stream {:?} will not be listed in available streams because it's encoding isn't H264 or H265 (it's {:?} instead)", stream.video_and_stream.name, configuration.encode);
                                 return None;
                             }
@@ -324,7 +328,7 @@ impl SignallingServer {
                                 ),
                             )
                         }
-                        crate::stream::types::CaptureConfiguration::Redirect(_) => {
+                        CaptureConfiguration::Redirect(_) => {
                             // Filter out non RTSP redirect streams
                             let scheme = stream.video_and_stream.stream_information.endpoints.first()?.scheme();
                             if scheme != "rtsp" {
@@ -363,28 +367,18 @@ impl SignallingServer {
     }
 }
 
-impl TryFrom<tungstenite::Message> for signalling_protocol::Protocol {
-    type Error = anyhow::Error;
-
-    #[instrument(level = "trace")]
-    fn try_from(value: tungstenite::Message) -> Result<Self, Self::Error> {
-        let msg = value.to_text()?;
-
-        let protocol = serde_json::from_str::<signalling_protocol::Protocol>(msg)?;
-
-        Ok(protocol)
-    }
+pub(crate) fn protocol_from_ws_message(
+    value: tungstenite::Message,
+) -> anyhow::Result<signalling_protocol::Protocol> {
+    let msg = value.to_text()?;
+    let protocol = serde_json::from_str::<signalling_protocol::Protocol>(msg)?;
+    Ok(protocol)
 }
 
-impl TryInto<tungstenite::Message> for signalling_protocol::Protocol {
-    type Error = anyhow::Error;
-
-    #[instrument(level = "trace", skip(self))]
-    fn try_into(self) -> Result<tungstenite::Message, Self::Error> {
-        let json_str = serde_json::to_string(&self)?;
-
-        let msg = tungstenite::Message::Text(json_str);
-
-        Ok(msg)
-    }
+pub(crate) fn protocol_to_ws_message(
+    protocol: signalling_protocol::Protocol,
+) -> anyhow::Result<tungstenite::Message> {
+    let json_str = serde_json::to_string(&protocol)?;
+    let msg = tungstenite::Message::Text(json_str);
+    Ok(msg)
 }

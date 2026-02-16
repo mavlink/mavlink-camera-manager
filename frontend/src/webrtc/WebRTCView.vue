@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import adapter from "webrtc-adapter";
 
-import { Manager } from "@/manager";
+import { Manager } from "./manager";
 
 import { reactive, ref, computed, watch, Ref } from "vue";
 

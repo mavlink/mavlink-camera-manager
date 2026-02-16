@@ -41,7 +41,7 @@ jobs:
       with:
         node-version: '20'
         # cache: 'yarn'
-        # cache-dependency-path: 'src/lib/stream/webrtc/frontend'
+        # cache-dependency-path: 'frontend'
 
     - name: Install build dependencies - Install Yarn
       run: npm install --global yarn
@@ -61,9 +61,8 @@ jobs:
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain stable -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-    - name: Generate bindings
-      run: |
-        cargo run --package=bindings --verbose --locked
+    - name: Generate and check bindings
+      run: ./.githooks/pre-push
 
     - uses: oven-sh/setup-bun@v2
       with:

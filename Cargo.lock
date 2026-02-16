@@ -739,10 +739,9 @@ dependencies = [
 name = "bindings"
 version = "0.1.0"
 dependencies = [
+ "mcm-api",
  "regex",
- "serde",
  "ts-rs",
- "uuid 1.19.0",
 ]
 
 [[package]]
@@ -3516,7 +3515,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.4",
  "tower-service",
- "webpki-roots 1.0.5",
+ "webpki-roots 1.0.6",
 ]
 
 [[package]]
@@ -4210,13 +4209,13 @@ dependencies = [
  "include_dir",
  "lazy_static",
  "mavlink",
+ "mcm-api",
  "onvif",
  "paperclip",
  "pnet",
  "quick-xml 0.31.0",
  "rand 0.8.5",
  "regex",
- "reqwest",
  "ringbuffer",
  "schema",
  "scopeguard",
@@ -4273,6 +4272,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.113",
+]
+
+[[package]]
+name = "mcm-api"
+version = "0.1.0"
+dependencies = [
+ "paperclip",
+ "serde",
+ "serde_json",
+ "ts-rs",
+ "url",
+ "uuid 1.19.0",
 ]
 
 [[package]]
@@ -5502,9 +5513,7 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64 0.22.1",
  "bytes",
- "futures-channel",
  "futures-core",
- "futures-util",
  "http 1.4.0",
  "http-body",
  "http-body-util",
@@ -5531,7 +5540,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "webpki-roots 1.0.5",
+ "webpki-roots 1.0.6",
 ]
 
 [[package]]
@@ -7248,6 +7257,7 @@ checksum = "09d3fa4606cdab1e9b668cc65ce2545941d01f52bc27536a195c66c55b91cb84"
 dependencies = [
  "thiserror 1.0.69",
  "ts-rs-macros",
+ "url",
  "uuid 1.19.0",
 ]
 
@@ -7808,9 +7818,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.5"
+version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12bed680863276c63889429bfd6cab3b99943659923822de1c8a39c49e4d722c"
+checksum = "22cfaf3c063993ff62e73cb4311efde4db1efb31ab78a3e5c457939ad5cc0bed"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -8711,7 +8721,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "webpki-roots 1.0.5",
+ "webpki-roots 1.0.6",
  "x509-parser",
  "zenoh-buffers",
  "zenoh-codec",
@@ -8740,7 +8750,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "webpki-roots 1.0.5",
+ "webpki-roots 1.0.6",
  "zenoh-config",
  "zenoh-core",
  "zenoh-link-commons",
@@ -8808,7 +8818,7 @@ dependencies = [
  "tokio-rustls 0.26.4",
  "tokio-util",
  "tracing",
- "webpki-roots 1.0.5",
+ "webpki-roots 1.0.6",
  "x509-parser",
  "zenoh-config",
  "zenoh-core",
