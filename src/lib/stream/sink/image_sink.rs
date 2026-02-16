@@ -97,6 +97,20 @@ impl SinkInterface for ImageSink {
         let elements = &[&self.queue, &self.proxysink];
         link_sink_to_tee(tee_src_pad, pipeline, elements)?;
 
+        // Block data immediately so the decode pipeline never runs unless a
+        // thumbnail is explicitly requested via try_get_flat_sample().
+        let queue_src_pad = self
+            .queue
+            .static_pad("src")
+            .expect("No src pad found on Queue");
+        if let Some(blocker) = queue_src_pad
+            .add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, |_pad, _info| {
+                gst::PadProbeReturn::Ok
+            })
+        {
+            self.pad_blocker.lock().unwrap().replace(blocker);
+        }
+
         Ok(())
     }
 
@@ -192,7 +206,7 @@ impl ImageSink {
                         element.set_property_from_str("leaky", "downstream"); // Throw away any data
                         element.set_property("silent", true);
                         element.set_property("flush-on-eos", true);
-                        element.set_property("max-size-buffers", 0u32); // Disable buffers
+                        element.set_property("max-size-buffers", 1u32); // Keep only the latest buffer
                     }
                     None => {
                         warn!("Failed to customize proxysrc's queue: Failed to find queue in proxysrc");
