@@ -4,28 +4,28 @@ on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.OS }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
+          - OS: ubuntu-22.04
             TARGET: x86_64-unknown-linux-gnu
             SUFFIX: linux-desktop
 
-          - os: ubuntu-22.04
+          - OS: ubuntu-22.04
             TARGET: armv7-unknown-linux-gnueabihf
             SUFFIX: armv7
 
-          - os: ubuntu-22.04
+          - OS: ubuntu-22.04
             TARGET: aarch64-unknown-linux-gnu
             SUFFIX: aarch64
 
-          - os: macos-15-intel
+          - OS: macos-15-intel
             TARGET: x86_64-apple-darwin
             SUFFIX: macos
 
-          - os: windows-2022
+          - OS: windows-2022
             TARGET: x86_64-pc-windows-msvc
             SUFFIX: x86_64-pc-windows
             EXTENSION: .exe
@@ -44,7 +44,7 @@ jobs:
     - name: Use cached dependencies
       uses: Swatinem/rust-cache@v2
       with:
-        key: "${{ matrix.os }}-${{ matrix.TARGET }}-${{ hashFiles('**/Cargo.lock') }}"
+        key: "${{ matrix.OS }}-${{ matrix.TARGET }}-${{ hashFiles('**/Cargo.lock') }}"
         shared-key: "shared"
 
     - name: Install build dependencies - Rustup
@@ -69,12 +69,12 @@ jobs:
       run: |
         cd src/lib/stream/webrtc/frontend && bun install && bun run build && cd -
 
-    - name: Building for ${{ matrix.os }} ${{ matrix.target }} (${{ matrix.SUFFIX }})
+    - name: Building for ${{ matrix.OS }} ${{ matrix.TARGET }} (${{ matrix.SUFFIX }})
       if: ${{ contains(matrix.TARGET, 'linux') }}
       env:
         SKIP_WEB: 1
       run: |
-        cross build --release --locked --target ${{matrix.target}} --verbose
+        cross build --release --locked --target ${{matrix.TARGET}} --verbose
 
     - name: Install gstreamer
       if: ${{ !contains(matrix.TARGET, 'linux') }}
@@ -90,12 +90,12 @@ jobs:
         Expand-Archive -LiteralPath "${Env:TEMP}\wpd.zip" -DestinationPath "${Env:TEMP}\wpd"
         Move-Item -LiteralPath "${Env:TEMP}\wpd\WpdPack\Lib" -Destination lib
 
-    - name: Building for ${{ matrix.os }} ${{ matrix.target }} (${{ matrix.SUFFIX }})
+    - name: Building for ${{ matrix.OS }} ${{ matrix.TARGET }} (${{ matrix.SUFFIX }})
       if: ${{ !contains(matrix.TARGET, 'linux') }}
       env:
         SKIP_WEB: 1
       run: |
-        cargo build --release --locked --target ${{matrix.target}} --verbose
+        cargo build --release --locked --target ${{matrix.TARGET}} --verbose
 
     - name: Prepare files
       run: |
