@@ -164,6 +164,7 @@ impl WebRTCSink {
         sender: mpsc::UnboundedSender<Result<Message>>,
     ) -> Result<Self> {
         let queue = gst::ElementFactory::make("queue")
+            .name(format!("q-wrtc-{}", bind.session_id))
             .property_from_str("leaky", "downstream") // Throw away any data
             .property("silent", true)
             .property("flush-on-eos", true)
