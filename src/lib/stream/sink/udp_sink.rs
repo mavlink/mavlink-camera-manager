@@ -144,6 +144,7 @@ impl UdpSink {
     #[instrument(level = "debug", skip_all)]
     pub fn try_new(
         sink_id: Arc<uuid::Uuid>,
+        stream_id: &Arc<uuid::Uuid>,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
         let rtp_queue_time_ns = super::rtp_queue_max_time_ns(video_and_stream_information);
@@ -240,8 +241,13 @@ impl UdpSink {
             return Err(anyhow!("Failed linking UdpSink's elements: {link_err:?}"));
         }
 
-        let pipeline_runner =
-            PipelineRunner::try_new(&pipeline, &sink_id, true, video_and_stream_information)?;
+        let pipeline_runner = PipelineRunner::try_new(
+            &pipeline,
+            &sink_id,
+            stream_id,
+            true,
+            video_and_stream_information,
+        )?;
 
         Ok(Self {
             sink_id: sink_id.clone(),

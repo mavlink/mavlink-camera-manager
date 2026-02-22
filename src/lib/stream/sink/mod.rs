@@ -97,10 +97,12 @@ impl std::fmt::Display for Sink {
 #[instrument(level = "debug", skip_all)]
 pub fn create_udp_sink(
     id: Arc<uuid::Uuid>,
+    stream_id: &Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
     Ok(Sink::Udp(UdpSink::try_new(
         id,
+        stream_id,
         video_and_stream_information,
     )?))
 }
@@ -130,10 +132,12 @@ pub fn create_rtsp_sink(
 #[instrument(level = "debug", skip_all)]
 pub fn create_image_sink(
     id: Arc<uuid::Uuid>,
+    stream_id: &Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
     Ok(Sink::Image(ImageSink::try_new(
         id,
+        stream_id,
         video_and_stream_information,
     )?))
 }
@@ -141,10 +145,11 @@ pub fn create_image_sink(
 #[instrument(level = "debug", skip_all)]
 pub async fn create_zenoh_sink(
     id: Arc<uuid::Uuid>,
+    stream_id: &Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
     Ok(Sink::Zenoh(
-        ZenohSink::try_new(id, video_and_stream_information).await?,
+        ZenohSink::try_new(id, stream_id, video_and_stream_information).await?,
     ))
 }
 

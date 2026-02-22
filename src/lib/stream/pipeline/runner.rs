@@ -50,12 +50,14 @@ impl PipelineRunner {
     pub fn try_new(
         pipeline: &gst::Pipeline,
         pipeline_id: &Arc<uuid::Uuid>,
+        stream_id: &Arc<uuid::Uuid>,
         allow_block: bool,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
         Self::try_new_inner(
             pipeline,
             pipeline_id,
+            stream_id,
             allow_block,
             true,
             video_and_stream_information,
@@ -69,12 +71,14 @@ impl PipelineRunner {
     pub fn try_new_background(
         pipeline: &gst::Pipeline,
         pipeline_id: &Arc<uuid::Uuid>,
+        stream_id: &Arc<uuid::Uuid>,
         allow_block: bool,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
         Self::try_new_inner(
             pipeline,
             pipeline_id,
+            stream_id,
             allow_block,
             false,
             video_and_stream_information,
@@ -84,6 +88,7 @@ impl PipelineRunner {
     fn try_new_inner(
         pipeline: &gst::Pipeline,
         pipeline_id: &Arc<uuid::Uuid>,
+        stream_id: &Arc<uuid::Uuid>,
         allow_block: bool,
         realtime_threads: bool,
         video_and_stream_information: &VideoAndStreamInformation,
@@ -98,11 +103,13 @@ impl PipelineRunner {
         let task_handle = tokio::spawn({
             let video_and_stream_information = video_and_stream_information.clone();
             let pipeline_id = pipeline_id.clone();
+            let stream_id = stream_id.clone();
             async move {
                 debug!("task started!");
                 match Self::runner(
                     pipeline_weak,
                     pipeline_id,
+                    stream_id,
                     start_rx,
                     allow_block,
                     realtime_threads,
@@ -148,12 +155,19 @@ impl PipelineRunner {
 
     #[instrument(
         level = "debug",
-        skip(pipeline_weak, pipeline_id, start, video_and_stream_information),
+        skip(
+            pipeline_weak,
+            pipeline_id,
+            stream_id,
+            start,
+            video_and_stream_information
+        ),
         fields(realtime_threads)
     )]
     async fn runner(
         pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
         pipeline_id: Arc<uuid::Uuid>,
+        stream_id: Arc<uuid::Uuid>,
         mut start: tokio::sync::mpsc::Receiver<()>,
         allow_block: bool,
         realtime_threads: bool,
@@ -310,15 +324,9 @@ impl PipelineRunner {
                 .upgrade()
                 .context("Unable to access Pipeline for analysis probes")?;
 
-            // Extract stream_id from pipeline name: "pipeline-{type}-{uuid}"
-            let stream_id = pipeline_name
-                .splitn(3, '-')
-                .nth(2)
-                .unwrap_or("")
-                .to_string();
             let pa = Arc::new(pipeline_analysis::PipelineAnalysis::new(
                 pipeline_name.clone(),
-                stream_id,
+                stream_id.to_string(),
                 frame_duration.as_secs_f64() * 1000.0,
             ));
             pa.install_probes(&pipeline);
