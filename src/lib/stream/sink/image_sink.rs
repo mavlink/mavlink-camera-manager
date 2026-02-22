@@ -200,6 +200,7 @@ impl ImageSink {
     #[instrument(level = "debug", skip_all)]
     pub fn try_new(
         sink_id: Arc<uuid::Uuid>,
+        stream_id: &Arc<uuid::Uuid>,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
         let queue = gst::ElementFactory::make("queue")
@@ -395,6 +396,7 @@ impl ImageSink {
         let pipeline_runner = PipelineRunner::try_new_background(
             &pipeline,
             &sink_id,
+            stream_id,
             true,
             video_and_stream_information,
         )?;

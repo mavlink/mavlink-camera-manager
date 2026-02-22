@@ -748,7 +748,8 @@ impl StreamState {
                 .any(|endpoint| matches!(endpoint.scheme(), "udp" | "udp265"))
             {
                 let sink_id = Arc::new(Manager::generate_uuid(None));
-                match create_udp_sink(sink_id.clone(), &video_and_stream_information) {
+                match create_udp_sink(sink_id.clone(), &pipeline_id, &video_and_stream_information)
+                {
                     Ok(sink) => {
                         if let Some(pipeline) = stream.pipeline.as_mut() {
                             if let Err(reason) = pipeline.add_sink(sink).await {
@@ -810,7 +811,7 @@ impl StreamState {
             .map(|e| e.disable_thumbnails)
             .unwrap_or_default()
         {
-            match create_image_sink(sink_id.clone(), &video_and_stream_information) {
+            match create_image_sink(sink_id.clone(), &pipeline_id, &video_and_stream_information) {
                 Ok(sink) => {
                     if let Some(pipeline) = stream.pipeline.as_mut() {
                         if let Err(reason) = pipeline.add_sink(sink).await {
@@ -854,7 +855,13 @@ impl StreamState {
 
             if matches!(encoding, VideoEncodeType::H264 | VideoEncodeType::H265) {
                 let sink_id = Arc::new(Manager::generate_uuid(None));
-                match create_zenoh_sink(sink_id.clone(), &video_and_stream_information).await {
+                match create_zenoh_sink(
+                    sink_id.clone(),
+                    &pipeline_id,
+                    &video_and_stream_information,
+                )
+                .await
+                {
                     Ok(sink) => {
                         if let Some(pipeline) = stream.pipeline.as_mut() {
                             if let Err(reason) = pipeline.add_sink(sink).await {

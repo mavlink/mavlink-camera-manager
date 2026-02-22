@@ -408,8 +408,13 @@ impl WebRTCSink {
             ));
         }
 
-        let pipeline_runner =
-            PipelineRunner::try_new(&pipeline, &sink_id, true, video_and_stream_information)?;
+        let pipeline_runner = PipelineRunner::try_new(
+            &pipeline,
+            &sink_id,
+            &Arc::new(bind.producer_id),
+            true,
+            video_and_stream_information,
+        )?;
 
         sender.send(Ok(Message::from(Answer::StartSession(bind.clone()))))?;
 
