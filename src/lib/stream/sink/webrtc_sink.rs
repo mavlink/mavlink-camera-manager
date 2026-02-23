@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU8, Ordering},
+    Arc,
+};
 
 use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
@@ -162,19 +165,63 @@ impl WebRTCSink {
     pub fn try_new(
         bind: BindAnswer,
         sender: mpsc::UnboundedSender<Result<Message>>,
+        rtp_queue_max_time_ns: u64,
     ) -> Result<Self> {
+        // Queue state machine for dynamic sizing after DTLS handshake.
+        // 0 = handshake (1s backstop, signals ignored)
+        // 1 = flushing  (tightened to 1 frame, draining stale data)
+        // 2 = dynamic   (grow by 1 frame on overrun)
+        const HANDSHAKE: u8 = 0;
+        const FLUSHING: u8 = 1;
+        const DYNAMIC: u8 = 2;
+        let queue_state = Arc::new(AtomicU8::new(HANDSHAKE));
+
         // WebRTCBin needs headroom for SRTP encryption + ICE delivery.
         // Disable buffer-count and byte-size limits so a 4K keyframe
         // burst (hundreds of RTP packets) can pass through without the
         // leaky queue discarding mid-frame packets.  The 1-second
-        // default time limit remains as a safety backstop.
+        // default time limit remains as a safety backstop during DTLS.
         let queue = gst::ElementFactory::make("queue")
             .property_from_str("leaky", "downstream")
-            .property("silent", true)
             .property("flush-on-eos", true)
             .property("max-size-buffers", 0u32)
             .property("max-size-bytes", 0u32)
             .build()?;
+
+        // On overrun (queue full, leaking): if in dynamic state, grow
+        // by one frame interval so the queue adapts to CPU jitter.
+        {
+            let state = Arc::clone(&queue_state);
+            let frame_ns = rtp_queue_max_time_ns;
+            let cap_ns = rtp_queue_max_time_ns.saturating_mul(10);
+            queue.connect("overrun", false, move |values| {
+                if state.load(Ordering::Relaxed) == DYNAMIC {
+                    let queue = values[0].get::<gst::Element>().expect("Invalid argument");
+                    let cur = queue.property::<u64>("max-size-time");
+                    if cur < cap_ns {
+                        let new = (cur + frame_ns).min(cap_ns);
+                        queue.set_property("max-size-time", new);
+                        debug!(
+                            "WebRTC queue overrun: grew max-size-time to {}ms",
+                            new / 1_000_000
+                        );
+                    }
+                }
+                None
+            });
+        }
+
+        // On underrun (queue empty): transition from flushing to dynamic,
+        // meaning the DTLS-handshake backlog has drained and future
+        // overruns represent genuine CPU pressure.
+        {
+            let state = Arc::clone(&queue_state);
+            queue.connect("underrun", false, move |_values| {
+                let _ =
+                    state.compare_exchange(FLUSHING, DYNAMIC, Ordering::Relaxed, Ordering::Relaxed);
+                None
+            });
+        }
 
         // Workaround to have a better name for the threads created by the WebRTCBin element
         let webrtcbin = std::thread::Builder::new()
@@ -303,6 +350,8 @@ impl WebRTCSink {
             });
 
         let weak_proxy = this.downgrade();
+        let queue_weak = this.queue.downgrade();
+        let queue_state_ref = Arc::clone(&queue_state);
         this.webrtcbin
             .connect_notify(Some("connection-state"), move |webrtcbin, _pspec| {
                 let state =
@@ -312,6 +361,18 @@ impl WebRTCSink {
                     if let Err(error) = peer_connected_tx.send(()) {
                         error!("Failed to disable FailSafeKiller: {error:?}");
                     }
+
+                    // Tighten the queue to 1 frame interval, flushing stale
+                    // data from the DTLS handshake. The underrun signal will
+                    // transition to dynamic state once the backlog has drained.
+                    if let Some(queue) = queue_weak.upgrade() {
+                        debug!(
+                            "WebRTC connected: tightening queue max-size-time to {}ms (1 frame)",
+                            rtp_queue_max_time_ns / 1_000_000
+                        );
+                        queue.set_property("max-size-time", rtp_queue_max_time_ns);
+                    }
+                    queue_state_ref.store(FLUSHING, Ordering::Relaxed);
                 }
 
                 if let Err(error) = weak_proxy.on_connection_state_change(webrtcbin, &state) {
