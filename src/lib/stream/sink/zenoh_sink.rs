@@ -129,10 +129,12 @@ impl ZenohSink {
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
         let queue = gst::ElementFactory::make("queue")
-            .property_from_str("leaky", "downstream") // Throw away any data
+            .property_from_str("leaky", "downstream")
             .property("silent", true)
             .property("flush-on-eos", true)
-            .property("max-size-buffers", 0u32) // Disable buffers
+            .property("max-size-buffers", 1u32)
+            .property("max-size-bytes", 0u32)
+            .property("max-size-time", 0u64)
             .name(format!("queue-zenoh-{sink_id}"))
             .build()?;
 
@@ -152,10 +154,12 @@ impl ZenohSink {
                     .find(|element| element.name().starts_with("queue"))
                 {
                     Some(element) => {
-                        element.set_property_from_str("leaky", "downstream"); // Throw away any data
+                        element.set_property_from_str("leaky", "downstream");
                         element.set_property("silent", true);
                         element.set_property("flush-on-eos", true);
-                        element.set_property("max-size-buffers", 0u32); // Disable buffers
+                        element.set_property("max-size-buffers", 1u32);
+                        element.set_property("max-size-bytes", 0u32);
+                        element.set_property("max-size-time", 0u64);
                     }
                     None => {
                         warn!("Failed to customize proxysrc's queue: Failed to find queue in proxysrc");
