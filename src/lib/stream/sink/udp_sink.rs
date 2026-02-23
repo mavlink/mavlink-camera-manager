@@ -146,11 +146,18 @@ impl UdpSink {
         sink_id: Arc<uuid::Uuid>,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
+        let rtp_queue_time_ns = super::rtp_queue_max_time_ns(video_and_stream_information);
+
+        // This queue sits after the RTP tee and receives individual RTP
+        // packets. Use time-based limiting (one frame period) so a
+        // frame's packets aren't dropped.
         let queue = gst::ElementFactory::make("queue")
-            .property_from_str("leaky", "downstream") // Throw away any data
+            .property_from_str("leaky", "downstream")
             .property("silent", true)
             .property("flush-on-eos", true)
-            .property("max-size-buffers", 0u32) // Disable buffers
+            .property("max-size-buffers", 0u32)
+            .property("max-size-bytes", 0u32)
+            .property("max-size-time", rtp_queue_time_ns)
             .build()?;
 
         // Create a pair of proxies. The proxysink will be used in the source's pipeline,
@@ -169,9 +176,11 @@ impl UdpSink {
                     .find(|element| element.name().starts_with("queue"))
                 {
                     Some(element) => {
-                        element.set_property_from_str("leaky", "downstream"); // Throw away any data
+                        element.set_property_from_str("leaky", "downstream");
                         element.set_property("flush-on-eos", true);
-                        element.set_property("max-size-buffers", 0u32); // Disable buffers
+                        element.set_property("max-size-buffers", 0u32);
+                        element.set_property("max-size-bytes", 0u32);
+                        element.set_property("max-size-time", rtp_queue_time_ns);
                     }
                     None => {
                         warn!("Failed to customize proxysrc's queue: Failed to find queue in proxysrc");
