@@ -115,8 +115,13 @@ pub fn create_rtsp_sink(
         .stream_information
         .endpoints
         .clone();
+    let rtp_queue_time_ns = rtp_queue_max_time_ns(video_and_stream_information);
 
-    Ok(Sink::Rtsp(RtspSink::try_new(id, addresses)?))
+    Ok(Sink::Rtsp(RtspSink::try_new(
+        id,
+        addresses,
+        rtp_queue_time_ns,
+    )?))
 }
 
 #[instrument(level = "debug", skip_all)]
