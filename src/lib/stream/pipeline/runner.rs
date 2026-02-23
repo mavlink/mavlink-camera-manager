@@ -45,6 +45,41 @@ impl PipelineRunner {
         allow_block: bool,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
+        Self::try_new_inner(
+            pipeline,
+            pipeline_id,
+            allow_block,
+            true,
+            video_and_stream_information,
+        )
+    }
+
+    /// Like `try_new`, but with `realtime_threads = false`: streaming threads
+    /// are set to background priority (`SCHED_OTHER`, nice 19) instead of
+    /// `SCHED_RR` realtime. Use for auxiliary pipelines (e.g. thumbnail
+    /// generation) that must not preempt video stream threads.
+    pub fn try_new_background(
+        pipeline: &gst::Pipeline,
+        pipeline_id: &Arc<uuid::Uuid>,
+        allow_block: bool,
+        video_and_stream_information: &VideoAndStreamInformation,
+    ) -> Result<Self> {
+        Self::try_new_inner(
+            pipeline,
+            pipeline_id,
+            allow_block,
+            false,
+            video_and_stream_information,
+        )
+    }
+
+    fn try_new_inner(
+        pipeline: &gst::Pipeline,
+        pipeline_id: &Arc<uuid::Uuid>,
+        allow_block: bool,
+        realtime_threads: bool,
+        video_and_stream_information: &VideoAndStreamInformation,
+    ) -> Result<Self> {
         let pipeline_weak = pipeline.downgrade();
 
         let (start_tx, start_rx) = tokio::sync::mpsc::channel(1);
@@ -62,6 +97,7 @@ impl PipelineRunner {
                     pipeline_id,
                     start_rx,
                     allow_block,
+                    realtime_threads,
                     &video_and_stream_information,
                 )
                 .await
@@ -104,13 +140,15 @@ impl PipelineRunner {
 
     #[instrument(
         level = "debug",
-        skip(pipeline_weak, pipeline_id, start, video_and_stream_information)
+        skip(pipeline_weak, pipeline_id, start, video_and_stream_information),
+        fields(realtime_threads)
     )]
     async fn runner(
         pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
         pipeline_id: Arc<uuid::Uuid>,
         mut start: tokio::sync::mpsc::Receiver<()>,
         allow_block: bool,
+        realtime_threads: bool,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<()> {
         let (finish_tx, mut finish) = tokio::sync::mpsc::channel(1);
@@ -133,18 +171,27 @@ impl PipelineRunner {
                 if let gst::MessageView::StreamStatus(status) = msg.view() {
                     let (status_type, element) = status.get();
                     if matches!(status_type, gst::StreamStatusType::Enter) {
-                        if let Err(error) = thread_priority::set_thread_priority_and_policy(
-                            thread_priority::thread_native_id(),
-                            thread_priority::ThreadPriority::Max,
-                            thread_priority::ThreadSchedulePolicy::Realtime(
-                                thread_priority::RealtimeThreadSchedulePolicy::RoundRobin,
-                            ),
-                        ) {
-                            warn!("Failed configuring GStreamer stream thread: {error:}.");
+                        if realtime_threads {
+                            if let Err(error) = thread_priority::set_thread_priority_and_policy(
+                                thread_priority::thread_native_id(),
+                                thread_priority::ThreadPriority::Max,
+                                thread_priority::ThreadSchedulePolicy::Realtime(
+                                    thread_priority::RealtimeThreadSchedulePolicy::RoundRobin,
+                                ),
+                            ) {
+                                warn!("Failed configuring GStreamer stream thread: {error:}.");
+                            } else {
+                                let priority = thread_priority::get_current_thread_priority();
+                                let scheduler = thread_priority::get_thread_scheduling_attributes();
+                                info!("GStreamer stream thread sucessfully configured to MAX priority ({priority:?}) and real-time round robyn ({scheduler:?}). From element {:?}, from Pipeline {pipeline_name:?}", element.name());
+                            }
                         } else {
-                            let priority = thread_priority::get_current_thread_priority();
-                            let scheduler = thread_priority::get_thread_scheduling_attributes();
-                            info!("GStreamer stream thread sucessfully configured to MAX priority ({priority:?}) and real-time round robyn ({scheduler:?}). From element {:?}, from Pipeline {pipeline_name:?}", element.name());
+                            crate::helper::threads::lower_to_background_priority();
+                            debug!(
+                                "GStreamer stream thread set to background priority. \
+                                 From element {:?}, from Pipeline {pipeline_name:?}",
+                                element.name()
+                            );
                         }
                     }
                 }
