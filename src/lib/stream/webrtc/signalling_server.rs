@@ -11,7 +11,7 @@ use tracing::*;
 
 use crate::{cli, stream};
 
-use super::signalling_protocol::{self, *};
+use super::signalling_protocol::*;
 
 #[derive(Debug)]
 pub struct SignallingServer {
@@ -360,31 +360,5 @@ impl SignallingServer {
                 })
             })
             .collect())
-    }
-}
-
-impl TryFrom<tungstenite::Message> for signalling_protocol::Protocol {
-    type Error = anyhow::Error;
-
-    #[instrument(level = "trace")]
-    fn try_from(value: tungstenite::Message) -> Result<Self, Self::Error> {
-        let msg = value.to_text()?;
-
-        let protocol = serde_json::from_str::<signalling_protocol::Protocol>(msg)?;
-
-        Ok(protocol)
-    }
-}
-
-impl TryInto<tungstenite::Message> for signalling_protocol::Protocol {
-    type Error = anyhow::Error;
-
-    #[instrument(level = "trace", skip(self))]
-    fn try_into(self) -> Result<tungstenite::Message, Self::Error> {
-        let json_str = serde_json::to_string(&self)?;
-
-        let msg = tungstenite::Message::Text(json_str);
-
-        Ok(msg)
     }
 }
