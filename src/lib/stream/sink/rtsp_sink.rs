@@ -16,6 +16,7 @@ pub struct RtspSink {
     scheme: RTSPScheme,
     path: String,
     socket_path: String,
+    rtp_queue_time_ns: u64,
 }
 impl SinkInterface for RtspSink {
     #[instrument(level = "debug", skip(self, pipeline))]
@@ -88,12 +89,21 @@ impl SinkInterface for RtspSink {
 
 impl RtspSink {
     #[instrument(level = "debug", skip_all)]
-    pub fn try_new(id: Arc<uuid::Uuid>, addresses: Vec<url::Url>) -> Result<Self> {
+    pub fn try_new(
+        id: Arc<uuid::Uuid>,
+        addresses: Vec<url::Url>,
+        rtp_queue_time_ns: u64,
+    ) -> Result<Self> {
+        // This queue sits after the RTP tee and receives individual RTP
+        // packets. Use time-based limiting (one frame period) so a
+        // frame's packets aren't dropped.
         let queue = gst::ElementFactory::make("queue")
-            .property_from_str("leaky", "downstream") // Throw away any data
+            .property_from_str("leaky", "downstream")
             .property("silent", true)
             .property("flush-on-eos", true)
-            .property("max-size-buffers", 0u32) // Disable buffers
+            .property("max-size-buffers", 0u32)
+            .property("max-size-bytes", 0u32)
+            .property("max-size-time", rtp_queue_time_ns)
             .build()?;
 
         let (path, scheme) = addresses
@@ -128,6 +138,7 @@ impl RtspSink {
             path,
             socket_path,
             tee_src_pad: Default::default(),
+            rtp_queue_time_ns,
         })
     }
 
@@ -144,5 +155,9 @@ impl RtspSink {
     #[instrument(level = "trace", skip(self))]
     pub fn socket_path(&self) -> String {
         self.socket_path.clone()
+    }
+
+    pub fn rtp_queue_time_ns(&self) -> u64 {
+        self.rtp_queue_time_ns
     }
 }
