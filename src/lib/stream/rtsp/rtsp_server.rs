@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Result};
+use gst::prelude::*;
 use gst_rtsp::RTSPLowerTrans;
 use gst_rtsp_server::{prelude::*, RTSPTransportMode};
 use tracing::*;
@@ -113,7 +114,7 @@ impl RTSPServer {
         scheme: &RTSPScheme,
         path: &str,
         socket_path: &str,
-        rtp_caps: &gst::Caps,
+        video_caps: &gst::Caps,
         rtp_queue_time_ns: u64,
     ) -> Result<()> {
         // Initialize the singleton before calling gst factory
@@ -146,84 +147,68 @@ impl RTSPServer {
         factory.set_transport_mode(RTSPTransportMode::PLAY);
         factory.set_protocols(protocols);
 
-        let Some(encode) = rtp_caps.iter().find_map(|structure| {
-            structure.iter().find_map(|(key, sendvalue)| {
-                if key == "encoding-name" {
-                    Some(
-                        sendvalue
-                            .to_value()
-                            .get::<String>()
-                            .expect("Failed accessing encoding-name parameter"),
-                    )
-                } else {
-                    None
-                }
-            })
-        }) else {
-            return Err(anyhow!("Cannot find 'media' in caps"));
-        };
+        let caps_name = video_caps
+            .structure(0)
+            .map(|s| s.name().to_string())
+            .unwrap_or_default();
 
-        let rtp_caps = rtp_caps.to_string();
-        let description = match encode.as_str() {
-            "H264" => {
+        let video_caps_str = video_caps.to_string();
+        let description = match caps_name.as_str() {
+            "video/x-h264" => {
                 format!(
                     concat!(
                         "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
                         " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
-                        " ! capsfilter caps={rtp_caps:?}",
-                        " ! rtph264depay",
+                        " ! capsfilter caps={video_caps:?}",
                         " ! rtph264pay name=pay0 aggregate-mode=zero-latency config-interval=-1 pt=96",
                     ),
                     socket_path = socket_path,
-                    rtp_caps = rtp_caps,
+                    video_caps = video_caps_str,
                     queue_time = rtp_queue_time_ns,
                 )
             }
-            "H265" => {
+            "video/x-h265" => {
                 format!(
                     concat!(
                         "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
                         " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
-                        " ! capsfilter caps={rtp_caps:?}",
-                        " ! rtph265depay",
+                        " ! capsfilter caps={video_caps:?}",
                         " ! rtph265pay name=pay0 aggregate-mode=zero-latency config-interval=-1 pt=96",
                     ),
                     socket_path = socket_path,
-                    rtp_caps = rtp_caps,
+                    video_caps = video_caps_str,
                     queue_time = rtp_queue_time_ns,
                 )
             }
-            "RAW" => {
+            "video/x-raw" => {
                 format!(
                     concat!(
                         "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
                         " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
-                        " ! capsfilter caps={rtp_caps:?}",
-                        " ! rtpvrawdepay",
+                        " ! capsfilter caps={video_caps:?}",
                         " ! rtpvrawpay name=pay0 pt=96",
                     ),
                     socket_path = socket_path,
-                    rtp_caps = rtp_caps,
+                    video_caps = video_caps_str,
                     queue_time = rtp_queue_time_ns,
                 )
             }
-            "JPEG" => {
+            "image/jpeg" => {
                 format!(
                     concat!(
                         "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
                         " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
-                        " ! capsfilter caps={rtp_caps:?}",
-                        " ! rtpjpegdepay",
+                        " ! capsfilter caps={video_caps:?}",
                         " ! rtpjpegpay name=pay0 pt=96",
                     ),
                     socket_path = socket_path,
-                    rtp_caps = rtp_caps,
+                    video_caps = video_caps_str,
                     queue_time = rtp_queue_time_ns,
                 )
             }
             unsupported => {
                 return Err(anyhow!(
-                    "Encode {unsupported:?} is not supported for RTSP Sink"
+                    "Video caps {unsupported:?} not supported for RTSP Sink"
                 ))
             }
         };
