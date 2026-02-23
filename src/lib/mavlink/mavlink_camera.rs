@@ -258,7 +258,7 @@ impl MavlinkCameraInner {
                 let message =
                     MavMessage::CAMERA_INFORMATION(mavlink::common::CAMERA_INFORMATION_DATA {
                         time_boot_ms: super::sys_info::sys_info().time_boot_ms,
-                        firmware_version: 0,
+                        firmware_version: camera.component.firmware_version,
                         focal_length: 0.0,
                         sensor_size_h: 0.0,
                         sensor_size_v: 0.0,
@@ -270,7 +270,7 @@ impl MavlinkCameraInner {
                             &camera.component.vendor_name,
                         ),
                         model_name: from_string_to_sized_u8_array_with_null_terminator(
-                            &camera.component.vendor_name,
+                            &camera.component.model_name,
                         ),
 
                         lens_id: 0,
