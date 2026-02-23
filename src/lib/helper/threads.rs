@@ -4,6 +4,17 @@ use cached::proc_macro::cached;
 use sysinfo::{PidExt, ProcessExt, System, SystemExt};
 use tracing::*;
 
+/// Set the calling thread to a lower scheduling priority (nice 10) so that
+/// GStreamer pipeline threads — which run at `SCHED_RR` realtime when
+/// `CAP_SYS_NICE` is available — are always preferred by the OS scheduler.
+#[inline]
+pub fn lower_thread_priority() {
+    #[cfg(target_os = "linux")]
+    unsafe {
+        libc::setpriority(libc::PRIO_PROCESS, 0, 10);
+    }
+}
+
 #[cached(time = 1)]
 pub fn process_task_counter() -> usize {
     let mut system = System::new_all();
