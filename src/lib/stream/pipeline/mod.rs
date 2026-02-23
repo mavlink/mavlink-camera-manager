@@ -260,7 +260,8 @@ impl PipelineState {
                 RTSPServer::add_pipeline(
                     &sink.scheme(),
                     &sink.path(),
-                    &sink.socket_path(),
+                    sink.rtsp_appsrc(),
+                    sink.pts_offset(),
                     &caps,
                     sink.rtp_queue_time_ns(),
                 )?;
