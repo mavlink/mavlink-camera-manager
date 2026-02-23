@@ -114,6 +114,7 @@ impl RTSPServer {
         path: &str,
         socket_path: &str,
         rtp_caps: &gst::Caps,
+        rtp_queue_time_ns: u64,
     ) -> Result<()> {
         // Initialize the singleton before calling gst factory
         let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
@@ -168,52 +169,56 @@ impl RTSPServer {
                 format!(
                     concat!(
                         "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
-                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0",
+                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
                         " ! capsfilter caps={rtp_caps:?}",
                         " ! rtph264depay",
                         " ! rtph264pay name=pay0 aggregate-mode=zero-latency config-interval=-1 pt=96",
                     ),
                     socket_path = socket_path,
                     rtp_caps = rtp_caps,
+                    queue_time = rtp_queue_time_ns,
                 )
             }
             "H265" => {
                 format!(
                     concat!(
                         "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
-                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0",
+                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
                         " ! capsfilter caps={rtp_caps:?}",
                         " ! rtph265depay",
                         " ! rtph265pay name=pay0 aggregate-mode=zero-latency config-interval=-1 pt=96",
                     ),
                     socket_path = socket_path,
                     rtp_caps = rtp_caps,
+                    queue_time = rtp_queue_time_ns,
                 )
             }
             "RAW" => {
                 format!(
                     concat!(
                         "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
-                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0",
+                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
                         " ! capsfilter caps={rtp_caps:?}",
                         " ! rtpvrawdepay",
                         " ! rtpvrawpay name=pay0 pt=96",
                     ),
                     socket_path = socket_path,
                     rtp_caps = rtp_caps,
+                    queue_time = rtp_queue_time_ns,
                 )
             }
             "JPEG" => {
                 format!(
                     concat!(
                         "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
-                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=10",
+                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
                         " ! capsfilter caps={rtp_caps:?}",
                         " ! rtpjpegdepay",
                         " ! rtpjpegpay name=pay0 pt=96",
                     ),
                     socket_path = socket_path,
                     rtp_caps = rtp_caps,
+                    queue_time = rtp_queue_time_ns,
                 )
             }
             unsupported => {
