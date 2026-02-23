@@ -163,11 +163,17 @@ impl WebRTCSink {
         bind: BindAnswer,
         sender: mpsc::UnboundedSender<Result<Message>>,
     ) -> Result<Self> {
+        // WebRTCBin needs headroom for SRTP encryption + ICE delivery.
+        // Disable buffer-count and byte-size limits so a 4K keyframe
+        // burst (hundreds of RTP packets) can pass through without the
+        // leaky queue discarding mid-frame packets.  The 1-second
+        // default time limit remains as a safety backstop.
         let queue = gst::ElementFactory::make("queue")
-            .property_from_str("leaky", "downstream") // Throw away any data
+            .property_from_str("leaky", "downstream")
             .property("silent", true)
             .property("flush-on-eos", true)
-            .property("max-size-buffers", 0u32) // Disable buffers
+            .property("max-size-buffers", 0u32)
+            .property("max-size-bytes", 0u32)
             .build()?;
 
         // Workaround to have a better name for the threads created by the WebRTCBin element
