@@ -11,6 +11,7 @@ use gst::prelude::*;
 use std::{ops::Deref, sync::Arc};
 use tracing::*;
 
+use crate::stream::types::CaptureConfiguration;
 use crate::video_stream::types::VideoAndStreamInformation;
 
 use image_sink::ImageSink;
@@ -18,6 +19,24 @@ use rtsp_sink::RtspSink;
 use udp_sink::UdpSink;
 use webrtc_sink::WebRTCSink;
 use zenoh_sink::ZenohSink;
+
+const FALLBACK_RTP_QUEUE_TIME_NS: u64 = 100_000_000; // 100ms
+
+/// Compute the max-size-time (in nanoseconds) for queues that carry
+/// individual RTP packets.  Uses one frame period when the stream's
+/// FPS is known, otherwise falls back to 100 ms.
+pub fn rtp_queue_max_time_ns(info: &VideoAndStreamInformation) -> u64 {
+    if let CaptureConfiguration::Video(cfg) = &info.stream_information.configuration {
+        let fi = &cfg.frame_interval;
+        if fi.denominator > 0 && fi.numerator > 0 {
+            let ns = (fi.numerator as u64) * 1_000_000_000 / (fi.denominator as u64);
+            if ns > 0 {
+                return ns;
+            }
+        }
+    }
+    FALLBACK_RTP_QUEUE_TIME_NS
+}
 
 #[enum_dispatch]
 pub trait SinkInterface {
