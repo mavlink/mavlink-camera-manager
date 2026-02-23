@@ -105,6 +105,7 @@ impl RedirectPipeline {
                 format!(
                     concat!(
                         " ! rtph264depay",
+                        " ! queue leaky=downstream silent=true flush-on-eos=true max-size-buffers=1 max-size-bytes=0 max-size-time=0",
                         " ! h264parse config-interval=-1",
                         " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au",
                         " ! tee name={video_tee_name} allow-not-linked=true",
@@ -120,6 +121,7 @@ impl RedirectPipeline {
                 format!(
                     concat!(
                         " ! rtph265depay",
+                        " ! queue leaky=downstream silent=true flush-on-eos=true max-size-buffers=1 max-size-bytes=0 max-size-time=0",
                         " ! h265parse config-interval=-1",
                         " ! capsfilter name={filter_name} caps=video/x-h265,profile={profile},stream-format=byte-stream,alignment=au",
                         " ! tee name={video_tee_name} allow-not-linked=true",
