@@ -27,7 +27,6 @@ pub fn lower_to_background_priority() {
         libc::setpriority(libc::PRIO_PROCESS, 0, 19);
     }
 }
-
 #[cached(time = 1)]
 pub fn process_task_counter() -> usize {
     let mut system = System::new_all();

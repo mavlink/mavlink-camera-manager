@@ -262,6 +262,7 @@ pub async fn get_jpeg_thumbnail_from_source(
     // of this kind.
     let (tx, rx) = tokio::sync::oneshot::channel();
     std::thread::spawn(move || {
+        crate::helper::threads::lower_thread_priority();
         tokio::runtime::Builder::new_current_thread()
             .on_thread_start(|| debug!("Thread started"))
             .on_thread_stop(|| debug!("Thread stopped"))
