@@ -113,9 +113,6 @@ futures = "0.3"
 webrtc-util = { version = "0.8.1", default-features = false, features = ["vnet"] }
 turn = "0.7"
 
-## Image/Thumbnail
-image = "0.24"
-
 ## GSTREAMER
 gst = { package = "gstreamer", version = "0.23", features = ["v1_16"] }
 gst-app = { package = "gstreamer-app", version = "0.23", features = ["v1_16"] }
