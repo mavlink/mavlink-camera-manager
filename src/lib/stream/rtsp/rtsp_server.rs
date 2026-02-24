@@ -11,6 +11,7 @@ use gst_rtsp_server::{prelude::*, RTSPTransportMode};
 use tracing::*;
 
 use super::rtsp_scheme::RTSPScheme;
+use crate::stream::sink::rtsp_sink::RtspFlowHandle;
 
 #[allow(dead_code)]
 pub struct RTSPServer {
@@ -109,7 +110,7 @@ impl RTSPServer {
         }
     }
 
-    #[instrument(level = "debug", skip(rtsp_appsrc, pts_offset))]
+    #[instrument(level = "debug", skip(rtsp_appsrc, pts_offset, flow_handle))]
     pub fn add_pipeline(
         scheme: &RTSPScheme,
         path: &str,
@@ -117,6 +118,7 @@ impl RTSPServer {
         pts_offset: std::sync::Arc<std::sync::Mutex<Option<gst::ClockTime>>>,
         video_caps: &gst::Caps,
         rtp_queue_time_ns: u64,
+        flow_handle: RtspFlowHandle,
     ) -> Result<()> {
         // Initialize the singleton before calling gst factory
         let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
@@ -214,7 +216,6 @@ impl RTSPServer {
                         appsrc.set_caps(Some(&video_caps_clone));
                         appsrc.set_max_bytes(0);
                         appsrc.set_property("block", false);
-                        // Reset PTS offset so timestamps rebase from 0 for the new media
                         *pts_offset.lock().unwrap() = None;
                         *rtsp_appsrc.lock().unwrap() = Some(appsrc);
                         debug!("Connected appsrc for RTSP media");
@@ -225,6 +226,17 @@ impl RTSPServer {
             } else {
                 error!("Failed to downcast RTSP media element to Bin");
             }
+
+            flow_handle.on_client_connected();
+
+            let rtsp_appsrc_disconnect = rtsp_appsrc.clone();
+            let pts_offset_disconnect = pts_offset.clone();
+            let flow_handle_disconnect = flow_handle.clone();
+            media.connect_unprepared(move |_media| {
+                *rtsp_appsrc_disconnect.lock().unwrap() = None;
+                *pts_offset_disconnect.lock().unwrap() = None;
+                flow_handle_disconnect.on_client_disconnected();
+            });
         });
 
         if let Some(server) = rtsp_server

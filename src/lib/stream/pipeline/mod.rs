@@ -264,6 +264,7 @@ impl PipelineState {
                     sink.pts_offset(),
                     &caps,
                     sink.rtp_queue_time_ns(),
+                    sink.flow_handle(),
                 )?;
 
                 RTSPServer::start_pipeline(&sink.path())?;
@@ -306,26 +307,6 @@ impl PipelineState {
 
         // Unlink the Sink
         sink.unlink(pipeline, pipeline_id)?;
-
-        // Set pipeline state to NULL when there are no consumers to save CPU usage.
-        // TODO: We are skipping rtspsrc here because once back to null, we are having
-        // trouble knowing how to propper reuse it.
-        if !self
-            .pipeline
-            .children()
-            .iter()
-            .any(|child| child.name().starts_with("rtspsrc"))
-        {
-            if let Some(rtp_tee) = &self.rtp_tee {
-                if rtp_tee.src_pads().is_empty() {
-                    if let Err(error) = pipeline.set_state(gst::State::Null) {
-                        return Err(anyhow!(
-                            "Failed to change state of Pipeline {pipeline_id} to NULL. Reason: {error}"
-                        ));
-                    }
-                }
-            }
-        }
 
         if let Sink::Rtsp(sink) = &sink {
             RTSPServer::stop_pipeline(&sink.path())?;

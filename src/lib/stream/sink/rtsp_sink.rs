@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc, Mutex,
+};
 
 use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
@@ -11,6 +14,57 @@ use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
 type SharedAppSrc = Arc<Mutex<Option<gst_app::AppSrc>>>;
 type SharedPtsOffset = Arc<Mutex<Option<gst::ClockTime>>>;
 
+/// Shared handle that controls RTSP data flow via a GStreamer `valve`
+/// element and participates in stream-level consumer tracking for lazy
+/// pipeline support.
+#[derive(Clone, Debug)]
+pub struct RtspFlowHandle {
+    valve: gst::Element,
+    client_count: Arc<AtomicUsize>,
+    consumer_count: Arc<AtomicUsize>,
+    idle: Arc<AtomicBool>,
+}
+
+impl RtspFlowHandle {
+    fn new(valve: gst::Element, consumer_count: Arc<AtomicUsize>, idle: Arc<AtomicBool>) -> Self {
+        Self {
+            valve,
+            client_count: Arc::new(AtomicUsize::new(0)),
+            consumer_count,
+            idle,
+        }
+    }
+
+    /// Called when an RTSP client connects (media_configure).
+    /// Opens the valve on the first client and tracks the consumer.
+    pub fn on_client_connected(&self) {
+        let prev = self.client_count.fetch_add(1, Ordering::Relaxed);
+        if prev == 0 {
+            self.valve.set_property("drop", false);
+            debug!("RTSP: first client connected, valve opened");
+        }
+        self.consumer_count.fetch_add(1, Ordering::Relaxed);
+        self.idle.store(false, Ordering::Relaxed);
+    }
+
+    /// Called when an RTSP client disconnects (media unprepared).
+    /// Closes the valve when the last client leaves and updates
+    /// stream-level consumer tracking. The watcher handles the idle
+    /// timeout transition after a grace period with zero consumers.
+    pub fn on_client_disconnected(&self) {
+        let prev = self.client_count.fetch_sub(1, Ordering::Relaxed);
+        if prev == 1 {
+            self.valve.set_property("drop", true);
+            debug!("RTSP: last client disconnected, valve closed");
+        }
+        self.consumer_count.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    pub fn valve(&self) -> &gst::Element {
+        &self.valve
+    }
+}
+
 #[derive(Debug)]
 pub struct RtspSink {
     sink_id: Arc<uuid::Uuid>,
@@ -22,6 +76,7 @@ pub struct RtspSink {
     rtp_queue_time_ns: u64,
     rtsp_appsrc: SharedAppSrc,
     pts_offset: SharedPtsOffset,
+    flow_handle: RtspFlowHandle,
 }
 impl SinkInterface for RtspSink {
     #[instrument(level = "debug", skip(self, pipeline))]
@@ -42,7 +97,11 @@ impl SinkInterface for RtspSink {
             unreachable!()
         };
 
-        let elements = &[&self.queue, self.appsink.upcast_ref()];
+        let elements = &[
+            self.flow_handle.valve(),
+            &self.queue,
+            self.appsink.upcast_ref(),
+        ];
         link_sink_to_tee(tee_src_pad, pipeline, elements)?;
 
         Ok(())
@@ -55,7 +114,11 @@ impl SinkInterface for RtspSink {
             return Ok(());
         };
 
-        let elements = &[&self.queue, self.appsink.upcast_ref()];
+        let elements = &[
+            self.flow_handle.valve(),
+            &self.queue,
+            self.appsink.upcast_ref(),
+        ];
         unlink_sink_from_tee(tee_src_pad, pipeline, elements)?;
 
         Ok(())
@@ -92,7 +155,15 @@ impl RtspSink {
         id: Arc<uuid::Uuid>,
         addresses: Vec<url::Url>,
         rtp_queue_time_ns: u64,
+        consumer_count: Arc<AtomicUsize>,
+        idle: Arc<AtomicBool>,
     ) -> Result<Self> {
+        let valve = gst::ElementFactory::make("valve")
+            .name(format!("RtspValve-{id}"))
+            .property("drop", true)
+            .build()
+            .context("Failed to create valve element for RTSP sink")?;
+
         let queue = gst::ElementFactory::make("queue")
             .property_from_str("leaky", "downstream")
             .property("silent", true)
@@ -173,6 +244,7 @@ impl RtspSink {
             rtp_queue_time_ns,
             rtsp_appsrc,
             pts_offset,
+            flow_handle: RtspFlowHandle::new(valve, consumer_count, idle),
         })
     }
 
@@ -196,5 +268,9 @@ impl RtspSink {
 
     pub fn rtp_queue_time_ns(&self) -> u64 {
         self.rtp_queue_time_ns
+    }
+
+    pub fn flow_handle(&self) -> RtspFlowHandle {
+        self.flow_handle.clone()
     }
 }

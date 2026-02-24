@@ -110,6 +110,8 @@ pub fn create_udp_sink(
 pub fn create_rtsp_sink(
     id: Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
+    consumer_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    idle: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<Sink> {
     let addresses = video_and_stream_information
         .stream_information
@@ -121,6 +123,8 @@ pub fn create_rtsp_sink(
         id,
         addresses,
         rtp_queue_time_ns,
+        consumer_count,
+        idle,
     )?))
 }
 

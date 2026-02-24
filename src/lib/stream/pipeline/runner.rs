@@ -306,7 +306,11 @@ impl PipelineRunner {
                             .upgrade()
                             .context("Unable to access the Pipeline {pipeline_name:?} from its weak reference")?;
 
-
+                        if pipeline.current_state() != gst::State::Playing {
+                            previous_position = None;
+                            lost_ticks = 0;
+                            continue;
+                        }
 
                         if let Some(position) = pipeline.query_position::<gst::ClockTime>() {
                             match previous_position {
