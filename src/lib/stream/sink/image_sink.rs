@@ -471,9 +471,21 @@ impl ImageSink {
             }
         }
 
+        // Request an immediate keyframe from the upstream encoder so the
+        // decoder can produce a frame without waiting for the next natural
+        // keyframe (which may be many seconds away with x264enc defaults).
+        // The event must be sent on a src pad: GStreamer's send_event()
+        // only accepts upstream events on src pads.
+        if let Some(queue_src_pad) = self.queue.static_pad("src") {
+            let event = gst_video::UpstreamForceKeyUnitEvent::builder()
+                .all_headers(true)
+                .build();
+            queue_src_pad.send_event(event);
+        }
+
         let mut receiver = self.jpeg_sender.subscribe();
 
-        tokio::time::timeout(tokio::time::Duration::from_secs(2), receiver.recv())
+        tokio::time::timeout(tokio::time::Duration::from_secs(5), receiver.recv())
             .await??
             .map_err(|e| anyhow!(e.to_string()))
     }
