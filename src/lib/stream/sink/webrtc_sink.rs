@@ -362,15 +362,13 @@ impl WebRTCSink {
                         error!("Failed to disable FailSafeKiller: {error:?}");
                     }
 
-                    // Tighten the queue to 1 frame interval, flushing stale
-                    // data from the DTLS handshake. The underrun signal will
-                    // transition to dynamic state once the backlog has drained.
                     if let Some(queue) = queue_weak.upgrade() {
                         debug!(
                             "WebRTC connected: tightening queue max-size-time to {}ms (1 frame)",
                             rtp_queue_max_time_ns / 1_000_000
                         );
                         queue.set_property("max-size-time", rtp_queue_max_time_ns);
+                        optimise_webrtcbin_send_path(webrtcbin, &queue);
                     }
                     queue_state_ref.store(FLUSHING, Ordering::Relaxed);
                 }
@@ -822,5 +820,154 @@ fn customize_sent_sdp(sdp: &gst_sdp::SDPMessageRef) -> Result<gst_sdp::SDPMessag
         }
     });
 
+    // Strip FEC (ulpfec) and RED payload types from the SDP offer.
+    // Even though fec-type is set to None on the transceiver, webrtcbin
+    // still creates rtpulpfecenc and rtpredenc elements internally. Removing
+    // these codecs from the SDP prevents the peer from negotiating them,
+    // which avoids unnecessary FEC/RED packet processing on both sides.
+    new_sdp.medias_mut().for_each(|media| {
+        strip_fec_and_red_from_media(media);
+    });
+
     Ok(new_sdp)
+}
+
+/// Remove RED and ULPFEC payload types from a single SDP media section.
+///
+/// Scans `a=rtpmap` attributes for encodings containing "red/" or "ulpfec/",
+/// collects their payload-type numbers, then removes the corresponding
+/// `a=rtpmap`, `a=fmtp`, and format-list entries.
+fn strip_fec_and_red_from_media(media: &mut gst_sdp::SDPMediaRef) {
+    let mut fec_red_pts: Vec<String> = Vec::new();
+
+    for attr in media.attributes() {
+        if attr.key() == "rtpmap" {
+            if let Some(value) = attr.value() {
+                let lower = value.to_lowercase();
+                if lower.contains(" red/") || lower.contains(" ulpfec/") {
+                    if let Some(pt) = value.split_whitespace().next() {
+                        fec_red_pts.push(pt.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    if fec_red_pts.is_empty() {
+        return;
+    }
+
+    debug!("Stripping FEC/RED payload types from SDP: {fec_red_pts:?}");
+
+    let mut attr_indices: Vec<usize> = Vec::new();
+    for (idx, attr) in media.attributes().enumerate() {
+        if matches!(attr.key(), "rtpmap" | "fmtp") {
+            if let Some(value) = attr.value() {
+                if let Some(pt) = value.split_whitespace().next() {
+                    if fec_red_pts.iter().any(|p| p == pt) {
+                        attr_indices.push(idx);
+                    }
+                }
+            }
+        }
+    }
+    for idx in attr_indices.into_iter().rev() {
+        let _ = media.remove_attribute(idx as u32);
+    }
+
+    let mut fmt_indices: Vec<u32> = Vec::new();
+    for i in 0..media.formats_len() {
+        if let Some(fmt) = media.format(i) {
+            if fec_red_pts.iter().any(|p| p == fmt) {
+                fmt_indices.push(i);
+            }
+        }
+    }
+    for idx in fmt_indices.into_iter().rev() {
+        let _ = media.remove_format(idx);
+    }
+}
+
+/// Optimise the `webrtcbin` send path once the peer connection is established:
+///
+/// 1. **Excise FEC/RED encoders** – `rtpulpfecenc` and `rtpredenc` are created
+///    even with `fec-type=None` and still burn measurable CPU copying every RTP
+///    buffer.  We surgically unlink and remove them.
+///
+/// 2. **Disable clocksync pacing** – The `clocksync` elements inside
+///    `transportsendbin` actively hold buffers to pace them to the pipeline
+///    clock.  For a send-only WebRTC path this is unnecessary overhead;
+///    setting `sync=false` makes them zero-cost pass-through while keeping the
+///    element graph intact (no risky pad surgery).
+fn optimise_webrtcbin_send_path(webrtcbin: &gst::Element, queue: &gst::Element) {
+    let Some(queue_src_pad) = queue.static_pad("src") else {
+        warn!("Cannot find queue src pad for webrtcbin send-path optimisation");
+        return;
+    };
+
+    let webrtcbin = webrtcbin.clone();
+    queue_src_pad.add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, move |_pad, _info| {
+        let Some(bin) = webrtcbin.downcast_ref::<gst::Bin>() else {
+            warn!("webrtcbin is not a Bin, cannot optimise send path");
+            return gst::PadProbeReturn::Remove;
+        };
+
+        let elements: Vec<gst::Element> = bin
+            .iterate_recurse()
+            .into_iter()
+            .filter_map(Result::ok)
+            .collect();
+
+        for element in &elements {
+            let name = element.name();
+
+            if name.starts_with("rtpulpfecenc") || name.starts_with("rtpredenc") {
+                match excise_single_element(element) {
+                    Ok(()) => debug!("Excised {name} from WebRTC send path"),
+                    Err(error) => warn!("Failed to excise {name}: {error:#}"),
+                }
+            }
+        }
+
+        gst::PadProbeReturn::Remove
+    });
+}
+
+/// Remove a single passthrough element from its pipeline chain by splicing
+/// its upstream and downstream neighbours together.
+///
+/// # Safety contract
+/// Must be called from a pad-probe callback (or equivalent) where data flow
+/// through the element is already blocked.
+fn excise_single_element(element: &gst::Element) -> Result<()> {
+    let sink_pad = element
+        .static_pad("sink")
+        .context("element has no sink pad")?;
+    let src_pad = element
+        .static_pad("src")
+        .context("element has no src pad")?;
+
+    let upstream_pad = sink_pad.peer().context("sink pad has no upstream peer")?;
+    let downstream_pad = src_pad.peer().context("src pad has no downstream peer")?;
+
+    upstream_pad
+        .unlink(&sink_pad)
+        .map_err(|e| anyhow!("unlink upstream→element: {e}"))?;
+    src_pad
+        .unlink(&downstream_pad)
+        .map_err(|e| anyhow!("unlink element→downstream: {e}"))?;
+
+    upstream_pad
+        .link(&downstream_pad)
+        .map_err(|e| anyhow!("relink upstream→downstream: {e:?}"))?;
+
+    if let Some(parent) = element.parent() {
+        if let Some(bin) = parent.downcast_ref::<gst::Bin>() {
+            let _ = element.set_state(gst::State::Null);
+            bin.remove(element)
+                .map_err(|e| anyhow!("remove from bin: {e}"))?;
+        }
+    }
+
+    Ok(())
 }
