@@ -311,6 +311,7 @@
                     response += ', Disable Mavlink: ' + video_and_stream.stream_information.extended_configuration?.disable_mavlink ?? false
                     response += ', Disable Zenoh: ' + video_and_stream.stream_information.extended_configuration?.disable_zenoh ?? false
                     response += ', Disable Thumbnails: ' + video_and_stream.stream_information.extended_configuration?.disable_thumbnails ?? false
+                    response += ', Disable Lazy: ' + video_and_stream.stream_information.extended_configuration?.disable_lazy ?? false
                     return response
                 },
                 requestData: async function() {
@@ -399,6 +400,7 @@
                                 "disable_mavlink": Boolean(stream.extended_configuration.disable_mavlink),
                                 "disable_zenoh": Boolean(stream.extended_configuration.disable_zenoh),
                                 "disable_thumbnails": Boolean(stream.extended_configuration.disable_thumbnails),
+                                "disable_lazy": Boolean(stream.extended_configuration.disable_lazy),
                             },
                         }
                     }
@@ -733,6 +735,7 @@
                         this.stream_setting.extended_configuration.disable_mavlink = Boolean(this.stream.video_and_stream.stream_information.extended_configuration?.disable_mavlink)
                         this.stream_setting.extended_configuration.disable_zenoh = Boolean(this.stream.video_and_stream.stream_information.extended_configuration?.disable_zenoh)
                         this.stream_setting.extended_configuration.disable_thumbnails = Boolean(this.stream.video_and_stream.stream_information.extended_configuration?.disable_thumbnails)
+                        this.stream_setting.extended_configuration.disable_lazy = Boolean(this.stream.video_and_stream.stream_information.extended_configuration?.disable_lazy)
                     },
                     deep: true
                 },
@@ -793,6 +796,7 @@
                             disable_mavlink: undefined,
                             disable_zenoh: undefined,
                             disable_thumbnails: undefined,
+                            disable_lazy: undefined,
                         },
                     },
                     stream_options: {
@@ -884,6 +888,13 @@
                         <input
                             type="checkbox"
                             v-model="stream_setting.extended_configuration.disable_thumbnails"
+                        >
+                    </div>
+                    <div>
+                        <label>Disable Lazy: </label>
+                        <input
+                            type="checkbox"
+                            v-model="stream_setting.extended_configuration.disable_lazy"
                         >
                     </div>
 

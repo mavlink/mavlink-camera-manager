@@ -116,6 +116,10 @@ struct Args {
     #[clap(long, value_name = "onvif://<USERNAME>:<PASSWORD>@<HOST>", value_delimiter = ',', value_parser = onvif_auth_validator, env = "MCM_ONVIF_AUTH")]
     onvif_auth: Vec<String>,
 
+    /// Enable the /dot WebSocket endpoint for GStreamer pipeline graph streaming.
+    #[arg(long)]
+    enable_dot: bool,
+
     /// Enables the zenoh integration by default in client mode.
     #[arg(long)]
     zenoh: bool,
@@ -314,6 +318,10 @@ pub fn onvif_auth() -> HashMap<std::net::Ipv4Addr, onvif::soap::client::Credenti
             Some((host, credentials))
         })
         .collect()
+}
+
+pub fn is_dot_enabled() -> bool {
+    MANAGER.clap_matches.enable_dot
 }
 
 pub fn enable_zenoh() -> bool {
