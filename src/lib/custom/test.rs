@@ -21,7 +21,10 @@ pub fn take_webrtc_stream() -> Vec<VideoAndStreamInformation> {
                     numerator: 1,
                 },
             }),
-            extended_configuration: None,
+            extended_configuration: Some(ExtendedConfiguration {
+                disable_lazy: true,
+                ..Default::default()
+            }),
         },
         video_source: VideoSourceType::Gst(video::video_source_gst::VideoSourceGst {
             name: "Fake".into(),
