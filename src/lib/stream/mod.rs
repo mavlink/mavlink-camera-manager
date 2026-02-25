@@ -6,7 +6,10 @@ pub mod sink;
 pub mod types;
 pub mod webrtc;
 
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc,
+};
 
 use ::gst::prelude::*;
 use anyhow::{anyhow, Context, Result};
@@ -42,6 +45,8 @@ pub struct Stream {
     error: Arc<RwLock<anyhow::Result<()>>>,
     terminated: Arc<RwLock<bool>>,
     watcher_handle: Option<tokio::task::JoinHandle<()>>,
+    pub consumer_count: Arc<AtomicUsize>,
+    pub idle: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -97,6 +102,9 @@ impl Stream {
             Arc::new(RwLock::new(video_and_stream_information))
         };
 
+        let consumer_count = Arc::new(AtomicUsize::new(0));
+        let idle = Arc::new(AtomicBool::new(false));
+
         let state = Arc::new(RwLock::new(Some(
             StreamState::try_default(video_and_stream_information.clone(), pipeline_id.clone())
                 .await?,
@@ -113,6 +121,8 @@ impl Stream {
             let video_and_stream_information = video_and_stream_information.clone();
             let state = state.clone();
             let pipeline_id = pipeline_id.clone();
+            let idle = idle.clone();
+            let consumer_count = consumer_count.clone();
 
             async move {
                 debug!("StreamWatcher task started!");
@@ -122,6 +132,8 @@ impl Stream {
                     error,
                     state,
                     terminated,
+                    idle,
+                    consumer_count,
                 )
                 .await
                 {
@@ -138,34 +150,120 @@ impl Stream {
             state,
             terminated,
             watcher_handle,
+            consumer_count,
+            idle,
         })
     }
 
-    #[instrument(level = "debug", skip(state, terminated))]
+    #[instrument(level = "debug", skip(state, terminated, idle, consumer_count))]
     async fn watcher(
         video_and_stream_information: Arc<RwLock<VideoAndStreamInformation>>,
         pipeline_id: Arc<uuid::Uuid>,
         error_status: Arc<RwLock<anyhow::Result<()>>>,
         state: Arc<RwLock<Option<StreamState>>>,
         terminated: Arc<RwLock<bool>>,
+        idle: Arc<AtomicBool>,
+        consumer_count: Arc<AtomicUsize>,
     ) -> Result<()> {
-        // To reduce log size, each report we raise the report interval geometrically until a maximum value is reached:
         let report_interval_mult = 2;
         let report_interval_max = 60;
         let mut report_interval = std::time::Duration::from_secs(1);
         let mut last_report_time = std::time::Instant::now();
 
+        let mut suspended = false;
+        let idle_grace_period = std::time::Duration::from_secs(5);
+        let mut no_consumers_since: Option<std::time::Instant> = None;
         let mut period = tokio::time::interval(tokio::time::Duration::from_millis(100));
         loop {
             period.tick().await;
 
-            if !state.read().await.as_ref().is_some_and(|state| {
+            if *terminated.read().await {
+                break;
+            }
+
+            let is_lazy = !video_and_stream_information
+                .read()
+                .await
+                .stream_information
+                .extended_configuration
+                .as_ref()
+                .map(|e| e.disable_lazy)
+                .unwrap_or(false);
+
+            let is_running = state.read().await.as_ref().is_some_and(|state| {
                 state
                     .pipeline
                     .as_ref()
                     .map(|pipeline| pipeline.is_running())
                     .unwrap_or_default()
-            }) {
+            });
+
+            let consumers = consumer_count.load(Ordering::Relaxed);
+
+            if is_lazy && is_running && !suspended && consumers == 0 {
+                if no_consumers_since.is_none() {
+                    no_consumers_since = Some(std::time::Instant::now());
+                }
+                if no_consumers_since.is_some_and(|since| since.elapsed() >= idle_grace_period) {
+                    idle.store(true, Ordering::Relaxed);
+                }
+            } else {
+                no_consumers_since = None;
+            }
+            let is_idle = idle.load(Ordering::Relaxed);
+
+            if suspended && !is_running {
+                warn!(
+                    "Pipeline runner exited during suspension for {pipeline_id:?}, will recreate"
+                );
+                suspended = false;
+            }
+
+            if is_running && is_idle && is_lazy && !suspended {
+                debug!("Lazy pipeline {pipeline_id:?}: no consumers for {idle_grace_period:?}, suspending");
+                if let Some(ref st) = *state.read().await {
+                    if let Some(ref pipeline) = st.pipeline {
+                        if let Err(error) = pipeline
+                            .inner_state_as_ref()
+                            .pipeline
+                            .set_state(::gst::State::Null)
+                        {
+                            warn!("Failed suspending pipeline {pipeline_id:?}: {error:?}");
+                        }
+                    }
+                }
+                suspended = true;
+                continue;
+            }
+
+            if suspended && is_idle {
+                continue;
+            }
+
+            if suspended && !is_idle {
+                debug!("Lazy pipeline {pipeline_id:?}: consumer connected, resuming");
+                let resume_ok = state.read().await.as_ref().is_some_and(|st| {
+                    st.pipeline.as_ref().is_some_and(|pipeline| {
+                        pipeline
+                            .inner_state_as_ref()
+                            .pipeline
+                            .set_state(::gst::State::Playing)
+                            .is_ok()
+                    })
+                });
+                if resume_ok {
+                    suspended = false;
+                } else {
+                    warn!("Failed resuming pipeline {pipeline_id:?}, will recreate");
+                    suspended = false;
+                    if let Some(old) = state.write().await.take() {
+                        drop(old);
+                    }
+                }
+                continue;
+            }
+
+            if !is_running {
                 // First, drop the current state
                 if let Some(state) = state.write().await.take() {
                     drop(state);
@@ -279,6 +377,8 @@ impl Stream {
                 let new_state = match StreamState::try_new(
                     video_and_stream_information.clone(),
                     pipeline_id.clone(),
+                    consumer_count.clone(),
+                    idle.clone(),
                 )
                 .await
                 {
@@ -296,11 +396,6 @@ impl Stream {
 
                 // Try to recreate the stream
                 state.write().await.replace(new_state);
-            }
-
-            if *terminated.read().await {
-                debug!("Ending stream {pipeline_id:?}.");
-                break;
             }
         }
 
@@ -367,6 +462,8 @@ impl StreamState {
     pub async fn try_new(
         video_and_stream_information: Arc<RwLock<VideoAndStreamInformation>>,
         pipeline_id: Arc<uuid::Uuid>,
+        consumer_count: Arc<AtomicUsize>,
+        idle: Arc<AtomicBool>,
     ) -> Result<Self> {
         let mut stream =
             Self::try_default(video_and_stream_information.clone(), pipeline_id.clone()).await?;
@@ -421,7 +518,12 @@ impl StreamState {
                 .any(|endpoint| RTSPScheme::try_from(endpoint.scheme()).is_ok())
             {
                 let sink_id = Arc::new(Manager::generate_uuid(None));
-                match create_rtsp_sink(sink_id.clone(), &video_and_stream_information) {
+                match create_rtsp_sink(
+                    sink_id.clone(),
+                    &video_and_stream_information,
+                    consumer_count.clone(),
+                    idle.clone(),
+                ) {
                     Ok(sink) => {
                         if let Some(pipeline) = stream.pipeline.as_mut() {
                             if let Err(reason) = pipeline.add_sink(sink).await {

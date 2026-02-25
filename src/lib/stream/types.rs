@@ -34,6 +34,7 @@ pub struct ExtendedConfiguration {
     pub disable_mavlink: bool,
     pub disable_zenoh: bool,
     pub disable_thumbnails: bool,
+    pub disable_lazy: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Apiv2Schema)]
@@ -43,10 +44,19 @@ pub struct StreamInformation {
     pub extended_configuration: Option<ExtendedConfiguration>,
 }
 
+#[derive(Apiv2Schema, Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StreamStatusState {
+    Running,
+    Idle,
+    Stopped,
+}
+
 #[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
 pub struct StreamStatus {
     pub id: uuid::Uuid,
     pub running: bool,
+    pub state: StreamStatusState,
     pub error: Option<String>,
     pub video_and_stream: VideoAndStreamInformation,
     pub mavlink: Option<MavlinkComponent>,
