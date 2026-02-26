@@ -1,4 +1,7 @@
-use std::net::SocketAddr;
+use std::{
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::{anyhow, Context, Result};
 use async_tungstenite::{tokio::TokioAdapter, tungstenite, WebSocketStream};
@@ -9,9 +12,13 @@ use tokio::{
 };
 use tracing::*;
 
-use crate::{cli, stream};
+use mcm_api::v1::{
+    signalling::*,
+    stream::{CaptureConfiguration, StreamStatusState},
+    video::VideoEncodeType,
+};
 
-use super::signalling_protocol::*;
+use crate::{cli, stream, video::types::VideoSourceTypeExt};
 
 #[derive(Debug)]
 pub struct SignallingServer {
@@ -110,7 +117,10 @@ impl SignallingServer {
         // This MPSC channel is used to transmit messages to websocket from Session
         let (mpsc_sender, mut mpsc_receiver) = mpsc::unbounded_channel::<Result<Message>>();
 
+        let active_sessions: Arc<Mutex<Vec<BindAnswer>>> = Arc::new(Mutex::new(Vec::new()));
+
         // Create a sender task, which receives from the mpsc channel
+        let sender_sessions = active_sessions.clone();
         let sender_task_handle = tokio::spawn(async move {
             loop {
                 match tokio::time::timeout(std::time::Duration::from_secs(30), mpsc_receiver.recv())
@@ -120,13 +130,18 @@ impl SignallingServer {
                         if let Message::Question(Question::EndSession(end_session_question)) =
                             message
                         {
-                            let bind = end_session_question.bind;
+                            let bind = end_session_question.bind.clone();
                             let reason = end_session_question.reason;
 
                             if let Err(error) = stream::Manager::remove_session(&bind, reason).await
                             {
                                 error!("Failed removing session: {bind:?}. Reason: {error}",);
                             }
+
+                            sender_sessions
+                                .lock()
+                                .unwrap()
+                                .retain(|b| b.session_id != bind.session_id);
 
                             info!("Session: {bind:?} ended by consumer");
                             continue;
@@ -166,6 +181,7 @@ impl SignallingServer {
             anyhow::Ok(())
         });
 
+        let receiver_sessions = active_sessions.clone();
         let receiver_task_handle = tokio::spawn(async move {
             while let Some(msg) = ws_stream.next().await {
                 let msg = match msg {
@@ -185,7 +201,9 @@ impl SignallingServer {
                     }
                 };
 
-                if let Err(error) = Self::handle_message(msg.clone(), &mpsc_sender).await {
+                if let Err(error) =
+                    Self::handle_message(msg.clone(), &mpsc_sender, &receiver_sessions).await
+                {
                     error!("Failed handling message: {error}");
                     break;
                 }
@@ -198,15 +216,32 @@ impl SignallingServer {
 
         let _ = tokio::join!(sender_task_handle, receiver_task_handle);
 
+        // Clean up any sessions that weren't explicitly ended (e.g. browser
+        // navigated away without sending EndSession).
+        let orphaned = active_sessions
+            .lock()
+            .unwrap()
+            .drain(..)
+            .collect::<Vec<_>>();
+        for bind in &orphaned {
+            info!("Cleaning up orphaned session: {bind:?}");
+            if let Err(error) =
+                stream::Manager::remove_session(bind, "WebSocket disconnected".to_string()).await
+            {
+                warn!("Failed cleaning up orphaned session {bind:?}: {error}");
+            }
+        }
+
         debug!("Signalling connection terminated");
 
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(sender))]
+    #[instrument(level = "debug", skip(sender, active_sessions))]
     async fn handle_message(
         msg: String,
         sender: &mpsc::UnboundedSender<Result<Message>>,
+        active_sessions: &Arc<Mutex<Vec<BindAnswer>>>,
     ) -> Result<()> {
         let protocol = match serde_json::from_str::<Protocol>(&msg) {
             Ok(protocol) => protocol,
@@ -235,19 +270,31 @@ impl SignallingServer {
                         // After this point, any further negotiation will be sent from webrtcbin,
                         // which will use this mpsc channel's sender to queue the message for the
                         // WebSocket, which will receive and send it to the consumer via WebSocket.
-                        stream::Manager::add_session(&bind, sender.clone())
+                        let session_id = stream::Manager::add_session(&bind, sender.clone())
                             .await
                             .context("Failed adding session.")?;
+
+                        active_sessions.lock().unwrap().push(BindAnswer {
+                            consumer_id: bind.consumer_id,
+                            producer_id: bind.producer_id,
+                            session_id,
+                        });
 
                         None
                     }
                     Question::EndSession(end_session_question) => {
-                        let bind = end_session_question.bind;
+                        let bind = end_session_question.bind.clone();
                         let reason = end_session_question.reason;
 
                         if let Err(error) = stream::Manager::remove_session(&bind, reason).await {
                             error!("Failed removing session {bind:?}. Reason: {error}",);
                         }
+
+                        active_sessions
+                            .lock()
+                            .unwrap()
+                            .retain(|b| b.session_id != bind.session_id);
+
                         return Err(anyhow!("Session {bind:?} ended by consumer"));
                     }
                 }
@@ -299,7 +346,7 @@ impl SignallingServer {
 
         let streams = streams
             .iter()
-            .filter(|stream| stream.running)
+            .filter(|stream| stream.state != StreamStatusState::Stopped)
             .collect::<Vec<_>>();
 
         Ok(streams
@@ -307,9 +354,9 @@ impl SignallingServer {
             .filter_map(|stream| {
                 let (height, width, encode, interval) =
                     match &stream.video_and_stream.stream_information.configuration {
-                        crate::stream::types::CaptureConfiguration::Video(configuration) => {
+                        CaptureConfiguration::Video(configuration) => {
                             // Filter out non-H264/h265 local streams
-                            if !matches!(configuration.encode, crate::video::types::VideoEncodeType::H264 | crate::video::types::VideoEncodeType::H265) {
+                            if !matches!(configuration.encode, VideoEncodeType::H264 | VideoEncodeType::H265) {
                                 trace!("Stream {:?} will not be listed in available streams because it's encoding isn't H264 or H265 (it's {:?} instead)", stream.video_and_stream.name, configuration.encode);
                                 return None;
                             }
@@ -324,7 +371,7 @@ impl SignallingServer {
                                 ),
                             )
                         }
-                        crate::stream::types::CaptureConfiguration::Redirect(_) => {
+                        CaptureConfiguration::Redirect(_) => {
                             // Filter out non RTSP redirect streams
                             let scheme = stream.video_and_stream.stream_information.endpoints.first()?.scheme();
                             if scheme != "rtsp" {

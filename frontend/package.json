@@ -14,6 +14,7 @@
     "@badrap/result": "^0.2.13",
     "@types/websocket": "^1.0.5",
     "vue": "^3.2.41",
+    "vue-router": "^5.0.2",
     "webrtc-adapter": "^8.2.0"
   },
   "devDependencies": {

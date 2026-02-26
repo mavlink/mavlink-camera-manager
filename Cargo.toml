@@ -1,6 +1,7 @@
 [workspace]
 members = [
     ".",
+    "api",
     "bindings"
 ]
 
@@ -38,9 +39,10 @@ path = "src/main.rs"
 
 [workspace.dependencies]
 regex = "1.10.4"
-ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat", "uuid-impl"] }
+ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat", "uuid-impl", "url-impl"] }
 uuid = { version = "1.8", features = ["v4", "v5", "serde"] }
 serde = { version = "1.0", features = ["derive"] }
+url = { version = "2.5.0", features = ["serde"] }
 
 [dependencies]
 clap = { version = "4.5", features = ["derive", "env"] }
@@ -69,7 +71,7 @@ include_dir = "0.7.3"
 paperclip = { version = "0.8", features = ["paperclip-actix", "actix4",  "swagger-ui", "url", "uuid"] }
 #TODO: Replace it with yaserde
 quick-xml = { version = "0.31.0", features = ["serialize"] }
-url = { version = "2.5.0", features = ["serde"] }
+url = { workspace = true }
 directories = "5.0.1"
 pnet = { version = "0.34.0", features = ["std"] }
 semver = "1.0"
@@ -82,11 +84,14 @@ tracing-actix-web = "0.7.10"
 tracing-gstreamer = "0.7.0"
 tracing-tracy = { version = "0.10.5", features = ["ondemand", "broadcast"] } # Note that these features defines the tracy client behavior.
 ringbuffer = "0.15.0"
+arc-swap = "1"
+rustc-hash = "2"
 scopeguard = "1.2.0"
 zenoh = "1.5.1"
 cdr = "0.2.4"
 tempfile = "3.22.0"
 thread-priority = "3.0.0"
+libc = "0.2"
 
 # This is a custom revision adding file name suffix on top of tracing-appender-0.2.2" "0.2.2", but compatible with the current tracing version.
 # Reference: https://github.com/tokio-rs/tracing/issues/2441
@@ -101,6 +106,7 @@ tokio = { version = "1.37", features = ["full"] }
 enum_dispatch = "0.3.13"
 uuid = { workspace = true }
 ts-rs = { workspace = true }
+mcm-api = { path = "api", features = ["paperclip"] }
 cached = { version = "0.51", features = ["serde", "serde_json", "async_tokio_rt_multi_thread"] }
 
 ## Mavlink
@@ -112,9 +118,6 @@ async-std = { version = "1.12", features =  ["tokio1"] }
 futures = "0.3"
 webrtc-util = { version = "0.8.1", default-features = false, features = ["vnet"] }
 turn = "0.7"
-
-## Image/Thumbnail
-image = "0.24"
 
 ## GSTREAMER
 gst = { package = "gstreamer", version = "0.23", features = ["v1_16"] }
@@ -130,6 +133,7 @@ glib = "0.20.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 v4l = "0.14.0"
+libc = "0.2"
 
 [dev-dependencies]
 rand = "0.8.5"
@@ -137,12 +141,15 @@ serial_test = "0.10"
 tracing-test = "0.2"
 
 [build-dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 vergen-gix = { version = "1.0.9", default-features = false, features = ["build", "cargo"] }
 ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat", "uuid-impl"] }
 uuid = { version = "1.8", features = ["v4", "serde"] }
 serde = { version = "1.0", features = ["derive"] }
 regex = "1"
+
+[[example]]
+name = "stream_latency"
+path = "examples/stream_latency/main.rs"
 
 [profile.release]
 lto = true

@@ -4,10 +4,18 @@ use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use tracing::*;
 
-use crate::{
-    stream::gst::utils::wait_for_element_state_async,
-    video_stream::types::VideoAndStreamInformation,
-};
+use mcm_api::v1::{stats::StatsLevel, stream::VideoAndStreamInformation};
+
+use crate::stream::stats::pipeline_analysis::{PipelineTopology, TopologyEdge, TopologyNode};
+
+use crate::stream::{gst::utils::wait_for_element_state_async, stats::pipeline_analysis};
+
+/// In-memory pipeline analysis: level from --pipeline-analysis-level or MCM_PIPELINE_ANALYSIS_LEVEL env.
+/// "off" means disabled, "lite" or "full" means enabled with the corresponding stats level.
+static ANALYSIS_LEVEL: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(crate::cli::manager::pipeline_analysis_level);
+static ANALYSIS_ENABLED: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| *ANALYSIS_LEVEL != "off");
 
 #[derive(Debug)]
 pub struct PipelineRunner {
@@ -42,7 +50,47 @@ impl PipelineRunner {
     pub fn try_new(
         pipeline: &gst::Pipeline,
         pipeline_id: &Arc<uuid::Uuid>,
+        stream_id: &Arc<uuid::Uuid>,
         allow_block: bool,
+        video_and_stream_information: &VideoAndStreamInformation,
+    ) -> Result<Self> {
+        Self::try_new_inner(
+            pipeline,
+            pipeline_id,
+            stream_id,
+            allow_block,
+            true,
+            video_and_stream_information,
+        )
+    }
+
+    /// Like `try_new`, but with `realtime_threads = false`: streaming threads
+    /// are set to background priority (`SCHED_OTHER`, nice 19) instead of
+    /// `SCHED_RR` realtime. Use for auxiliary pipelines (e.g. thumbnail
+    /// generation) that must not preempt video stream threads.
+    pub fn try_new_background(
+        pipeline: &gst::Pipeline,
+        pipeline_id: &Arc<uuid::Uuid>,
+        stream_id: &Arc<uuid::Uuid>,
+        allow_block: bool,
+        video_and_stream_information: &VideoAndStreamInformation,
+    ) -> Result<Self> {
+        Self::try_new_inner(
+            pipeline,
+            pipeline_id,
+            stream_id,
+            allow_block,
+            false,
+            video_and_stream_information,
+        )
+    }
+
+    fn try_new_inner(
+        pipeline: &gst::Pipeline,
+        pipeline_id: &Arc<uuid::Uuid>,
+        stream_id: &Arc<uuid::Uuid>,
+        allow_block: bool,
+        realtime_threads: bool,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
         let pipeline_weak = pipeline.downgrade();
@@ -55,13 +103,16 @@ impl PipelineRunner {
         let task_handle = tokio::spawn({
             let video_and_stream_information = video_and_stream_information.clone();
             let pipeline_id = pipeline_id.clone();
+            let stream_id = stream_id.clone();
             async move {
                 debug!("task started!");
                 match Self::runner(
                     pipeline_weak,
                     pipeline_id,
+                    stream_id,
                     start_rx,
                     allow_block,
+                    realtime_threads,
                     &video_and_stream_information,
                 )
                 .await
@@ -104,13 +155,22 @@ impl PipelineRunner {
 
     #[instrument(
         level = "debug",
-        skip(pipeline_weak, pipeline_id, start, video_and_stream_information)
+        skip(
+            pipeline_weak,
+            pipeline_id,
+            stream_id,
+            start,
+            video_and_stream_information
+        ),
+        fields(realtime_threads)
     )]
     async fn runner(
         pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
         pipeline_id: Arc<uuid::Uuid>,
+        stream_id: Arc<uuid::Uuid>,
         mut start: tokio::sync::mpsc::Receiver<()>,
         allow_block: bool,
+        realtime_threads: bool,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<()> {
         let (finish_tx, mut finish) = tokio::sync::mpsc::channel(1);
@@ -133,18 +193,27 @@ impl PipelineRunner {
                 if let gst::MessageView::StreamStatus(status) = msg.view() {
                     let (status_type, element) = status.get();
                     if matches!(status_type, gst::StreamStatusType::Enter) {
-                        if let Err(error) = thread_priority::set_thread_priority_and_policy(
-                            thread_priority::thread_native_id(),
-                            thread_priority::ThreadPriority::Max,
-                            thread_priority::ThreadSchedulePolicy::Realtime(
-                                thread_priority::RealtimeThreadSchedulePolicy::RoundRobin,
-                            ),
-                        ) {
-                            warn!("Failed configuring GStreamer stream thread: {error:}.");
+                        if realtime_threads {
+                            if let Err(error) = thread_priority::set_thread_priority_and_policy(
+                                thread_priority::thread_native_id(),
+                                thread_priority::ThreadPriority::Max,
+                                thread_priority::ThreadSchedulePolicy::Realtime(
+                                    thread_priority::RealtimeThreadSchedulePolicy::RoundRobin,
+                                ),
+                            ) {
+                                warn!("Failed configuring GStreamer stream thread: {error:}.");
+                            } else {
+                                let priority = thread_priority::get_current_thread_priority();
+                                let scheduler = thread_priority::get_thread_scheduling_attributes();
+                                info!("GStreamer stream thread sucessfully configured to MAX priority ({priority:?}) and real-time round robyn ({scheduler:?}). From element {:?}, from Pipeline {pipeline_name:?}", element.name());
+                            }
                         } else {
-                            let priority = thread_priority::get_current_thread_priority();
-                            let scheduler = thread_priority::get_thread_scheduling_attributes();
-                            info!("GStreamer stream thread sucessfully configured to MAX priority ({priority:?}) and real-time round robyn ({scheduler:?}). From element {:?}, from Pipeline {pipeline_name:?}", element.name());
+                            crate::helper::threads::lower_to_background_priority();
+                            debug!(
+                                "GStreamer stream thread set to background priority. \
+                                 From element {:?}, from Pipeline {pipeline_name:?}",
+                                element.name()
+                            );
                         }
                     }
                 }
@@ -216,7 +285,7 @@ impl PipelineRunner {
             .stream_information
             .configuration
         {
-            crate::stream::types::CaptureConfiguration::Video(video_capture_configuration) => {
+            mcm_api::v1::stream::CaptureConfiguration::Video(video_capture_configuration) => {
                 let frame_interval = &video_capture_configuration.frame_interval;
 
                 if frame_interval.denominator > 0 && frame_interval.numerator > 0 {
@@ -228,13 +297,52 @@ impl PipelineRunner {
                     std::time::Duration::from_secs(1)
                 }
             }
-            crate::stream::types::CaptureConfiguration::Redirect(_) => {
+            mcm_api::v1::stream::CaptureConfiguration::Redirect(_) => {
                 return Err(anyhow!(
                     "PipelineRunner aborted for Pipeline {pipeline_name:?}: Redirect CaptureConfiguration means the stream was not initialized yet"
                 ));
             }
         };
 
+        // ── Pipeline Analysis: generalized per-element instrumentation ──
+        // Set the global stats level and window size from CLI on first pipeline creation only,
+        // so that later API changes are not overwritten on pipeline restarts.
+        static INIT_ANALYSIS_DEFAULTS: std::sync::Once = std::sync::Once::new();
+        INIT_ANALYSIS_DEFAULTS.call_once(|| {
+            match ANALYSIS_LEVEL.as_str() {
+                "full" => pipeline_analysis::set_global_stats_level(StatsLevel::Full),
+                "lite" => pipeline_analysis::set_global_stats_level(StatsLevel::Lite),
+                _ => {} // "off" — leave default (Lite, but we won't create analyses)
+            }
+            pipeline_analysis::set_global_window_size(
+                crate::cli::manager::pipeline_analysis_window_size(),
+            );
+        });
+
+        let _pa = if *ANALYSIS_ENABLED {
+            let pipeline = pipeline_weak
+                .upgrade()
+                .context("Unable to access Pipeline for analysis probes")?;
+
+            let pa = Arc::new(pipeline_analysis::PipelineAnalysis::new(
+                pipeline_name.clone(),
+                stream_id.to_string(),
+                frame_duration.as_secs_f64() * 1000.0,
+            ));
+            pa.install_probes(&pipeline);
+            pipeline_analysis::register(&pa);
+            info!(
+                "Pipeline analysis enabled (level={}) for Pipeline {pipeline_name:?}",
+                *ANALYSIS_LEVEL
+            );
+            pipeline_analysis::ensure_global_system_sampler_started();
+
+            Some(pa)
+        } else {
+            None
+        };
+
+        // ── Tick-based position monitoring loop ──
         // Check if we need to break external loop.
         // Some cameras have a duplicated timestamp when starting.
         // to avoid restarting the camera once and once again,
@@ -259,7 +367,11 @@ impl PipelineRunner {
                             .upgrade()
                             .context("Unable to access the Pipeline {pipeline_name:?} from its weak reference")?;
 
-
+                        if pipeline.current_state() != gst::State::Playing {
+                            previous_position = None;
+                            lost_ticks = 0;
+                            continue;
+                        }
 
                         if let Some(position) = pipeline.query_position::<gst::ClockTime>() {
                             match previous_position {
@@ -268,7 +380,7 @@ impl PipelineRunner {
                                         lost_ticks += 1;
 
                                         if lost_ticks == min_lost_ticks_before_considering_stuck {
-                                            warn!("Position unchanged for {min_lost_ticks_before_considering_stuck} consecutive ticks. Pipeline {pipeline_name:?} may be stuck.")
+                                            warn!("Position unchanged for {min_lost_ticks_before_considering_stuck} consecutive ticks. Pipeline {pipeline_name:?} may be stuck.");
                                         } else if lost_ticks > max_lost_ticks {
                                             error!("Pipeline {pipeline_name:?} lost too many timestamps ({lost_ticks} > max {max_lost_ticks}). Last position: {position:?}");
                                             return Err(anyhow!("Pipeline {pipeline_name:?} appears stuck — position unchanged for too long"));
@@ -422,7 +534,7 @@ async fn bus_watcher_task(
                             }
                             (None, Some(new)) => {
                                 let new_ms = new.nseconds() as f64 / 1_000_000.0;
-                                debug!("Latency established for Pipeline {pipeline_name:?}: {new_ms:.2}ms"                                    );
+                                debug!("Latency established for Pipeline {pipeline_name:?}: {new_ms:.2}ms");
                                 if new_ms > 100.0 {
                                     warn!("High latency detected for Pipeline {pipeline_name:?}: {:.2}ms - may cause noticeable delay", new_ms);
                                 }
@@ -554,4 +666,67 @@ async fn bus_watcher_task(
     }
 
     debug!("BusWatcher task ended for Pipeline {pipeline_name:?}!");
+}
+
+/// Extract the element topology from a running GStreamer pipeline as a directed graph.
+///
+/// Uses `iterate_recurse()` to include elements inside bins (e.g. rtspsrc,
+/// webrtcbin internals). Each node records its parent bin and whether it is
+/// itself a bin, enabling clients to reconstruct the structural hierarchy.
+pub(crate) fn extract_topology(pipeline: &gst::Pipeline) -> PipelineTopology {
+    let elements: Vec<gst::Element> = pipeline
+        .iterate_recurse()
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect();
+
+    let mut nodes = Vec::with_capacity(elements.len());
+    let mut edges = Vec::new();
+
+    for el in &elements {
+        let name = el.name().to_string();
+        let type_name = el
+            .factory()
+            .map(|f| f.name().to_string())
+            .unwrap_or_default();
+
+        let parent_bin: Option<String> = el
+            .parent()
+            .and_then(|p| p.downcast::<gst::Element>().ok())
+            .filter(|p| !p.is::<gst::Pipeline>())
+            .map(|p| p.name().to_string());
+
+        let is_bin = el.downcast_ref::<gst::Bin>().is_some();
+
+        nodes.push(TopologyNode {
+            name: name.clone(),
+            type_name,
+            parent_bin,
+            is_bin,
+        });
+
+        for pad in el.src_pads() {
+            if let Some(peer) = pad.peer() {
+                if let Some(peer_el) = peer.parent_element() {
+                    let media_type = pad
+                        .current_caps()
+                        .and_then(|caps| caps.structure(0).map(|s| s.name().to_string()));
+
+                    edges.push(TopologyEdge {
+                        from_node: name.clone(),
+                        from_pad: pad.name().to_string(),
+                        to_node: peer_el.name().to_string(),
+                        to_pad: peer.name().to_string(),
+                        media_type,
+                    });
+                }
+            }
+        }
+    }
+
+    PipelineTopology {
+        nodes,
+        edges,
+        sinks: Vec::new(),
+    }
 }

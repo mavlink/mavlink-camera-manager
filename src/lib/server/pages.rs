@@ -1,4 +1,4 @@
-use std::io::prelude::*;
+use std::{ffi::OsStr, path::Path};
 
 use actix_web::{
     http::header,
@@ -8,211 +8,94 @@ use actix_web::{
 };
 use actix_ws::Message;
 use futures::StreamExt;
-use paperclip::actix::{api_v2_operation, Apiv2Schema, CreatedJson};
-use serde::{Deserialize, Serialize};
+use paperclip::actix::{api_v2_operation, CreatedJson};
 use serde_json::json;
 use tokio::time::Duration;
 use tracing::*;
-use validator::Validate;
+
+use mcm_api::v1::{
+    server::{
+        ApiVideoSource, AuthenticateOnvifDeviceRequest, BlockSource, Development, Info, PostStream,
+        RemoveStream, ResetCameraControls, ResetSettings, SdpFileRequest, ThumbnailFileRequest,
+        UnauthenticateOnvifDeviceRequest, UnblockSource, V4lControl, XmlFileRequest,
+    },
+    stats::{SetLevelRequest, SetWindowSizeRequest, SnapshotQuery, SnapshotWsQuery},
+    stream::VideoAndStreamInformation,
+    video::VideoSourceType,
+};
 
 use crate::{
-    controls::types::Control,
-    helper,
+    helper::{self, threads::lower_thread_priority},
     server::error::{Error, Result},
     settings,
-    stream::{gst as gst_stream, manager as stream_manager, types::StreamInformation},
+    stream::{gst as gst_stream, manager as stream_manager, stats::pipeline_analysis},
     video::{
-        types::{Format, VideoSourceType},
+        types::VideoSourceTypeExt,
         video_source::{self, VideoSource, VideoSourceFormats},
         xml,
     },
-    video_stream::types::VideoAndStreamInformation,
 };
 
-#[derive(Apiv2Schema, Debug, Serialize)]
-pub struct ApiVideoSource {
-    name: String,
-    source: String,
-    formats: Vec<Format>,
-    controls: Vec<Control>,
-    blocked: bool,
-}
-
-#[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
-pub struct V4lControl {
-    device: String,
-    v4l_id: u64,
-    value: i64,
-}
-
-#[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
-pub struct PostStream {
-    name: String,
-    source: String,
-    stream_information: StreamInformation,
-}
-
-#[derive(Apiv2Schema, Debug, Deserialize)]
-pub struct RemoveStream {
-    name: String,
-}
-
-#[derive(Apiv2Schema, Debug, Deserialize)]
-pub struct BlockSource {
-    source_string: String,
-}
-
-#[derive(Apiv2Schema, Debug, Deserialize)]
-pub struct UnblockSource {
-    source_string: String,
-}
-
-#[derive(Apiv2Schema, Debug, Deserialize)]
-pub struct ResetSettings {
-    all: Option<bool>,
-}
-
-#[derive(Apiv2Schema, Debug, Deserialize)]
-pub struct ResetCameraControls {
-    device: String,
-}
-
-#[derive(Apiv2Schema, Debug, Deserialize)]
-pub struct XmlFileRequest {
-    file: String,
-}
-
-#[derive(Apiv2Schema, Debug, Deserialize)]
-pub struct SdpFileRequest {
-    source: String,
-}
-
-#[derive(Apiv2Schema, Debug, Deserialize, Validate)]
-pub struct ThumbnailFileRequest {
-    source: String,
-    /// The Quality level (a percentage value as an integer between 1 and 100) is inversely proportional to JPEG compression level, which means the higher, the best.
-    #[validate(range(min = 1, max = 100))]
-    quality: Option<u8>,
-    /// Target height of the thumbnail. The value should be an integer between 1 and 1080 (because of memory constraints).
-    #[validate(range(min = 1, max = 1080))]
-    target_height: Option<u16>,
-}
-
-#[derive(Apiv2Schema, Serialize, Debug)]
-pub struct Development {
-    number_of_tasks: usize,
-}
-
-#[derive(Apiv2Schema, Serialize, Debug)]
-pub struct Info {
-    /// Name of the program
-    name: String,
-    /// Version/tag
-    version: String,
-    /// Git SHA
-    sha: String,
-    build_date: String,
-    /// Authors name
-    authors: String,
-    /// Unstable field for custom development
-    development: Development,
-}
-
-impl Info {
-    pub fn new() -> Self {
-        Self {
-            name: env!("CARGO_PKG_NAME").into(),
-            version: env!("CARGO_PKG_VERSION").into(),
-            sha: option_env!("VERGEN_GIT_SHA").unwrap_or("?").into(),
-            build_date: env!("VERGEN_BUILD_TIMESTAMP").into(),
-            authors: env!("CARGO_PKG_AUTHORS").into(),
-            development: Development {
-                number_of_tasks: helper::threads::process_task_counter(),
-            },
-        }
+pub fn new_info() -> Info {
+    Info {
+        name: env!("CARGO_PKG_NAME").into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        sha: option_env!("VERGEN_GIT_SHA").unwrap_or("?").into(),
+        build_date: env!("VERGEN_BUILD_TIMESTAMP").into(),
+        authors: env!("CARGO_PKG_AUTHORS").into(),
+        development: Development {
+            number_of_tasks: helper::threads::process_task_counter(),
+        },
     }
 }
-
-#[derive(Apiv2Schema, Deserialize, Debug)]
-pub struct AuthenticateOnvifDeviceRequest {
-    /// Onvif Device UUID, obtained via `/onvif/devices` get request
-    device_uuid: uuid::Uuid,
-    /// Username for the Onvif Device
-    username: String,
-    /// Password for the Onvif Device
-    password: String,
-}
-
-#[derive(Apiv2Schema, Deserialize, Debug)]
-pub struct UnauthenticateOnvifDeviceRequest {
-    /// Onvif Device UUID, obtained via `/onvif/devices` get request
-    device_uuid: uuid::Uuid,
-}
-
-use std::{ffi::OsStr, path::Path};
 
 use include_dir::{include_dir, Dir};
 
-static WEBRTC_DIST: Dir<'_> = include_dir!("src/lib/stream/webrtc/frontend/dist");
+static DIST: Dir<'_> = include_dir!("frontend/dist");
 
-fn load_file(file_name: &str) -> String {
-    if file_name.starts_with("webrtc/") {
-        return load_webrtc(file_name);
-    }
-
-    // Load files at runtime only in debug builds
-    if cfg!(debug_assertions) {
-        let html_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/html/");
-        let mut file = std::fs::File::open(html_path.join(file_name)).unwrap();
-        let mut contents = String::new();
-        file.read_to_string(&mut contents).unwrap();
-        return contents;
-    }
-
-    match file_name {
-        "" | "index.html" => std::include_str!("../../html/index.html").into(),
-        "vue.js" => std::include_str!("../../html/vue.js").into(),
-        _ => format!("File not found: {file_name:?}"),
-    }
-}
-
-fn load_webrtc(filename: &str) -> String {
-    let filename = filename.trim_start_matches("webrtc/");
-    let file = WEBRTC_DIST.get_file(filename).unwrap();
-    let content = file.contents_utf8().unwrap();
-    content.into()
+fn load_file(file_name: &str) -> Option<&'static str> {
+    DIST.get_file(file_name)
+        .and_then(|file| file.contents_utf8())
 }
 
 #[api_v2_operation]
 pub fn root(req: HttpRequest) -> Result<HttpResponse> {
-    let filename = match req.match_info().query("filename") {
-        "" | "index.html" => "index.html",
-        "vue.js" => "vue.js",
+    let raw = req.match_info().get("filename").unwrap_or("");
+    let filename = if raw.is_empty() { "index.html" } else { raw };
 
-        webrtc_file if webrtc_file.starts_with("webrtc/") => webrtc_file,
+    // Try exact file match
+    if let Some(content) = load_file(filename) {
+        let extension = Path::new(filename)
+            .extension()
+            .and_then(OsStr::to_str)
+            .unwrap_or("");
+        let mime = actix_files::file_extension_to_mime(extension).to_string();
+        return Ok(HttpResponse::Ok().content_type(mime).body(content));
+    }
 
-        something => {
-            //TODO: do that in load_file
-            return Err(Error::NotFound(format!(
-                "Page does not exist: {something:?}"
-            )));
-        }
-    };
-    let content = load_file(filename);
-    let extension = Path::new(&filename)
-        .extension()
-        .and_then(OsStr::to_str)
-        .unwrap_or("");
-    let mime = actix_files::file_extension_to_mime(extension).to_string();
+    // Try directory index: {path}/index.html
+    let dir_index = format!("{}/index.html", filename.trim_end_matches('/'));
+    if let Some(content) = load_file(&dir_index) {
+        let mime = actix_files::file_extension_to_mime("html").to_string();
+        return Ok(HttpResponse::Ok().content_type(mime).body(content));
+    }
 
-    Ok(HttpResponse::Ok().content_type(mime).body(content))
+    // SPA fallback: serve index.html for client-side routing
+    if let Some(content) = load_file("index.html") {
+        let mime = actix_files::file_extension_to_mime("html").to_string();
+        return Ok(HttpResponse::Ok().content_type(mime).body(content));
+    }
+
+    Err(Error::NotFound(format!(
+        "Page does not exist: {filename:?}"
+    )))
 }
 
 #[api_v2_operation]
 /// Provide information about the running service
 /// There is no stable API guarantee for the development field
 pub async fn info() -> Result<CreatedJson<Info>> {
-    Ok(CreatedJson(Info::new()))
+    Ok(CreatedJson(new_info()))
 }
 
 //TODO: change endpoint name to sources
@@ -504,15 +387,25 @@ pub async fn thumbnail(
     // but because paperclip (at least until 0.8) is using `actix-web-validator 3.x`,
     // and `validator 0.14`, the newest api needed to use it along #[api_v2_operation]
     // wasn't implemented yet, it doesn't compile.
-    // To workaround this, we are manually calling the validator here, using actix to
-    // automatically handle the validation error for us as it normally would.
+    // To workaround this, we are manually validating here.
+    // Note: `ThumbnailFileRequest` used to derive `validator::Validate`, but since
+    // it moved to the `mcm-api` crate (which doesn't depend on `validator`), we now
+    // do the range checks inline instead.
     // TODO: update this function to use `actix_web_validator::Query` directly and get
     // rid of this workaround.
-    if let Err(errors) = thumbnail_file_request.validate() {
-        warn!("Failed validating ThumbnailFileRequest. Reason: {errors:?}");
-        return Ok(actix_web::ResponseError::error_response(
-            &actix_web_validator::Error::from(errors),
-        ));
+    if let Some(quality) = thumbnail_file_request.quality {
+        if !(1..=100).contains(&quality) {
+            return Err(Error::Internal(format!(
+                "Quality must be between 1 and 100, got {quality}"
+            )));
+        }
+    }
+    if let Some(target_height) = thumbnail_file_request.target_height {
+        if !(1..=1080).contains(&target_height) {
+            return Err(Error::Internal(format!(
+                "Target height must be between 1 and 1080, got {target_height}"
+            )));
+        }
     }
 
     let source = thumbnail_file_request.source.clone();
@@ -618,7 +511,14 @@ pub async fn unauthenticate_onvif_device(
 
 #[api_v2_operation]
 /// WebSocket endpoint that streams the DOT representation of all running GStreamer pipelines in real time.
+/// Requires `--enable-dot` CLI flag; returns 404 when disabled.
 pub async fn dot_stream(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse> {
+    if !crate::cli::manager::is_dot_enabled() {
+        return Err(Error::NotFound(
+            "DOT endpoint disabled. Start with --enable-dot to enable.".into(),
+        ));
+    }
+
     let (response, mut session, mut msg_stream) =
         actix_ws::handle(&req, stream).map_err(|error| Error::Internal(format!("{error:?}")))?;
 
@@ -679,4 +579,157 @@ pub async fn dot_stream(req: HttpRequest, stream: web::Payload) -> Result<HttpRe
     });
 
     Ok(response)
+}
+
+/// Consolidated snapshot of all streams.
+pub async fn streams_snapshot_get(query: web::Query<SnapshotQuery>) -> Result<HttpResponse> {
+    let buffer_limit = query.into_inner().buffer_limit;
+    let streams_info = stream_manager::streams()
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+    let json_bytes = tokio::task::spawn_blocking(move || {
+        lower_thread_priority();
+        pipeline_analysis::full_snapshot_json(buffer_limit, &streams_info)
+    })
+    .await
+    .map_err(|error| Error::Internal(format!("{error:?}")))?;
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(json_bytes.as_ref().clone()))
+}
+
+/// WebSocket endpoint that streams snapshots at a configurable interval.
+pub async fn streams_snapshot_ws(
+    req: HttpRequest,
+    stream: web::Payload,
+    query: web::Query<SnapshotWsQuery>,
+) -> Result<HttpResponse> {
+    let query = query.into_inner();
+    let interval_ms = query.interval_ms.max(500);
+    let buffer_limit = query.buffer_limit;
+    let (response, mut session, mut msg_stream) =
+        actix_ws::handle(&req, stream).map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    rt::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_millis(interval_ms));
+        loop {
+            tokio::select! {
+                Some(msg) = msg_stream.next() => {
+                    match msg {
+                        Ok(Message::Ping(_)) | Ok(Message::Pong(_)) |
+                        Ok(Message::Text(_)) | Ok(Message::Binary(_)) |
+                        Ok(Message::Continuation(_)) | Ok(Message::Nop) => continue,
+                        Ok(Message::Close(_)) | Err(_) => break,
+                    }
+                }
+                _ = interval.tick() => {
+                    let streams_info = match stream_manager::streams().await {
+                        Ok(info) => info,
+                        Err(error) => {
+                            warn!("Failed to get streams info for WS snapshot: {error:?}");
+                            continue;
+                        }
+                    };
+                    let json_bytes = match tokio::task::spawn_blocking(move || {
+                        lower_thread_priority();
+                        pipeline_analysis::full_snapshot_json(buffer_limit, &streams_info)
+                    }).await {
+                        Ok(bytes) => bytes,
+                        Err(_) => continue,
+                    };
+                    // Safety: serde_json always produces valid UTF-8.
+                    let json_str = unsafe { std::str::from_utf8_unchecked(&json_bytes) };
+                    if session.text(json_str).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    Ok(response)
+}
+
+#[api_v2_operation]
+/// Reset all stream statistics (clears rolling windows and counters).
+pub async fn streams_reset() -> Result<HttpResponse> {
+    pipeline_analysis::reset_all();
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body("{\"status\":\"reset\"}"))
+}
+
+#[api_v2_operation]
+/// Get the stats level (lite/full).
+pub async fn streams_level_get() -> Result<HttpResponse> {
+    let level = pipeline_analysis::global_stats_level();
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(format!("{{\"level\":\"{level}\"}}")))
+}
+
+#[api_v2_operation]
+/// Set the stats level. Body: {"level": "lite"} or {"level": "full"}.
+/// Note: changing the level only affects newly created pipelines. Existing
+/// probes keep their original level until the pipeline restarts.
+pub async fn streams_level_set(json: web::Json<SetLevelRequest>) -> Result<HttpResponse> {
+    use mcm_api::v1::stats::StatsLevel;
+
+    let level = match json.level.as_str() {
+        "lite" => StatsLevel::Lite,
+        "full" => StatsLevel::Full,
+        other => {
+            return Err(Error::BadRequest(format!(
+                "Invalid level: {other:?}. Must be \"lite\" or \"full\"."
+            )));
+        }
+    };
+    pipeline_analysis::set_global_stats_level(level);
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(format!("{{\"level\":\"{}\"}}", json.level)))
+}
+
+#[api_v2_operation]
+/// Get the current window size.
+pub async fn streams_window_size_get() -> Result<HttpResponse> {
+    let size = pipeline_analysis::global_window_size();
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(serde_json::json!({"window_size": size}).to_string()))
+}
+
+#[api_v2_operation]
+/// Set the window size. Body: {"window_size": 900}.
+/// Note: changing the window size only affects newly created pipelines.
+/// Existing probes keep their original window size until the pipeline restarts.
+pub async fn streams_window_size_set(
+    json: web::Json<SetWindowSizeRequest>,
+) -> Result<HttpResponse> {
+    if !pipeline_analysis::is_valid_window_size(json.window_size) {
+        return Err(Error::BadRequest(format!(
+            "window_size must be between 1 and {}",
+            pipeline_analysis::MAX_WINDOW_SIZE
+        )));
+    }
+    pipeline_analysis::set_global_window_size(json.window_size);
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(serde_json::json!({"window_size": json.window_size}).to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::http::StatusCode;
+    use actix_web::ResponseError;
+
+    #[actix_web::test]
+    async fn window_size_set_rejects_zero() {
+        let result =
+            streams_window_size_set(web::Json(SetWindowSizeRequest { window_size: 0 })).await;
+
+        let err = result.expect_err("expected bad request");
+        assert_eq!(err.status_code(), StatusCode::BAD_REQUEST);
+    }
 }

@@ -5,11 +5,13 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Result};
+use gst::prelude::*;
 use gst_rtsp::RTSPLowerTrans;
 use gst_rtsp_server::{prelude::*, RTSPTransportMode};
 use tracing::*;
 
 use super::rtsp_scheme::RTSPScheme;
+use crate::stream::sink::rtsp_sink::RtspFlowHandle;
 
 #[allow(dead_code)]
 pub struct RTSPServer {
@@ -108,13 +110,15 @@ impl RTSPServer {
         }
     }
 
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip(rtsp_appsrc, pts_offset, flow_handle))]
     pub fn add_pipeline(
         scheme: &RTSPScheme,
         path: &str,
-        socket_path: &str,
-        rtp_caps: &gst::Caps,
+        rtsp_appsrc: std::sync::Arc<std::sync::Mutex<Option<gst_app::AppSrc>>>,
+        pts_offset: std::sync::Arc<std::sync::Mutex<Option<gst::ClockTime>>>,
+        video_caps: &gst::Caps,
         rtp_queue_time_ns: u64,
+        flow_handle: RtspFlowHandle,
     ) -> Result<()> {
         // Initialize the singleton before calling gst factory
         let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
@@ -146,84 +150,55 @@ impl RTSPServer {
         factory.set_transport_mode(RTSPTransportMode::PLAY);
         factory.set_protocols(protocols);
 
-        let Some(encode) = rtp_caps.iter().find_map(|structure| {
-            structure.iter().find_map(|(key, sendvalue)| {
-                if key == "encoding-name" {
-                    Some(
-                        sendvalue
-                            .to_value()
-                            .get::<String>()
-                            .expect("Failed accessing encoding-name parameter"),
-                    )
-                } else {
-                    None
-                }
-            })
-        }) else {
-            return Err(anyhow!("Cannot find 'media' in caps"));
-        };
+        let caps_name = video_caps
+            .structure(0)
+            .map(|s| s.name().to_string())
+            .unwrap_or_default();
 
-        let rtp_caps = rtp_caps.to_string();
-        let description = match encode.as_str() {
-            "H264" => {
+        let description = match caps_name.as_str() {
+            "video/x-h264" => {
                 format!(
                     concat!(
-                        "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
+                        "appsrc name=source is-live=true format=time do-timestamp=false",
                         " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
-                        " ! capsfilter caps={rtp_caps:?}",
-                        " ! rtph264depay",
                         " ! rtph264pay name=pay0 aggregate-mode=zero-latency config-interval=-1 pt=96",
                     ),
-                    socket_path = socket_path,
-                    rtp_caps = rtp_caps,
                     queue_time = rtp_queue_time_ns,
                 )
             }
-            "H265" => {
+            "video/x-h265" => {
                 format!(
                     concat!(
-                        "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
+                        "appsrc name=source is-live=true format=time do-timestamp=false",
                         " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
-                        " ! capsfilter caps={rtp_caps:?}",
-                        " ! rtph265depay",
                         " ! rtph265pay name=pay0 aggregate-mode=zero-latency config-interval=-1 pt=96",
                     ),
-                    socket_path = socket_path,
-                    rtp_caps = rtp_caps,
                     queue_time = rtp_queue_time_ns,
                 )
             }
-            "RAW" => {
+            "video/x-raw" => {
                 format!(
                     concat!(
-                        "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
+                        "appsrc name=source is-live=true format=time do-timestamp=false",
                         " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
-                        " ! capsfilter caps={rtp_caps:?}",
-                        " ! rtpvrawdepay",
                         " ! rtpvrawpay name=pay0 pt=96",
                     ),
-                    socket_path = socket_path,
-                    rtp_caps = rtp_caps,
                     queue_time = rtp_queue_time_ns,
                 )
             }
-            "JPEG" => {
+            "image/jpeg" => {
                 format!(
                     concat!(
-                        "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
+                        "appsrc name=source is-live=true format=time do-timestamp=false",
                         " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
-                        " ! capsfilter caps={rtp_caps:?}",
-                        " ! rtpjpegdepay",
                         " ! rtpjpegpay name=pay0 pt=96",
                     ),
-                    socket_path = socket_path,
-                    rtp_caps = rtp_caps,
                     queue_time = rtp_queue_time_ns,
                 )
             }
             unsupported => {
                 return Err(anyhow!(
-                    "Encode {unsupported:?} is not supported for RTSP Sink"
+                    "Video caps {unsupported:?} not supported for RTSP Sink"
                 ))
             }
         };
@@ -231,6 +206,38 @@ impl RTSPServer {
         debug!("RTSP Server description: {description:#?}");
 
         factory.set_launch(&description);
+
+        let video_caps_clone = video_caps.clone();
+        factory.connect_media_configure(move |_factory, media| {
+            let element = media.element();
+            if let Some(bin) = element.downcast_ref::<gst::Bin>() {
+                if let Some(source) = bin.by_name("source") {
+                    if let Ok(appsrc) = source.downcast::<gst_app::AppSrc>() {
+                        appsrc.set_caps(Some(&video_caps_clone));
+                        appsrc.set_max_bytes(0);
+                        appsrc.set_property("block", false);
+                        *pts_offset.lock().unwrap() = None;
+                        *rtsp_appsrc.lock().unwrap() = Some(appsrc);
+                        debug!("Connected appsrc for RTSP media");
+                    }
+                } else {
+                    error!("Failed to find 'source' appsrc in RTSP media pipeline");
+                }
+            } else {
+                error!("Failed to downcast RTSP media element to Bin");
+            }
+
+            flow_handle.on_client_connected();
+
+            let rtsp_appsrc_disconnect = rtsp_appsrc.clone();
+            let pts_offset_disconnect = pts_offset.clone();
+            let flow_handle_disconnect = flow_handle.clone();
+            media.connect_unprepared(move |_media| {
+                *rtsp_appsrc_disconnect.lock().unwrap() = None;
+                *pts_offset_disconnect.lock().unwrap() = None;
+                flow_handle_disconnect.on_client_disconnected();
+            });
+        });
 
         if let Some(server) = rtsp_server
             .path_to_factory

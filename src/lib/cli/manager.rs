@@ -96,6 +96,13 @@ struct Args {
     #[arg(long, value_name = "PORT", num_args = 0..=1, default_missing_value = "9515")]
     enable_webrtc_task_test: Option<u16>,
 
+    /// Run the internal stats snapshot benchmark and exit.
+    /// Waits for pipelines to start, calls full_snapshot() in a tight loop
+    /// (bypassing the snapshot cache), then terminates. Use with cargo flamegraph.
+    #[cfg(feature = "bench-internal")]
+    #[arg(long)]
+    bench_stats_snapshot: bool,
+
     /// Sets the MAVLink System ID.
     #[arg(long, value_name = "SYSTEM_ID", default_value = "1")]
     mavlink_system_id: u8,
@@ -116,6 +123,10 @@ struct Args {
     #[clap(long, value_name = "onvif://<USERNAME>:<PASSWORD>@<HOST>", value_delimiter = ',', value_parser = onvif_auth_validator, env = "MCM_ONVIF_AUTH")]
     onvif_auth: Vec<String>,
 
+    /// Enable the /dot WebSocket endpoint for GStreamer pipeline graph streaming.
+    #[arg(long)]
+    enable_dot: bool,
+
     /// Enables the zenoh integration by default in client mode.
     #[arg(long)]
     zenoh: bool,
@@ -123,6 +134,31 @@ struct Args {
     /// Sets the zenoh configuration file path.
     #[arg(long, value_name = "PATH")]
     zenoh_config_file: Option<String>,
+
+    /// Sets the pipeline analysis stats level. "lite" uses O(1) atomic
+    /// accumulators (mean/min/max/std). "full" uses an O(window) ring buffer
+    /// (adds percentiles, distributions, scatter data). "off" disables.
+    /// Results available at /stats/pipeline-analysis.
+    #[arg(
+        long,
+        value_name = "off|lite|full",
+        default_value = "lite",
+        env = "MCM_PIPELINE_ANALYSIS_LEVEL"
+    )]
+    pipeline_analysis_level: String,
+
+    /// Sets the rolling window size (number of buffers) for pipeline analysis
+    /// ring buffers (used when stats level is "full"). Larger values retain
+    /// more history for percentiles/distributions but use more memory.
+    /// Each slot costs 16 bytes per probed pad.
+    #[arg(
+        long,
+        value_name = "NUM_BUFFERS",
+        value_parser = pipeline_analysis_window_size_validator,
+        default_value_t = crate::stream::stats::pipeline_analysis::DEFAULT_WINDOW_SIZE,
+        env = "MCM_PIPELINE_ANALYSIS_WINDOW_SIZE"
+    )]
+    pipeline_analysis_window_size: usize,
 }
 
 #[derive(Debug)]
@@ -238,6 +274,11 @@ pub fn enable_webrtc_task_test() -> Option<u16> {
     MANAGER.clap_matches.enable_webrtc_task_test
 }
 
+#[cfg(feature = "bench-internal")]
+pub fn bench_stats_snapshot() -> bool {
+    MANAGER.clap_matches.bench_stats_snapshot
+}
+
 pub fn mavlink_system_id() -> u8 {
     MANAGER.clap_matches.mavlink_system_id
 }
@@ -316,12 +357,26 @@ pub fn onvif_auth() -> HashMap<std::net::Ipv4Addr, onvif::soap::client::Credenti
         .collect()
 }
 
+pub fn is_dot_enabled() -> bool {
+    MANAGER.clap_matches.enable_dot
+}
+
 pub fn enable_zenoh() -> bool {
     MANAGER.clap_matches.zenoh
 }
 
 pub fn zenoh_config_file() -> Option<String> {
     MANAGER.clap_matches.zenoh_config_file.clone()
+}
+
+/// Returns the configured pipeline analysis level ("off", "lite", or "full").
+pub fn pipeline_analysis_level() -> String {
+    MANAGER.clap_matches.pipeline_analysis_level.clone()
+}
+
+/// Returns the configured pipeline analysis window size.
+pub fn pipeline_analysis_window_size() -> usize {
+    MANAGER.clap_matches.pipeline_analysis_window_size
 }
 
 fn gst_feature_rank_validator(val: &str) -> Result<String, String> {
@@ -371,6 +426,19 @@ fn mavlink_camera_component_id_range_validator(
     }
 
     Ok(first_id..=last_id)
+}
+
+fn pipeline_analysis_window_size_validator(val: &str) -> Result<usize, String> {
+    let size = val
+        .parse::<usize>()
+        .map_err(|_| "window size must be an unsigned integer".to_string())?;
+    if !crate::stream::stats::pipeline_analysis::is_valid_window_size(size) {
+        return Err(format!(
+            "window size must be between 1 and {}",
+            crate::stream::stats::pipeline_analysis::MAX_WINDOW_SIZE
+        ));
+    }
+    Ok(size)
 }
 
 #[cfg(test)]

@@ -5,11 +5,12 @@ use gst::prelude::*;
 use tokio::task::JoinHandle;
 use tracing::*;
 
-use crate::{
-    stream::{pipeline::runner::PipelineRunner, types::CaptureConfiguration},
-    video::types::VideoEncodeType,
-    video_stream::types::VideoAndStreamInformation,
+use mcm_api::v1::{
+    stream::{CaptureConfiguration, VideoAndStreamInformation},
+    video::VideoEncodeType,
 };
+
+use crate::stream::pipeline::runner::PipelineRunner;
 
 use super::{
     link_sink_to_tee, types::zenoh_message::CompressedVideo, types::zenoh_message::Timestamp,
@@ -126,6 +127,7 @@ impl ZenohSink {
     #[instrument(level = "debug", skip_all)]
     pub async fn try_new(
         sink_id: Arc<uuid::Uuid>,
+        stream_id: &Arc<uuid::Uuid>,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
         let queue = gst::ElementFactory::make("queue")
@@ -344,8 +346,13 @@ impl ZenohSink {
             return Err(anyhow!("Failed linking ZenohSink's elements: {link_err:?}"));
         }
 
-        let pipeline_runner =
-            PipelineRunner::try_new(&pipeline, &sink_id, false, video_and_stream_information)?;
+        let pipeline_runner = PipelineRunner::try_new(
+            &pipeline,
+            &sink_id,
+            stream_id,
+            false,
+            video_and_stream_information,
+        )?;
 
         Ok(Self {
             sink_id,

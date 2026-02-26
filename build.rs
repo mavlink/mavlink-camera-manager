@@ -2,15 +2,6 @@ use std::{path::Path, process::Command};
 
 use vergen_gix::{BuildBuilder, CargoBuilder, DependencyKind, GixBuilder};
 
-fn file_download(url: &str, output: &str) {
-    let mut resp =
-        reqwest::blocking::get(url).unwrap_or_else(|_| panic!("Failed to download file: {url}"));
-    let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(output);
-    let mut output_file = std::fs::File::create(&file_path)
-        .unwrap_or_else(|_| panic!("Failed to create file: {file_path:?}"));
-    std::io::copy(&mut resp, &mut output_file).expect("Failed to copy content.");
-}
-
 #[cfg(windows)]
 fn print_link_search_path() {
     use std::env;
@@ -31,11 +22,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     generate_build_details()?;
 
-    file_download(
-        "https://unpkg.com/vue@3.0.5/dist/vue.global.js",
-        "src/html/vue.js",
-    );
-
     // set SKIP_WEB=1 to skip
     if std::env::var("SKIP_WEB").is_err() {
         build_web();
@@ -45,13 +31,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn build_web() {
-    // Note that as we are not waching all files, sometimes we'd need to force this build
-    println!("cargo:rerun-if-changed=./src/lib/stream/webrtc/frontend/index.html");
-    println!("cargo:rerun-if-changed=./src/lib/stream/webrtc/frontend/package.json");
-    println!("cargo:rerun-if-changed=./src/lib/stream/webrtc/frontend/src");
+    // Note that as we are not watching all files, sometimes we'd need to force this build
+    println!("cargo:rerun-if-changed=./frontend/index.html");
+    println!("cargo:rerun-if-changed=./frontend/package.json");
+    println!("cargo:rerun-if-changed=./frontend/vite.config.ts");
+    println!("cargo:rerun-if-changed=./frontend/tsconfig.json");
+    println!("cargo:rerun-if-changed=./frontend/tsconfig.config.json");
+    println!("cargo:rerun-if-changed=./frontend/src");
+    println!("cargo:rerun-if-changed=./frontend/bindings/signalling_protocol.d.ts");
 
-    let frontend_dir = Path::new("./src/lib/stream/webrtc/frontend");
+    let frontend_dir = Path::new("./frontend");
     frontend_dir.try_exists().unwrap();
+
+    let bindings_file = Path::new("./frontend/bindings/signalling_protocol.d.ts");
+    if !bindings_file.exists() {
+        panic!(
+            "\n\n\
+            Frontend TypeScript bindings not found at: {}\n\n\
+            Please generate them first by running:\n\n\
+            \tcargo run --package=bindings\n\n\
+            Or use `build.sh` which handles this automatically.\n",
+            bindings_file.display()
+        );
+    }
 
     let program = if Command::new("bun")
         .args(["--version"])

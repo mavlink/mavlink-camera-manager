@@ -1,6 +1,6 @@
 import type { Stream } from "@/signalling_protocol";
 
-import type { Signaller } from "@/signaller";
+import type { Signaller } from "./signaller";
 
 type on_close_callback = (session_id: string, reason: string) => void;
 

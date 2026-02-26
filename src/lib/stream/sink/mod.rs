@@ -11,8 +11,7 @@ use gst::prelude::*;
 use std::{ops::Deref, sync::Arc};
 use tracing::*;
 
-use crate::stream::types::CaptureConfiguration;
-use crate::video_stream::types::VideoAndStreamInformation;
+use mcm_api::v1::stream::{CaptureConfiguration, VideoAndStreamInformation};
 
 use image_sink::ImageSink;
 use rtsp_sink::RtspSink;
@@ -98,10 +97,12 @@ impl std::fmt::Display for Sink {
 #[instrument(level = "debug", skip_all)]
 pub fn create_udp_sink(
     id: Arc<uuid::Uuid>,
+    stream_id: &Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
     Ok(Sink::Udp(UdpSink::try_new(
         id,
+        stream_id,
         video_and_stream_information,
     )?))
 }
@@ -110,6 +111,8 @@ pub fn create_udp_sink(
 pub fn create_rtsp_sink(
     id: Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
+    consumer_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    idle: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<Sink> {
     let addresses = video_and_stream_information
         .stream_information
@@ -121,16 +124,20 @@ pub fn create_rtsp_sink(
         id,
         addresses,
         rtp_queue_time_ns,
+        consumer_count,
+        idle,
     )?))
 }
 
 #[instrument(level = "debug", skip_all)]
 pub fn create_image_sink(
     id: Arc<uuid::Uuid>,
+    stream_id: &Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
     Ok(Sink::Image(ImageSink::try_new(
         id,
+        stream_id,
         video_and_stream_information,
     )?))
 }
@@ -138,10 +145,11 @@ pub fn create_image_sink(
 #[instrument(level = "debug", skip_all)]
 pub async fn create_zenoh_sink(
     id: Arc<uuid::Uuid>,
+    stream_id: &Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
     Ok(Sink::Zenoh(
-        ZenohSink::try_new(id, video_and_stream_information).await?,
+        ZenohSink::try_new(id, stream_id, video_and_stream_information).await?,
     ))
 }
 
