@@ -10,7 +10,7 @@ use tracing::*;
 use crate::{
     settings,
     stream::{
-        sink::{webrtc_sink::WebRTCSink, Sink, SinkInterface},
+        sink::{rtp_queue_max_time_ns, webrtc_sink::WebRTCSink, Sink, SinkInterface},
         types::CaptureConfiguration,
         webrtc::signalling_protocol::BindAnswer,
     },
@@ -479,7 +479,12 @@ impl Manager {
             session_id,
         };
 
-        let sink = Sink::WebRTC(WebRTCSink::try_new(bind, sender)?);
+        let queue_time_ns = {
+            let info = stream.video_and_stream_information.read().await;
+            rtp_queue_max_time_ns(&info)
+        };
+
+        let sink = Sink::WebRTC(WebRTCSink::try_new(bind, sender, queue_time_ns)?);
 
         let mut state_guard = stream.state.write().await;
 
