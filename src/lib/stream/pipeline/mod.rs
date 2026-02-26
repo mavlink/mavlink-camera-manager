@@ -194,8 +194,8 @@ impl PipelineState {
         // Request a new src pad for the used Tee
         // Note: Here we choose if the sink will receive a Video or RTP packages
         let tee = match sink {
-            Sink::Image(_) | Sink::Zenoh(_) => &self.video_tee,
-            Sink::Udp(_) | Sink::Rtsp(_) | Sink::WebRTC(_) => &self.rtp_tee,
+            Sink::Image(_) | Sink::Zenoh(_) | Sink::Rtsp(_) => &self.video_tee,
+            Sink::Udp(_) | Sink::WebRTC(_) => &self.rtp_tee,
         };
 
         let Some(tee) = tee else {
@@ -238,14 +238,21 @@ impl PipelineState {
         }
 
         if let Sink::Rtsp(sink) = &sink {
-            if let Some(rtp_tee) = &self.rtp_tee {
-                let caps = &rtp_tee
+            if let Some(video_tee) = &self.video_tee {
+                // Prefer fully-negotiated caps (includes codec_data for H264 avc),
+                // fall back to the capsfilter's configured caps for initial setup.
+                let caps = video_tee
                     .static_pad("sink")
-                    .expect("No static sink pad found on capsfilter")
-                    .current_caps()
-                    .context("Failed to get caps from capsfilter sink pad")?;
+                    .and_then(|p| p.current_caps())
+                    .or_else(|| {
+                        let filter_name = format!("{PIPELINE_FILTER_NAME}-{}", self.pipeline_id);
+                        pipeline
+                            .by_name(&filter_name)
+                            .and_then(|f| f.property::<Option<gst::Caps>>("caps"))
+                    })
+                    .context("Failed to get caps for RTSP sink")?;
 
-                debug!("caps: {:#?}", caps.to_string());
+                debug!("RTSP video caps: {:#?}", caps.to_string());
 
                 // In case it exisits, try to remove it first, but skip the result
                 let _ = RTSPServer::stop_pipeline(&sink.path());
@@ -253,8 +260,9 @@ impl PipelineState {
                 RTSPServer::add_pipeline(
                     &sink.scheme(),
                     &sink.path(),
-                    &sink.socket_path(),
-                    caps,
+                    sink.rtsp_appsrc(),
+                    sink.pts_offset(),
+                    &caps,
                     sink.rtp_queue_time_ns(),
                 )?;
 
