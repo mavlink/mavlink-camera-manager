@@ -601,7 +601,14 @@ pub async fn unauthenticate_onvif_device(
 
 #[api_v2_operation]
 /// WebSocket endpoint that streams the DOT representation of all running GStreamer pipelines in real time.
+/// Requires `--enable-dot` CLI flag; returns 404 when disabled.
 pub async fn dot_stream(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse> {
+    if !crate::cli::manager::is_dot_enabled() {
+        return Err(Error::NotFound(
+            "DOT endpoint disabled. Start with --enable-dot to enable.".into(),
+        ));
+    }
+
     let (response, mut session, mut msg_stream) =
         actix_ws::handle(&req, stream).map_err(|error| Error::Internal(format!("{error:?}")))?;
 
