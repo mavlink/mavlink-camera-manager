@@ -969,14 +969,14 @@ impl Manager {
                     .as_ref()
                     .map(|m| m.into());
 
-                Some(StreamStatus {
+                Some(StreamStatus::new(
                     id,
                     running,
                     state,
                     error,
                     video_and_stream,
                     mavlink,
-                })
+                ))
             })
             .collect()
             .await;
