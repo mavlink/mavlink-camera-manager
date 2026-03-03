@@ -5,6 +5,7 @@ use url::Url;
 use crate::v1::video::{FrameInterval, VideoEncodeType, VideoSourceType};
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
+#[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 pub struct VideoCaptureConfiguration {
     pub encode: VideoEncodeType,
     pub height: u32,
@@ -14,6 +15,7 @@ pub struct VideoCaptureConfiguration {
 
 #[deprecated(note = "The API will soon allow for optional CaptureConfiguration instead")]
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, TS)]
+#[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 pub struct RedirectCaptureConfiguration {}
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]

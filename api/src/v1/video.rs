@@ -111,6 +111,7 @@ pub enum VideoSourceGstType {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 pub struct VideoSourceGst {
     pub name: String,
     pub source: VideoSourceGstType,
@@ -123,6 +124,7 @@ pub enum VideoSourceOnvifType {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 pub struct VideoSourceOnvif {
     pub name: String,
     pub source: VideoSourceOnvifType,
@@ -131,6 +133,7 @@ pub struct VideoSourceOnvif {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 pub struct OnvifDeviceInformation {
     pub manufacturer: String,
     pub model: String,
@@ -146,6 +149,7 @@ pub enum VideoSourceRedirectType {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 pub struct VideoSourceRedirect {
     pub name: String,
     pub source: VideoSourceRedirectType,
