@@ -11,6 +11,7 @@ pub struct Protocol {
 
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "content", rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum Message {
     Question(Question),
     Answer(Answer),
@@ -19,6 +20,7 @@ pub enum Message {
 
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "content", rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum Question {
     PeerId,
     AvailableStreams,
@@ -56,6 +58,7 @@ pub struct EndSessionQuestion {
 
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "content", rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum Answer {
     PeerId(PeerIdAnswer),
     AvailableStreams(Vec<Stream>),
@@ -81,6 +84,7 @@ pub struct Stream {
 
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "content", rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum Negotiation {
     MediaNegotiation(MediaNegotiation),
     IceNegotiation(IceNegotiation),
@@ -97,6 +101,7 @@ pub struct MediaNegotiation {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
+#[non_exhaustive]
 /// [RTCSessionDescription](https://developer.mozilla.org/en-US/docs/Web/API/RTCSessionDescription) as expected by browsers.
 /// Note: `pranswer` and `rollback` are not supported here.
 pub enum RTCSessionDescription {

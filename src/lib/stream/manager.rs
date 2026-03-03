@@ -568,6 +568,7 @@ impl Manager {
             signalling::RTCSessionDescription::Offer(offer) => {
                 (offer.sdp.clone(), gst_webrtc::WebRTCSDPType::Offer)
             }
+            _ => unreachable!("unexpected RTCSessionDescription variant"),
         };
 
         let sdp = gst_sdp::SDPMessage::parse_buffer(sdp.as_bytes())?;
