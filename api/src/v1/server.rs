@@ -17,6 +17,24 @@ pub struct ApiVideoSource {
     pub blocked: bool,
 }
 
+impl ApiVideoSource {
+    pub fn new(
+        name: String,
+        source: String,
+        formats: Vec<Format>,
+        controls: Vec<Control>,
+        blocked: bool,
+    ) -> Self {
+        Self {
+            name,
+            source,
+            formats,
+            controls,
+            blocked,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 pub struct V4lControl {
@@ -107,6 +125,26 @@ pub struct Info {
     pub authors: String,
     /// Unstable field for custom development
     pub development: Development,
+}
+
+impl Info {
+    pub fn new(
+        name: String,
+        version: String,
+        sha: String,
+        build_date: String,
+        authors: String,
+        development: Development,
+    ) -> Self {
+        Self {
+            name,
+            version,
+            sha,
+            build_date,
+            authors,
+            development,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, TS)]

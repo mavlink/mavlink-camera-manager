@@ -49,6 +49,26 @@ pub struct ExtendedConfiguration {
     pub disable_recording: bool,
 }
 
+impl ExtendedConfiguration {
+    pub fn new(
+        thermal: bool,
+        disable_mavlink: bool,
+        disable_zenoh: bool,
+        disable_thumbnails: bool,
+        disable_lazy: bool,
+        disable_recording: bool,
+    ) -> Self {
+        Self {
+            thermal,
+            disable_mavlink,
+            disable_zenoh,
+            disable_thumbnails,
+            disable_lazy,
+            disable_recording,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 pub struct StreamInformation {
@@ -75,6 +95,26 @@ pub struct StreamStatus {
     pub error: Option<String>,
     pub video_and_stream: VideoAndStreamInformation,
     pub mavlink: Option<MavlinkComponent>,
+}
+
+impl StreamStatus {
+    pub fn new(
+        id: uuid::Uuid,
+        running: bool,
+        state: StreamStatusState,
+        error: Option<String>,
+        video_and_stream: VideoAndStreamInformation,
+        mavlink: Option<MavlinkComponent>,
+    ) -> Self {
+        Self {
+            id,
+            running,
+            state,
+            error,
+            video_and_stream,
+            mavlink,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, TS)]
