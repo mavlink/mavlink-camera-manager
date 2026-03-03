@@ -565,6 +565,7 @@ fn validate_control(control: &Control, value: i64) -> Result<(), String> {
                 ));
             }
         }
+        _ => unreachable!("unexpected ControlType variant"),
     }
 
     Ok(())

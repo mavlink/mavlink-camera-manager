@@ -4,6 +4,7 @@ use ts_rs::TS;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Hash, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 #[serde(rename_all = "UPPERCASE")]
+#[non_exhaustive]
 pub enum VideoEncodeType {
     H264,
     H265,
@@ -67,6 +68,7 @@ pub struct FrameInterval {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
+#[non_exhaustive]
 pub enum VideoSourceType {
     Gst(VideoSourceGst),
     Local(VideoSourceLocal),
@@ -87,6 +89,7 @@ impl std::fmt::Display for VideoSourceType {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
+#[non_exhaustive]
 pub enum VideoSourceLocalType {
     Unknown(String),
     Usb(String),
@@ -104,6 +107,7 @@ pub struct VideoSourceLocal {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
+#[non_exhaustive]
 pub enum VideoSourceGstType {
     Local(VideoSourceLocal),
     Fake(String),
@@ -119,6 +123,7 @@ pub struct VideoSourceGst {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
+#[non_exhaustive]
 pub enum VideoSourceOnvifType {
     Onvif(String),
 }
@@ -144,6 +149,7 @@ pub struct OnvifDeviceInformation {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
+#[non_exhaustive]
 pub enum VideoSourceRedirectType {
     Redirect(String),
 }

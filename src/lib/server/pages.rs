@@ -152,6 +152,7 @@ pub async fn v4l() -> Result<Json<Vec<ApiVideoSource>>> {
                         redirect.controls(),
                         blocked,
                     ),
+                    _ => unreachable!("unexpected VideoSourceType variant"),
                 }
             }
         })

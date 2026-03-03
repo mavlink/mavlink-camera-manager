@@ -25,9 +25,10 @@ pub fn take_webrtc_stream() -> Vec<VideoAndStreamInformation> {
                     numerator: 1,
                 },
             }),
-            extended_configuration: Some(ExtendedConfiguration {
-                disable_lazy: true,
-                ..Default::default()
+            extended_configuration: Some({
+                let mut extended_configuration = ExtendedConfiguration::default();
+                extended_configuration.disable_lazy = true;
+                extended_configuration
             }),
         },
         video_source: VideoSourceType::Gst(VideoSourceGst {

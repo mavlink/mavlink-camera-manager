@@ -13,6 +13,7 @@ impl VideoSourceTypeExt for VideoSourceType {
             VideoSourceType::Gst(gst) => gst,
             VideoSourceType::Onvif(onvif) => onvif,
             VideoSourceType::Redirect(redirect) => redirect,
+            _ => unreachable!("unexpected VideoSourceType variant"),
         }
     }
 }
@@ -24,6 +25,7 @@ impl VideoSourceFormats for VideoSourceType {
             VideoSourceType::Local(local) => local.formats().await,
             VideoSourceType::Onvif(onvif) => onvif.formats().await,
             VideoSourceType::Redirect(redirect) => redirect.formats().await,
+            _ => unreachable!("unexpected VideoSourceType variant"),
         }
     }
 }

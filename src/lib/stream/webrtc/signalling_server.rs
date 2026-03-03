@@ -313,6 +313,7 @@ impl SignallingServer {
 
                         return Err(anyhow!("Session {bind:?} ended by consumer"));
                     }
+                    _ => unreachable!("unexpected Question variant"),
                 }
             }
             Message::Answer(answer) => {
@@ -343,7 +344,9 @@ impl SignallingServer {
 
                     None
                 }
+                _ => unreachable!("unexpected Negotiation variant"),
             },
+            _ => unreachable!("unexpected Message variant"),
         };
 
         if let Some(answer) = answer
@@ -397,6 +400,7 @@ impl SignallingServer {
 
                             (None, None, None, None)
                         }
+                        _ => unreachable!("unexpected CaptureConfiguration variant"),
                     };
 
                 let source = Some(

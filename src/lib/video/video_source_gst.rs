@@ -95,6 +95,7 @@ impl VideoSourceFormats for VideoSourceGst {
                     },
                 ]
             }
+            _ => unreachable!("unexpected VideoSourceGstType variant"),
         }
     }
 }
@@ -109,6 +110,7 @@ impl VideoSource for VideoSourceGst {
             VideoSourceGstType::Local(local) => local.source_string(),
             VideoSourceGstType::Fake(string) => string,
             VideoSourceGstType::QR(string) => string,
+            _ => unreachable!("unexpected VideoSourceGstType variant"),
         }
     }
 
@@ -155,6 +157,7 @@ impl VideoSource for VideoSourceGst {
                 _ => false,
             },
             VideoSourceGstType::QR(_) => true,
+            _ => unreachable!("unexpected VideoSourceGstType variant"),
         }
     }
 

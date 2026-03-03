@@ -177,6 +177,7 @@ pub fn from_video_source(video_source: &dyn VideoSource) -> Result<String> {
                         .collect(),
                 },
             }),
+            _ => unreachable!("unexpected ControlType variant"),
         })
         .collect();
 

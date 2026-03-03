@@ -21,6 +21,7 @@ pub struct RedirectCaptureConfiguration {}
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 #[serde(tag = "type", rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum CaptureConfiguration {
     Video(VideoCaptureConfiguration),
     /// This is only still used for easy stream creation, and it is always converted to Self::Video.
@@ -40,6 +41,7 @@ impl std::fmt::Display for CaptureConfiguration {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 #[serde(default)]
+#[non_exhaustive]
 pub struct ExtendedConfiguration {
     pub thermal: bool,
     pub disable_mavlink: bool,
@@ -88,6 +90,7 @@ pub enum StreamStatusState {
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
+#[non_exhaustive]
 pub struct StreamStatus {
     pub id: uuid::Uuid,
     pub running: bool,

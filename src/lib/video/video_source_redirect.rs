@@ -8,6 +8,7 @@ impl VideoSourceFormats for VideoSourceRedirect {
             VideoSourceRedirectType::Redirect(_) => {
                 vec![]
             }
+            _ => unreachable!("unexpected VideoSourceRedirectType variant"),
         }
     }
 }
@@ -20,6 +21,7 @@ impl VideoSource for VideoSourceRedirect {
     fn source_string(&self) -> &str {
         match &self.source {
             VideoSourceRedirectType::Redirect(string) => string,
+            _ => unreachable!("unexpected VideoSourceRedirectType variant"),
         }
     }
 
@@ -58,6 +60,7 @@ impl VideoSource for VideoSourceRedirect {
     fn is_valid(&self) -> bool {
         match &self.source {
             VideoSourceRedirectType::Redirect(_) => true,
+            _ => unreachable!("unexpected VideoSourceRedirectType variant"),
         }
     }
 

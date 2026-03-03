@@ -9,6 +9,7 @@ use crate::v1::video::Format;
 
 #[derive(Debug, Serialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
+#[non_exhaustive]
 pub struct ApiVideoSource {
     pub name: String,
     pub source: String,
@@ -113,6 +114,7 @@ pub struct Development {
 
 #[derive(Serialize, Debug, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
+#[non_exhaustive]
 pub struct Info {
     /// Name of the program
     pub name: String,

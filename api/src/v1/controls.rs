@@ -14,6 +14,7 @@ pub struct Control {
 
 #[derive(Debug, Clone, Serialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
+#[non_exhaustive]
 pub enum ControlType {
     Bool(ControlBool),
     Slider(ControlSlider),
