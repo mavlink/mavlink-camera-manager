@@ -273,6 +273,7 @@ impl Stream {
                     VideoSourceType::Gst(_) => (),
 
                     VideoSourceType::Onvif(_) => (),
+
                     _ => unreachable!("unexpected VideoSourceType variant"),
                 }
 

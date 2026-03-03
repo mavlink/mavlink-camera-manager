@@ -1,0 +1,16 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: val
+---
+{
+  "type": "mediaNegotiation",
+  "content": {
+    "consumer_id": "00000000-0000-0000-0000-000000000001",
+    "producer_id": "00000000-0000-0000-0000-000000000002",
+    "session_id": "00000000-0000-0000-0000-000000000003",
+    "sdp": {
+      "type": "answer",
+      "sdp": "v=0\r\n"
+    }
+  }
+}

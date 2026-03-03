@@ -1,0 +1,9 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: "V4lControl { device: \"/dev/video0\".into(), v4l_id: 42, value: 128, }"
+---
+{
+  "device": "/dev/video0",
+  "v4l_id": 42,
+  "value": 128
+}

@@ -1,0 +1,14 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: "CaptureConfiguration::Video(sample_video_capture_configuration())"
+---
+{
+  "type": "video",
+  "encode": "H264",
+  "height": 1080,
+  "width": 1920,
+  "frame_interval": {
+    "numerator": 1,
+    "denominator": 30
+  }
+}

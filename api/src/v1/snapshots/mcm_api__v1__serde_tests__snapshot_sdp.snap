@@ -1,0 +1,7 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: "Sdp { sdp: \"v=0\\r\\n\".into(), }"
+---
+{
+  "sdp": "v=0\r\n"
+}

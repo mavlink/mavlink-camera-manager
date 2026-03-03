@@ -1,0 +1,11 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: sample_video_source_local()
+---
+{
+  "name": "USB Camera",
+  "device_path": "/dev/video0",
+  "type": {
+    "Usb": "usb-0000:00:14.0-1"
+  }
+}
