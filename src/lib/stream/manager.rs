@@ -685,13 +685,13 @@ impl Manager {
                     .map(|state| state.mavlink_camera.as_ref().map(|m| m.into()))
                     .unwrap_or_default();
 
-                Some(StreamStatus {
+                Some(StreamStatus::new(
                     id,
                     running,
                     error,
                     video_and_stream,
                     mavlink,
-                })
+                ))
             })
             .collect()
             .await;

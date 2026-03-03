@@ -41,11 +41,28 @@ impl std::fmt::Display for CaptureConfiguration {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 #[serde(default)]
+#[non_exhaustive]
 pub struct ExtendedConfiguration {
     pub thermal: bool,
     pub disable_mavlink: bool,
     pub disable_zenoh: bool,
     pub disable_thumbnails: bool,
+}
+
+impl ExtendedConfiguration {
+    pub fn new(
+        thermal: bool,
+        disable_mavlink: bool,
+        disable_zenoh: bool,
+        disable_thumbnails: bool,
+    ) -> Self {
+        Self {
+            thermal,
+            disable_mavlink,
+            disable_zenoh,
+            disable_thumbnails,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
@@ -58,12 +75,31 @@ pub struct StreamInformation {
 
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
+#[non_exhaustive]
 pub struct StreamStatus {
     pub id: uuid::Uuid,
     pub running: bool,
     pub error: Option<String>,
     pub video_and_stream: VideoAndStreamInformation,
     pub mavlink: Option<MavlinkComponent>,
+}
+
+impl StreamStatus {
+    pub fn new(
+        id: uuid::Uuid,
+        running: bool,
+        error: Option<String>,
+        video_and_stream: VideoAndStreamInformation,
+        mavlink: Option<MavlinkComponent>,
+    ) -> Self {
+        Self {
+            id,
+            running,
+            error,
+            video_and_stream,
+            mavlink,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, TS)]
