@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    net::{IpAddr, Ipv4Addr},
+    net::IpAddr,
     sync::Arc,
     time::Duration,
 };
@@ -35,7 +35,7 @@ pub struct ManagerContext {
     /// Credentials can be either added in runtime, or loaded from settings
     credentials: HashMap<uuid::Uuid, Credentials>,
     /// Credentials provided via url, such as those provided via ENV or CLI
-    url_credentials: HashMap<Ipv4Addr, Credentials>,
+    url_credentials: HashMap<IpAddr, Credentials>,
 }
 
 type StreamURI = String;
@@ -94,7 +94,7 @@ impl Manager {
 
     #[instrument(level = "debug", skip_all)]
     /// Expect onvif://<user>:<password>@<ip>:<port>/<path>, where path and port are ignored, and all the rest is mandatory.
-    pub fn credentials_from_url(url: &url::Url) -> Result<(Ipv4Addr, Credentials)> {
+    pub fn credentials_from_url(url: &url::Url) -> Result<(IpAddr, Credentials)> {
         if url.scheme().ne("onvif") {
             return Err(anyhow!("Scheme must be `onvif`"));
         }
@@ -102,7 +102,7 @@ impl Manager {
         let host = url
             .host_str()
             .context("Host must be provided")?
-            .parse::<Ipv4Addr>()?;
+            .parse::<IpAddr>()?;
 
         let password = url
             .password()
