@@ -133,6 +133,7 @@ import V4lSlider from "./components/V4lSlider.vue";
 import StreamForm from "./components/StreamForm.vue";
 import type {
   ApiVideoSource,
+  ControlType,
   StreamStatus,
   VideoAndStreamInformation,
 } from "@/api";
@@ -312,7 +313,10 @@ export default defineComponent({
         target.appendChild(errorContainer);
       }
     },
-    controlVariant(configuration: Record<string, unknown>, variant: string): any {
+    controlVariant(
+      configuration: ControlType,
+      variant: "Bool" | "Slider" | "Menu",
+    ): any {
       return (configuration as Record<string, unknown>)[variant];
     },
     openWebsiteInTab(url: string) {
