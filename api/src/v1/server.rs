@@ -1,4 +1,4 @@
-use std::net::Ipv4Addr;
+use std::net::IpAddr;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -168,10 +168,11 @@ pub struct UnauthenticateOnvifDeviceRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 pub struct OnvifDevice {
     pub uuid: uuid::Uuid,
     #[ts(type = "string")]
-    pub ip: Ipv4Addr,
+    pub ip: IpAddr,
     pub types: Vec<String>,
     pub hardware: Option<String>,
     pub name: Option<String>,
