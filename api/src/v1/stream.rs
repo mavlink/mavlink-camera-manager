@@ -26,6 +26,15 @@ pub enum CaptureConfiguration {
     Redirect(RedirectCaptureConfiguration),
 }
 
+impl std::fmt::Display for CaptureConfiguration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Video(_) => write!(f, "Video"),
+            Self::Redirect(_) => write!(f, "Redirect"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 #[serde(default)]

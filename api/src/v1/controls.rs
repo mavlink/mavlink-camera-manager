@@ -20,6 +20,16 @@ pub enum ControlType {
     Menu(ControlMenu),
 }
 
+impl std::fmt::Display for ControlType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bool(_) => write!(f, "Bool"),
+            Self::Slider(_) => write!(f, "Slider"),
+            Self::Menu(_) => write!(f, "Menu"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 pub struct ControlState {

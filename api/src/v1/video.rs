@@ -13,6 +13,19 @@ pub enum VideoEncodeType {
     Yuyv,
 }
 
+impl std::fmt::Display for VideoEncodeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::H264 => write!(f, "H264"),
+            Self::H265 => write!(f, "H265"),
+            Self::Mjpg => write!(f, "MJPG"),
+            Self::Rgb => write!(f, "RGB"),
+            Self::Unknown(s) => write!(f, "{s}"),
+            Self::Yuyv => write!(f, "YUYV"),
+        }
+    }
+}
+
 impl std::str::FromStr for VideoEncodeType {
     type Err = std::convert::Infallible;
 
@@ -59,6 +72,17 @@ pub enum VideoSourceType {
     Local(VideoSourceLocal),
     Onvif(VideoSourceOnvif),
     Redirect(VideoSourceRedirect),
+}
+
+impl std::fmt::Display for VideoSourceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Gst(_) => write!(f, "Gst"),
+            Self::Local(_) => write!(f, "Local"),
+            Self::Onvif(_) => write!(f, "Onvif"),
+            Self::Redirect(_) => write!(f, "Redirect"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
