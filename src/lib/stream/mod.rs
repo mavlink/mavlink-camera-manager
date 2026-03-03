@@ -273,6 +273,7 @@ impl Stream {
                     VideoSourceType::Gst(_) => (),
 
                     VideoSourceType::Onvif(_) => (),
+                    _ => unreachable!("unexpected VideoSourceType variant"),
                 }
 
                 let new_state = match StreamState::try_new(

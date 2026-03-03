@@ -85,6 +85,7 @@ impl Pipeline {
                 mcm_api::v1::video::VideoSourceGstType::QR(_) => Pipeline::QR(QrPipeline {
                     state: pipeline_state,
                 }),
+                _ => unreachable!("unexpected VideoSourceGstType variant"),
             },
             #[cfg(target_os = "linux")]
             VideoSourceType::Local(_) => Pipeline::V4l(V4lPipeline {
@@ -98,6 +99,7 @@ impl Pipeline {
             VideoSourceType::Redirect(_) => Pipeline::Redirect(RedirectPipeline {
                 state: pipeline_state,
             }),
+            _ => unreachable!("unexpected VideoSourceType variant"),
         })
     }
 
@@ -141,6 +143,7 @@ impl PipelineState {
                 mcm_api::v1::video::VideoSourceGstType::QR(_) => {
                     QrPipeline::try_new(pipeline_id, video_and_stream_information)
                 }
+                _ => unreachable!("unexpected VideoSourceGstType variant"),
             },
             #[cfg(target_os = "linux")]
             VideoSourceType::Local(_) => {
@@ -156,6 +159,7 @@ impl PipelineState {
             VideoSourceType::Redirect(_) => {
                 RedirectPipeline::try_new(pipeline_id, video_and_stream_information)
             }
+            _ => unreachable!("unexpected VideoSourceType variant"),
         }?;
 
         let video_tee = pipeline.by_name(&format!("{PIPELINE_VIDEO_TEE_NAME}-{pipeline_id}"));

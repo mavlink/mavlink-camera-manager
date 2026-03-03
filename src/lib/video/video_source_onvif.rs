@@ -6,7 +6,9 @@ use super::video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats}
 
 impl VideoSourceFormats for VideoSourceOnvif {
     async fn formats(&self) -> Vec<Format> {
-        let VideoSourceOnvifType::Onvif(stream_uri) = &self.source;
+        let VideoSourceOnvifType::Onvif(stream_uri) = &self.source else {
+            unreachable!("unexpected VideoSourceOnvifType variant")
+        };
         OnvifManager::get_formats(stream_uri)
             .await
             .unwrap_or_default()
@@ -21,6 +23,7 @@ impl VideoSource for VideoSourceOnvif {
     fn source_string(&self) -> &str {
         match &self.source {
             VideoSourceOnvifType::Onvif(url) => url.as_str(),
+            _ => unreachable!("unexpected VideoSourceOnvifType variant"),
         }
     }
 
@@ -59,6 +62,7 @@ impl VideoSource for VideoSourceOnvif {
     fn is_valid(&self) -> bool {
         match &self.source {
             VideoSourceOnvifType::Onvif(_) => true,
+            _ => unreachable!("unexpected VideoSourceOnvifType variant"),
         }
     }
 

@@ -47,7 +47,9 @@ impl OnvifPipeline {
         };
 
         let location = {
-            let VideoSourceOnvifType::Onvif(url) = &video_source.source;
+            let VideoSourceOnvifType::Onvif(url) = &video_source.source else {
+                unreachable!("unexpected VideoSourceOnvifType variant")
+            };
             url.to_string()
         };
 
