@@ -561,7 +561,7 @@ fn validate_control(control: &Control, value: i64) -> Result<(), String> {
             let values = &[0, 1];
             if !values.contains(&value) {
                 return Err(format!(
-                    "Value {value:?} is not one of the Control accepted values: {values:?}"
+                    "Value {value:?} is not one of the Control options: {values:?}",
                 ));
             }
         }
