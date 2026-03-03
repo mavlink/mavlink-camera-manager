@@ -47,6 +47,7 @@ impl MavlinkCameraComponent {
             CaptureConfiguration::Redirect(_) => {
                 unreachable!("Redirect streams now use CaptureConfiguration::Video")
             }
+            _ => unreachable!("unexpected CaptureConfiguration variant"),
         };
 
         let thermal = video_and_stream_information

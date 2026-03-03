@@ -490,6 +490,7 @@ impl StreamState {
                         "Redirect CaptureConfiguration means the stream was not initialized yet"
                     ));
                 }
+                _ => unreachable!("unexpected CaptureConfiguration variant"),
             };
 
             if matches!(encoding, VideoEncodeType::H264 | VideoEncodeType::H265) {
@@ -625,6 +626,7 @@ fn validate_endpoints(video_and_stream_information: &VideoAndStreamInformation) 
     {
         CaptureConfiguration::Video(configuration) => configuration.encode.clone(),
         CaptureConfiguration::Redirect(_) => VideoEncodeType::Unknown("Redirect stream".into()),
+        _ => unreachable!("unexpected CaptureConfiguration variant"),
     };
 
     let errors: Vec<anyhow::Error> = endpoints.iter().filter_map(|endpoint| {

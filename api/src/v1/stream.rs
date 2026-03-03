@@ -5,6 +5,7 @@ use url::Url;
 use crate::v1::video::{FrameInterval, VideoEncodeType, VideoSourceType};
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
+#[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 pub struct VideoCaptureConfiguration {
     pub encode: VideoEncodeType,
     pub height: u32,
@@ -14,16 +15,27 @@ pub struct VideoCaptureConfiguration {
 
 #[deprecated(note = "The API will soon allow for optional CaptureConfiguration instead")]
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, TS)]
+#[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 pub struct RedirectCaptureConfiguration {}
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
 #[serde(tag = "type", rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum CaptureConfiguration {
     Video(VideoCaptureConfiguration),
     /// This is only still used for easy stream creation, and it is always converted to Self::Video.
     #[allow(deprecated)]
     Redirect(RedirectCaptureConfiguration),
+}
+
+impl std::fmt::Display for CaptureConfiguration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Video(_) => write!(f, "Video"),
+            Self::Redirect(_) => write!(f, "Redirect"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Default, TS)]

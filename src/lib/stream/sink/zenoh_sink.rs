@@ -182,6 +182,7 @@ impl ZenohSink {
                     "Redirect CaptureConfiguration means the stream was not initialized yet"
                 ));
             }
+            _ => unreachable!("unexpected CaptureConfiguration variant"),
         };
 
         let _parser;

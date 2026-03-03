@@ -341,6 +341,7 @@ impl SignallingServer {
 
                             (None, None, None, None)
                         }
+                        _ => unreachable!("unexpected CaptureConfiguration variant"),
                     };
 
                 let source = Some(

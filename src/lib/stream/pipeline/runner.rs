@@ -232,6 +232,7 @@ impl PipelineRunner {
                     "PipelineRunner aborted for Pipeline {pipeline_name:?}: Redirect CaptureConfiguration means the stream was not initialized yet"
                 ));
             }
+            _ => unreachable!("unexpected CaptureConfiguration variant"),
         };
 
         // Check if we need to break external loop.

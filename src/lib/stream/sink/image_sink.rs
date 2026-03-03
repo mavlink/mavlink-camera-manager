@@ -219,6 +219,7 @@ impl ImageSink {
                     "PipelineRunner aborted: Redirect CaptureConfiguration means the stream was not initialized yet"
                 ));
             }
+            _ => unreachable!("unexpected CaptureConfiguration variant"),
         };
 
         // Depending of the sources' format we need different elements to transform it into a raw format
