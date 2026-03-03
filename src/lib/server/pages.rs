@@ -395,14 +395,14 @@ pub async fn thumbnail(
     // rid of this workaround.
     if let Some(quality) = thumbnail_file_request.quality {
         if !(1..=100).contains(&quality) {
-            return Err(Error::Internal(format!(
+            return Err(Error::BadRequest(format!(
                 "Quality must be between 1 and 100, got {quality}"
             )));
         }
     }
     if let Some(target_height) = thumbnail_file_request.target_height {
         if !(1..=1080).contains(&target_height) {
-            return Err(Error::Internal(format!(
+            return Err(Error::BadRequest(format!(
                 "Target height must be between 1 and 1080, got {target_height}"
             )));
         }
