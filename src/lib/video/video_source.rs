@@ -84,6 +84,7 @@ pub async fn reset_controls(source_string: &str) -> Result<(), Vec<std::io::Erro
             ControlType::Bool(bool) => bool.default,
             ControlType::Slider(slider) => slider.default,
             ControlType::Menu(menu) => menu.default,
+            _ => unreachable!("unexpected ControlType variant"),
         };
 
         if let Err(error) = camera.inner().set_control_by_id(control.id, default_value) {

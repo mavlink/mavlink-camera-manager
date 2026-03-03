@@ -14,10 +14,21 @@ pub struct Control {
 
 #[derive(Debug, Clone, Serialize, TS)]
 #[cfg_attr(feature = "paperclip", derive(paperclip::actix::Apiv2Schema))]
+#[non_exhaustive]
 pub enum ControlType {
     Bool(ControlBool),
     Slider(ControlSlider),
     Menu(ControlMenu),
+}
+
+impl std::fmt::Display for ControlType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bool(_) => write!(f, "Bool"),
+            Self::Slider(_) => write!(f, "Slider"),
+            Self::Menu(_) => write!(f, "Menu"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, TS)]
