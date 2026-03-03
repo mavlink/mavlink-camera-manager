@@ -1,0 +1,17 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: "VideoSourceType::Onvif(sample_video_source_onvif())"
+---
+{
+  "Onvif": {
+    "name": "ONVIF Camera",
+    "source": {
+      "Onvif": "onvif://192.168.1.100"
+    },
+    "manufacturer": "ACME Corp",
+    "model": "IPCam-4K",
+    "firmware_version": "2.1.0",
+    "serial_number": "SN-123456",
+    "hardware_id": "HW-789"
+  }
+}
