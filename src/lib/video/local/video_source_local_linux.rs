@@ -724,12 +724,13 @@ impl VideoSource for VideoSourceLocal {
         for v4l_control in v4l_controls {
             let mut control = Control {
                 name: v4l_control.name,
+                cpp_type: String::new(),
                 id: v4l_control.id as u64,
                 state: ControlState {
                     is_disabled: v4l_control.flags.contains(v4l::control::Flags::DISABLED),
                     is_inactive: v4l_control.flags.contains(v4l::control::Flags::INACTIVE),
                 },
-                ..Default::default()
+                configuration: ControlType::default(),
             };
 
             if matches!(v4l_control.typ, v4l::control::Type::CtrlClass) {
@@ -922,6 +923,7 @@ mod device_identification_tests {
         VideoAndStreamInformation {
             name: "dummy stream".into(),
             stream_information: StreamInformation {
+                endpoints: vec![url::Url::parse("udp://0.0.0.0:5600").unwrap()],
                 configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
                     encode,
                     height: 1080,
@@ -931,7 +933,6 @@ mod device_identification_tests {
                         denominator: 1,
                     },
                 }),
-                endpoints: vec![url::Url::parse("udp://0.0.0.0:5600").unwrap()],
                 extended_configuration: None,
             },
             video_source: VideoSourceType::Local(VideoSourceLocal {

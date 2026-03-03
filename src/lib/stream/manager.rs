@@ -706,8 +706,8 @@ impl Manager {
             ))?;
 
             let bind = BindAnswer {
-                producer_id,
                 consumer_id,
+                producer_id,
                 session_id,
             };
 
