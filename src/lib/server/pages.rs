@@ -34,16 +34,16 @@ use crate::{
 };
 
 pub fn new_info() -> Info {
-    Info {
-        name: env!("CARGO_PKG_NAME").into(),
-        version: env!("CARGO_PKG_VERSION").into(),
-        sha: option_env!("VERGEN_GIT_SHA").unwrap_or("?").into(),
-        build_date: env!("VERGEN_BUILD_TIMESTAMP").into(),
-        authors: env!("CARGO_PKG_AUTHORS").into(),
-        development: Development {
+    Info::new(
+        env!("CARGO_PKG_NAME").into(),
+        env!("CARGO_PKG_VERSION").into(),
+        option_env!("VERGEN_GIT_SHA").unwrap_or("?").into(),
+        env!("VERGEN_BUILD_TIMESTAMP").into(),
+        env!("CARGO_PKG_AUTHORS").into(),
+        Development {
             number_of_tasks: helper::threads::process_task_counter(),
         },
-    }
+    )
 }
 
 use std::{ffi::OsStr, path::Path};
@@ -114,34 +114,34 @@ pub async fn v4l() -> Result<Json<Vec<ApiVideoSource>>> {
                 let blocked = blocked_sources.iter().any(|s| s == source_string);
 
                 match cam {
-                    VideoSourceType::Local(local) => ApiVideoSource {
-                        name: local.name().clone(),
-                        source: local.source_string().to_string(),
-                        formats: local.formats().await,
-                        controls: local.controls(),
+                    VideoSourceType::Local(local) => ApiVideoSource::new(
+                        local.name().clone(),
+                        local.source_string().to_string(),
+                        local.formats().await,
+                        local.controls(),
                         blocked,
-                    },
-                    VideoSourceType::Gst(gst) => ApiVideoSource {
-                        name: gst.name().clone(),
-                        source: gst.source_string().to_string(),
-                        formats: gst.formats().await,
-                        controls: gst.controls(),
+                    ),
+                    VideoSourceType::Gst(gst) => ApiVideoSource::new(
+                        gst.name().clone(),
+                        gst.source_string().to_string(),
+                        gst.formats().await,
+                        gst.controls(),
                         blocked,
-                    },
-                    VideoSourceType::Onvif(onvif) => ApiVideoSource {
-                        name: onvif.name().clone(),
-                        source: onvif.source_string().to_string(),
-                        formats: onvif.formats().await,
-                        controls: onvif.controls(),
+                    ),
+                    VideoSourceType::Onvif(onvif) => ApiVideoSource::new(
+                        onvif.name().clone(),
+                        onvif.source_string().to_string(),
+                        onvif.formats().await,
+                        onvif.controls(),
                         blocked,
-                    },
-                    VideoSourceType::Redirect(redirect) => ApiVideoSource {
-                        name: redirect.name().clone(),
-                        source: redirect.source_string().to_string(),
-                        formats: redirect.formats().await,
-                        controls: redirect.controls(),
+                    ),
+                    VideoSourceType::Redirect(redirect) => ApiVideoSource::new(
+                        redirect.name().clone(),
+                        redirect.source_string().to_string(),
+                        redirect.formats().await,
+                        redirect.controls(),
                         blocked,
-                    },
+                    ),
                     _ => unreachable!("unexpected VideoSourceType variant"),
                 }
             }
