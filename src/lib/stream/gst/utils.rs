@@ -8,6 +8,15 @@ use mcm_api::v1::{
     video::{FrameInterval, VideoEncodeType},
 };
 
+/// Convert a GStreamer framerate `Fraction` (frames/sec) into a
+/// `FrameInterval` (sec/frame) by swapping numerator and denominator.
+pub fn frame_interval_from_framerate(framerate: gst::Fraction) -> FrameInterval {
+    FrameInterval {
+        numerator: framerate.denom() as u32,
+        denominator: framerate.numer() as u32,
+    }
+}
+
 #[derive(Debug)]
 pub struct PluginRankConfig {
     pub name: String,
@@ -484,10 +493,7 @@ async fn wait_for_video_capture_configuration(
             encode: encode.clone(),
             height,
             width,
-            frame_interval: FrameInterval {
-                numerator: framerate.denom() as u32,
-                denominator: framerate.numer() as u32,
-            },
+            frame_interval: frame_interval_from_framerate(framerate),
         });
 
         return Ok(video_capture_configuration);
