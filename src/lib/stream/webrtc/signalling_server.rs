@@ -356,16 +356,7 @@ impl SignallingServer {
                 let name = stream.video_and_stream.name.clone();
                 let id = stream.id;
 
-                Some(Stream {
-                    id,
-                    name,
-                    encode,
-                    height,
-                    width,
-                    interval,
-                    source,
-                    created: None,
-                })
+                Some(Stream { id, name, encode, height, width, interval, source, created: None })
             })
             .collect())
     }

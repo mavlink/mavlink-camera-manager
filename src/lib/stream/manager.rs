@@ -471,8 +471,8 @@ impl Manager {
         ))?;
 
         let bind = signalling::BindAnswer {
-            producer_id,
             consumer_id,
+            producer_id,
             session_id,
         };
 

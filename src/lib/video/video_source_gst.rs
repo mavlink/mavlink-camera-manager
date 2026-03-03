@@ -12,8 +12,8 @@ impl VideoSourceFormats for VideoSourceGst {
                 let intervals: Vec<FrameInterval> = [60, 30, 24, 16, 10, 5]
                     .iter()
                     .map(|&frame_interval| FrameInterval {
-                        denominator: frame_interval,
                         numerator: 1,
+                        denominator: frame_interval,
                     })
                     .collect();
 
@@ -59,8 +59,8 @@ impl VideoSourceFormats for VideoSourceGst {
                 let intervals: Vec<FrameInterval> = [60, 30, 24, 16, 10, 5]
                     .iter()
                     .map(|&frame_interval| FrameInterval {
-                        denominator: frame_interval,
                         numerator: 1,
+                        denominator: frame_interval,
                     })
                     .collect();
 

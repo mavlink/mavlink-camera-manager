@@ -21,8 +21,8 @@ pub fn take_webrtc_stream() -> Vec<VideoAndStreamInformation> {
                 height: size.1,
                 width: size.0,
                 frame_interval: FrameInterval {
-                    denominator: 10,
                     numerator: 1,
+                    denominator: 10,
                 },
             }),
             extended_configuration: None,
