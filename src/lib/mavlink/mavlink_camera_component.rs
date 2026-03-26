@@ -40,7 +40,7 @@ impl MavlinkCameraComponent {
             crate::stream::types::CaptureConfiguration::Video(cfg) => {
                 let framerate =
                     cfg.frame_interval.denominator as f32 / cfg.frame_interval.numerator as f32;
-                (cfg.height as u16, cfg.width as u16, framerate)
+                (cfg.width as u16, cfg.height as u16, framerate)
             }
             crate::stream::types::CaptureConfiguration::Redirect(_) => {
                 unreachable!("Redirect streams now use CaptureConfiguration::Video")

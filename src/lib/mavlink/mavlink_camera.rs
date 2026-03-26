@@ -128,6 +128,19 @@ impl MavlinkCameraInner {
         .ok()
     }
 
+    /// Returns the video stream URI with `0.0.0.0` replaced by the
+    /// machine's externally visible address, so remote clients (e.g. QGC)
+    /// can actually reach the RTSP server. Resolved dynamically for the
+    /// same reason as `cam_definition_uri`: the default route may change.
+    fn resolved_video_stream_uri(&self) -> String {
+        let mut url = self.video_stream_uri.clone();
+        if url.host_str() == Some("0.0.0.0") {
+            let visible_address = get_visible_qgc_address();
+            let _ = url.set_host(Some(&visible_address));
+        }
+        url.to_string()
+    }
+
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip_all, fields(component_id = camera.component.component_id))]
     pub async fn heartbeat_loop(
@@ -322,7 +335,7 @@ impl MavlinkCameraInner {
                 mavtype: camera.mavlink_stream_type,
                 name: from_string_to_sized_u8_array_with_null_terminator(&camera.video_stream_name),
                 uri: from_string_to_sized_u8_array_with_null_terminator(
-                    camera.video_stream_uri.as_ref(),
+                    &camera.resolved_video_stream_uri(),
                 ),
             })
         }
