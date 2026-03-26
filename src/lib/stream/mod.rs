@@ -23,7 +23,7 @@ use crate::{
     mavlink::mavlink_camera::MavlinkCamera,
     video::{
         types::{FrameInterval, VideoEncodeType, VideoSourceType},
-        video_source::cameras_available,
+        video_source::{cameras_available, VideoSource},
     },
     video_stream::types::VideoAndStreamInformation,
 };
@@ -94,6 +94,41 @@ fn default_video_capture_configuration(encode: VideoEncodeType) -> VideoCaptureC
             numerator: 0,
             denominator: 0,
         },
+    }
+}
+
+/// Re-probes the stream source to obtain a fresh `CaptureConfiguration`.
+///
+/// Returns `Ok(Some(config))` when the source was probed and a new configuration
+/// is available, `Ok(None)` when no probing is needed (Gst, Local), or `Err`
+/// when probing failed.
+#[instrument(level = "debug", skip_all)]
+pub(crate) async fn refresh_source_configuration(
+    video_and_stream_information: &VideoAndStreamInformation,
+) -> Result<Option<CaptureConfiguration>> {
+    match &video_and_stream_information.video_source {
+        VideoSourceType::Redirect(_) => {
+            let url = video_and_stream_information
+                .stream_information
+                .endpoints
+                .first()
+                .context("No URL found")?;
+
+            get_capture_configuration_from_stream_uri(url)
+                .await
+                .map(Some)
+        }
+
+        VideoSourceType::Onvif(source) => {
+            let url = url::Url::parse(source.source_string())
+                .context("Failed to parse ONVIF source URL")?;
+
+            get_capture_configuration_from_stream_uri(&url)
+                .await
+                .map(Some)
+        }
+
+        VideoSourceType::Local(_) | VideoSourceType::Gst(_) => Ok(None),
     }
 }
 
@@ -198,106 +233,94 @@ impl Stream {
                 let video_and_stream_information_cloned =
                     video_and_stream_information.read().await.clone();
 
-                match video_and_stream_information_cloned.video_source {
-                    // If it's a redirect, update CaptureConfiguration as a CaptureConfiguration::Video
-                    VideoSourceType::Redirect(_) => {
-                        let url = video_and_stream_information_cloned
-                            .stream_information
-                            .endpoints
-                            .first()
-                            .context("No URL found")?;
-
-                        let capture_configuration = match get_capture_configuration_from_stream_uri(
-                            url,
-                        )
-                        .await
-                        {
-                            Ok(capture_configuration) => capture_configuration,
-                            Err(error) => {
-                                let error_message =
-                                        format!("Failed getting CaptureConfiguration from endpoint. Error: {error:?}. Trying again soon...");
-
-                                warn!(error_message);
-                                *error_status.write().await = Err(anyhow!(error_message));
-
-                                continue;
-                            }
-                        };
-
+                // Re-probe configuration for sources that support it (Redirect, Onvif)
+                match refresh_source_configuration(&video_and_stream_information_cloned).await {
+                    Ok(Some(capture_configuration)) => {
                         *error_status.write().await = Ok(());
 
                         video_and_stream_information
                             .write()
                             .await
                             .stream_information
-                            .configuration = capture_configuration
+                            .configuration = capture_configuration;
                     }
+                    Ok(None) => {
+                        // No probing needed (Gst) or handled separately (Local)
+                    }
+                    Err(error) => {
+                        let error_message = format!(
+                            "Failed getting CaptureConfiguration from source. Error: {error:?}. Trying again soon..."
+                        );
 
-                    // If it's a camera, try to update the device
-                    VideoSourceType::Local(_) => {
-                        let mut streams = vec![video_and_stream_information_cloned.clone()];
-                        let mut candidates = cameras_available().await;
+                        warn!(error_message);
+                        *error_status.write().await = Err(anyhow!(error_message));
 
-                        // Discards any source from other running streams, otherwise we'd be trying to create a stream from a device in use (which is not possible)
-                        let current_running_streams = manager::streams()
-                            .await
-                            .unwrap()
-                            .iter()
-                            .filter_map(|status| {
-                                status
-                                    .running
-                                    .then_some(status.video_and_stream.video_source.clone())
-                            })
-                            .collect::<Vec<VideoSourceType>>();
-                        candidates.retain(|candidate| !current_running_streams.contains(candidate));
+                        continue;
+                    }
+                }
 
-                        let should_report =
-                            std::time::Instant::now() - last_report_time >= report_interval;
+                // If it's a local camera, try to update the device
+                if matches!(
+                    video_and_stream_information_cloned.video_source,
+                    VideoSourceType::Local(_)
+                ) {
+                    let mut streams = vec![video_and_stream_information_cloned.clone()];
+                    let mut candidates = cameras_available().await;
 
-                        // Find the best candidate
-                        manager::update_devices(&mut streams, &mut candidates, should_report).await;
-                        *video_and_stream_information.write().await =
-                            streams.first().unwrap().clone();
-
-                        // Check if the chosen video source is available
-                        match crate::video::video_source::get_video_source(
-                            video_and_stream_information_cloned
-                                .video_source
-                                .inner()
-                                .source_string(),
-                        )
+                    // Discards any source from other running streams, otherwise we'd be trying to create a stream from a device in use (which is not possible)
+                    let current_running_streams = manager::streams()
                         .await
-                        {
-                            Ok(best_candidate) => {
-                                video_and_stream_information.write().await.video_source =
-                                    best_candidate;
-                            }
-                            Err(error) => {
-                                if should_report {
-                                    let error_message  = format!("Failed to recreate the stream {pipeline_id:?}: {error:?}. Is the device connected? Trying again each second until the success or stream is removed. Next report in {report_interval:?} to reduce log size.");
+                        .unwrap()
+                        .iter()
+                        .filter_map(|status| {
+                            status
+                                .running
+                                .then_some(status.video_and_stream.video_source.clone())
+                        })
+                        .collect::<Vec<VideoSourceType>>();
+                    candidates.retain(|candidate| !current_running_streams.contains(candidate));
 
-                                    warn!(error_message);
-                                    *error_status.write().await = Err(anyhow!(error_message));
+                    let should_report =
+                        std::time::Instant::now() - last_report_time >= report_interval;
 
-                                    last_report_time = std::time::Instant::now();
-                                    report_interval *= report_interval_mult;
-                                    if report_interval
-                                        > std::time::Duration::from_secs(report_interval_max)
-                                    {
-                                        report_interval =
-                                            std::time::Duration::from_secs(report_interval_max);
-                                    }
+                    // Find the best candidate
+                    manager::update_devices(&mut streams, &mut candidates, should_report).await;
+                    *video_and_stream_information.write().await = streams.first().unwrap().clone();
+
+                    // Check if the chosen video source is available
+                    match crate::video::video_source::get_video_source(
+                        video_and_stream_information_cloned
+                            .video_source
+                            .inner()
+                            .source_string(),
+                    )
+                    .await
+                    {
+                        Ok(best_candidate) => {
+                            video_and_stream_information.write().await.video_source =
+                                best_candidate;
+                        }
+                        Err(error) => {
+                            if should_report {
+                                let error_message  = format!("Failed to recreate the stream {pipeline_id:?}: {error:?}. Is the device connected? Trying again each second until the success or stream is removed. Next report in {report_interval:?} to reduce log size.");
+
+                                warn!(error_message);
+                                *error_status.write().await = Err(anyhow!(error_message));
+
+                                last_report_time = std::time::Instant::now();
+                                report_interval *= report_interval_mult;
+                                if report_interval
+                                    > std::time::Duration::from_secs(report_interval_max)
+                                {
+                                    report_interval =
+                                        std::time::Duration::from_secs(report_interval_max);
                                 }
-
-                                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                                continue;
                             }
+
+                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                            continue;
                         }
                     }
-
-                    VideoSourceType::Gst(_) => (),
-
-                    VideoSourceType::Onvif(_) => (),
                 }
 
                 let new_state = match StreamState::try_new(
