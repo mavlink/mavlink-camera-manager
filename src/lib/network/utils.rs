@@ -1,15 +1,33 @@
+use std::sync::RwLock;
+
 use pnet;
 use tracing::*;
 
 use crate::cli::manager::vehicle_ddns;
 
+static OBSERVED_ADDRESS: RwLock<Option<String>> = RwLock::new(None);
+
+/// Store a known-reachable IP learned from an incoming HTTP request.
+pub fn set_observed_address(address: String) {
+    if let Ok(mut guard) = OBSERVED_ADDRESS.write() {
+        *guard = Some(address);
+    }
+}
+
+/// Priority: (1) CLI `--vehicle-ddns`, (2) IP observed from an HTTP
+/// client request, (3) pnet interface detection (legacy fallback).
 pub fn get_visible_qgc_address() -> String {
     match vehicle_ddns() {
         Some(ddns) => ddns.to_string(),
-        None => get_ipv4_addresses()
-            .last()
-            .unwrap_or(&std::net::Ipv4Addr::UNSPECIFIED)
-            .to_string(),
+        None => {
+            if let Some(addr) = OBSERVED_ADDRESS.read().ok().and_then(|g| g.clone()) {
+                return addr;
+            }
+            get_ipv4_addresses()
+                .last()
+                .unwrap_or(&std::net::Ipv4Addr::UNSPECIFIED)
+                .to_string()
+        }
     }
 }
 
