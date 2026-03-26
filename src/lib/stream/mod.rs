@@ -1053,4 +1053,78 @@ mod tests {
         let result = refresh_source_configuration(&stream).await;
         assert!(result.unwrap().is_none());
     }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn update_devices_invalidates_device_when_no_candidates_match() {
+        let mut streams = vec![VideoAndStreamInformation {
+            name: "test-local".into(),
+            stream_information: test_stream_information(),
+            video_source: VideoSourceType::Local(VideoSourceLocal {
+                name: "Nonexistent Camera".into(),
+                device_path: "/dev/video99".into(),
+                typ: VideoSourceLocalType::Unknown("test".into()),
+            }),
+        }];
+
+        let mut candidates = vec![];
+
+        manager::update_devices(&mut streams, &mut candidates, false).await;
+
+        let VideoSourceType::Local(source) = &streams[0].video_source else {
+            panic!("expected Local source");
+        };
+        assert_eq!(
+            source.device_path, "",
+            "device_path should be invalidated when no candidates match"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn update_devices_picks_candidate_with_same_name_and_encode() {
+        let mut streams = vec![VideoAndStreamInformation {
+            name: "test-local".into(),
+            stream_information: StreamInformation {
+                endpoints: vec![Url::parse("rtsp://127.0.0.1:8554/test").unwrap()],
+                configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
+                    encode: VideoEncodeType::H264,
+                    height: 1080,
+                    width: 1920,
+                    frame_interval: FrameInterval {
+                        numerator: 1,
+                        denominator: 30,
+                    },
+                }),
+                extended_configuration: None,
+            },
+            video_source: VideoSourceType::Local(VideoSourceLocal {
+                name: "USB Camera".into(),
+                device_path: "/dev/video0".into(),
+                typ: VideoSourceLocalType::Usb("0000:00:14.0-2".into()),
+            }),
+        }];
+
+        let mut candidates = vec![VideoSourceType::Local(VideoSourceLocal {
+            name: "Different Camera".into(),
+            device_path: "/dev/video2".into(),
+            typ: VideoSourceLocalType::Usb("0000:00:14.0-3".into()),
+        })];
+
+        manager::update_devices(&mut streams, &mut candidates, false).await;
+
+        let VideoSourceType::Local(source) = &streams[0].video_source else {
+            panic!("expected Local source");
+        };
+        assert_eq!(
+            source.device_path, "",
+            "device_path should be invalidated when candidate name doesn't match"
+        );
+
+        assert_eq!(
+            candidates.len(),
+            1,
+            "unmatched candidate should remain in the list"
+        );
+    }
 }
