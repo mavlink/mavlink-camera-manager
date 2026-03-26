@@ -866,4 +866,191 @@ mod tests {
 
         assert_eq!(generate_pipeline_id(&first), generate_pipeline_id(&second));
     }
+
+    use crate::controls::onvif::camera::OnvifDeviceInformation;
+    use crate::video::video_source_onvif::{VideoSourceOnvif, VideoSourceOnvifType};
+
+    fn allocate_udp_port() -> u16 {
+        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        socket.local_addr().unwrap().port()
+    }
+
+    fn spawn_h264_udp_sender(port: u16) -> ::gst::Pipeline {
+        ::gst::init().unwrap();
+        let pipeline = ::gst::parse::launch(&format!(
+            concat!(
+                "videotestsrc is-live=true pattern=ball do-timestamp=true",
+                " ! video/x-raw,width=160,height=120,framerate=30/1",
+                " ! x264enc tune=zerolatency speed-preset=ultrafast bitrate=500",
+                " ! h264parse config-interval=-1",
+                " ! rtph264pay aggregate-mode=zero-latency config-interval=-1 pt=96",
+                " ! udpsink host=127.0.0.1 port={port}",
+            ),
+            port = port,
+        ))
+        .unwrap()
+        .downcast::<::gst::Pipeline>()
+        .unwrap();
+        pipeline.set_state(::gst::State::Playing).unwrap();
+        pipeline
+    }
+
+    fn spawn_h265_udp_sender(port: u16) -> ::gst::Pipeline {
+        ::gst::init().unwrap();
+        let pipeline = ::gst::parse::launch(&format!(
+            concat!(
+                "videotestsrc is-live=true pattern=ball do-timestamp=true",
+                " ! video/x-raw,width=160,height=120,framerate=30/1,format=I420",
+                " ! x265enc tune=zerolatency speed-preset=ultrafast bitrate=500",
+                " ! h265parse config-interval=-1",
+                " ! rtph265pay aggregate-mode=zero-latency config-interval=-1 pt=96",
+                " ! udpsink host=127.0.0.1 port={port}",
+            ),
+            port = port,
+        ))
+        .unwrap()
+        .downcast::<::gst::Pipeline>()
+        .unwrap();
+        pipeline.set_state(::gst::State::Playing).unwrap();
+        pipeline
+    }
+
+    fn onvif_stream(name: &str, source_url: &str) -> VideoAndStreamInformation {
+        VideoAndStreamInformation {
+            name: name.to_string(),
+            stream_information: StreamInformation {
+                endpoints: vec![Url::parse("rtsp://127.0.0.1:8554/test").unwrap()],
+                configuration: CaptureConfiguration::Video(default_video_capture_configuration(
+                    VideoEncodeType::H264,
+                )),
+                extended_configuration: None,
+            },
+            video_source: VideoSourceType::Onvif(VideoSourceOnvif {
+                name: "Test ONVIF Camera".into(),
+                source: VideoSourceOnvifType::Onvif(source_url.to_string()),
+                device_information: OnvifDeviceInformation {
+                    manufacturer: "Test".into(),
+                    model: "Test".into(),
+                    firmware_version: "1.0".into(),
+                    serial_number: "000".into(),
+                    hardware_id: "test".into(),
+                },
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn refresh_source_configuration_redirect_detects_h264() {
+        let port = allocate_udp_port();
+        let sender = spawn_h264_udp_sender(port);
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        let stream = redirect_stream("test-redirect", &format!("udp://127.0.0.1:{port}"));
+        let result = refresh_source_configuration(&stream).await;
+        sender.set_state(::gst::State::Null).unwrap();
+
+        let config = result
+            .expect("probe should succeed")
+            .expect("should return Some");
+        let CaptureConfiguration::Video(video_config) = config else {
+            panic!("expected Video configuration");
+        };
+        assert_eq!(video_config.encode, VideoEncodeType::H264);
+    }
+
+    #[tokio::test]
+    async fn refresh_source_configuration_redirect_detects_encoding_change() {
+        let port = allocate_udp_port();
+
+        let sender = spawn_h264_udp_sender(port);
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        let stream = redirect_stream("test-redirect", &format!("udp://127.0.0.1:{port}"));
+        let result = refresh_source_configuration(&stream).await;
+        sender.set_state(::gst::State::Null).unwrap();
+
+        let config = result.unwrap().unwrap();
+        let CaptureConfiguration::Video(video_config) = config else {
+            panic!("expected Video configuration");
+        };
+        assert_eq!(video_config.encode, VideoEncodeType::H264);
+
+        let sender = spawn_h265_udp_sender(port);
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        let result = refresh_source_configuration(&stream).await;
+        sender.set_state(::gst::State::Null).unwrap();
+
+        let config = result.unwrap().unwrap();
+        let CaptureConfiguration::Video(video_config) = config else {
+            panic!("expected Video configuration");
+        };
+        assert_eq!(video_config.encode, VideoEncodeType::H265);
+    }
+
+    #[tokio::test]
+    async fn refresh_source_configuration_onvif_detects_h264() {
+        let port = allocate_udp_port();
+        let sender = spawn_h264_udp_sender(port);
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        let stream = onvif_stream("test-onvif", &format!("udp://127.0.0.1:{port}"));
+        let result = refresh_source_configuration(&stream).await;
+        sender.set_state(::gst::State::Null).unwrap();
+
+        let config = result
+            .expect("probe should succeed")
+            .expect("should return Some");
+        let CaptureConfiguration::Video(video_config) = config else {
+            panic!("expected Video configuration");
+        };
+        assert_eq!(video_config.encode, VideoEncodeType::H264);
+    }
+
+    #[tokio::test]
+    async fn refresh_source_configuration_onvif_detects_encoding_change() {
+        let port = allocate_udp_port();
+
+        let sender = spawn_h264_udp_sender(port);
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        let stream = onvif_stream("test-onvif", &format!("udp://127.0.0.1:{port}"));
+        let result = refresh_source_configuration(&stream).await;
+        sender.set_state(::gst::State::Null).unwrap();
+
+        let config = result.unwrap().unwrap();
+        let CaptureConfiguration::Video(video_config) = config else {
+            panic!("expected Video configuration");
+        };
+        assert_eq!(video_config.encode, VideoEncodeType::H264);
+
+        let sender = spawn_h265_udp_sender(port);
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        let result = refresh_source_configuration(&stream).await;
+        sender.set_state(::gst::State::Null).unwrap();
+
+        let config = result.unwrap().unwrap();
+        let CaptureConfiguration::Video(video_config) = config else {
+            panic!("expected Video configuration");
+        };
+        assert_eq!(video_config.encode, VideoEncodeType::H265);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn refresh_source_configuration_returns_none_for_local() {
+        let stream = VideoAndStreamInformation {
+            name: "test-local".into(),
+            stream_information: test_stream_information(),
+            video_source: VideoSourceType::Local(VideoSourceLocal {
+                name: "Local camera".into(),
+                device_path: "/dev/video0".into(),
+                typ: VideoSourceLocalType::Unknown("test".into()),
+            }),
+        };
+
+        let result = refresh_source_configuration(&stream).await;
+        assert!(result.unwrap().is_none());
+    }
 }
