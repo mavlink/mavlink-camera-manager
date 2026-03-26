@@ -292,6 +292,8 @@ pub async fn reset() {
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     use super::*;
     use crate::stream::types::{
         CaptureConfiguration, StreamInformation, VideoCaptureConfiguration,
@@ -315,6 +317,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_no_aboslute_path() {
         init(None).await;
         let manager = MANAGER.read().unwrap();
@@ -326,6 +329,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_store() {
         init(Some(&generate_random_settings_file_name())).await;
 
