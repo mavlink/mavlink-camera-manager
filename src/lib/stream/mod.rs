@@ -727,3 +727,120 @@ fn validate_endpoints(video_and_stream_information: &VideoAndStreamInformation) 
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use serial_test::serial;
+    use url::Url;
+
+    use super::*;
+    #[cfg(target_os = "linux")]
+    use crate::video::video_source_local::{VideoSourceLocal, VideoSourceLocalType};
+    use crate::video::video_source_redirect::{VideoSourceRedirect, VideoSourceRedirectType};
+
+    fn test_stream_information() -> StreamInformation {
+        StreamInformation {
+            endpoints: vec![Url::parse("rtsp://127.0.0.1:8554/test").unwrap()],
+            configuration: CaptureConfiguration::Video(default_video_capture_configuration(
+                VideoEncodeType::H264,
+            )),
+            extended_configuration: None,
+        }
+    }
+
+    fn redirect_stream(name: &str, endpoint: &str) -> VideoAndStreamInformation {
+        VideoAndStreamInformation {
+            name: name.to_string(),
+            stream_information: StreamInformation {
+                endpoints: vec![Url::parse(endpoint).unwrap()],
+                ..test_stream_information()
+            },
+            video_source: VideoSourceType::Redirect(VideoSourceRedirect {
+                name: "Redirect source".into(),
+                source: VideoSourceRedirectType::Redirect("Redirect".into()),
+            }),
+        }
+    }
+
+    fn settings_file() -> String {
+        format!("/tmp/stream-tests-{}.json", uuid::Uuid::new_v4())
+    }
+
+    #[test]
+    fn shareable_redirect_streams_use_their_name_in_pipeline_id() {
+        let first = generate_pipeline_id(&redirect_stream(
+            "yard-east",
+            "rtsp://127.0.0.1:8554/yard-east",
+        ));
+        let second = generate_pipeline_id(&redirect_stream(
+            "yard-west",
+            "rtsp://127.0.0.1:8554/yard-west",
+        ));
+
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn redirect_pipeline_id_is_stable_for_the_same_stream_input() {
+        let stream = redirect_stream("yard-east", "rtsp://127.0.0.1:8554/yard-east");
+
+        assert_eq!(generate_pipeline_id(&stream), generate_pipeline_id(&stream));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn redirect_streams_can_be_added_without_pipeline_id_collisions() {
+        crate::settings::manager::init(Some(&settings_file())).await;
+        crate::settings::manager::clear_blocked_sources();
+        crate::stream::manager::remove_all_streams().await.unwrap();
+
+        let first = redirect_stream("yard-east", "rtsp://127.0.0.1:8554/yard-east");
+        let second = redirect_stream("yard-west", "rtsp://127.0.0.1:8554/yard-west");
+
+        crate::stream::manager::add_stream_and_start(first)
+            .await
+            .unwrap();
+        crate::stream::manager::add_stream_and_start(second)
+            .await
+            .unwrap();
+
+        let streams = crate::stream::manager::streams().await.unwrap();
+        let stream_ids: std::collections::HashSet<_> =
+            streams.iter().map(|stream| stream.id).collect();
+
+        assert_eq!(streams.len(), 2);
+        assert_eq!(stream_ids.len(), 2);
+
+        crate::stream::manager::remove_stream_by_name("yard-east")
+            .await
+            .unwrap();
+        crate::stream::manager::remove_stream_by_name("yard-west")
+            .await
+            .unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn non_shareable_sources_keep_host_and_port_out_of_the_seed() {
+        let first = VideoAndStreamInformation {
+            name: "cam-a".into(),
+            stream_information: test_stream_information(),
+            video_source: VideoSourceType::Local(VideoSourceLocal {
+                name: "Local camera".into(),
+                device_path: "rtsp://10.23.8.41:8554/yard-east".into(),
+                typ: VideoSourceLocalType::Unknown("test".into()),
+            }),
+        };
+        let second = VideoAndStreamInformation {
+            name: "cam-b".into(),
+            stream_information: test_stream_information(),
+            video_source: VideoSourceType::Local(VideoSourceLocal {
+                name: "Local camera".into(),
+                device_path: "rtsp://192.168.2.10:9000/yard-east".into(),
+                typ: VideoSourceLocalType::Unknown("test".into()),
+            }),
+        };
+
+        assert_eq!(generate_pipeline_id(&first), generate_pipeline_id(&second));
+    }
+}
