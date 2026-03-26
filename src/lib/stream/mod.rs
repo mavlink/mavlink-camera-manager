@@ -52,26 +52,55 @@ pub struct StreamState {
     pub mavlink_camera: Option<MavlinkCamera>,
 }
 
+fn normalize_pipeline_source_string(source_string: &str) -> String {
+    // To be DHCP-friendly, we ignore the address for IP-based sources.
+    match source_string.parse::<url::Url>() {
+        Ok(mut url) => {
+            let _ = url.set_host(None);
+            let _ = url.set_port(None);
+            url.to_string()
+        }
+        Err(_) => source_string.to_string(),
+    }
+}
+
+fn pipeline_id_seed(video_and_stream_information: &VideoAndStreamInformation) -> String {
+    let video_source_inner = video_and_stream_information.video_source.inner();
+    let source_string = normalize_pipeline_source_string(video_source_inner.source_string());
+
+    if video_source_inner.is_shareable() {
+        format!(
+            "{}:{}:{}",
+            video_and_stream_information.name,
+            video_source_inner.name(),
+            source_string,
+        )
+    } else {
+        format!("{}:{}", video_source_inner.name(), source_string)
+    }
+}
+
+fn generate_pipeline_id(video_and_stream_information: &VideoAndStreamInformation) -> uuid::Uuid {
+    let pipeline_id_seed = pipeline_id_seed(video_and_stream_information);
+    Manager::generate_uuid(Some(&pipeline_id_seed))
+}
+
+fn default_video_capture_configuration(encode: VideoEncodeType) -> VideoCaptureConfiguration {
+    VideoCaptureConfiguration {
+        encode,
+        height: 0,
+        width: 0,
+        frame_interval: FrameInterval {
+            numerator: 0,
+            denominator: 0,
+        },
+    }
+}
+
 impl Stream {
     #[instrument(level = "debug", skip_all)]
     pub async fn try_new(video_and_stream_information: &VideoAndStreamInformation) -> Result<Self> {
-        let video_source_inner = video_and_stream_information.video_source.inner();
-
-        // To be DHCP-friendly, we ignore the address for IP-based sources
-        let source_string = match video_source_inner.source_string().parse::<url::Url>() {
-            Ok(mut url) => {
-                let _ = url.set_host(None);
-                let _ = url.set_port(None);
-                url.to_string()
-            }
-            Err(_) => video_source_inner.source_string().to_string(),
-        };
-
-        let pipeline_id = Arc::new(Manager::generate_uuid(Some(&format!(
-            "{}:{}",
-            video_source_inner.name(),
-            source_string,
-        ))));
+        let pipeline_id = Arc::new(generate_pipeline_id(video_and_stream_information));
 
         // Replace Redirect with Video
         let video_and_stream_information = {
@@ -83,15 +112,10 @@ impl Stream {
             ) {
                 video_and_stream_information
                     .stream_information
-                    .configuration = CaptureConfiguration::Video(VideoCaptureConfiguration {
-                    encode: VideoEncodeType::Unknown("Redirect stream".to_string()),
-                    height: 0,
-                    width: 0,
-                    frame_interval: FrameInterval {
-                        numerator: 0,
-                        denominator: 0,
-                    },
-                });
+                    .configuration =
+                    CaptureConfiguration::Video(default_video_capture_configuration(
+                        VideoEncodeType::Unknown("Redirect stream".to_string()),
+                    ));
             }
 
             Arc::new(RwLock::new(video_and_stream_information))
