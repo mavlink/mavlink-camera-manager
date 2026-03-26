@@ -433,7 +433,16 @@ pub fn camera_reset_controls(json: web::Json<ResetCameraControls>) -> Result<Htt
 
 #[api_v2_operation]
 /// Provides a xml description file that contains information for a specific device, based on: https://mavlink.io/en/services/camera_def.html
-pub fn xml(xml_file_request: web::Query<XmlFileRequest>) -> Result<HttpResponse> {
+pub fn xml(req: HttpRequest, xml_file_request: web::Query<XmlFileRequest>) -> Result<HttpResponse> {
+    let host = req.connection_info().host().to_string();
+    if let Some(ip_str) = host.split(':').next() {
+        if let Ok(ip) = ip_str.parse::<std::net::IpAddr>() {
+            if !ip.is_unspecified() && !ip.is_loopback() {
+                crate::network::utils::set_observed_address(ip_str.to_string());
+            }
+        }
+    }
+
     debug!("{xml_file_request:#?}");
     let cameras = video_source::cameras_available().await;
     let camera = cameras
