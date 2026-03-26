@@ -51,6 +51,10 @@ export class Session {
 
     this.peer_connection = this.createRTCPeerConnection(rtcConfiguration);
 
+    (window as any).__mcm_peer_connections =
+      (window as any).__mcm_peer_connections || [];
+    (window as any).__mcm_peer_connections.push(this.peer_connection);
+
     this.updateStatus("Creating Session...");
 
     // TODO: Fix this, should not end when WebSocket is closed!!!
@@ -315,6 +319,12 @@ export class Session {
   }
 
   public end() {
+    const pcs = (window as any).__mcm_peer_connections;
+    if (pcs) {
+      const idx = pcs.indexOf(this.peer_connection);
+      if (idx >= 0) pcs.splice(idx, 1);
+    }
+
     this.peer_connection.close();
 
     this.peer_connection.removeEventListener(
