@@ -1,9 +1,12 @@
 mod bluerov;
+#[cfg(feature = "webrtc-test")]
 mod test;
 
 use clap::ValueEnum;
 
-use crate::{cli, video_stream::types::VideoAndStreamInformation};
+use mcm_api::v1::stream::VideoAndStreamInformation;
+
+use crate::cli;
 
 #[derive(ValueEnum, PartialEq, Debug, Clone)]
 #[clap(rename_all = "verbatim")]

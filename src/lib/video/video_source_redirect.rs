@@ -1,23 +1,6 @@
-use paperclip::actix::Apiv2Schema;
-use serde::{Deserialize, Serialize};
+use mcm_api::v1::{controls::Control, video::*};
 
-use crate::controls::types::Control;
-
-use super::{
-    types::*,
-    video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats},
-};
-
-#[derive(Apiv2Schema, Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum VideoSourceRedirectType {
-    Redirect(String),
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct VideoSourceRedirect {
-    pub name: String,
-    pub source: VideoSourceRedirectType,
-}
+use super::video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats};
 
 impl VideoSourceFormats for VideoSourceRedirect {
     async fn formats(&self) -> Vec<Format> {
