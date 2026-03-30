@@ -288,7 +288,7 @@ pub fn gst_feature_rank() -> Vec<PluginRankConfig> {
         .collect()
 }
 
-pub fn onvif_auth() -> HashMap<std::net::Ipv4Addr, onvif::soap::client::Credentials> {
+pub fn onvif_auth() -> HashMap<std::net::IpAddr, onvif::soap::client::Credentials> {
     MANAGER
         .clap_matches
         .onvif_auth

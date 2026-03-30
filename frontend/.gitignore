@@ -22,5 +22,6 @@ dist-ssr
 *.sln
 *.sw?
 
-# Bindings generated from external rust code
-bindings
+# NOTE: frontend/bindings/ is NOT gitignored. The generated TypeScript bindings
+# are committed so CI can detect unintended API changes. See .githooks/pre-push
+# and the "Generate and check bindings" step in .github/workflows/rust.yml.

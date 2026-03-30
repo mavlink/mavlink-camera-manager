@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    net::{IpAddr, Ipv4Addr},
+    net::IpAddr,
     sync::Arc,
     time::Duration,
 };
@@ -8,14 +8,12 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use futures::StreamExt as _;
 use onvif::soap::client::Credentials;
-use serde::Serialize;
 use tokio::sync::RwLock;
 use tracing::*;
-use url::Url;
 
-use crate::video::{
-    types::{Format, VideoSourceType},
-    video_source_onvif::{VideoSourceOnvif, VideoSourceOnvifType},
+use mcm_api::v1::{
+    server::OnvifDevice,
+    video::{Format, VideoSourceOnvif, VideoSourceOnvifType, VideoSourceType},
 };
 
 use super::camera::*;
@@ -37,41 +35,10 @@ pub struct ManagerContext {
     /// Credentials can be either added in runtime, or loaded from settings
     credentials: HashMap<uuid::Uuid, Credentials>,
     /// Credentials provided via url, such as those provided via ENV or CLI
-    url_credentials: HashMap<Ipv4Addr, Credentials>,
+    url_credentials: HashMap<IpAddr, Credentials>,
 }
 
 type StreamURI = String;
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct OnvifDevice {
-    pub uuid: uuid::Uuid,
-    pub ip: Ipv4Addr,
-    pub types: Vec<String>,
-    pub hardware: Option<String>,
-    pub name: Option<String>,
-    pub urls: Vec<Url>,
-}
-
-impl TryFrom<onvif::discovery::Device> for OnvifDevice {
-    type Error = anyhow::Error;
-
-    fn try_from(device: onvif::discovery::Device) -> Result<Self, Self::Error> {
-        Ok(Self {
-            uuid: device_address_to_uuid(&device.address)?,
-            ip: device
-                .urls
-                .first()
-                .context("Device should have at least one URL")?
-                .host_str()
-                .context("Device URL should have a host")?
-                .parse()?,
-            types: device.types,
-            hardware: device.hardware,
-            name: device.name,
-            urls: device.urls,
-        })
-    }
-}
 
 impl Drop for Manager {
     fn drop(&mut self) {
@@ -127,7 +94,7 @@ impl Manager {
 
     #[instrument(level = "debug", skip_all)]
     /// Expect onvif://<user>:<password>@<ip>:<port>/<path>, where path and port are ignored, and all the rest is mandatory.
-    pub fn credentials_from_url(url: &url::Url) -> Result<(Ipv4Addr, Credentials)> {
+    pub fn credentials_from_url(url: &url::Url) -> Result<(IpAddr, Credentials)> {
         if url.scheme().ne("onvif") {
             return Err(anyhow!("Scheme must be `onvif`"));
         }
@@ -135,7 +102,7 @@ impl Manager {
         let host = url
             .host_str()
             .context("Host must be provided")?
-            .parse::<Ipv4Addr>()?;
+            .parse::<IpAddr>()?;
 
         let password = url
             .password()
@@ -352,9 +319,7 @@ impl Manager {
                     );
 
                     let device_address = device.address.clone(); // Save address for potential error logging
-                    let device = match <onvif::discovery::Device as TryInto<OnvifDevice>>::try_into(
-                        device,
-                    ) {
+                    let device = match onvif_device_from_discovery(device) {
                         Ok(onvif_device) => onvif_device,
                         Err(error) => {
                             error!(
@@ -642,4 +607,21 @@ fn device_address_to_uuid(device_address: &str) -> Result<uuid::Uuid> {
         .context("Failed to parse device address into a UUID")?
         .parse()
         .map_err(anyhow::Error::msg)
+}
+
+pub fn onvif_device_from_discovery(device: onvif::discovery::Device) -> Result<OnvifDevice> {
+    Ok(OnvifDevice {
+        uuid: device_address_to_uuid(&device.address)?,
+        ip: device
+            .urls
+            .first()
+            .context("Device should have at least one URL")?
+            .host_str()
+            .context("Device URL should have a host")?
+            .parse()?,
+        types: device.types,
+        hardware: device.hardware,
+        name: device.name,
+        urls: device.urls,
+    })
 }

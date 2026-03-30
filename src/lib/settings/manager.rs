@@ -9,7 +9,9 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use tracing::*;
 
-use crate::{cli, custom, video_stream::types::VideoAndStreamInformation};
+use mcm_api::v1::stream::VideoAndStreamInformation;
+
+use crate::{cli, custom};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct HeaderSettingsFile {
@@ -295,12 +297,9 @@ mod tests {
     use serial_test::serial;
 
     use super::*;
-    use crate::stream::types::{
-        CaptureConfiguration, StreamInformation, VideoCaptureConfiguration,
-    };
-    use crate::video::{
-        types::{FrameInterval, VideoEncodeType, VideoSourceType},
-        video_source_local::{VideoSourceLocal, VideoSourceLocalType},
+    use mcm_api::v1::stream::{CaptureConfiguration, StreamInformation, VideoCaptureConfiguration};
+    use mcm_api::v1::video::{
+        FrameInterval, VideoEncodeType, VideoSourceLocal, VideoSourceLocalType, VideoSourceType,
     };
     use url::Url;
 

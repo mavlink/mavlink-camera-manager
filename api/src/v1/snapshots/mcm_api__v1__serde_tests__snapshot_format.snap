@@ -1,0 +1,19 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: sample_format()
+---
+{
+  "encode": "H264",
+  "sizes": [
+    {
+      "width": 1920,
+      "height": 1080,
+      "intervals": [
+        {
+          "numerator": 1,
+          "denominator": 30
+        }
+      ]
+    }
+  ]
+}

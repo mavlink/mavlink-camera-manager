@@ -1,10 +1,14 @@
 use url::Url;
 
-use crate::{
-    stream::types::*,
-    video::{self, types::*, video_source_gst::VideoSourceGstType},
-    video_stream::types::VideoAndStreamInformation,
+use mcm_api::v1::{
+    stream::{
+        CaptureConfiguration, StreamInformation, VideoAndStreamInformation,
+        VideoCaptureConfiguration,
+    },
+    video::{FrameInterval, VideoEncodeType, VideoSourceGst, VideoSourceGstType, VideoSourceType},
 };
+
+use crate::video::types::STANDARD_SIZES;
 
 pub fn take_webrtc_stream() -> Vec<VideoAndStreamInformation> {
     let size = STANDARD_SIZES.last().unwrap();
@@ -17,13 +21,13 @@ pub fn take_webrtc_stream() -> Vec<VideoAndStreamInformation> {
                 height: size.1,
                 width: size.0,
                 frame_interval: FrameInterval {
-                    denominator: 10,
                     numerator: 1,
+                    denominator: 10,
                 },
             }),
             extended_configuration: None,
         },
-        video_source: VideoSourceType::Gst(video::video_source_gst::VideoSourceGst {
+        video_source: VideoSourceType::Gst(VideoSourceGst {
             name: "Fake".into(),
             source: VideoSourceGstType::Fake("ball".into()),
         }),

@@ -3,35 +3,34 @@ pub mod manager;
 pub mod pipeline;
 pub mod rtsp;
 pub mod sink;
-pub mod types;
 pub mod webrtc;
 
 use std::sync::Arc;
 
 use ::gst::prelude::*;
 use anyhow::{anyhow, Context, Result};
-use gst::utils::get_capture_configuration_from_stream_uri;
-use manager::Manager;
-use pipeline::{Pipeline, PipelineGstreamerInterface};
-use sink::{create_image_sink, create_rtsp_sink, create_udp_sink, create_zenoh_sink};
 use tokio::sync::RwLock;
 use tracing::*;
-use types::*;
-use webrtc::signalling_protocol::PeerId;
+
+use mcm_api::v1::{
+    signalling::PeerId,
+    stream::*,
+    video::{FrameInterval, VideoEncodeType, VideoSourceType},
+};
 
 use crate::{
     mavlink::mavlink_camera::MavlinkCamera,
-    video::{
-        types::{FrameInterval, VideoEncodeType, VideoSourceType},
-        video_source::cameras_available,
-    },
-    video_stream::types::VideoAndStreamInformation,
+    video::{types::VideoSourceTypeExt, video_source::cameras_available},
 };
 
 use self::{
-    gst::utils::wait_for_element_state,
+    gst::utils::{get_capture_configuration_from_stream_uri, wait_for_element_state},
+    manager::Manager,
+    pipeline::{Pipeline, PipelineGstreamerInterface},
     rtsp::{rtsp_scheme::RTSPScheme, rtsp_server::RTSP_SERVER_PORT},
-    sink::SinkInterface,
+    sink::{
+        create_image_sink, create_rtsp_sink, create_udp_sink, create_zenoh_sink, SinkInterface,
+    },
 };
 
 #[derive(Debug)]
@@ -298,6 +297,8 @@ impl Stream {
                     VideoSourceType::Gst(_) => (),
 
                     VideoSourceType::Onvif(_) => (),
+
+                    _ => unreachable!("unexpected VideoSourceType variant"),
                 }
 
                 let new_state = match StreamState::try_new(
@@ -514,6 +515,7 @@ impl StreamState {
                         "Redirect CaptureConfiguration means the stream was not initialized yet"
                     ));
                 }
+                _ => unreachable!("unexpected CaptureConfiguration variant"),
             };
 
             if matches!(encoding, VideoEncodeType::H264 | VideoEncodeType::H265) {
@@ -649,6 +651,7 @@ fn validate_endpoints(video_and_stream_information: &VideoAndStreamInformation) 
     {
         CaptureConfiguration::Video(configuration) => configuration.encode.clone(),
         CaptureConfiguration::Redirect(_) => VideoEncodeType::Unknown("Redirect stream".into()),
+        _ => unreachable!("unexpected CaptureConfiguration variant"),
     };
 
     let errors: Vec<anyhow::Error> = endpoints.iter().filter_map(|endpoint| {

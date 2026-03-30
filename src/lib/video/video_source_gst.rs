@@ -1,30 +1,8 @@
-use paperclip::actix::Apiv2Schema;
-use serde::{Deserialize, Serialize};
+use mcm_api::v1::{controls::Control, video::*};
 
-use crate::{
-    controls::types::Control,
-    stream::gst::utils::{is_gst_plugin_available, PluginRequirement},
-};
+use crate::stream::gst::utils::{is_gst_plugin_available, PluginRequirement};
 
-use super::{
-    types::*,
-    video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats},
-    video_source_local::VideoSourceLocal,
-};
-
-#[derive(Apiv2Schema, Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum VideoSourceGstType {
-    // TODO: local should have a pipeline also
-    Local(VideoSourceLocal),
-    Fake(String),
-    QR(String),
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct VideoSourceGst {
-    pub name: String,
-    pub source: VideoSourceGstType,
-}
+use super::video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats};
 
 impl VideoSourceFormats for VideoSourceGst {
     async fn formats(&self) -> Vec<Format> {
@@ -34,8 +12,8 @@ impl VideoSourceFormats for VideoSourceGst {
                 let intervals: Vec<FrameInterval> = [60, 30, 24, 16, 10, 5]
                     .iter()
                     .map(|&frame_interval| FrameInterval {
-                        denominator: frame_interval,
                         numerator: 1,
+                        denominator: frame_interval,
                     })
                     .collect();
 
@@ -81,8 +59,8 @@ impl VideoSourceFormats for VideoSourceGst {
                 let intervals: Vec<FrameInterval> = [60, 30, 24, 16, 10, 5]
                     .iter()
                     .map(|&frame_interval| FrameInterval {
-                        denominator: frame_interval,
                         numerator: 1,
+                        denominator: frame_interval,
                     })
                     .collect();
 
@@ -117,6 +95,7 @@ impl VideoSourceFormats for VideoSourceGst {
                     },
                 ]
             }
+            _ => unreachable!("unexpected VideoSourceGstType variant"),
         }
     }
 }
@@ -131,6 +110,7 @@ impl VideoSource for VideoSourceGst {
             VideoSourceGstType::Local(local) => local.source_string(),
             VideoSourceGstType::Fake(string) => string,
             VideoSourceGstType::QR(string) => string,
+            _ => unreachable!("unexpected VideoSourceGstType variant"),
         }
     }
 
@@ -177,6 +157,7 @@ impl VideoSource for VideoSourceGst {
                 _ => false,
             },
             VideoSourceGstType::QR(_) => true,
+            _ => unreachable!("unexpected VideoSourceGstType variant"),
         }
     }
 

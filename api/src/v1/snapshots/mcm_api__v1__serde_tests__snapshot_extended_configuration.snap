@@ -1,0 +1,10 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: sample_extended_configuration()
+---
+{
+  "thermal": true,
+  "disable_mavlink": false,
+  "disable_zenoh": false,
+  "disable_thumbnails": false
+}

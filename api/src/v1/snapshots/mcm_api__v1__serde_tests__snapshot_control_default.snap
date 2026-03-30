@@ -1,0 +1,19 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: "Control::default()"
+---
+{
+  "name": "",
+  "cpp_type": "",
+  "id": 0,
+  "state": {
+    "is_disabled": false,
+    "is_inactive": false
+  },
+  "configuration": {
+    "Bool": {
+      "default": 0,
+      "value": 0
+    }
+  }
+}

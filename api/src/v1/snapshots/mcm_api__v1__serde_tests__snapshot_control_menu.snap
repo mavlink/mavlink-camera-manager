@@ -1,0 +1,18 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: "ControlMenu\n{\n    default: 0, value: 1, options:\n    vec![ControlOption { name: \"Auto\".into(), value: 0, }, ControlOption\n    { name: \"Manual\".into(), value: 1, },],\n}"
+---
+{
+  "default": 0,
+  "value": 1,
+  "options": [
+    {
+      "name": "Auto",
+      "value": 0
+    },
+    {
+      "name": "Manual",
+      "value": 1
+    }
+  ]
+}

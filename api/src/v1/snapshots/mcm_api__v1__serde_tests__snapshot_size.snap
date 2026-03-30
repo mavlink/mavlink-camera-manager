@@ -1,0 +1,14 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: sample_size()
+---
+{
+  "width": 1920,
+  "height": 1080,
+  "intervals": [
+    {
+      "numerator": 1,
+      "denominator": 30
+    }
+  ]
+}

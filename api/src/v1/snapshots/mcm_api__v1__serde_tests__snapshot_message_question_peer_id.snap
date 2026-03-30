@@ -1,0 +1,10 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: "Message::Question(Question::PeerId)"
+---
+{
+  "type": "question",
+  "content": {
+    "type": "peerId"
+  }
+}

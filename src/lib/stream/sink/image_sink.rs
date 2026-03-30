@@ -9,11 +9,12 @@ use gst_video::VideoFrameExt;
 use image::FlatSamples;
 use tracing::*;
 
-use crate::{
-    stream::{pipeline::runner::PipelineRunner, types::CaptureConfiguration},
-    video::types::VideoEncodeType,
-    video_stream::types::VideoAndStreamInformation,
+use mcm_api::v1::{
+    stream::{CaptureConfiguration, VideoAndStreamInformation},
+    video::VideoEncodeType,
 };
+
+use crate::stream::pipeline::runner::PipelineRunner;
 
 use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
 
@@ -218,6 +219,7 @@ impl ImageSink {
                     "PipelineRunner aborted: Redirect CaptureConfiguration means the stream was not initialized yet"
                 ));
             }
+            _ => unreachable!("unexpected CaptureConfiguration variant"),
         };
 
         // Depending of the sources' format we need different elements to transform it into a raw format

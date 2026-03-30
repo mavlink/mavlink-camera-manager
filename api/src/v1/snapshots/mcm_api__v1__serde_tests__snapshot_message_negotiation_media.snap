@@ -1,0 +1,19 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: "Message::Negotiation(Negotiation::MediaNegotiation(negotiation))"
+---
+{
+  "type": "negotiation",
+  "content": {
+    "type": "mediaNegotiation",
+    "content": {
+      "consumer_id": "00000000-0000-0000-0000-000000000001",
+      "producer_id": "00000000-0000-0000-0000-000000000002",
+      "session_id": "00000000-0000-0000-0000-000000000003",
+      "sdp": {
+        "type": "offer",
+        "sdp": "v=0\r\no=- 0 0 IN IP4 0.0.0.0\r\n"
+      }
+    }
+  }
+}
