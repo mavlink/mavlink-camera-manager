@@ -739,10 +739,9 @@ dependencies = [
 name = "bindings"
 version = "0.1.0"
 dependencies = [
+ "mcm-api",
  "regex",
- "serde",
  "ts-rs",
- "uuid 1.19.0",
 ]
 
 [[package]]
@@ -4210,6 +4209,7 @@ dependencies = [
  "include_dir",
  "lazy_static",
  "mavlink",
+ "mcm-api",
  "onvif",
  "paperclip",
  "pnet",
@@ -4272,6 +4272,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.113",
+]
+
+[[package]]
+name = "mcm-api"
+version = "0.1.0"
+dependencies = [
+ "paperclip",
+ "serde",
+ "serde_json",
+ "ts-rs",
+ "url",
+ "uuid 1.19.0",
 ]
 
 [[package]]
@@ -7245,6 +7257,7 @@ checksum = "09d3fa4606cdab1e9b668cc65ce2545941d01f52bc27536a195c66c55b91cb84"
 dependencies = [
  "thiserror 1.0.69",
  "ts-rs-macros",
+ "url",
  "uuid 1.19.0",
 ]
 

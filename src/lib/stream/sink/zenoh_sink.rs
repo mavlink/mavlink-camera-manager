@@ -5,11 +5,12 @@ use gst::prelude::*;
 use tokio::task::JoinHandle;
 use tracing::*;
 
-use crate::{
-    stream::{pipeline::runner::PipelineRunner, types::CaptureConfiguration},
-    video::types::VideoEncodeType,
-    video_stream::types::VideoAndStreamInformation,
+use mcm_api::v1::{
+    stream::{CaptureConfiguration, VideoAndStreamInformation},
+    video::VideoEncodeType,
 };
+
+use crate::stream::pipeline::runner::PipelineRunner;
 
 use super::{
     link_sink_to_tee, types::zenoh_message::CompressedVideo, types::zenoh_message::Timestamp,
@@ -181,6 +182,7 @@ impl ZenohSink {
                     "Redirect CaptureConfiguration means the stream was not initialized yet"
                 ));
             }
+            _ => unreachable!("unexpected CaptureConfiguration variant"),
         };
 
         let _parser;

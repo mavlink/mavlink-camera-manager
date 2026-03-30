@@ -4,13 +4,9 @@ use anyhow::{anyhow, Result};
 use gst::prelude::*;
 use tracing::*;
 
-use crate::{
-    stream::types::CaptureConfiguration,
-    video::{
-        types::{VideoEncodeType, VideoSourceType},
-        video_source_onvif::VideoSourceOnvifType,
-    },
-    video_stream::types::VideoAndStreamInformation,
+use mcm_api::v1::{
+    stream::{CaptureConfiguration, VideoAndStreamInformation},
+    video::{VideoEncodeType, VideoSourceOnvifType, VideoSourceType},
 };
 
 use super::{
@@ -51,7 +47,9 @@ impl OnvifPipeline {
         };
 
         let location = {
-            let VideoSourceOnvifType::Onvif(url) = &video_source.source;
+            let VideoSourceOnvifType::Onvif(url) = &video_source.source else {
+                unreachable!("unexpected VideoSourceOnvifType variant")
+            };
             url.to_string()
         };
 

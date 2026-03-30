@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use serde::Serialize;
 
-use crate::controls::types::ControlType;
+use mcm_api::v1::controls::ControlType;
 
 use super::video_source::VideoSource;
 
@@ -177,6 +177,7 @@ pub fn from_video_source(video_source: &dyn VideoSource) -> Result<String> {
                         .collect(),
                 },
             }),
+            _ => unreachable!("unexpected ControlType variant"),
         })
         .collect();
 
@@ -194,7 +195,7 @@ pub fn from_video_source(video_source: &dyn VideoSource) -> Result<String> {
 mod tests {
     use quick_xml::se::to_string;
 
-    use crate::video::types::VideoSourceType;
+    use mcm_api::v1::video::VideoSourceType;
 
     use super::*;
 

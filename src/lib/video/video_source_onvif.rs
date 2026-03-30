@@ -1,32 +1,14 @@
-use paperclip::actix::Apiv2Schema;
-use serde::{Deserialize, Serialize};
+use mcm_api::v1::{controls::Control, video::*};
 
-use crate::controls::{
-    onvif::{camera::OnvifDeviceInformation, manager::Manager as OnvifManager},
-    types::Control,
-};
+use crate::controls::onvif::manager::Manager as OnvifManager;
 
-use super::{
-    types::*,
-    video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats},
-};
-
-#[derive(Apiv2Schema, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum VideoSourceOnvifType {
-    Onvif(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct VideoSourceOnvif {
-    pub name: String,
-    pub source: VideoSourceOnvifType,
-    #[serde(flatten)]
-    pub device_information: OnvifDeviceInformation,
-}
+use super::video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats};
 
 impl VideoSourceFormats for VideoSourceOnvif {
     async fn formats(&self) -> Vec<Format> {
-        let VideoSourceOnvifType::Onvif(stream_uri) = &self.source;
+        let VideoSourceOnvifType::Onvif(stream_uri) = &self.source else {
+            unreachable!("unexpected VideoSourceOnvifType variant")
+        };
         OnvifManager::get_formats(stream_uri)
             .await
             .unwrap_or_default()
@@ -41,6 +23,7 @@ impl VideoSource for VideoSourceOnvif {
     fn source_string(&self) -> &str {
         match &self.source {
             VideoSourceOnvifType::Onvif(url) => url.as_str(),
+            _ => unreachable!("unexpected VideoSourceOnvifType variant"),
         }
     }
 
@@ -79,6 +62,7 @@ impl VideoSource for VideoSourceOnvif {
     fn is_valid(&self) -> bool {
         match &self.source {
             VideoSourceOnvifType::Onvif(_) => true,
+            _ => unreachable!("unexpected VideoSourceOnvifType variant"),
         }
     }
 
