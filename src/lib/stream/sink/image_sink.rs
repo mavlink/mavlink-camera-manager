@@ -3,14 +3,14 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{anyhow, Error, Result};
 use gst::prelude::*;
-use gst_video::VideoFrameExt;
-use image::FlatSamples;
 use tracing::*;
 
 use crate::{
-    stream::{pipeline::runner::PipelineRunner, types::CaptureConfiguration},
+    stream::{
+        gst::utils::try_set_property, pipeline::runner::PipelineRunner, types::CaptureConfiguration,
+    },
     video::types::VideoEncodeType,
     video_stream::types::VideoAndStreamInformation,
 };
@@ -58,23 +58,43 @@ impl CachedThumbnails {
 
         Ok(())
     }
+
+    fn clear(&mut self) {
+        self.map.clear();
+    }
 }
 
 #[derive(Debug)]
 pub struct ImageSink {
     sink_id: Arc<uuid::Uuid>,
+    // Capture pipeline: proxysrc -> [decoders] -> appsink(enable-last-sample)
     pipeline: gst::Pipeline,
     queue: gst::Element,
     proxysink: gst::Element,
     _proxysrc: gst::Element,
     _transcoding_elements: Vec<gst::Element>,
     appsink: gst_app::AppSink,
-    tee_src_pad: Option<gst::Pad>,
-    flat_samples_sender: tokio::sync::broadcast::Sender<ClonableResult<FlatSamples<Vec<u8>>>>,
+    source_width: u32,
+    source_height: u32,
+    tee_src_pad: Arc<Mutex<Option<gst::Pad>>>,
     pad_blocker: Arc<Mutex<Option<gst::PadProbeId>>>,
     pipeline_runner: PipelineRunner,
+    flat_samples_sender: tokio::sync::broadcast::Sender<ClonableResult<()>>,
+    // Encoding pipeline: appsrc -> videoscale -> capsfilter -> videoconvert -> jpegenc -> jpeg_appsink
+    encode_pipeline: gst::Pipeline,
+    encode_appsrc: gst_app::AppSrc,
+    _encode_elements: Vec<gst::Element>,
+    jpegenc: gst::Element,
+    scale_capsfilter: gst::Element,
+    encode_sender: tokio::sync::broadcast::Sender<ClonableResult<Vec<u8>>>,
+    // Level 1 cache (raw frame): GStreamer's last-sample on appsink + freshness tracking
+    raw_capture_mutex: Arc<tokio::sync::Mutex<()>>,
+    last_capture_instant: Arc<Mutex<Option<std::time::Instant>>>,
+    // Level 2 cache (JPEG per settings)
+    encode_mutex: Arc<tokio::sync::Mutex<()>>,
     thumbnails: Arc<Mutex<CachedThumbnails>>,
 }
+
 impl SinkInterface for ImageSink {
     #[instrument(level = "debug", skip(self, pipeline))]
     fn link(
@@ -83,26 +103,27 @@ impl SinkInterface for ImageSink {
         pipeline_id: &Arc<uuid::Uuid>,
         tee_src_pad: gst::Pad,
     ) -> Result<()> {
-        if self.tee_src_pad.is_some() {
-            return Err(anyhow!(
-                "Tee's src pad from Sink {:?} has already been configured",
-                self.get_id()
-            ));
+        {
+            let mut guard = self.tee_src_pad.lock().unwrap();
+            if guard.is_some() {
+                return Err(anyhow!(
+                    "Tee's src pad from Sink {:?} has already been configured",
+                    self.get_id()
+                ));
+            }
+            guard.replace(tee_src_pad.clone());
         }
-        self.tee_src_pad.replace(tee_src_pad);
-        let Some(tee_src_pad) = &self.tee_src_pad else {
-            unreachable!()
-        };
 
         let elements = &[&self.queue, &self.proxysink];
-        link_sink_to_tee(tee_src_pad, pipeline, elements)?;
+        link_sink_to_tee(&tee_src_pad, pipeline, elements)?;
 
         Ok(())
     }
 
     #[instrument(level = "debug", skip(self, pipeline))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &Arc<uuid::Uuid>) -> Result<()> {
-        let Some(tee_src_pad) = &self.tee_src_pad else {
+        let guard = self.tee_src_pad.lock().unwrap();
+        let Some(tee_src_pad) = guard.as_ref() else {
             warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
             return Ok(());
         };
@@ -112,6 +133,10 @@ impl SinkInterface for ImageSink {
 
         if let Err(error) = self.pipeline.set_state(::gst::State::Null) {
             warn!("Failed setting sink Pipeline state to Null: {error:?}");
+        }
+
+        if let Err(error) = self.encode_pipeline.set_state(::gst::State::Null) {
+            warn!("Failed setting encode pipeline state to Null: {error:?}");
         }
 
         Ok(())
@@ -137,12 +162,21 @@ impl SinkInterface for ImageSink {
     #[instrument(level = "debug", skip(self))]
     fn eos(&self) {
         let pipeline_weak = self.pipeline.downgrade();
+        let encode_pipeline_weak = self.encode_pipeline.downgrade();
         if let Err(error) = std::thread::Builder::new()
             .name("EOS".to_string())
             .spawn(move || {
-                let pipeline = pipeline_weak.upgrade().unwrap();
-                if let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
-                    error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
+                if let Some(pipeline) = pipeline_weak.upgrade() {
+                    if let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
+                        error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
+                    }
+                }
+                if let Some(pipeline) = encode_pipeline_weak.upgrade() {
+                    if let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
+                        error!(
+                            "Failed posting Eos message into encode pipeline bus. Reason: {error:?}"
+                        );
+                    }
                 }
             })
             .expect("Failed spawning EOS thread")
@@ -208,11 +242,15 @@ impl ImageSink {
             }
         }
 
-        let encoding = match &video_and_stream_information
+        let (encoding, source_width, source_height) = match &video_and_stream_information
             .stream_information
             .configuration
         {
-            CaptureConfiguration::Video(video_configuraiton) => video_configuraiton.encode.clone(),
+            CaptureConfiguration::Video(video_configuraiton) => (
+                video_configuraiton.encode.clone(),
+                video_configuraiton.width,
+                video_configuraiton.height,
+            ),
             CaptureConfiguration::Redirect(_) => {
                 return Err(anyhow!(
                     "PipelineRunner aborted: Redirect CaptureConfiguration means the stream was not initialized yet"
@@ -229,10 +267,15 @@ impl ImageSink {
                     .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
                     .property("sync", false)
                     .build()?;
-                let decoder = gst::ElementFactory::make("avdec_h264")
-                    .property_from_str("lowres", "2") // (0) is 'full'; (1) is '1/2-size'; (2) is '1/4-size'
-                    .build()?;
-                decoder.has_property("discard-corrupted-frames", None).then(|| decoder.set_property("discard-corrupted-frames", true));
+                let decoder = gst::ElementFactory::make("avdec_h264").build()?;
+                try_set_property(&decoder, "lowres", 2); // (0) is 'full'; (1) is '1/2-size'; (2) is '1/4-size'
+                try_set_property(&decoder, "skip-frame", 32); // (0) is 'default'; (8) is 'non-ref'; (16) is 'bidir'; (24) is 'non-intra'; (32) is 'non-key'; (48) is 'all'
+                try_set_property(&decoder, "max-threads", 1);
+                try_set_property(&decoder, "min-force-key-unit-interval", 100_000_000u64);
+                try_set_property(&decoder, "qos", false);
+                try_set_property(&decoder, "discard-corrupted-frames", true);
+                try_set_property(&decoder, "output-corrupt", false);
+                try_set_property(&decoder, "std-compliance", 0); // (2147483647) is 'auto'; (2) is 'very-strict'; (1) is 'strict'; (0) is 'normal'; (-1) is 'unofficial'; (-2) is 'experimental'
                 _transcoding_elements.push(filter);
                 _transcoding_elements.push(decoder);
             }
@@ -242,126 +285,69 @@ impl ImageSink {
                 .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
                 .property("sync", false)
                 .build()?;
-                let decoder = gst::ElementFactory::make("avdec_h265")
-                    .property_from_str("lowres", "2") // (0) is 'full'; (1) is '1/2-size'; (2) is '1/4-size'
-                    .build()?;
-                decoder.has_property("discard-corrupted-frames", None).then(|| decoder.set_property("discard-corrupted-frames", true));
-                decoder.has_property("std-compliance", None).then(|| decoder.set_property_from_str("std-compliance", "normal"));
+                let decoder = gst::ElementFactory::make("avdec_h265").build()?;
+                try_set_property(&decoder, "lowres", 2); // (0) is 'full'; (1) is '1/2-size'; (2) is '1/4-size'
+                try_set_property(&decoder, "skip-frame", 32); // (0) is 'default'; (8) is 'non-ref'; (16) is 'bidir'; (24) is 'non-intra'; (32) is 'non-key'; (48) is 'all'
+                try_set_property(&decoder, "max-threads", 1);
+                try_set_property(&decoder, "min-force-key-unit-interval", 100_000_000u64);
+                try_set_property(&decoder, "qos", false);
+                try_set_property(&decoder, "discard-corrupted-frames", true);
+                try_set_property(&decoder, "output-corrupt", false);
+                try_set_property(&decoder, "std-compliance", 0); // (2147483647) is 'auto'; (2) is 'very-strict'; (1) is 'strict'; (0) is 'normal'; (-1) is 'unofficial'; (-2) is 'experimental'
                 _transcoding_elements.push(filter);
                 _transcoding_elements.push(decoder);
             }
             VideoEncodeType::Mjpg => {
                 let decoder = gst::ElementFactory::make("jpegdec").build()?;
-                decoder.has_property("discard-corrupted-frames", None).then(|| decoder.set_property("discard-corrupted-frames", true));
+                try_set_property(&decoder, "idct-method", 2); // (0) is 'islow'; (1) is 'ifast'; (2) is 'float'
+                try_set_property(&decoder, "min-force-key-unit-interval", 100_000_000u64);
+                try_set_property(&decoder, "qos", false);
+                try_set_property(&decoder, "discard-corrupted-frames", true);
                 _transcoding_elements.push(decoder);
             }
-            VideoEncodeType::Rgb => {}
-            VideoEncodeType::Yuyv => {}
-            _ => return Err(anyhow!("Unsupported video encoding for ImageSink: {encoding:?}. The supported are: H264, MJPG and YUYV")),
+            VideoEncodeType::Rgb | VideoEncodeType::Yuyv => {}
+            _ => {
+                return Err(anyhow!(
+                    "Unsupported video encoding for ImageSink: {encoding:?}. The supported are: H264, H265, MJPG, RGB and YUYV"
+                ))
+            }
         };
 
-        let videoconvert = gst::ElementFactory::make("videoconvert").build()?;
-        _transcoding_elements.push(videoconvert);
-
-        // We want RGB format
-        let caps = gst::Caps::builder("video/x-raw")
-            .field("format", gst_video::VideoFormat::Rgbx.to_str())
-            .build();
-
+        // Raw capture appsink + callback
         let pad_blocker: Arc<Mutex<Option<gst::PadProbeId>>> = Default::default();
         let pad_blocker_clone = pad_blocker.clone();
-        let queue_src_pad = queue.static_pad("src").expect("No src pad found on Queue");
+        let tee_src_pad: Arc<Mutex<Option<gst::Pad>>> = Default::default();
+        let queue_clone = queue.clone();
 
-        // To get data out of the callback, we'll be using this arc mutex
         let (sender, _) = tokio::sync::broadcast::channel(1);
         let flat_samples_sender = sender.clone();
         let mut pending = false;
 
-        // The appsink will then call those handlers, as soon as data is available.
         let appsink_callbacks = gst_app::AppSinkCallbacks::builder()
-            // Add a handler to the "new-sample" signal.
-            .new_sample(move |appsink| {
+            .new_sample(move |_appsink| {
+                // Always re-block to stop data flow regardless of listener state
+                if let Some(queue_src_pad) = queue_clone.static_pad("src") {
+                    // Got a valid frame, block any further frame until next request
+                    if let Some(old_blocker) = queue_src_pad
+                        .add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, |_pad, _info| {
+                            gst::PadProbeReturn::Ok
+                        })
+                        .and_then(|blocker| pad_blocker_clone.lock().unwrap().replace(blocker))
+                    {
+                        queue_src_pad.remove_probe(old_blocker);
+                    }
+                }
+
                 // Only process if requested
                 if sender.receiver_count() == 0 || pending {
                     return Ok(gst::FlowSuccess::Ok);
                 }
-                debug!("Starting a snapshot");
                 pending = true;
 
-                // Pull the sample in question out of the appsink's buffer
-                let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
-                let buffer = sample.buffer().ok_or_else(|| {
-                    let reason = "Failed to get buffer from appsink";
-                    gst::element_error!(appsink, gst::ResourceError::Failed, ("{reason:?}"));
-
-                    let _ = sender.send(Err(Arc::new(anyhow!(reason))));
-                    pending = false;
-
-                    gst::FlowError::Error
-                })?;
-
-                // Drop non-key frames
-                if buffer.flags().contains(gst::BufferFlags::DELTA_UNIT) {
-                    let _ = sender.send(Err(Arc::new(anyhow!("Not a valid frame"))));
-                    pending = false;
-
-                    return Ok(gst::FlowSuccess::Ok);
-                }
-
-                // Got a valid frame, block any further frame until next request
-                if let Some(old_blocker) = queue_src_pad
-                    .add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, |_pad, _info| {
-                        gst::PadProbeReturn::Ok
-                    })
-                    .and_then(|blocker| pad_blocker_clone.lock().unwrap().replace(blocker))
-                {
-                    queue_src_pad.remove_probe(old_blocker);
-                }
-
-                let caps = sample.caps().expect("Sample without caps");
-                let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
-
-                // At this point, buffer is only a reference to an existing memory region somewhere.
-                // When we want to access its content, we have to map it while requesting the required
-                // mode of access (read, read/write).
-                // This type of abstraction is necessary, because the buffer in question might not be
-                // on the machine's main memory itself, but rather in the GPU's memory.
-                // So mapping the buffer makes the underlying memory region accessible to us.
-                // See: https://gstreamer.freedesktop.org/documentation/plugin-development/advanced/allocation.html
-                let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info)
-                    .map_err(|_| {
-                        let reason = "Failed to map buffer readable";
-                        gst::element_error!(appsink, gst::ResourceError::Failed, ("{reason:?}"));
-
-                        let _ = sender.send(Err(Arc::new(anyhow!(reason))));
-                        pending = false;
-
-                        gst::FlowError::Error
-                    })?;
-
-                // Create a FlatSamples around the borrowed video frame data from GStreamer with
-                // the correct stride as provided by GStreamer.
-                let frame = image::FlatSamples::<Vec<u8>> {
-                    samples: frame.plane_data(0).unwrap().to_vec(),
-                    layout: image::flat::SampleLayout {
-                        // RGB
-                        channels: 3,
-                        // 1 byte from component to component
-                        channel_stride: 1,
-                        width: frame.width(),
-                        // 4 byte from pixel to pixel
-                        width_stride: 4,
-                        height: frame.height(),
-                        // stride from line to line
-                        height_stride: frame.plane_stride()[0] as usize,
-                    },
-                    color_hint: Some(image::ColorType::Rgb8),
-                };
-
                 // Send the data
-                let _ = sender.send(Ok(frame));
+                let _ = sender.send(Ok(()));
                 pending = false;
-                debug!("Finished the snapshot");
+                debug!("Raw frame captured into last-sample");
 
                 Ok(gst::FlowSuccess::Ok)
             })
@@ -369,12 +355,16 @@ impl ImageSink {
 
         let appsink = gst_app::AppSink::builder()
             .name(format!("AppSink-{sink_id}"))
+            .async_(false)
             .sync(false)
             .max_buffers(1u32)
             .drop(true)
-            .caps(&caps)
+            .enable_last_sample(true)
+            .qos(false)
             .callbacks(appsink_callbacks)
             .build();
+        try_set_property(appsink.upcast_ref(), "leaky-type", 2); // (0) is 'none'; (1) is 'upstream'; (2) is 'downstream'
+        try_set_property(appsink.upcast_ref(), "silent", true);
 
         // Create the pipeline
         let pipeline = gst::Pipeline::builder()
@@ -403,6 +393,95 @@ impl ImageSink {
         let pipeline_runner =
             PipelineRunner::try_new(&pipeline, &sink_id, true, video_and_stream_information)?;
 
+        // Build encoding pipeline
+        let (enc_sender, _) = tokio::sync::broadcast::channel(1);
+        let encode_sender = enc_sender.clone();
+
+        let encode_appsink_callbacks = gst_app::AppSinkCallbacks::builder()
+            .new_sample(move |appsink| {
+                let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
+                let buffer = sample.buffer().ok_or_else(|| {
+                    let _ = enc_sender.send(Err(Arc::new(anyhow!(
+                        "Failed to get buffer from encode appsink"
+                    ))));
+                    gst::FlowError::Error
+                })?;
+                let map = buffer.map_readable().map_err(|_| {
+                    let _ = enc_sender.send(Err(Arc::new(anyhow!(
+                        "Failed to map encode buffer readable"
+                    ))));
+                    gst::FlowError::Error
+                })?;
+                let _ = enc_sender.send(Ok(map.as_slice().to_vec()));
+                Ok(gst::FlowSuccess::Ok)
+            })
+            .build();
+
+        let encode_appsrc = gst_app::AppSrc::builder()
+            .name(format!("EncodeAppSrc-{sink_id}"))
+            .format(gst::Format::Time)
+            .is_live(false)
+            .build();
+        encode_appsrc.set_property("block", false);
+
+        let enc_videoscale = gst::ElementFactory::make("videoscale")
+            .property_from_str("method", "1")
+            .property("n-threads", 1u32)
+            .build()?;
+
+        let scale_capsfilter = gst::ElementFactory::make("capsfilter").build()?;
+
+        let enc_videoconvert = gst::ElementFactory::make("videoconvert")
+            .property("n-threads", 1u32)
+            .build()?;
+
+        let jpegenc = gst::ElementFactory::make("jpegenc")
+            .property("quality", 70i32)
+            .property_from_str("idct-method", "1")
+            .build()?;
+
+        let encode_appsink = gst_app::AppSink::builder()
+            .name(format!("EncodeAppSink-{sink_id}"))
+            .async_(false)
+            .sync(false)
+            .max_buffers(1u32)
+            .drop(false)
+            .enable_last_sample(false)
+            .qos(false)
+            .callbacks(encode_appsink_callbacks)
+            .build();
+        try_set_property(encode_appsink.upcast_ref(), "silent", true);
+
+        let _encode_elements: Vec<gst::Element> = vec![
+            enc_videoscale,
+            scale_capsfilter.clone(),
+            enc_videoconvert,
+            jpegenc.clone(),
+        ];
+
+        let encode_pipeline = gst::Pipeline::builder()
+            .name(format!("pipeline-image-encode-{sink_id}"))
+            .build();
+
+        let mut enc_elements: Vec<&gst::Element> = vec![encode_appsrc.upcast_ref()];
+        enc_elements.extend(_encode_elements.iter());
+        enc_elements.push(encode_appsink.upcast_ref());
+        let enc_elements = &enc_elements;
+
+        if let Err(add_err) = encode_pipeline.add_many(enc_elements) {
+            return Err(anyhow!(
+                "Failed adding elements to encode pipeline: {add_err:?}"
+            ));
+        }
+        if let Err(link_err) = gst::Element::link_many(enc_elements) {
+            if let Err(remove_err) = encode_pipeline.remove_many(enc_elements) {
+                warn!("Failed removing elements from encode pipeline: {remove_err:?}")
+            };
+            return Err(anyhow!(
+                "Failed linking encode pipeline elements: {link_err:?}"
+            ));
+        }
+
         Ok(Self {
             sink_id: sink_id.clone(),
             pipeline,
@@ -411,96 +490,153 @@ impl ImageSink {
             _proxysrc,
             _transcoding_elements,
             appsink,
-            tee_src_pad: Default::default(),
-            flat_samples_sender,
+            source_width,
+            source_height,
+            tee_src_pad,
             pad_blocker,
             pipeline_runner,
+            flat_samples_sender,
+            encode_pipeline,
+            encode_appsrc,
+            _encode_elements,
+            jpegenc,
+            scale_capsfilter,
+            encode_sender,
+            raw_capture_mutex: Default::default(),
+            last_capture_instant: Default::default(),
+            encode_mutex: Default::default(),
             thumbnails: Default::default(),
         })
     }
 
+    /// Unblock the source pad, wait for a single raw frame to arrive at
+    /// `appsink` (stored via `enable-last-sample`), then re-block.
     #[instrument(level = "debug", skip(self))]
-    async fn try_get_flat_sample(&self) -> Result<FlatSamples<Vec<u8>>> {
-        // Play the pipeline if it's not playing yet.
-        // Here we can ignore the result because we have a timeout when waiting for the snapshot
+    async fn capture_raw_frame(&self) -> Result<()> {
+        // The capture pipeline stays in Playing between snapshots.
+        // A pad blocker on the queue's src pad prevents data from
+        // reaching the decoder when idle, so CPU usage is negligible.
+        // Cycling through Null would lose the proxy's sticky events
+        // (stream-start, caps, segment) which cannot be reliably
+        // restored, causing "data flow before stream-start" warnings
+        // and segfaults in avdec_h264.
         if self.pipeline.current_state() != gst::State::Playing {
-            let _ = self.pipeline.set_state(gst::State::Playing);
+            self.pipeline
+                .set_state(gst::State::Playing)
+                .map_err(|error| anyhow!("Failed to set capture pipeline to Playing: {error:?}"))?;
+            self.pipeline
+                .state(gst::ClockTime::from_seconds(10))
+                .0
+                .map_err(|error| anyhow!("Capture pipeline failed to reach Playing: {error:?}"))?;
         }
 
-        // Unblock the data from entering the ProxySink
-        if let Some(blocker) = self.pad_blocker.lock().unwrap().take() {
-            self.queue
-                .static_pad("src")
-                .expect("No src pad found on Queue")
-                .remove_probe(blocker);
-        }
-
-        // Trigger the snapshot
+        // Subscribe BEFORE unblocking to guarantee we receive the notification
         let mut receiver = self.flat_samples_sender.subscribe();
 
-        // Wait for the snapshot to be taken, with a timeout
-        // Here we'd have the raw snapshot, we just need to convert it to the final format/size
-        tokio::time::timeout(tokio::time::Duration::from_secs(2), receiver.recv())
-            .await??
-            .map_err(|e| anyhow!(e.to_string()))
-    }
-
-    #[instrument(level = "debug", skip(self, flat_sample))]
-    async fn try_process_sample(
-        &self,
-        flat_sample: FlatSamples<Vec<u8>>,
-        info: gst_video::VideoInfo,
-        settings: ThumbnailSettings,
-    ) -> Result<Vec<u8>> {
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<u8>>>();
-        let (quality, target_height) = (settings.quality, settings.target_height);
-        tokio::task::spawn(async move {
-            // Calculate a target width/height that keeps the display aspect ratio while having
-            // a height of the given target_height (eg 240 pixels)
-            let display_aspect_ratio = (flat_sample.layout.width as f64
-                * info.par().numer() as f64)
-                / (flat_sample.layout.height as f64 * info.par().denom() as f64);
-            let target_height = target_height.unwrap_or(flat_sample.layout.height);
-            let target_width = (target_height as f64 * display_aspect_ratio) as u32;
-
-            // Scale image to our target dimensions
-            let image_view = match flat_sample.as_view::<image::Rgb<u8>>() {
-                Ok(image_view) => image_view,
-                Err(error) => {
-                    let _ = tx.send(Err(anyhow!("Failed creating image view. Reason: {error}")));
-                    return;
-                }
-            };
-            let img_buf = image::imageops::thumbnail(&image_view, target_width, target_height);
-
-            // Transmute it to our output buffer, which represents the image itself in the chosen file format
-            let mut buffer = std::io::Cursor::new(Vec::new());
-            if let Err(error) = image::DynamicImage::ImageRgb8(img_buf)
-                .write_to(&mut buffer, image::ImageOutputFormat::Jpeg(quality))
-            {
-                let _ = tx.send(Err(anyhow!("Failed creating image. Reason: {error}")));
-                return;
-            }
-
-            let _ = tx.send(Ok(buffer.into_inner()));
-        });
-
-        let thumbnail = tokio::time::timeout(tokio::time::Duration::from_secs(2), rx).await???;
-
-        {
-            let mut thumbnails = match self.thumbnails.lock() {
-                Ok(guard) => guard,
-                Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-            };
-
-            if let Err(error) = thumbnails.try_set(&settings, thumbnail.clone()) {
-                error!("Failed setting cached thumbnail. Reason: {error:?}");
+        // Unblock the queue's src pad to allow data to flow to the decoder
+        if let Some(blocker) = self.pad_blocker.lock().unwrap().take() {
+            if let Some(queue_src_pad) = self.queue.static_pad("src") {
+                queue_src_pad.remove_probe(blocker);
             }
         }
 
-        Ok(thumbnail)
+        // Request an immediate keyframe from the upstream encoder so the
+        // decoder can produce a frame without waiting for the next natural
+        // keyframe (which may be many seconds away with x264enc defaults).
+        if let Some(queue_src_pad) = self.queue.static_pad("src") {
+            let event = gst_video::UpstreamForceKeyUnitEvent::builder()
+                .all_headers(true)
+                .build();
+            queue_src_pad.send_event(event);
+        }
+
+        let result =
+            tokio::time::timeout(tokio::time::Duration::from_secs(15), receiver.recv()).await;
+
+        result??.map_err(anyhow::Error::msg)
     }
 
+    /// Read the raw frame from `appsink`'s `last-sample`, configure the
+    /// encoding pipeline for the given settings, push the frame through, and
+    /// return the resulting JPEG bytes.
+    #[instrument(level = "debug", skip(self))]
+    async fn encode_raw_frame(&self, settings: &ThumbnailSettings) -> Result<Vec<u8>> {
+        let sample: gst::Sample = self
+            .appsink
+            .property::<Option<gst::Sample>>("last-sample")
+            .ok_or_else(|| anyhow!("No raw frame available in last-sample"))?;
+        let caps = sample
+            .caps()
+            .ok_or_else(|| anyhow!("Raw sample has no caps"))?
+            .to_owned();
+        let buffer = sample
+            .buffer()
+            .ok_or_else(|| anyhow!("Raw sample has no buffer"))?;
+
+        // Configure encoding elements for this request's settings
+        self.jpegenc
+            .set_property("quality", settings.quality as i32);
+
+        if let Some(target_h) = settings.target_height {
+            let aspect_ratio = self.source_width as f64 / self.source_height as f64;
+            let target_w = (target_h as f64 * aspect_ratio) as u32;
+            // Ensure even dimensions for YUV format compatibility
+            let target_w = target_w + (target_w % 2);
+            let target_h = target_h + (target_h % 2);
+
+            let scale_caps = gst::Caps::builder("video/x-raw")
+                .field("width", target_w as i32)
+                .field("height", target_h as i32)
+                .build();
+            self.scale_capsfilter.set_property("caps", &scale_caps);
+        } else {
+            self.scale_capsfilter
+                .set_property("caps", gst::Caps::new_any());
+        }
+
+        // Set appsrc caps to match the raw frame format
+        self.encode_appsrc.set_caps(Some(&caps));
+
+        // Ensure encoding pipeline is Playing
+        if self.encode_pipeline.current_state() != gst::State::Playing {
+            self.encode_pipeline
+                .set_state(gst::State::Playing)
+                .map_err(|error| anyhow!("Failed to set encode pipeline to Playing: {error:?}"))?;
+            self.encode_pipeline
+                .state(gst::ClockTime::from_seconds(10))
+                .0
+                .map_err(|error| anyhow!("Encode pipeline failed to reach Playing: {error:?}"))?;
+        }
+
+        // Subscribe BEFORE pushing to guarantee we receive the result
+        let mut receiver = self.encode_sender.subscribe();
+
+        let buffer_copy = buffer
+            .copy_deep()
+            .map_err(|e| anyhow!("Failed to deep-copy raw buffer: {e}"))?;
+        self.encode_appsrc
+            .push_buffer(buffer_copy)
+            .map_err(|err| anyhow!("Failed to push buffer into encode appsrc: {err:?}"))?;
+
+        let result =
+            tokio::time::timeout(tokio::time::Duration::from_secs(5), receiver.recv()).await;
+
+        #[cfg(target_os = "linux")]
+        unsafe {
+            libc::malloc_trim(0);
+        }
+
+        result??.map_err(anyhow::Error::msg)
+    }
+
+    /// Produce a JPEG thumbnail with the requested settings.
+    ///
+    /// Uses a two-level stampede-proof cache:
+    ///  - Level 1: raw decoded frame (GStreamer's `last-sample` on `appsink`)
+    ///  - Level 2: JPEG per `ThumbnailSettings`
+    ///
+    /// Both levels use double-checked locking so that concurrent requests for
+    /// the same entry coalesce into a single production.
     #[instrument(level = "debug", skip(self))]
     pub async fn make_jpeg_thumbnail_from_last_frame(
         &self,
@@ -512,29 +648,83 @@ impl ImageSink {
             target_height,
         };
 
-        // Try to get from cache
+        // Level 2 quick check: return cached JPEG if still fresh
         {
-            let thumbnails = match self.thumbnails.lock() {
-                Ok(guard) => guard,
-                Err(error) => return Err(anyhow!("Failed locking a Mutex. Reason: {error}")),
-            };
-
-            if let Some(thumbnail) = thumbnails.try_get(&settings)? {
-                return Ok(thumbnail);
-            };
+            let cache = self
+                .thumbnails
+                .lock()
+                .map_err(|e| anyhow!("Failed locking a Mutex. Reason: {e}"))?;
+            if let Some(jpeg) = cache.try_get(&settings)? {
+                return Ok(jpeg);
+            }
         }
 
-        // If cache doesn't hit, produce a new one
-        let flat_sample = self.try_get_flat_sample().await?;
+        // Level 1: ensure the raw frame is fresh (stampede-proof)
+        {
+            let is_fresh = self
+                .last_capture_instant
+                .lock()
+                .map_err(|e| anyhow!("Failed locking a Mutex. Reason: {e}"))?
+                .map(|instant| instant.elapsed() < std::time::Duration::from_secs(1))
+                .unwrap_or(false);
 
-        let caps = &self
-            .appsink
-            .static_pad("sink")
-            .expect("No static sink pad found on capsfilter")
-            .current_caps()
-            .context("Failed to get caps from capsfilter sink pad")?;
-        let info = gst_video::VideoInfo::from_caps(caps).context("Failed to parse caps")?;
+            if !is_fresh {
+                let _guard = self.raw_capture_mutex.lock().await;
 
-        self.try_process_sample(flat_sample, info, settings).await
+                // Double-check after acquiring the serializer
+                let still_stale = self
+                    .last_capture_instant
+                    .lock()
+                    .map_err(|e| anyhow!("Failed locking a Mutex. Reason: {e}"))?
+                    .map(|instant| instant.elapsed() >= std::time::Duration::from_secs(1))
+                    .unwrap_or(true);
+
+                if still_stale {
+                    self.capture_raw_frame().await?;
+
+                    *self
+                        .last_capture_instant
+                        .lock()
+                        .map_err(|e| anyhow!("Failed locking a Mutex. Reason: {e}"))? =
+                        Some(std::time::Instant::now());
+
+                    // Invalidate JPEG cache since the underlying raw frame changed
+                    self.thumbnails
+                        .lock()
+                        .map_err(|e| anyhow!("Failed locking a Mutex. Reason: {e}"))?
+                        .clear();
+                }
+            }
+        }
+
+        // Level 2: encode with stampede prevention
+        {
+            let _guard = self.encode_mutex.lock().await;
+
+            // Double-check after acquiring the serializer
+            {
+                let cache = self
+                    .thumbnails
+                    .lock()
+                    .map_err(|e| anyhow!("Failed locking a Mutex. Reason: {e}"))?;
+                if let Some(jpeg) = cache.try_get(&settings)? {
+                    return Ok(jpeg);
+                }
+            }
+
+            let jpeg_bytes = self.encode_raw_frame(&settings).await?;
+
+            {
+                let mut cache = self
+                    .thumbnails
+                    .lock()
+                    .map_err(|e| anyhow!("Failed locking a Mutex. Reason: {e}"))?;
+                if let Err(error) = cache.try_set(&settings, jpeg_bytes.clone()) {
+                    error!("Failed setting cached thumbnail. Reason: {error:?}");
+                }
+            }
+
+            Ok(jpeg_bytes)
+        }
     }
 }
