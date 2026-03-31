@@ -79,7 +79,7 @@ impl SinkInterface for UdpSink {
         debug!("Got caps: {caps:#?}");
 
         let mut sdp_media = gst_sdp::SDPMedia::new();
-        gst_sdp::SDPMediaRef::set_media_from_caps(&caps, &mut sdp_media)?;
+        gst_sdp::SDPMediaRef::set_media_from_caps(&mut sdp_media, &caps)?;
 
         let url = self.addresses.first().context("Missing address")?.clone();
         sdp_media.add_connection("IN", "IP4", url.host_str().context("Missing host")?, 127, 1);
