@@ -1,4 +1,5 @@
 pub mod protocol;
+pub mod rtsp_client;
 pub mod thumbnail_client;
 
 use std::{
