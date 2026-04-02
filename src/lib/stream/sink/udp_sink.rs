@@ -5,7 +5,8 @@ use gst::prelude::*;
 use tracing::*;
 
 use crate::{
-    stream::pipeline::runner::PipelineRunner, video_stream::types::VideoAndStreamInformation,
+    stream::{gst::utils::excise_proxysrc_queue, pipeline::runner::PipelineRunner},
+    video_stream::types::VideoAndStreamInformation,
 };
 
 use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
@@ -14,9 +15,9 @@ use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
 pub struct UdpSink {
     sink_id: Arc<uuid::Uuid>,
     pipeline: gst::Pipeline,
-    queue: gst::Element,
     proxysink: gst::Element,
     _proxysrc: gst::Element,
+    proxysrc_queue: Option<gst::Element>,
     _udpsink: gst::Element,
     udpsink_sink_pad: gst::Pad,
     tee_src_pad: Option<gst::Pad>,
@@ -42,8 +43,21 @@ impl SinkInterface for UdpSink {
             unreachable!()
         };
 
-        let elements = &[&self.queue, &self.proxysink];
+        let elements = &[&self.proxysink];
         link_sink_to_tee(tee_src_pad, pipeline, elements)?;
+
+        if let Some(queue) = &self.proxysrc_queue {
+            if let Some(src_pad) = queue.static_pad("src") {
+                let queue_weak = queue.downgrade();
+                src_pad.add_probe(
+                    gst::PadProbeType::BUFFER | gst::PadProbeType::BUFFER_LIST,
+                    move |_pad, _info| {
+                        excise_proxysrc_queue(&queue_weak);
+                        gst::PadProbeReturn::Remove
+                    },
+                );
+            }
+        }
 
         Ok(())
     }
@@ -55,7 +69,7 @@ impl SinkInterface for UdpSink {
             return Ok(());
         };
 
-        let elements = &[&self.queue, &self.proxysink];
+        let elements = &[&self.proxysink];
         unlink_sink_from_tee(tee_src_pad, pipeline, elements)?;
 
         if let Err(error) = self.pipeline.set_state(::gst::State::Null) {
@@ -146,50 +160,25 @@ impl UdpSink {
         sink_id: Arc<uuid::Uuid>,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
-        let rtp_queue_time_ns = super::rtp_queue_max_time_ns(video_and_stream_information);
-
-        // This queue sits after the RTP tee and receives individual RTP
-        // packets. Use time-based limiting (one frame period) so a
-        // frame's packets aren't dropped.
-        let queue = gst::ElementFactory::make("queue")
-            .property_from_str("leaky", "downstream")
-            .property("silent", true)
-            .property("flush-on-eos", true)
-            .property("max-size-buffers", 0u32)
-            .property("max-size-bytes", 0u32)
-            .property("max-size-time", rtp_queue_time_ns)
-            .build()?;
-
-        // Create a pair of proxies. The proxysink will be used in the source's pipeline,
-        // while the proxysrc will be used in this sink's pipeline
         let proxysink = gst::ElementFactory::make("proxysink").build()?;
         let _proxysrc = gst::ElementFactory::make("proxysrc")
             .property("proxysink", &proxysink)
             .build()?;
 
-        // Configure proxysrc's queue, skips if fails
-        match _proxysrc.downcast_ref::<gst::Bin>() {
-            Some(bin) => {
-                let elements = bin.children();
-                match elements
-                    .iter()
-                    .find(|element| element.name().starts_with("queue"))
-                {
-                    Some(element) => {
-                        element.set_property_from_str("leaky", "downstream");
-                        element.set_property("flush-on-eos", true);
-                        element.set_property("max-size-buffers", 0u32);
-                        element.set_property("max-size-bytes", 0u32);
-                        element.set_property("max-size-time", rtp_queue_time_ns);
-                    }
-                    None => {
-                        warn!("Failed to customize proxysrc's queue: Failed to find queue in proxysrc");
-                    }
-                }
-            }
-            None => {
-                warn!("Failed to customize proxysrc's queue: Failed to downcast element to bin")
-            }
+        let proxysrc_queue = _proxysrc.downcast_ref::<gst::Bin>().and_then(|bin| {
+            bin.children()
+                .into_iter()
+                .find(|element| element.name().starts_with("queue"))
+        });
+        if let Some(queue) = &proxysrc_queue {
+            queue.set_property_from_str("leaky", "downstream");
+            queue.set_property("silent", true);
+            queue.set_property("flush-on-eos", true);
+            queue.set_property("max-size-buffers", 1u32);
+            queue.set_property("max-size-bytes", 0u32);
+            queue.set_property("max-size-time", 0u64);
+        } else {
+            warn!("Failed to find queue inside proxysrc");
         }
 
         let addresses = video_and_stream_information
@@ -246,9 +235,9 @@ impl UdpSink {
         Ok(Self {
             sink_id: sink_id.clone(),
             pipeline,
-            queue,
             proxysink,
             _proxysrc,
+            proxysrc_queue,
             _udpsink,
             udpsink_sink_pad,
             addresses,
