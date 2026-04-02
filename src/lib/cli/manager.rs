@@ -116,6 +116,10 @@ struct Args {
     #[clap(long, value_name = "onvif://<USERNAME>:<PASSWORD>@<HOST>", value_delimiter = ',', value_parser = onvif_auth_validator, env = "MCM_ONVIF_AUTH")]
     onvif_auth: Vec<String>,
 
+    /// Enable the /dot WebSocket endpoint for GStreamer pipeline graph streaming.
+    #[arg(long)]
+    enable_dot: bool,
+
     /// Enables the zenoh integration by default in client mode.
     #[arg(long)]
     zenoh: bool,
@@ -123,6 +127,20 @@ struct Args {
     /// Sets the zenoh configuration file path.
     #[arg(long, value_name = "PATH")]
     zenoh_config_file: Option<String>,
+
+    /// Enable real-time (SCHED_RR) thread scheduling for GStreamer pipeline
+    /// threads. Requires CAP_SYS_NICE. When disabled (default), pipeline
+    /// threads run under normal SCHED_OTHER scheduling.
+    #[arg(long)]
+    enable_realtime_threads: bool,
+
+    /// Sets the RTSP server listen port.
+    #[arg(long, value_name = "PORT", default_value_t = 8554)]
+    rtsp_port: u16,
+
+    /// Disable ONVIF camera discovery.
+    #[arg(long)]
+    disable_onvif: bool,
 }
 
 #[derive(Debug)]
@@ -147,9 +165,12 @@ lazy_static! {
 
 impl Manager {
     fn new() -> Self {
-        Self {
-            clap_matches: Args::parse(),
-        }
+        let clap_matches = if cfg!(test) {
+            Args::parse_from(["mavlink-camera-manager"])
+        } else {
+            Args::parse()
+        };
+        Self { clap_matches }
     }
 }
 
@@ -316,12 +337,28 @@ pub fn onvif_auth() -> HashMap<std::net::Ipv4Addr, onvif::soap::client::Credenti
         .collect()
 }
 
+pub fn is_dot_enabled() -> bool {
+    MANAGER.clap_matches.enable_dot
+}
+
 pub fn enable_zenoh() -> bool {
     MANAGER.clap_matches.zenoh
 }
 
 pub fn zenoh_config_file() -> Option<String> {
     MANAGER.clap_matches.zenoh_config_file.clone()
+}
+
+pub fn enable_realtime_threads() -> bool {
+    MANAGER.clap_matches.enable_realtime_threads
+}
+
+pub fn rtsp_server_port() -> u16 {
+    MANAGER.clap_matches.rtsp_port
+}
+
+pub fn is_onvif_disabled() -> bool {
+    MANAGER.clap_matches.disable_onvif
 }
 
 fn gst_feature_rank_validator(val: &str) -> Result<String, String> {
