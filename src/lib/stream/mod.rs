@@ -1,4 +1,5 @@
 pub mod gst;
+pub mod lifecycle;
 pub mod manager;
 pub mod pipeline;
 pub mod rtsp;
