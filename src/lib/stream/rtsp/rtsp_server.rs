@@ -5,9 +5,12 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Result};
+use gst::prelude::*;
 use gst_rtsp::RTSPLowerTrans;
 use gst_rtsp_server::{prelude::*, RTSPTransportMode};
 use tracing::*;
+
+use crate::stream::sink::rtsp_sink::RtspFlowHandle;
 
 use super::rtsp_scheme::RTSPScheme;
 
@@ -27,8 +30,6 @@ lazy_static! {
         Arc::new(Mutex::new(RTSPServer::default()));
 }
 
-pub const RTSP_SERVER_PORT: u16 = 8554;
-
 impl RTSPServer {
     #[instrument(level = "debug")]
     fn default() -> Self {
@@ -40,7 +41,7 @@ impl RTSPServer {
         let (sender, receiver) = std::sync::mpsc::channel::<String>();
 
         let host = "0.0.0.0".to_string();
-        let port = RTSP_SERVER_PORT;
+        let port = crate::cli::manager::rtsp_server_port();
         let server = gst_rtsp_server::RTSPServer::new();
         server.set_address(&host);
         server.set_service(&port.to_string());
@@ -66,6 +67,10 @@ impl RTSPServer {
         RTSP_SERVER.as_ref().lock().unwrap().run
     }
 
+    pub fn port() -> u16 {
+        RTSP_SERVER.as_ref().lock().unwrap().port
+    }
+
     #[instrument(level = "debug", skip(channel))]
     fn run_main_loop(channel: std::sync::mpsc::Sender<String>) {
         if let Err(error) = gst::init() {
@@ -88,10 +93,13 @@ impl RTSPServer {
             // interested in them. In this example, we only do have one, so we can
             // leave the context parameter empty, it will automatically select
             // the default one.
-            let id = rtsp_server
-                .server
-                .attach(None)
-                .expect("Failed attaching to default context");
+            let id = match rtsp_server.server.attach(None) {
+                Ok(id) => id,
+                Err(err) => {
+                    error!("Failed attaching RTSP server to main context: {err:?}, retrying...");
+                    continue;
+                }
+            };
 
             // Start the mainloop. From this point on, the server will start to serve
             // our quality content to connecting clients.
@@ -108,13 +116,24 @@ impl RTSPServer {
         }
     }
 
-    #[instrument(level = "debug")]
+    /// Returns `true` if a factory for the given path is already registered.
+    pub fn has_factory(path: &str) -> bool {
+        RTSP_SERVER
+            .as_ref()
+            .lock()
+            .unwrap()
+            .path_to_factory
+            .contains_key(path)
+    }
+
+    #[instrument(level = "debug", skip(rtsp_appsrc, pts_offset, flow_handle))]
     pub fn add_pipeline(
         scheme: &RTSPScheme,
         path: &str,
-        socket_path: &str,
-        rtp_caps: &gst::Caps,
-        rtp_queue_time_ns: u64,
+        rtsp_appsrc: Arc<Mutex<Option<gst_app::AppSrc>>>,
+        pts_offset: Arc<Mutex<Option<gst::ClockTime>>>,
+        video_caps: &gst::Caps,
+        flow_handle: RtspFlowHandle,
     ) -> Result<()> {
         // Initialize the singleton before calling gst factory
         let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
@@ -146,84 +165,35 @@ impl RTSPServer {
         factory.set_transport_mode(RTSPTransportMode::PLAY);
         factory.set_protocols(protocols);
 
-        let Some(encode) = rtp_caps.iter().find_map(|structure| {
-            structure.iter().find_map(|(key, sendvalue)| {
-                if key == "encoding-name" {
-                    Some(
-                        sendvalue
-                            .to_value()
-                            .get::<String>()
-                            .expect("Failed accessing encoding-name parameter"),
-                    )
-                } else {
-                    None
-                }
-            })
-        }) else {
-            return Err(anyhow!("Cannot find 'media' in caps"));
-        };
+        let caps_name = video_caps
+            .structure(0)
+            .map(|s| s.name().to_string())
+            .unwrap_or_default();
 
-        let rtp_caps = rtp_caps.to_string();
-        let description = match encode.as_str() {
-            "H264" => {
-                format!(
-                    concat!(
-                        "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
-                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
-                        " ! capsfilter caps={rtp_caps:?}",
-                        " ! rtph264depay",
-                        " ! rtph264pay name=pay0 aggregate-mode=zero-latency config-interval=-1 pt=96",
-                    ),
-                    socket_path = socket_path,
-                    rtp_caps = rtp_caps,
-                    queue_time = rtp_queue_time_ns,
-                )
-            }
-            "H265" => {
-                format!(
-                    concat!(
-                        "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
-                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
-                        " ! capsfilter caps={rtp_caps:?}",
-                        " ! rtph265depay",
-                        " ! rtph265pay name=pay0 aggregate-mode=zero-latency config-interval=-1 pt=96",
-                    ),
-                    socket_path = socket_path,
-                    rtp_caps = rtp_caps,
-                    queue_time = rtp_queue_time_ns,
-                )
-            }
-            "RAW" => {
-                format!(
-                    concat!(
-                        "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
-                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
-                        " ! capsfilter caps={rtp_caps:?}",
-                        " ! rtpvrawdepay",
-                        " ! rtpvrawpay name=pay0 pt=96",
-                    ),
-                    socket_path = socket_path,
-                    rtp_caps = rtp_caps,
-                    queue_time = rtp_queue_time_ns,
-                )
-            }
-            "JPEG" => {
-                format!(
-                    concat!(
-                        "shmsrc socket-path={socket_path} do-timestamp=true is-live=false",
-                        " ! queue leaky=downstream flush-on-eos=true silent=true max-size-buffers=0 max-size-bytes=0 max-size-time={queue_time}",
-                        " ! capsfilter caps={rtp_caps:?}",
-                        " ! rtpjpegdepay",
-                        " ! rtpjpegpay name=pay0 pt=96",
-                    ),
-                    socket_path = socket_path,
-                    rtp_caps = rtp_caps,
-                    queue_time = rtp_queue_time_ns,
-                )
-            }
+        let description = match caps_name.as_str() {
+            "video/x-h264" => concat!(
+                "appsrc name=source is-live=true format=time do-timestamp=false",
+                " ! rtph264pay name=pay0 aggregate-mode=zero-latency config-interval=-1 pt=96",
+            )
+            .to_string(),
+            "video/x-h265" => concat!(
+                "appsrc name=source is-live=true format=time do-timestamp=false",
+                " ! rtph265pay name=pay0 aggregate-mode=zero-latency config-interval=-1 pt=96",
+            )
+            .to_string(),
+            "video/x-raw" => concat!(
+                "appsrc name=source is-live=true format=time do-timestamp=false",
+                " ! rtpvrawpay name=pay0 pt=96",
+            )
+            .to_string(),
+            "image/jpeg" => concat!(
+                "appsrc name=source is-live=true format=time do-timestamp=false",
+                " ! rtpjpegpay name=pay0 pt=96",
+            )
+            .to_string(),
             unsupported => {
                 return Err(anyhow!(
-                    "Encode {unsupported:?} is not supported for RTSP Sink"
+                    "Video caps {unsupported:?} not supported for RTSP Sink"
                 ))
             }
         };
@@ -231,6 +201,53 @@ impl RTSPServer {
         debug!("RTSP Server description: {description:#?}");
 
         factory.set_launch(&description);
+
+        let path_owned = path.to_string();
+        factory.connect_media_configure(move |_factory, media| {
+            debug!(
+                "RTSP media_configure: client connecting to {:?}",
+                path_owned
+            );
+
+            let element = media.element();
+            if let Some(bin) = element.downcast_ref::<gst::Bin>() {
+                if let Some(source) = bin.by_name("source") {
+                    if let Ok(appsrc) = source.downcast::<gst_app::AppSrc>() {
+                        appsrc.set_max_bytes(0);
+                        appsrc.set_property("block", false);
+                        *pts_offset.lock().unwrap() = None;
+                        *rtsp_appsrc.lock().unwrap() = Some(appsrc);
+                        debug!(
+                            "RTSP media_configure: appsrc connected, awaiting sample-derived caps"
+                        );
+                    }
+                } else {
+                    error!("Failed to find 'source' appsrc in RTSP media pipeline");
+                }
+            } else {
+                error!("Failed to downcast RTSP media element to Bin");
+            }
+
+            flow_handle.on_client_connected();
+
+            media.connect_new_state(move |media, _state| {
+                force_rtsp_transport_sinks_sync_false(media);
+            });
+
+            let rtsp_appsrc_disconnect = rtsp_appsrc.clone();
+            let pts_offset_disconnect = pts_offset.clone();
+            let flow_handle_disconnect = flow_handle.clone();
+            let path_disconnect = path_owned.clone();
+            media.connect_unprepared(move |_media| {
+                debug!(
+                    "RTSP media unprepared: client disconnected from {:?}",
+                    path_disconnect
+                );
+                *rtsp_appsrc_disconnect.lock().unwrap() = None;
+                *pts_offset_disconnect.lock().unwrap() = None;
+                flow_handle_disconnect.on_client_disconnected();
+            });
+        });
 
         if let Some(server) = rtsp_server
             .path_to_factory
@@ -297,5 +314,24 @@ impl RTSPServer {
         debug!("RTSP {path:?} removed.");
 
         Ok(())
+    }
+}
+
+fn force_rtsp_transport_sinks_sync_false(media: &gst_rtsp_server::RTSPMedia) {
+    for idx in 0..media.n_streams() {
+        let Some(stream) = media.stream(idx) else {
+            continue;
+        };
+        let Some(bin) = stream.joined_bin() else {
+            continue;
+        };
+
+        for element in bin.iterate_recurse().into_iter().filter_map(Result::ok) {
+            if element.find_property("sync").is_none() || element.static_pad("src").is_some() {
+                continue;
+            }
+
+            element.set_property("sync", false);
+        }
     }
 }
