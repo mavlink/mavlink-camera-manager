@@ -2,6 +2,7 @@ pub mod protocol;
 pub mod rtsp_client;
 pub mod thumbnail_client;
 pub mod udp_client;
+pub mod zenoh_client;
 
 use std::{
     hash::{DefaultHasher, Hasher},
