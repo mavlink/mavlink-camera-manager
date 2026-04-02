@@ -1,9 +1,13 @@
 pub mod protocol;
 pub mod rtsp_client;
-pub mod thumbnail_client;
 pub mod udp_client;
 pub mod webrtc_client;
 pub mod zenoh_client;
+
+pub mod thumbnail_client;
+
+#[cfg(feature = "webrtc-test")]
+pub mod browser_webrtc_client;
 
 use std::{
     hash::{DefaultHasher, Hasher},
