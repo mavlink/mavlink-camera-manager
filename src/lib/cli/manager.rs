@@ -92,10 +92,6 @@ struct Args {
     #[arg(long)]
     enable_thread_counter: bool,
 
-    /// Enable the WebRTC task test and optionally choose the WebDriver port.
-    #[arg(long, value_name = "PORT", default_value_t = 9515)]
-    enable_webrtc_task_test: u32,
-
     /// Sets the MAVLink System ID.
     #[arg(long, value_name = "SYSTEM_ID", default_value = "1")]
     mavlink_system_id: u8,
@@ -268,10 +264,6 @@ pub fn default_settings() -> Option<custom::CustomEnvironment> {
 
 pub fn enable_thread_counter() -> bool {
     MANAGER.clap_matches.enable_thread_counter
-}
-
-pub fn enable_webrtc_task_test() -> Option<u32> {
-    Some(MANAGER.clap_matches.enable_webrtc_task_test)
 }
 
 pub fn mavlink_system_id() -> u8 {
@@ -452,7 +444,6 @@ mod tests {
     #[test]
     fn default_arguments() {
         assert!(!is_verbose());
-        assert_eq!(enable_webrtc_task_test(), Some(9515));
         assert_eq!(
             stream_recreation_failure_timeout(),
             Some(Duration::from_secs(300))
