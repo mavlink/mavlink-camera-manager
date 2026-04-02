@@ -4,8 +4,19 @@ use mavlink_camera_manager::{
 
 use tracing::*;
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
-async fn main() -> Result<(), std::io::Error> {
+fn main() -> Result<(), std::io::Error> {
+    helper::threads::lower_thread_priority();
+
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(10)
+        .enable_all()
+        .on_thread_start(helper::threads::lower_thread_priority)
+        .build()
+        .expect("Failed to create Tokio runtime")
+        .block_on(async_main())
+}
+
+async fn async_main() -> Result<(), std::io::Error> {
     // CLI should be started before logger to allow control over verbosity
     cli::manager::init();
     // Logger should start before everything else to register any log information
@@ -21,7 +32,9 @@ async fn main() -> Result<(), std::io::Error> {
     settings::manager::set_mavlink_endpoint(&cli::manager::mavlink_connection_string());
 
     // Onvif should start after the stream manager
-    controls::onvif::manager::Manager::init().await;
+    if !cli::manager::is_onvif_disabled() {
+        controls::onvif::manager::Manager::init().await;
+    }
 
     if cli::manager::enable_zenoh() {
         zenoh::init().await.unwrap();
