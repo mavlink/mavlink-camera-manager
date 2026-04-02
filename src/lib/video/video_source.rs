@@ -28,13 +28,14 @@ pub(crate) trait VideoSourceAvailable {
 }
 
 pub async fn cameras_available() -> Vec<VideoSourceType> {
-    [
-        &VideoSourceLocal::cameras_available().await[..],
-        &VideoSourceGst::cameras_available().await[..],
-        &VideoSourceOnvif::cameras_available().await[..],
-        &VideoSourceRedirect::cameras_available().await[..],
-    ]
-    .concat()
+    let mut sources = Vec::new();
+    sources.extend(VideoSourceLocal::cameras_available().await);
+    sources.extend(VideoSourceGst::cameras_available().await);
+    if !crate::cli::manager::is_onvif_disabled() {
+        sources.extend(VideoSourceOnvif::cameras_available().await);
+    }
+    sources.extend(VideoSourceRedirect::cameras_available().await);
+    sources
 }
 
 pub async fn get_video_source(source_string: &str) -> Result<VideoSourceType, std::io::Error> {
