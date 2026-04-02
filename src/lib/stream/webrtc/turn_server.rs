@@ -77,7 +77,10 @@ impl TurnServer {
         debug!("Starting TURN server on {endpoint:?}...");
 
         tokio::runtime::Builder::new_multi_thread()
-            .on_thread_start(|| debug!("Thread started"))
+            .on_thread_start(|| {
+                crate::helper::threads::lower_thread_priority();
+                debug!("Thread started");
+            })
             .on_thread_stop(|| debug!("Thread stopped"))
             .thread_name_fn(|| {
                 static ATOMIC_ID: std::sync::atomic::AtomicUsize =
