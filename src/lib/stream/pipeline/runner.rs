@@ -5,7 +5,7 @@ use gst::prelude::*;
 use tracing::*;
 
 use crate::{
-    stream::gst::utils::wait_for_element_state_async,
+    stream::gst::utils::{dump_bin_elements, wait_for_element_state_async},
     video_stream::types::VideoAndStreamInformation,
 };
 
@@ -45,6 +45,41 @@ impl PipelineRunner {
         allow_block: bool,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
+        Self::try_new_inner(
+            pipeline,
+            pipeline_id,
+            allow_block,
+            crate::cli::manager::enable_realtime_threads(),
+            video_and_stream_information,
+        )
+    }
+
+    /// Like `try_new`, but with `realtime_threads = false`: streaming threads
+    /// are set to background priority (`SCHED_OTHER`, nice 19) instead of
+    /// `SCHED_RR` realtime. Use for auxiliary pipelines (e.g. thumbnail
+    /// generation) that must not preempt video stream threads.
+    pub fn try_new_background(
+        pipeline: &gst::Pipeline,
+        pipeline_id: &Arc<uuid::Uuid>,
+        allow_block: bool,
+        video_and_stream_information: &VideoAndStreamInformation,
+    ) -> Result<Self> {
+        Self::try_new_inner(
+            pipeline,
+            pipeline_id,
+            allow_block,
+            false,
+            video_and_stream_information,
+        )
+    }
+
+    fn try_new_inner(
+        pipeline: &gst::Pipeline,
+        pipeline_id: &Arc<uuid::Uuid>,
+        allow_block: bool,
+        realtime_threads: bool,
+        video_and_stream_information: &VideoAndStreamInformation,
+    ) -> Result<Self> {
         let pipeline_weak = pipeline.downgrade();
 
         let (start_tx, start_rx) = tokio::sync::mpsc::channel(1);
@@ -62,6 +97,7 @@ impl PipelineRunner {
                     pipeline_id,
                     start_rx,
                     allow_block,
+                    realtime_threads,
                     &video_and_stream_information,
                 )
                 .await
@@ -104,13 +140,15 @@ impl PipelineRunner {
 
     #[instrument(
         level = "debug",
-        skip(pipeline_weak, pipeline_id, start, video_and_stream_information)
+        skip(pipeline_weak, pipeline_id, start, video_and_stream_information),
+        fields(realtime_threads)
     )]
     async fn runner(
         pipeline_weak: gst::glib::WeakRef<gst::Pipeline>,
         pipeline_id: Arc<uuid::Uuid>,
         mut start: tokio::sync::mpsc::Receiver<()>,
         allow_block: bool,
+        realtime_threads: bool,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<()> {
         let (finish_tx, mut finish) = tokio::sync::mpsc::channel(1);
@@ -133,18 +171,27 @@ impl PipelineRunner {
                 if let gst::MessageView::StreamStatus(status) = msg.view() {
                     let (status_type, element) = status.get();
                     if matches!(status_type, gst::StreamStatusType::Enter) {
-                        if let Err(error) = thread_priority::set_thread_priority_and_policy(
-                            thread_priority::thread_native_id(),
-                            thread_priority::ThreadPriority::Max,
-                            thread_priority::ThreadSchedulePolicy::Realtime(
-                                thread_priority::RealtimeThreadSchedulePolicy::RoundRobin,
-                            ),
-                        ) {
-                            warn!("Failed configuring GStreamer stream thread: {error:}.");
+                        if realtime_threads {
+                            if let Err(error) = thread_priority::set_thread_priority_and_policy(
+                                thread_priority::thread_native_id(),
+                                thread_priority::ThreadPriority::Max,
+                                thread_priority::ThreadSchedulePolicy::Realtime(
+                                    thread_priority::RealtimeThreadSchedulePolicy::RoundRobin,
+                                ),
+                            ) {
+                                warn!("Failed configuring GStreamer stream thread: {error:}.");
+                            } else {
+                                let priority = thread_priority::get_current_thread_priority();
+                                let scheduler = thread_priority::get_thread_scheduling_attributes();
+                                info!("GStreamer stream thread sucessfully configured to MAX priority ({priority:?}) and real-time round robyn ({scheduler:?}). From element {:?}, from Pipeline {pipeline_name:?}", element.name());
+                            }
                         } else {
-                            let priority = thread_priority::get_current_thread_priority();
-                            let scheduler = thread_priority::get_thread_scheduling_attributes();
-                            info!("GStreamer stream thread sucessfully configured to MAX priority ({priority:?}) and real-time round robyn ({scheduler:?}). From element {:?}, from Pipeline {pipeline_name:?}", element.name());
+                            crate::helper::threads::lower_to_background_priority();
+                            debug!(
+                                "GStreamer stream thread set to background priority. \
+                                 From element {:?}, from Pipeline {pipeline_name:?}",
+                                element.name()
+                            );
                         }
                     }
                 }
@@ -165,49 +212,41 @@ impl PipelineRunner {
             finish_tx,
         ));
 
-        // Wait until start receive the signal
-        debug!("PipelineRunner waiting for start commandk for Pipeline {pipeline_name:?}...");
-        loop {
-            tokio::select! {
-                reason = finish.recv() => {
-                    return Err(anyhow!("{reason:?}"));
-                }
-                start_cmd = start.recv() => {
-                    match start_cmd {
-                        Some(()) => {
-                            debug!("PipelineRunner received start commandk for Pipeline {pipeline_name:?}");
+        // Wait for the start command. We intentionally do NOT check the bus
+        // watcher's `finish` channel here: during initial pipeline creation,
+        // `add_sink` may set the pipeline to Playing before this start command
+        // arrives. Any transient bus messages (e.g. residual EOS from a
+        // previous StreamState teardown) must not kill the runner before it is
+        // ready. They will be handled in the main monitoring loop below.
+        debug!("PipelineRunner waiting for start command for Pipeline {pipeline_name:?}...");
+        match start.recv().await {
+            Some(()) => {
+                debug!("PipelineRunner received start command for Pipeline {pipeline_name:?}");
 
-                            let pipeline = pipeline_weak
-                                .upgrade()
-                                .context("Unable to access the Pipeline ({pipeline_name:?}) from its weak reference")?;
+                let pipeline = pipeline_weak.upgrade().context(
+                    "Unable to access the Pipeline ({pipeline_name:?}) from its weak reference",
+                )?;
 
-                            if pipeline.current_state() != gst::State::Playing {
-                                if let Err(error) = pipeline.set_state(gst::State::Playing) {
-                                    error!(
-                                        "Failed setting Pipeline {pipeline_name:?} to Playing state. Reason: {error:?}"
-                                    );
-                                    continue;
-                                }
-                            }
-
-                            if let Err(error) = wait_for_element_state_async(
-                                pipeline_weak.clone(),
-                                gst::State::Playing,
-                                100,
-                                5,
-                            ).await {
-                                return Err(anyhow!("{error:?}"));
-                            }
-
-                            break;
-                        }
-                        None => {
-                            return Err(anyhow!("start channel closed before sending command from Pipeline {pipeline_name:?}"));
-                        }
+                if pipeline.current_state() != gst::State::Playing {
+                    if let Err(error) = pipeline.set_state(gst::State::Playing) {
+                        return Err(anyhow!(
+                            "Failed setting Pipeline {pipeline_name:?} to Playing state. Reason: {error:?}"
+                        ));
                     }
-
                 }
-            };
+
+                if let Err(error) =
+                    wait_for_element_state_async(pipeline_weak.clone(), gst::State::Playing, 100, 5)
+                        .await
+                {
+                    return Err(anyhow!("{error:?}"));
+                }
+            }
+            None => {
+                return Err(anyhow!(
+                    "start channel closed before sending command from Pipeline {pipeline_name:?}"
+                ));
+            }
         }
 
         info!("PipelineRunner started for Pipeline {pipeline_name:?}!");
@@ -241,7 +280,7 @@ impl PipelineRunner {
         // this checks for a maximum number of lost before restarting.
         let mut previous_position: Option<gst::ClockTime> = None;
         let mut lost_ticks: usize = 0;
-        let max_lost_ticks: usize = 30;
+        let max_lost_ticks: usize = 150;
         let min_lost_ticks_before_considering_stuck = 3;
 
         let mut period = tokio::time::interval(frame_duration);
@@ -259,7 +298,11 @@ impl PipelineRunner {
                             .upgrade()
                             .context("Unable to access the Pipeline {pipeline_name:?} from its weak reference")?;
 
-
+                        if pipeline.current_state() != gst::State::Playing {
+                            previous_position = None;
+                            lost_ticks = 0;
+                            continue;
+                        }
 
                         if let Some(position) = pipeline.query_position::<gst::ClockTime>() {
                             match previous_position {
@@ -271,7 +314,7 @@ impl PipelineRunner {
                                             warn!("Position unchanged for {min_lost_ticks_before_considering_stuck} consecutive ticks. Pipeline {pipeline_name:?} may be stuck.")
                                         } else if lost_ticks > max_lost_ticks {
                                             error!("Pipeline {pipeline_name:?} lost too many timestamps ({lost_ticks} > max {max_lost_ticks}). Last position: {position:?}");
-                                            return Err(anyhow!("Pipeline {pipeline_name:?} appears stuck — position unchanged for too long"));
+                                            return Err(anyhow!("Pipeline {pipeline_name:?} appears stuck -- position unchanged for too long"));
                                         }
                                     } else {
 
@@ -332,6 +375,22 @@ async fn bus_watcher_task(
 
         match message.view() {
             MessageView::Eos(eos) => {
+                // Only react to pipeline-level (aggregated) EOS.  Child
+                // elements such as webrtcbin may post their own EOS
+                // messages during dynamic sink removal -- those must not
+                // kill the pipeline runner.
+                let is_pipeline_eos = eos
+                    .src()
+                    .map(|s| s.downcast_ref::<gst::Pipeline>().is_some())
+                    .unwrap_or(false);
+                if !is_pipeline_eos {
+                    debug!(
+                        "Ignoring non-pipeline EOS from {:?} in Pipeline {pipeline_name:?}",
+                        eos.src().map(|s| s.path_string())
+                    );
+                    continue;
+                }
+
                 pipeline.debug_to_dot_file_with_ts(
                     gst::DebugGraphDetails::all(),
                     format!("pipeline-{pipeline_id}-eos"),
@@ -344,6 +403,37 @@ async fn bus_watcher_task(
                 break;
             }
             MessageView::Error(error) => {
+                let src_path = error
+                    .src()
+                    .map(|s| s.path_string().to_string())
+                    .unwrap_or_default();
+                let debug_info = format!("{:?}", error.debug());
+
+                // "not-linked" errors from pads inside rtspsrc are
+                // expected when the source provides streams we don't
+                // consume (e.g. audio).  Treat them as warnings instead
+                // of killing the pipeline.
+                if src_path.contains("GstRTSPSrc") && debug_info.contains("not-linked") {
+                    warn!(
+                        "Ignoring non-fatal not-linked error from {src_path:?} \
+                         in Pipeline {pipeline_name:?}"
+                    );
+                    continue;
+                }
+
+                // Errors from webrtcbin child elements (e.g. nicesrc
+                // after DTLS close) are expected during normal WebRTC
+                // disconnection. The DTLS close callback already
+                // triggers remove_session to clean up the sink.
+                if src_path.contains("GstWebRTCBin") {
+                    warn!(
+                        "Ignoring non-fatal webrtcbin error from {src_path:?} \
+                         in Pipeline {pipeline_name:?}: {} ({debug_info})",
+                        error.error()
+                    );
+                    continue;
+                }
+
                 pipeline.debug_to_dot_file_with_ts(
                     gst::DebugGraphDetails::all(),
                     format!("pipeline-{pipeline_id}-error"),
@@ -382,6 +472,28 @@ async fn bus_watcher_task(
                             .is_some_and(|s| s.downcast_ref::<gst::Pipeline>().is_some())
                     {
                         debug!("Pipeline {pipeline_name:?} reached PLAYING state");
+
+                        if crate::cli::manager::is_dot_enabled() {
+                            dump_bin_elements(
+                                pipeline.upcast_ref::<gst::Bin>(),
+                                &format!("Pipeline {pipeline_name:?}"),
+                            );
+
+                            let delayed_pipeline_weak = pipeline.downgrade();
+                            let delayed_name = pipeline_name.clone();
+                            std::thread::Builder::new()
+                                .name("PipelineDump".to_string())
+                                .spawn(move || {
+                                    std::thread::sleep(std::time::Duration::from_secs(2));
+                                    if let Some(p) = delayed_pipeline_weak.upgrade() {
+                                        dump_bin_elements(
+                                            p.upcast_ref::<gst::Bin>(),
+                                            &format!("Pipeline {delayed_name:?} (delayed, fully populated)"),
+                                        );
+                                    }
+                                })
+                                .expect("Failed spawning PipelineDump thread");
+                        }
                     }
                 }
             }
