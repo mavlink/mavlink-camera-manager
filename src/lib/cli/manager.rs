@@ -1,6 +1,7 @@
+use std::{collections::HashMap, sync::Arc, time::Duration};
+
 use anyhow::Context;
 use clap;
-use std::{collections::HashMap, sync::Arc};
 use tracing::error;
 
 use crate::{custom, stream::gst::utils::PluginRankConfig};
@@ -91,10 +92,9 @@ struct Args {
     #[arg(long)]
     enable_thread_counter: bool,
 
-    /// Enable webrtc thread test with limit of child tasks (can use port for webdriver as parameter).
-    #[cfg(feature = "webrtc-test")]
-    #[arg(long, value_name = "PORT", num_args = 0..=1, default_missing_value = "9515")]
-    enable_webrtc_task_test: Option<u16>,
+    /// Enable the WebRTC task test and optionally choose the WebDriver port.
+    #[arg(long, value_name = "PORT", default_value_t = 9515)]
+    enable_webrtc_task_test: u32,
 
     /// Sets the MAVLink System ID.
     #[arg(long, value_name = "SYSTEM_ID", default_value = "1")]
@@ -116,6 +116,10 @@ struct Args {
     #[clap(long, value_name = "onvif://<USERNAME>:<PASSWORD>@<HOST>", value_delimiter = ',', value_parser = onvif_auth_validator, env = "MCM_ONVIF_AUTH")]
     onvif_auth: Vec<String>,
 
+    /// Enable the /dot WebSocket endpoint for GStreamer pipeline graph streaming.
+    #[arg(long)]
+    enable_dot: bool,
+
     /// Enables the zenoh integration by default in client mode.
     #[arg(long)]
     zenoh: bool,
@@ -123,6 +127,36 @@ struct Args {
     /// Sets the zenoh configuration file path.
     #[arg(long, value_name = "PATH")]
     zenoh_config_file: Option<String>,
+
+    /// Enable real-time (SCHED_RR) thread scheduling for GStreamer pipeline
+    /// threads. Requires CAP_SYS_NICE. When disabled (default), pipeline
+    /// threads run under normal SCHED_OTHER scheduling.
+    #[arg(long)]
+    enable_realtime_threads: bool,
+
+    /// Sets the RTSP server listen port.
+    #[arg(long, value_name = "PORT", default_value_t = 8554)]
+    rtsp_port: u16,
+
+    /// Disable ONVIF camera discovery.
+    #[arg(long)]
+    disable_onvif: bool,
+
+    /// How long to keep retrying failed stream recreation before removing the
+    /// stream. Use `none` to retry forever, or `0` to remove immediately.
+    #[arg(
+        long,
+        value_name = "SECONDS|none",
+        default_value = "300",
+        value_parser = stream_recreation_failure_timeout_validator
+    )]
+    stream_recreation_failure_timeout: StreamRecreationFailureTimeoutArg,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum StreamRecreationFailureTimeoutArg {
+    Never,
+    Seconds(u64),
 }
 
 #[derive(Debug)]
@@ -147,9 +181,12 @@ lazy_static! {
 
 impl Manager {
     fn new() -> Self {
-        Self {
-            clap_matches: Args::parse(),
-        }
+        let clap_matches = if cfg!(test) {
+            Args::parse_from(["mavlink-camera-manager"])
+        } else {
+            Args::parse()
+        };
+        Self { clap_matches }
     }
 }
 
@@ -233,9 +270,8 @@ pub fn enable_thread_counter() -> bool {
     MANAGER.clap_matches.enable_thread_counter
 }
 
-#[cfg(feature = "webrtc-test")]
-pub fn enable_webrtc_task_test() -> Option<u16> {
-    MANAGER.clap_matches.enable_webrtc_task_test
+pub fn enable_webrtc_task_test() -> Option<u32> {
+    Some(MANAGER.clap_matches.enable_webrtc_task_test)
 }
 
 pub fn mavlink_system_id() -> u8 {
@@ -316,12 +352,35 @@ pub fn onvif_auth() -> HashMap<std::net::Ipv4Addr, onvif::soap::client::Credenti
         .collect()
 }
 
+pub fn is_dot_enabled() -> bool {
+    MANAGER.clap_matches.enable_dot
+}
+
 pub fn enable_zenoh() -> bool {
     MANAGER.clap_matches.zenoh
 }
 
 pub fn zenoh_config_file() -> Option<String> {
     MANAGER.clap_matches.zenoh_config_file.clone()
+}
+
+pub fn enable_realtime_threads() -> bool {
+    MANAGER.clap_matches.enable_realtime_threads
+}
+
+pub fn rtsp_server_port() -> u16 {
+    MANAGER.clap_matches.rtsp_port
+}
+
+pub fn is_onvif_disabled() -> bool {
+    MANAGER.clap_matches.disable_onvif
+}
+
+pub fn stream_recreation_failure_timeout() -> Option<Duration> {
+    match MANAGER.clap_matches.stream_recreation_failure_timeout {
+        StreamRecreationFailureTimeoutArg::Never => None,
+        StreamRecreationFailureTimeoutArg::Seconds(secs) => Some(Duration::from_secs(secs)),
+    }
 }
 
 fn gst_feature_rank_validator(val: &str) -> Result<String, String> {
@@ -373,6 +432,19 @@ fn mavlink_camera_component_id_range_validator(
     Ok(first_id..=last_id)
 }
 
+fn stream_recreation_failure_timeout_validator(
+    val: &str,
+) -> Result<StreamRecreationFailureTimeoutArg, String> {
+    if val.eq_ignore_ascii_case("none") {
+        return Ok(StreamRecreationFailureTimeoutArg::Never);
+    }
+
+    let secs = val
+        .parse::<u64>()
+        .map_err(|_| "Expected a non-negative integer number of seconds or \"none\"".to_string())?;
+    Ok(StreamRecreationFailureTimeoutArg::Seconds(secs))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -380,5 +452,38 @@ mod tests {
     #[test]
     fn default_arguments() {
         assert!(!is_verbose());
+        assert_eq!(enable_webrtc_task_test(), Some(9515));
+        assert_eq!(
+            stream_recreation_failure_timeout(),
+            Some(Duration::from_secs(300))
+        );
+    }
+
+    #[test]
+    fn stream_recreation_failure_timeout_accepts_none() {
+        let args = Args::parse_from([
+            "mavlink-camera-manager",
+            "--stream-recreation-failure-timeout",
+            "none",
+        ]);
+
+        assert_eq!(
+            args.stream_recreation_failure_timeout,
+            StreamRecreationFailureTimeoutArg::Never
+        );
+    }
+
+    #[test]
+    fn stream_recreation_failure_timeout_accepts_zero() {
+        let args = Args::parse_from([
+            "mavlink-camera-manager",
+            "--stream-recreation-failure-timeout",
+            "0",
+        ]);
+
+        assert_eq!(
+            args.stream_recreation_failure_timeout,
+            StreamRecreationFailureTimeoutArg::Seconds(0)
+        );
     }
 }
