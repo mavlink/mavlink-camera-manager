@@ -167,8 +167,8 @@ pub fn set_plugin_rank(plugin_name: &str, rank: gst::Rank) -> Result<()> {
     Ok(())
 }
 
-pub fn wait_for_element_state(
-    element_weak: gst::glib::WeakRef<gst::Pipeline>,
+pub fn wait_for_element_state<T: IsA<gst::Element>>(
+    element_weak: gst::glib::WeakRef<T>,
     state: gst::State,
     polling_time_millis: u64,
     timeout_time_secs: u64,
@@ -186,7 +186,33 @@ pub fn wait_for_element_state(
             break;
         }
 
-        trials -= 1;
+        trials = trials.saturating_sub(1);
+        if trials == 0 {
+            return Err(anyhow!(
+                "set state timed-out ({timeout_time_secs:?} seconds)"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+pub fn wait_for_element_state_sync(
+    element: &gst::Element,
+    state: gst::State,
+    polling_time_millis: u64,
+    timeout_time_secs: u64,
+) -> Result<()> {
+    let mut trials = 1000 * timeout_time_secs / polling_time_millis;
+
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(polling_time_millis));
+
+        if element.current_state() == state {
+            break;
+        }
+
+        trials = trials.saturating_sub(1);
         if trials == 0 {
             return Err(anyhow!(
                 "set state timed-out ({timeout_time_secs:?} seconds)"
@@ -218,7 +244,7 @@ pub async fn wait_for_element_state_async(
             break;
         }
 
-        trials -= 1;
+        trials = trials.saturating_sub(1);
         if trials == 0 {
             return Err(anyhow!(
                 "set state timed-out ({timeout_time_secs:?} seconds)"
@@ -554,4 +580,195 @@ pub fn try_set_property(element: &gst::Element, name: &str, value: impl Into<gst
     }
 
     element.set_property_from_value(name, &value);
+}
+
+/// Remove a single passthrough element from its pipeline chain by splicing
+/// its upstream and downstream neighbours together, then setting the element
+/// to Null and removing it from its parent bin.
+///
+/// # Safety contract
+/// Must be called from a pad-probe callback on a **different** element's pad
+/// (not the excised element's own pad). `set_state(Null)` joins the excised
+/// element's streaming thread; if that thread is the one executing the probe
+/// callback, the call deadlocks.
+pub fn excise_single_element(element: &gst::Element) -> Result<()> {
+    let name = element.name().to_string();
+
+    let sink_pad = element
+        .static_pad("sink")
+        .context("element has no sink pad")?;
+    let src_pad = element
+        .static_pad("src")
+        .context("element has no src pad")?;
+
+    let upstream_pad = sink_pad.peer().context("sink pad has no upstream peer")?;
+    let downstream_pad = src_pad.peer().context("src pad has no downstream peer")?;
+
+    let upstream_elem = upstream_pad
+        .parent_element()
+        .map(|e| e.name().to_string())
+        .unwrap_or_default();
+    let downstream_elem = downstream_pad
+        .parent_element()
+        .map(|e| e.name().to_string())
+        .unwrap_or_default();
+
+    debug!(
+        "Excising {name}: unlinking {upstream_elem}:{} → {name} → {downstream_elem}:{}",
+        upstream_pad.name(),
+        downstream_pad.name(),
+    );
+
+    upstream_pad
+        .unlink(&sink_pad)
+        .map_err(|e| anyhow!("unlink upstream→element: {e}"))?;
+    src_pad
+        .unlink(&downstream_pad)
+        .map_err(|e| anyhow!("unlink element→downstream: {e}"))?;
+
+    upstream_pad
+        .link(&downstream_pad)
+        .map_err(|e| anyhow!("relink upstream→downstream: {e:?}"))?;
+
+    debug!(
+        "Excising {name}: relinked {upstream_elem}:{} → {downstream_elem}:{}",
+        upstream_pad.name(),
+        downstream_pad.name(),
+    );
+
+    let removed = if let Some(bin) = element.parent().and_then(|p| p.downcast::<gst::Bin>().ok()) {
+        match bin.remove(element) {
+            Ok(_) => true,
+            Err(error) => {
+                warn!("Excising {name}: remove from bin failed: {error}");
+                false
+            }
+        }
+    } else {
+        false
+    };
+
+    let null_ok = match element.set_state(gst::State::Null) {
+        Ok(_) => true,
+        Err(error) => {
+            warn!("Excising {name}: set_state(Null) failed: {error}");
+            false
+        }
+    };
+    if null_ok {
+        if let Err(error) = wait_for_element_state_sync(element, gst::State::Null, 100, 2) {
+            warn!("Excising {name}: {error}");
+        }
+    }
+
+    debug!("Excising {name}: done (null={null_ok}, removed={removed})");
+
+    Ok(())
+}
+
+/// Excises the internal queue that `proxysrc` creates, eliminating one frame of
+/// intermediate buffering. Must be called from a pad-probe on the queue's src pad
+/// once the first buffer has flowed.
+pub fn excise_proxysrc_queue(queue: &glib::WeakRef<gst::Element>) {
+    let Some(queue_ref) = queue.upgrade() else {
+        return;
+    };
+
+    let Some(upstream_pad) = queue_ref
+        .static_pad("sink")
+        .and_then(|sink_pad| sink_pad.peer())
+    else {
+        warn!("Failed to find upstream pad for proxysrc queue excision");
+        return;
+    };
+
+    info!("Proxysrc queue excision: Installing BLOCK_DOWNSTREAM probe");
+
+    let queue = queue.clone();
+    upstream_pad.add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, move |_pad, _info| {
+        let Some(queue_ref) = queue.upgrade() else {
+            return gst::PadProbeReturn::Remove;
+        };
+
+        match excise_single_element(&queue_ref) {
+            Ok(()) => info!("Proxysrc queue excision: Queue successfully excised"),
+            Err(error) => warn!("Failed to excise proxysrc queue: {error:?}"),
+        }
+
+        gst::PadProbeReturn::Remove
+    });
+}
+
+/// Hooks into the pipeline to excise every `rtpjitterbuffer` that `rtspsrc`'s
+/// internal `rtpbin` creates. Without the jitterbuffer, retransmission (NACK)
+/// cannot function, so `do-retransmission` is also forced to `false`.
+pub fn bypass_jitterbuffer(pipeline: &gst::Pipeline) {
+    for element in pipeline
+        .iterate_recurse()
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        if element
+            .factory()
+            .map(|f| f.name() == "rtspsrc")
+            .unwrap_or(false)
+        {
+            element.set_property("do-retransmission", false);
+            debug!("Disabled do-retransmission on {}", element.name());
+        }
+    }
+
+    pipeline.connect("deep-element-added", false, move |values| {
+        let element = values[2].get::<gst::Element>().expect("Invalid argument");
+
+        let is_jitterbuffer = element
+            .factory()
+            .map(|f| f.name() == "rtpjitterbuffer")
+            .unwrap_or(false);
+
+        if !is_jitterbuffer {
+            return None;
+        }
+
+        let name = element.name().to_string();
+        let excision_delay_time = std::time::Duration::from_secs(5);
+        debug!(
+            "Detected {name}, scheduling delayed excision ({}s)",
+            excision_delay_time.as_secs()
+        );
+
+        let element_weak = element.downgrade();
+        let name_clone = name.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(excision_delay_time);
+            let Some(element) = element_weak.upgrade() else {
+                debug!("{name_clone} was dropped before excision timer fired");
+                return;
+            };
+            // Skip excision if the parent pipeline is already tearing down.
+            // Racing with set_state(Null) can deadlock GStreamer internals.
+            let skip = element
+                .parent()
+                .and_then(|p| p.downcast::<gst::Element>().ok())
+                .is_some_and(|p| p.current_state() < gst::State::Paused);
+            if skip {
+                debug!("{name_clone}: parent pipeline is below Paused, skipping excision");
+                return;
+            }
+            let Some(upstream_pad) = element.static_pad("sink").and_then(|p| p.peer()) else {
+                warn!("{name_clone} has no upstream peer, cannot excise");
+                return;
+            };
+            debug!("Excision timer fired for {name_clone}, adding block probe on upstream pad");
+            upstream_pad.add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, move |_pad, _info| {
+                match excise_single_element(&element) {
+                    Ok(()) => debug!("Excised {name_clone} from pipeline"),
+                    Err(error) => error!("Failed to excise {name_clone}: {error:#}"),
+                }
+                gst::PadProbeReturn::Remove
+            });
+        });
+
+        None
+    });
 }
