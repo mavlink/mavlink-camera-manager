@@ -516,9 +516,9 @@ async fn wait_for_video_capture_configuration(
 }
 
 /// Set a GObject property by name, logging a warning on failure instead of
-/// panicking.  For enum-typed properties that receive an `i32`, the value is
-/// converted via [`gst::glib::EnumClass`] so the resulting [`gst::glib::Value`]
-/// carries the correct GType (avoids panics from `set_property_from_str`).
+/// panicking.  For enum-typed properties the value is resolved via
+/// [`gst::glib::EnumClass`]: `i32` values are mapped by numeric value, and
+/// `&str` values are looked up by nick.
 pub fn try_set_property(element: &gst::Element, name: &str, value: impl Into<gst::glib::Value>) {
     let Some(pspec) = element.find_property(name) else {
         warn!(
@@ -529,19 +529,28 @@ pub fn try_set_property(element: &gst::Element, name: &str, value: impl Into<gst
     };
 
     let value = value.into();
-    if let (Ok(int_val), Some(enum_class)) = (
-        value.get::<i32>(),
-        gst::glib::EnumClass::with_type(pspec.value_type()),
-    ) {
-        if let Some(enum_value) = enum_class.to_value(int_val) {
-            element.set_property_from_value(name, &enum_value);
-        } else {
-            warn!(
-                "Enum value {int_val} is not valid for property '{name}' on element '{}'",
-                element.type_()
-            );
+    if let Some(enum_class) = gst::glib::EnumClass::with_type(pspec.value_type()) {
+        if let Ok(int_val) = value.get::<i32>() {
+            if let Some(enum_value) = enum_class.to_value(int_val) {
+                element.set_property_from_value(name, &enum_value);
+            } else {
+                warn!(
+                    "Enum value {int_val} is not valid for property '{name}' on element '{}'",
+                    element.type_()
+                );
+            }
+            return;
         }
-        return;
+        if let Ok(nick) = value.get::<&str>() {
+            match enum_class.to_value_by_nick(nick) {
+                Some(enum_value) => element.set_property_from_value(name, &enum_value),
+                None => warn!(
+                    "Enum nick '{nick}' is not valid for property '{name}' on element '{}'",
+                    element.type_()
+                ),
+            }
+            return;
+        }
     }
 
     element.set_property_from_value(name, &value);
