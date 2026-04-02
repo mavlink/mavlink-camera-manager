@@ -708,3 +708,81 @@ pub fn bypass_jitterbuffer(pipeline: &gst::Pipeline) {
         None
     });
 }
+
+const INTERESTING_PROPERTIES: &[&str] = &[
+    "leaky",
+    "max-size-buffers",
+    "max-size-bytes",
+    "max-size-time",
+    "silent",
+    "flush-on-eos",
+    "sync",
+    "async",
+    "latency",
+    "do-retransmission",
+    "aggregate-mode",
+    "config-interval",
+    "is-live",
+    "udp-buffer-size",
+    "location",
+    "pt",
+    "drop-on-latency",
+];
+
+pub fn dump_bin_elements(bin: &gst::Bin, label: &str) {
+    use std::fmt::Write;
+
+    let mut out = format!("{label} elements:\n");
+
+    for (i, element) in bin
+        .iterate_recurse()
+        .into_iter()
+        .filter_map(Result::ok)
+        .enumerate()
+    {
+        let factory_name = element
+            .factory()
+            .map(|f| f.name().to_string())
+            .unwrap_or_else(|| "?".into());
+        let name = element.name();
+
+        let _ = write!(out, "  [{i}] {factory_name} \"{name}\"");
+
+        for &prop_name in INTERESTING_PROPERTIES {
+            if element.find_property(prop_name).is_some() {
+                let val = element.property_value(prop_name);
+                let display = val
+                    .serialize()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|_| format!("{val:?}"));
+                let _ = write!(out, " {prop_name}={display}");
+            }
+        }
+        out.push('\n');
+
+        for pad in element.pads() {
+            let dir = match pad.direction() {
+                gst::PadDirection::Sink => "sink",
+                gst::PadDirection::Src => "src",
+                _ => "?",
+            };
+            let caps_str = pad
+                .current_caps()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "(not negotiated)".into());
+            let peer = pad
+                .peer()
+                .map(|p| {
+                    let peer_elem = p
+                        .parent_element()
+                        .map(|e| e.name().to_string())
+                        .unwrap_or_default();
+                    format!(" -> {peer_elem}:{}", p.name())
+                })
+                .unwrap_or_default();
+            let _ = writeln!(out, "      {dir}:{}{peer}  {caps_str}", pad.name());
+        }
+    }
+
+    info!("{out}");
+}
