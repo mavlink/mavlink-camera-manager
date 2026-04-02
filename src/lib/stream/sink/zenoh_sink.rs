@@ -6,7 +6,11 @@ use tokio::task::JoinHandle;
 use tracing::*;
 
 use crate::{
-    stream::{pipeline::runner::PipelineRunner, types::CaptureConfiguration},
+    stream::{
+        gst::utils::{excise_proxysrc_queue, try_set_property},
+        pipeline::runner::PipelineRunner,
+        types::CaptureConfiguration,
+    },
     video::types::VideoEncodeType,
     video_stream::types::VideoAndStreamInformation,
 };
@@ -20,9 +24,9 @@ use super::{
 pub struct ZenohSink {
     sink_id: Arc<uuid::Uuid>,
     pipeline: gst::Pipeline,
-    queue: gst::Element,
     proxysink: gst::Element,
     _proxysrc: gst::Element,
+    proxysrc_queue: Option<gst::Element>,
     _parser: gst::Element,
     _appsink: gst_app::AppSink,
     tee_src_pad: Option<gst::Pad>,
@@ -56,8 +60,21 @@ impl SinkInterface for ZenohSink {
             unreachable!()
         };
 
-        let elements = &[&self.queue, &self.proxysink];
+        let elements = &[&self.proxysink];
         link_sink_to_tee(tee_src_pad, pipeline, elements)?;
+
+        if let Some(queue) = &self.proxysrc_queue {
+            if let Some(src_pad) = queue.static_pad("src") {
+                let queue_weak = queue.downgrade();
+                src_pad.add_probe(
+                    gst::PadProbeType::BUFFER | gst::PadProbeType::BUFFER_LIST,
+                    move |_pad, _info| {
+                        excise_proxysrc_queue(&queue_weak);
+                        gst::PadProbeReturn::Remove
+                    },
+                );
+            }
+        }
 
         Ok(())
     }
@@ -69,7 +86,7 @@ impl SinkInterface for ZenohSink {
             return Ok(());
         };
 
-        let elements = &[&self.queue, &self.proxysink];
+        let elements = &[&self.proxysink];
         unlink_sink_from_tee(tee_src_pad, pipeline, elements)?;
 
         if let Err(error) = self.pipeline.set_state(::gst::State::Null) {
@@ -128,47 +145,28 @@ impl ZenohSink {
         sink_id: Arc<uuid::Uuid>,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
-        let queue = gst::ElementFactory::make("queue")
-            .property_from_str("leaky", "downstream")
-            .property("silent", true)
-            .property("flush-on-eos", true)
-            .property("max-size-buffers", 1u32)
-            .property("max-size-bytes", 0u32)
-            .property("max-size-time", 0u64)
-            .name(format!("queue-zenoh-{sink_id}"))
-            .build()?;
-
         // Create a pair of proxies. The proxysink will be used in the source's pipeline,
         // while the proxysrc will be used in this sink's pipeline
         let proxysink = gst::ElementFactory::make("proxysink").build()?;
-        let _proxysrc = gst::ElementFactory::make("proxysrc")
+        let _proxysrc: gst::Element = gst::ElementFactory::make("proxysrc")
             .property("proxysink", &proxysink)
             .build()?;
 
         // Configure proxysrc's queue, skips if fails
-        match _proxysrc.downcast_ref::<gst::Bin>() {
-            Some(bin) => {
-                let elements = bin.children();
-                match elements
-                    .iter()
-                    .find(|element| element.name().starts_with("queue"))
-                {
-                    Some(element) => {
-                        element.set_property_from_str("leaky", "downstream");
-                        element.set_property("silent", true);
-                        element.set_property("flush-on-eos", true);
-                        element.set_property("max-size-buffers", 1u32);
-                        element.set_property("max-size-bytes", 0u32);
-                        element.set_property("max-size-time", 0u64);
-                    }
-                    None => {
-                        warn!("Failed to customize proxysrc's queue: Failed to find queue in proxysrc");
-                    }
-                }
-            }
-            None => {
-                warn!("Failed to customize proxysrc's queue: Failed to downcast element to bin")
-            }
+        let proxysrc_queue = _proxysrc.downcast_ref::<gst::Bin>().and_then(|bin| {
+            bin.children()
+                .into_iter()
+                .find(|element| element.name().starts_with("queue"))
+        });
+        if let Some(queue) = &proxysrc_queue {
+            queue.set_property_from_str("leaky", "downstream");
+            queue.set_property("silent", true);
+            queue.set_property("flush-on-eos", true);
+            queue.set_property("max-size-buffers", 1u32);
+            queue.set_property("max-size-bytes", 0u32);
+            queue.set_property("max-size-time", 0u64);
+        } else {
+            warn!("Failed to find queue inside proxysrc");
         }
 
         let video_encoding = match &video_and_stream_information
@@ -321,12 +319,17 @@ impl ZenohSink {
 
         let _appsink = gst_app::AppSink::builder()
             .name(format!("AppSink-{sink_id}"))
+            .async_(false)
             .sync(false)
             .max_buffers(1u32)
             .drop(true)
+            .enable_last_sample(false)
             .caps(&caps)
+            .qos(false)
             .callbacks(appsink_callbacks)
             .build();
+        try_set_property(_appsink.upcast_ref(), "leaky-type", 2); // (0) is 'none'; (1) is 'upstream'; (2) is 'downstream'
+        try_set_property(_appsink.upcast_ref(), "silent", true);
 
         let pipeline = gst::Pipeline::builder()
             .name(format!("pipeline-zenoh-sink-{sink_id}"))
@@ -352,9 +355,9 @@ impl ZenohSink {
         Ok(Self {
             sink_id,
             pipeline,
-            queue,
             proxysink,
             _proxysrc,
+            proxysrc_queue,
             _parser,
             _appsink,
             tee_src_pad: Default::default(),
