@@ -259,12 +259,12 @@ fn make_source_description_from_stream_uri(stream_uri: &url::Url) -> Result<Stri
     match stream_uri.scheme() {
         "rtsp" => {
             Ok(format!(
-                "rtspsrc name=source location={stream_uri} is-live=true latency=0 do-retransmission=true"
+                "rtspsrc name=source location={stream_uri} is-live=true latency=0 do-retransmission=false"
             ))
         }
         "udp" => {
             Ok(format!(
-                "udpsrc name=source address={address} port={port} close-socket=false auto-multicast=true do-timestamp=true",
+                "udpsrc name=source address={address} port={port} auto-multicast=true do-timestamp=true",
                 address = stream_uri.host().context("URI without host")?,
                 port = stream_uri.port().context("URI without port")?,
             ))
@@ -283,7 +283,7 @@ pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Result<VideoEn
 
     description.push_str(concat!(
         " ! application/x-rtp, media=(string)video",
-        " ! fakesink name=sink sync=false",
+        " ! fakesink name=sink sync=false async=false",
     ));
 
     let pipeline = gst::parse::launch(&description)
@@ -312,22 +312,11 @@ pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Result<VideoEn
     }
 
     let encode =
-        tokio::time::timeout(tokio::time::Duration::from_secs(15), wait_for_encode(rx)).await;
+        tokio::time::timeout(tokio::time::Duration::from_secs(3), wait_for_encode(rx)).await;
 
     sink_pad.remove_probe(probe_id);
 
-    if pipeline.current_state() == gst::State::Playing {
-        pipeline.send_event(gst::event::Eos::new());
-    }
-    if let Err(error) = pipeline.set_state(gst::State::Null) {
-        return Err(anyhow!(
-            "Failed setting Pipeline state to Null. Reason: {error:?}"
-        ));
-    } else if let Err(error) =
-        wait_for_element_state_async(pipeline.downgrade(), ::gst::State::Null, 100, 30).await
-    {
-        error!("Failed setting Pipeline state to Null. Reason: {error:?}");
-    }
+    teardown_probe_pipeline(pipeline).await;
 
     encode?.context("Not found")
 }
@@ -408,15 +397,27 @@ async fn get_capture_configuration_using_encoding(
 ) -> Result<CaptureConfiguration> {
     let mut description = make_source_description_from_stream_uri(stream_uri)?;
 
-    description.push_str(" ! application/x-rtp, media=(string)video");
-
     match encode {
-        VideoEncodeType::H264 => description.push_str(" ! rtph264depay ! h264parse ! avdec_h264"),
-        VideoEncodeType::H265 => description.push_str(" ! rtph265depay ! h265parse ! avdec_h265"),
+        VideoEncodeType::H264 => {
+            description.push_str(concat!(
+                " ! application/x-rtp, media=(string)video, encoding-name=(string)H264",
+                " ! rtph264depay",
+                " ! h264parse",
+            ));
+        }
+        VideoEncodeType::H265 => {
+            description.push_str(concat!(
+                " ! application/x-rtp, media=(string)video, encoding-name=(string)H265",
+                " ! rtph265depay",
+                " ! h265parse",
+            ));
+        }
         _unsupported => unreachable!(),
     }
 
-    description.push_str(" ! fakesink name=sink sync=false");
+    description.push_str(" ! fakesink name=sink sync=false async=false");
+
+    debug!("Brute-force probe pipeline: {description}");
 
     let pipeline = gst::parse::launch(&description)
         .context("Failed to create pipeline")?
@@ -437,10 +438,9 @@ async fn get_capture_configuration_using_encoding(
             "Failed setting Pipeline state to Playing. Reason: {error:?}"
         ));
     } else if let Err(error) =
-        wait_for_element_state_async(pipeline.downgrade(), ::gst::State::Playing, 100, 30).await
+        wait_for_element_state_async(pipeline.downgrade(), ::gst::State::Playing, 100, 5).await
     {
-        let _ = pipeline.set_state(::gst::State::Null);
-        error!("Failed setting Pipeline state to Playing. Reason: {error:?}");
+        warn!("Pipeline slow to reach Playing ({error:?}), waiting for caps anyway...");
     }
 
     let video_capture_configuration = tokio::time::timeout(
@@ -451,20 +451,45 @@ async fn get_capture_configuration_using_encoding(
 
     sink_pad.remove_probe(probe_id);
 
-    if pipeline.current_state() == gst::State::Playing {
-        pipeline.send_event(gst::event::Eos::new());
-    }
-    if let Err(error) = pipeline.set_state(gst::State::Null) {
-        return Err(anyhow!(
-            "Failed setting Pipeline state to Null. Reason: {error:?}"
-        ));
-    } else if let Err(error) =
-        wait_for_element_state_async(pipeline.downgrade(), ::gst::State::Null, 100, 30).await
-    {
-        error!("Failed setting Pipeline state to Null. Reason: {error:?}");
-    }
+    teardown_probe_pipeline(pipeline).await;
 
     video_capture_configuration?.context("Not found")
+}
+
+/// Tear down a temporary probe pipeline without blocking the async runtime.
+///
+/// `rtspsrc` can block indefinitely in `set_state(Null)` when the remote
+/// RTSP server is unresponsive or the session had no data flowing.  Moving
+/// the state change to `spawn_blocking` with a timeout prevents the caller
+/// (typically the stream watcher) from stalling.
+async fn teardown_probe_pipeline(pipeline: gst::Pipeline) {
+    const TEARDOWN_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(5);
+
+    if pipeline.current_state() >= gst::State::Paused {
+        pipeline.send_event(gst::event::Eos::new());
+    }
+
+    let pipeline_clone = pipeline.clone();
+    let result = tokio::time::timeout(
+        TEARDOWN_TIMEOUT,
+        tokio::task::spawn_blocking(move || {
+            if let Err(error) = pipeline_clone.set_state(gst::State::Null) {
+                warn!("Probe pipeline set_state(Null) failed: {error:?}");
+            }
+        }),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => warn!("Probe pipeline teardown task panicked: {error}"),
+        Err(_) => {
+            warn!(
+                "Probe pipeline teardown timed out after {TEARDOWN_TIMEOUT:?}, \
+                 leaving cleanup to background thread"
+            );
+        }
+    }
 }
 
 fn setup_pad_and_probe(pad: &gst::Pad, tx: mpsc::Sender<gst::Caps>) -> Option<gst::PadProbeId> {
