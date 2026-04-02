@@ -1,4 +1,5 @@
 pub mod protocol;
+pub mod thumbnail_client;
 
 use std::{
     hash::{DefaultHasher, Hasher},
