@@ -316,6 +316,7 @@ mod tests {
         format!("/tmp/{}.json", rand_string)
     }
 
+    #[serial]
     #[tokio::test]
     #[serial]
     async fn test_no_aboslute_path() {
@@ -328,6 +329,7 @@ mod tests {
         );
     }
 
+    #[serial]
     #[tokio::test]
     #[serial]
     async fn test_store() {
