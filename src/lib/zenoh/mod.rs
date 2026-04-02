@@ -21,11 +21,7 @@ pub async fn init() -> Result<()> {
 
             let info = session.info();
             let zid = info.zid().await;
-            let routers = info
-                .routers_zid()
-                .await
-                .map(|zid| zid)
-                .collect::<Vec<ZenohId>>();
+            let routers = info.routers_zid().await.collect::<Vec<ZenohId>>();
 
             info!("Zenoh Session started with zid: {zid:?}, routers: {routers:?}",);
 
