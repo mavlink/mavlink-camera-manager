@@ -113,6 +113,10 @@ pub async fn start_default() -> Result<()> {
     let mut candidates = video_source::cameras_available().await;
     update_devices(&mut streams, &mut candidates, true).await;
 
+    if crate::cli::manager::is_onvif_disabled() {
+        streams.retain(|stream| !matches!(&stream.video_source, VideoSourceType::Onvif(_)));
+    }
+
     // Remove all invalid video_sources
     let streams: Vec<VideoAndStreamInformation> = streams
         .into_iter()
@@ -440,6 +444,18 @@ pub async fn add_stream_and_start(
         .video_source
         .inner()
         .source_string();
+
+    if crate::cli::manager::is_onvif_disabled()
+        && matches!(
+            &video_and_stream_information.video_source,
+            VideoSourceType::Onvif(_)
+        )
+    {
+        return Err(anyhow!(
+            "Source {source_string:?} cannot be used while --disable-onvif is set"
+        ));
+    }
+
     if is_source_blocked(source_string) {
         return Err(anyhow!(
             "Source {source_string:?} needs to be unblocked to be used"
