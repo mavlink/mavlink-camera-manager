@@ -230,6 +230,7 @@ impl ZenohSink {
             let publisher = session
                 .declare_publisher(zenoh_topic)
                 .encoding(zenoh_encoding)
+                .congestion_control(zenoh::qos::CongestionControl::Block)
                 .await
                 .map_err(anyhow::Error::msg)?;
 
