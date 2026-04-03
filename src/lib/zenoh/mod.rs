@@ -60,6 +60,9 @@ fn load_config() -> Result<Config> {
     let name = env!("CARGO_PKG_NAME");
 
     config
+        .insert_json5("transport/link/tx/queue/size/real_time", "16")
+        .expect("Failed to insert tx queue size");
+    config
         .insert_json5("adminspace", r#"{"enabled": true}"#)
         .expect("Failed to insert adminspace");
     config

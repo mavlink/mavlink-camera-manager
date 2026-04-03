@@ -231,6 +231,7 @@ impl ZenohSink {
                 .declare_publisher(zenoh_topic)
                 .encoding(zenoh_encoding)
                 .congestion_control(zenoh::qos::CongestionControl::Block)
+                .priority(zenoh::qos::Priority::RealTime)
                 .await
                 .map_err(anyhow::Error::msg)?;
 
