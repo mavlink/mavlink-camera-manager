@@ -3,7 +3,6 @@ use actix_extensible_rate_limit::{
     backend::{memory::InMemoryBackend, SimpleInputFunctionBuilder},
     RateLimiter,
 };
-use actix_service::Service;
 use actix_web::{error::JsonPayloadError, App, HttpRequest, HttpServer};
 use paperclip::{
     actix::{web, OpenApiExt},
@@ -25,11 +24,6 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
 
     HttpServer::new(move || {
         App::new()
-            // Add debug call for API access
-            .wrap_fn(|req, srv| {
-                trace!("{req:#?}");
-                srv.call(req)
-            })
             .wrap(
                 Cors::default()
                     .allow_any_origin()
@@ -39,7 +33,6 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
                     .max_age(3600),
             )
             .wrap(TracingLogger::default())
-            .wrap(actix_web::middleware::Logger::default())
             .wrap_api_with_spec(Api {
                 info: Info {
                     version: format!(

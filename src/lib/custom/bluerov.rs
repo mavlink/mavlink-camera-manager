@@ -3,7 +3,7 @@ use url::Url;
 
 use crate::{
     network::utils::get_visible_qgc_address,
-    stream::types::*,
+    stream::{rtsp::rtsp_server::RTSPServer, types::*},
     video::{
         self,
         types::*,
@@ -125,8 +125,9 @@ pub async fn rtsp() -> Vec<VideoAndStreamInformation> {
         };
 
         let visible_qgc_ip_address = get_visible_qgc_address();
+        let rtsp_port = RTSPServer::port();
         let endpoint = match Url::parse(&format!(
-            "rtsp://{visible_qgc_ip_address}:8554/video_{index}"
+            "rtsp://{visible_qgc_ip_address}:{rtsp_port}/video_{index}"
         )) {
             Ok(url) => url,
             Err(error) => {

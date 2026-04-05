@@ -233,12 +233,12 @@ fn make_source_description_from_stream_uri(stream_uri: &url::Url) -> Result<Stri
     match stream_uri.scheme() {
         "rtsp" => {
             Ok(format!(
-                "rtspsrc name=source location={stream_uri} is-live=true latency=0 do-retransmission=true"
+                "rtspsrc name=source location={stream_uri} is-live=true latency=0 do-retransmission=false"
             ))
         }
         "udp" => {
             Ok(format!(
-                "udpsrc name=source address={address} port={port} close-socket=false auto-multicast=true do-timestamp=true",
+                "udpsrc name=source address={address} port={port} auto-multicast=true do-timestamp=true",
                 address = stream_uri.host().context("URI without host")?,
                 port = stream_uri.port().context("URI without port")?,
             ))
@@ -257,7 +257,7 @@ pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Result<VideoEn
 
     description.push_str(concat!(
         " ! application/x-rtp, media=(string)video",
-        " ! fakesink name=sink sync=false",
+        " ! fakesink name=sink sync=false async=false",
     ));
 
     let pipeline = gst::parse::launch(&description)
@@ -286,22 +286,11 @@ pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Result<VideoEn
     }
 
     let encode =
-        tokio::time::timeout(tokio::time::Duration::from_secs(15), wait_for_encode(rx)).await;
+        tokio::time::timeout(tokio::time::Duration::from_secs(3), wait_for_encode(rx)).await;
 
     sink_pad.remove_probe(probe_id);
 
-    if pipeline.current_state() == gst::State::Playing {
-        pipeline.send_event(gst::event::Eos::new());
-    }
-    if let Err(error) = pipeline.set_state(gst::State::Null) {
-        return Err(anyhow!(
-            "Failed setting Pipeline state to Null. Reason: {error:?}"
-        ));
-    } else if let Err(error) =
-        wait_for_element_state_async(pipeline.downgrade(), ::gst::State::Null, 100, 30).await
-    {
-        error!("Failed setting Pipeline state to Null. Reason: {error:?}");
-    }
+    teardown_probe_pipeline(pipeline).await;
 
     encode?.context("Not found")
 }
@@ -382,15 +371,27 @@ async fn get_capture_configuration_using_encoding(
 ) -> Result<CaptureConfiguration> {
     let mut description = make_source_description_from_stream_uri(stream_uri)?;
 
-    description.push_str(" ! application/x-rtp, media=(string)video");
-
     match encode {
-        VideoEncodeType::H264 => description.push_str(" ! rtph264depay ! h264parse ! avdec_h264"),
-        VideoEncodeType::H265 => description.push_str(" ! rtph265depay ! h265parse ! avdec_h265"),
+        VideoEncodeType::H264 => {
+            description.push_str(concat!(
+                " ! application/x-rtp, media=(string)video, encoding-name=(string)H264",
+                " ! rtph264depay",
+                " ! h264parse",
+            ));
+        }
+        VideoEncodeType::H265 => {
+            description.push_str(concat!(
+                " ! application/x-rtp, media=(string)video, encoding-name=(string)H265",
+                " ! rtph265depay",
+                " ! h265parse",
+            ));
+        }
         _unsupported => unreachable!(),
     }
 
-    description.push_str(" ! fakesink name=sink sync=false");
+    description.push_str(" ! fakesink name=sink sync=false async=false");
+
+    debug!("Brute-force probe pipeline: {description}");
 
     let pipeline = gst::parse::launch(&description)
         .context("Failed to create pipeline")?
@@ -411,10 +412,9 @@ async fn get_capture_configuration_using_encoding(
             "Failed setting Pipeline state to Playing. Reason: {error:?}"
         ));
     } else if let Err(error) =
-        wait_for_element_state_async(pipeline.downgrade(), ::gst::State::Playing, 100, 30).await
+        wait_for_element_state_async(pipeline.downgrade(), ::gst::State::Playing, 100, 5).await
     {
-        let _ = pipeline.set_state(::gst::State::Null);
-        error!("Failed setting Pipeline state to Playing. Reason: {error:?}");
+        warn!("Pipeline slow to reach Playing ({error:?}), waiting for caps anyway...");
     }
 
     let video_capture_configuration = tokio::time::timeout(
@@ -425,20 +425,45 @@ async fn get_capture_configuration_using_encoding(
 
     sink_pad.remove_probe(probe_id);
 
-    if pipeline.current_state() == gst::State::Playing {
-        pipeline.send_event(gst::event::Eos::new());
-    }
-    if let Err(error) = pipeline.set_state(gst::State::Null) {
-        return Err(anyhow!(
-            "Failed setting Pipeline state to Null. Reason: {error:?}"
-        ));
-    } else if let Err(error) =
-        wait_for_element_state_async(pipeline.downgrade(), ::gst::State::Null, 100, 30).await
-    {
-        error!("Failed setting Pipeline state to Null. Reason: {error:?}");
-    }
+    teardown_probe_pipeline(pipeline).await;
 
     video_capture_configuration?.context("Not found")
+}
+
+/// Tear down a temporary probe pipeline without blocking the async runtime.
+///
+/// `rtspsrc` can block indefinitely in `set_state(Null)` when the remote
+/// RTSP server is unresponsive or the session had no data flowing.  Moving
+/// the state change to `spawn_blocking` with a timeout prevents the caller
+/// (typically the stream watcher) from stalling.
+async fn teardown_probe_pipeline(pipeline: gst::Pipeline) {
+    const TEARDOWN_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(5);
+
+    if pipeline.current_state() >= gst::State::Paused {
+        pipeline.send_event(gst::event::Eos::new());
+    }
+
+    let pipeline_clone = pipeline.clone();
+    let result = tokio::time::timeout(
+        TEARDOWN_TIMEOUT,
+        tokio::task::spawn_blocking(move || {
+            if let Err(error) = pipeline_clone.set_state(gst::State::Null) {
+                warn!("Probe pipeline set_state(Null) failed: {error:?}");
+            }
+        }),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => warn!("Probe pipeline teardown task panicked: {error}"),
+        Err(_) => {
+            warn!(
+                "Probe pipeline teardown timed out after {TEARDOWN_TIMEOUT:?}, \
+                 leaving cleanup to background thread"
+            );
+        }
+    }
 }
 
 fn setup_pad_and_probe(pad: &gst::Pad, tx: mpsc::Sender<gst::Caps>) -> Option<gst::PadProbeId> {
@@ -516,9 +541,9 @@ async fn wait_for_video_capture_configuration(
 }
 
 /// Set a GObject property by name, logging a warning on failure instead of
-/// panicking.  For enum-typed properties that receive an `i32`, the value is
-/// converted via [`gst::glib::EnumClass`] so the resulting [`gst::glib::Value`]
-/// carries the correct GType (avoids panics from `set_property_from_str`).
+/// panicking.  For enum-typed properties the value is resolved via
+/// [`gst::glib::EnumClass`]: `i32` values are mapped by numeric value, and
+/// `&str` values are looked up by nick.
 pub fn try_set_property(element: &gst::Element, name: &str, value: impl Into<gst::glib::Value>) {
     let Some(pspec) = element.find_property(name) else {
         warn!(
@@ -529,20 +554,260 @@ pub fn try_set_property(element: &gst::Element, name: &str, value: impl Into<gst
     };
 
     let value = value.into();
-    if let (Ok(int_val), Some(enum_class)) = (
-        value.get::<i32>(),
-        gst::glib::EnumClass::with_type(pspec.value_type()),
-    ) {
-        if let Some(enum_value) = enum_class.to_value(int_val) {
-            element.set_property_from_value(name, &enum_value);
-        } else {
-            warn!(
-                "Enum value {int_val} is not valid for property '{name}' on element '{}'",
-                element.type_()
-            );
+    if let Some(enum_class) = gst::glib::EnumClass::with_type(pspec.value_type()) {
+        if let Ok(int_val) = value.get::<i32>() {
+            if let Some(enum_value) = enum_class.to_value(int_val) {
+                element.set_property_from_value(name, &enum_value);
+            } else {
+                warn!(
+                    "Enum value {int_val} is not valid for property '{name}' on element '{}'",
+                    element.type_()
+                );
+            }
+            return;
         }
-        return;
+        if let Ok(nick) = value.get::<&str>() {
+            match enum_class.to_value_by_nick(nick) {
+                Some(enum_value) => element.set_property_from_value(name, &enum_value),
+                None => warn!(
+                    "Enum nick '{nick}' is not valid for property '{name}' on element '{}'",
+                    element.type_()
+                ),
+            }
+            return;
+        }
     }
 
     element.set_property_from_value(name, &value);
+}
+
+/// Remove a single passthrough element from its pipeline chain by splicing
+/// its upstream and downstream neighbours together, then setting the element
+/// to Null and removing it from its parent bin.
+///
+/// # Safety contract
+/// Must be called from a pad-probe callback on a **different** element's pad
+/// (not the excised element's own pad). `set_state(Null)` joins the excised
+/// element's streaming thread; if that thread is the one executing the probe
+/// callback, the call deadlocks.
+pub fn excise_single_element(element: &gst::Element) -> Result<()> {
+    let sink_pad = element
+        .static_pad("sink")
+        .context("element has no sink pad")?;
+    let src_pad = element
+        .static_pad("src")
+        .context("element has no src pad")?;
+
+    let upstream_pad = sink_pad.peer().context("sink pad has no upstream peer")?;
+    let downstream_pad = src_pad.peer().context("src pad has no downstream peer")?;
+
+    upstream_pad
+        .unlink(&sink_pad)
+        .map_err(|e| anyhow!("unlink upstream→element: {e}"))?;
+    src_pad
+        .unlink(&downstream_pad)
+        .map_err(|e| anyhow!("unlink element→downstream: {e}"))?;
+
+    upstream_pad
+        .link(&downstream_pad)
+        .map_err(|e| anyhow!("relink upstream→downstream: {e:?}"))?;
+
+    let name = element.name().to_string();
+    if let Err(error) = element.set_state(gst::State::Null) {
+        warn!("excise_single_element: set_state(Null) failed for {name}: {error}");
+    }
+    if let Some(parent) = element.parent() {
+        if let Some(bin) = parent.downcast_ref::<gst::Bin>() {
+            if let Err(error) = bin.remove(element) {
+                warn!("excise_single_element: remove from bin failed for {name}: {error}");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Excises the internal queue that `proxysrc` creates, eliminating one frame of
+/// intermediate buffering. Must be called from a pad-probe on the queue's src pad
+/// once the first buffer has flowed.
+pub fn excise_proxysrc_queue(queue: &glib::WeakRef<gst::Element>) {
+    let Some(queue_ref) = queue.upgrade() else {
+        return;
+    };
+
+    let Some(upstream_pad) = queue_ref
+        .static_pad("sink")
+        .and_then(|sink_pad| sink_pad.peer())
+    else {
+        warn!("Failed to find upstream pad for proxysrc queue excision");
+        return;
+    };
+
+    info!("Proxysrc queue excision: Installing BLOCK_DOWNSTREAM probe");
+
+    let queue = queue.clone();
+    upstream_pad.add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, move |_pad, _info| {
+        let Some(queue_ref) = queue.upgrade() else {
+            return gst::PadProbeReturn::Remove;
+        };
+
+        match excise_single_element(&queue_ref) {
+            Ok(()) => info!("Proxysrc queue excision: Queue successfully excised"),
+            Err(error) => warn!("Failed to excise proxysrc queue: {error:?}"),
+        }
+
+        gst::PadProbeReturn::Remove
+    });
+}
+
+/// Hooks into the pipeline to excise every `rtpjitterbuffer` that `rtspsrc`'s
+/// internal `rtpbin` creates. Without the jitterbuffer, retransmission (NACK)
+/// cannot function, so `do-retransmission` is also forced to `false`.
+pub fn bypass_jitterbuffer(pipeline: &gst::Pipeline) {
+    for element in pipeline
+        .iterate_recurse()
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        if element
+            .factory()
+            .map(|f| f.name() == "rtspsrc")
+            .unwrap_or(false)
+        {
+            element.set_property("do-retransmission", false);
+            debug!("Disabled do-retransmission on {}", element.name());
+        }
+    }
+
+    pipeline.connect("deep-element-added", false, move |values| {
+        let element = values[2].get::<gst::Element>().expect("Invalid argument");
+
+        let is_jitterbuffer = element
+            .factory()
+            .map(|f| f.name() == "rtpjitterbuffer")
+            .unwrap_or(false);
+
+        if !is_jitterbuffer {
+            return None;
+        }
+
+        let name = element.name().to_string();
+        let excision_delay_time = std::time::Duration::from_secs(5);
+        debug!(
+            "Detected {name}, scheduling delayed excision ({}s)",
+            excision_delay_time.as_secs()
+        );
+
+        let element_weak = element.downgrade();
+        let name_clone = name.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(excision_delay_time);
+            let Some(element) = element_weak.upgrade() else {
+                debug!("{name_clone} was dropped before excision timer fired");
+                return;
+            };
+            // Skip excision if the parent pipeline is already tearing down.
+            // Racing with set_state(Null) can deadlock GStreamer internals.
+            let skip = element
+                .parent()
+                .and_then(|p| p.downcast::<gst::Element>().ok())
+                .is_some_and(|p| p.current_state() < gst::State::Paused);
+            if skip {
+                debug!("{name_clone}: parent pipeline is below Paused, skipping excision");
+                return;
+            }
+            let Some(upstream_pad) = element.static_pad("sink").and_then(|p| p.peer()) else {
+                warn!("{name_clone} has no upstream peer, cannot excise");
+                return;
+            };
+            debug!("Excision timer fired for {name_clone}, adding block probe on upstream pad");
+            upstream_pad.add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, move |_pad, _info| {
+                match excise_single_element(&element) {
+                    Ok(()) => debug!("Excised {name_clone} from pipeline"),
+                    Err(error) => error!("Failed to excise {name_clone}: {error:#}"),
+                }
+                gst::PadProbeReturn::Remove
+            });
+        });
+
+        None
+    });
+}
+
+const INTERESTING_PROPERTIES: &[&str] = &[
+    "leaky",
+    "max-size-buffers",
+    "max-size-bytes",
+    "max-size-time",
+    "silent",
+    "flush-on-eos",
+    "sync",
+    "async",
+    "latency",
+    "do-retransmission",
+    "aggregate-mode",
+    "config-interval",
+    "is-live",
+    "udp-buffer-size",
+    "location",
+    "pt",
+    "drop-on-latency",
+];
+
+pub fn dump_bin_elements(bin: &gst::Bin, label: &str) {
+    use std::fmt::Write;
+
+    let mut out = format!("{label} elements:\n");
+
+    for (i, element) in bin
+        .iterate_recurse()
+        .into_iter()
+        .filter_map(Result::ok)
+        .enumerate()
+    {
+        let factory_name = element
+            .factory()
+            .map(|f| f.name().to_string())
+            .unwrap_or_else(|| "?".into());
+        let name = element.name();
+
+        let _ = write!(out, "  [{i}] {factory_name} \"{name}\"");
+
+        for &prop_name in INTERESTING_PROPERTIES {
+            if element.find_property(prop_name).is_some() {
+                let val = element.property_value(prop_name);
+                let display = val
+                    .serialize()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|_| format!("{val:?}"));
+                let _ = write!(out, " {prop_name}={display}");
+            }
+        }
+        out.push('\n');
+
+        for pad in element.pads() {
+            let dir = match pad.direction() {
+                gst::PadDirection::Sink => "sink",
+                gst::PadDirection::Src => "src",
+                _ => "?",
+            };
+            let caps_str = pad
+                .current_caps()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "(not negotiated)".into());
+            let peer = pad
+                .peer()
+                .map(|p| {
+                    let peer_elem = p
+                        .parent_element()
+                        .map(|e| e.name().to_string())
+                        .unwrap_or_default();
+                    format!(" -> {peer_elem}:{}", p.name())
+                })
+                .unwrap_or_default();
+            let _ = writeln!(out, "      {dir}:{}{peer}  {caps_str}", pad.name());
+        }
+    }
+
+    info!("{out}");
 }

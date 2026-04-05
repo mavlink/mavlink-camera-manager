@@ -1,4 +1,5 @@
 pub mod gst;
+pub mod lifecycle;
 pub mod manager;
 pub mod pipeline;
 pub mod rtsp;
@@ -6,7 +7,10 @@ pub mod sink;
 pub mod types;
 pub mod webrtc;
 
-use std::sync::Arc;
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 
 use ::gst::prelude::*;
 use anyhow::{anyhow, Context, Result};
@@ -17,7 +21,7 @@ use sink::{create_image_sink, create_rtsp_sink, create_udp_sink, create_zenoh_si
 use tokio::sync::RwLock;
 use tracing::*;
 use types::*;
-use webrtc::signalling_protocol::PeerId;
+use webrtc::signalling_protocol::{PeerId, SessionId};
 
 use crate::{
     mavlink::mavlink_camera::MavlinkCamera,
@@ -30,11 +34,11 @@ use crate::{
 
 use self::{
     gst::utils::wait_for_element_state,
-    rtsp::{rtsp_scheme::RTSPScheme, rtsp_server::RTSP_SERVER_PORT},
+    lifecycle::{LifecycleState, Phase},
+    rtsp::{rtsp_scheme::RTSPScheme, rtsp_server::RTSPServer},
     sink::SinkInterface,
 };
 
-#[derive(Debug)]
 pub struct Stream {
     pub state: Arc<RwLock<Option<StreamState>>>,
     pipeline_id: Arc<PeerId>,
@@ -42,6 +46,17 @@ pub struct Stream {
     error: Arc<RwLock<anyhow::Result<()>>>,
     terminated: Arc<RwLock<bool>>,
     watcher_handle: Option<tokio::task::JoinHandle<()>>,
+    pub lifecycle: Arc<LifecycleState>,
+    pub notify: Arc<tokio::sync::Notify>,
+    /// Tracks the timestamp of the last thumbnail request so the pipeline
+    /// stays alive for a cooldown period after the thumbnail is served.
+    pub thumbnail_cooldown: Arc<Mutex<Option<std::time::Instant>>>,
+    /// Persists across idle/wake cycles so heartbeats continue when the
+    /// pipeline is not running.
+    pub mavlink_camera: Arc<RwLock<Option<MavlinkCamera>>>,
+    /// Tracks WebRTC sessions that have been consumer-added, making
+    /// `remove_session` idempotent with respect to the lifecycle count.
+    pub active_webrtc_sessions: Arc<Mutex<HashSet<SessionId>>>,
 }
 
 #[derive(Debug)]
@@ -49,7 +64,6 @@ pub struct StreamState {
     pub pipeline_id: Arc<PeerId>,
     pub pipeline: Option<Pipeline>,
     pub video_and_stream_information: Arc<RwLock<VideoAndStreamInformation>>,
-    pub mavlink_camera: Option<MavlinkCamera>,
 }
 
 fn normalize_pipeline_source_string(source_string: &str) -> String {
@@ -156,6 +170,9 @@ impl Stream {
             Arc::new(RwLock::new(video_and_stream_information))
         };
 
+        let lifecycle = Arc::new(LifecycleState::new());
+        let notify = Arc::new(tokio::sync::Notify::new());
+
         let state = Arc::new(RwLock::new(Some(
             StreamState::try_default(video_and_stream_information.clone(), pipeline_id.clone())
                 .await?,
@@ -163,6 +180,7 @@ impl Stream {
 
         let terminated = Arc::new(RwLock::new(false));
         let error = Arc::new(RwLock::new(Ok(())));
+        let mavlink_camera = Arc::new(RwLock::new(None));
 
         debug!("Starting StreamWatcher task...");
 
@@ -172,6 +190,9 @@ impl Stream {
             let video_and_stream_information = video_and_stream_information.clone();
             let state = state.clone();
             let pipeline_id = pipeline_id.clone();
+            let lifecycle = lifecycle.clone();
+            let notify = notify.clone();
+            let mavlink_camera = mavlink_camera.clone();
 
             async move {
                 debug!("StreamWatcher task started!");
@@ -181,6 +202,9 @@ impl Stream {
                     error,
                     state,
                     terminated,
+                    lifecycle,
+                    notify,
+                    mavlink_camera,
                 )
                 .await
                 {
@@ -190,6 +214,24 @@ impl Stream {
             }
         }));
 
+        // Start pipeline once at creation to initialize infrastructure (RTSP server, etc.).
+        // For lazy streams the initial consumer is immediately removed so the pipeline
+        // drains to Idle if no real consumers connect within the grace period.
+        // For non-lazy streams (disable_lazy=true) we keep the phantom consumer so
+        // the pipeline transitions to Running(1) and stays alive indefinitely.
+        let disable_lazy = video_and_stream_information
+            .read()
+            .await
+            .stream_information
+            .extended_configuration
+            .as_ref()
+            .map(|ext| ext.disable_lazy)
+            .unwrap_or(false);
+        lifecycle.add_consumer(&*notify);
+        if !disable_lazy {
+            lifecycle.remove_consumer(true);
+        }
+
         Ok(Self {
             pipeline_id,
             video_and_stream_information,
@@ -197,157 +239,317 @@ impl Stream {
             state,
             terminated,
             watcher_handle,
+            lifecycle,
+            notify,
+            thumbnail_cooldown: Arc::new(Mutex::new(None)),
+            mavlink_camera,
+            active_webrtc_sessions: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
-    #[instrument(level = "debug", skip(state, terminated))]
+    #[instrument(
+        level = "debug",
+        skip(state, terminated, lifecycle, notify, mavlink_camera)
+    )]
     async fn watcher(
         video_and_stream_information: Arc<RwLock<VideoAndStreamInformation>>,
         pipeline_id: Arc<uuid::Uuid>,
         error_status: Arc<RwLock<anyhow::Result<()>>>,
         state: Arc<RwLock<Option<StreamState>>>,
         terminated: Arc<RwLock<bool>>,
+        lifecycle: Arc<LifecycleState>,
+        notify: Arc<tokio::sync::Notify>,
+        mavlink_camera: Arc<RwLock<Option<MavlinkCamera>>>,
     ) -> Result<()> {
-        // To reduce log size, each report we raise the report interval geometrically until a maximum value is reached:
         let report_interval_mult = 2;
         let report_interval_max = 60;
         let mut report_interval = std::time::Duration::from_secs(1);
         let mut last_report_time = std::time::Instant::now();
 
+        let idle_grace_period = std::time::Duration::from_secs(5);
+        let mut drain_start: Option<std::time::Instant> = None;
         let mut period = tokio::time::interval(tokio::time::Duration::from_millis(100));
+
+        let mut persistent_rtsp: Option<sink::rtsp_sink::RtspSinkPersistent> = None;
+
         loop {
-            period.tick().await;
-
-            if !state.read().await.as_ref().is_some_and(|state| {
-                state
-                    .pipeline
-                    .as_ref()
-                    .map(|pipeline| pipeline.is_running())
-                    .unwrap_or_default()
-            }) {
-                // First, drop the current state
-                if let Some(state) = state.write().await.take() {
-                    drop(state);
-                }
-
-                let video_and_stream_information_cloned =
-                    video_and_stream_information.read().await.clone();
-
-                // Re-probe configuration for sources that support it (Redirect, Onvif)
-                match refresh_source_configuration(&video_and_stream_information_cloned).await {
-                    Ok(Some(capture_configuration)) => {
-                        *error_status.write().await = Ok(());
-
-                        video_and_stream_information
-                            .write()
-                            .await
-                            .stream_information
-                            .configuration = capture_configuration;
-                    }
-                    Ok(None) => {
-                        // No probing needed (Gst) or handled separately (Local)
-                    }
-                    Err(error) => {
-                        let error_message = format!(
-                            "Failed getting CaptureConfiguration from source. Error: {error:?}. Trying again soon..."
-                        );
-
-                        warn!(error_message);
-                        *error_status.write().await = Err(anyhow!(error_message));
-
-                        continue;
-                    }
-                }
-
-                // If it's a local camera, try to update the device
-                if matches!(
-                    video_and_stream_information_cloned.video_source,
-                    VideoSourceType::Local(_)
-                ) {
-                    let mut streams = vec![video_and_stream_information_cloned.clone()];
-                    let mut candidates = cameras_available().await;
-
-                    // Discards any source from other running streams, otherwise we'd be trying to create a stream from a device in use (which is not possible)
-                    let current_running_streams = manager::streams()
-                        .await
-                        .unwrap()
-                        .iter()
-                        .filter_map(|status| {
-                            status
-                                .running
-                                .then_some(status.video_and_stream.video_source.clone())
-                        })
-                        .collect::<Vec<VideoSourceType>>();
-                    candidates.retain(|candidate| !current_running_streams.contains(candidate));
-
-                    let should_report =
-                        std::time::Instant::now() - last_report_time >= report_interval;
-
-                    // Find the best candidate
-                    manager::update_devices(&mut streams, &mut candidates, should_report).await;
-                    *video_and_stream_information.write().await = streams.first().unwrap().clone();
-
-                    // Check if the chosen video source is available
-                    match crate::video::video_source::get_video_source(
-                        video_and_stream_information_cloned
-                            .video_source
-                            .inner()
-                            .source_string(),
-                    )
-                    .await
-                    {
-                        Ok(best_candidate) => {
-                            video_and_stream_information.write().await.video_source =
-                                best_candidate;
-                        }
-                        Err(error) => {
-                            if should_report {
-                                let error_message  = format!("Failed to recreate the stream {pipeline_id:?}: {error:?}. Is the device connected? Trying again each second until the success or stream is removed. Next report in {report_interval:?} to reduce log size.");
-
-                                warn!(error_message);
-                                *error_status.write().await = Err(anyhow!(error_message));
-
-                                last_report_time = std::time::Instant::now();
-                                report_interval *= report_interval_mult;
-                                if report_interval
-                                    > std::time::Duration::from_secs(report_interval_max)
-                                {
-                                    report_interval =
-                                        std::time::Duration::from_secs(report_interval_max);
-                                }
-                            }
-
-                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                            continue;
-                        }
-                    }
-                }
-
-                let new_state = match StreamState::try_new(
-                    video_and_stream_information.clone(),
-                    pipeline_id.clone(),
-                )
-                .await
-                {
-                    Ok(state) => state,
-                    Err(error) => {
-                        let error_message=  format!("Failed to recreate the stream {pipeline_id:?}: {error:#?}. Trying again in one second...");
-
-                        warn!(error_message);
-                        *error_status.write().await = Err(anyhow!(error_message));
-
-                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                        continue;
-                    }
-                };
-
-                // Try to recreate the stream
-                state.write().await.replace(new_state);
+            tokio::select! {
+                _ = notify.notified() => {}
+                _ = period.tick() => {}
             }
 
             if *terminated.read().await {
-                debug!("Ending stream {pipeline_id:?}.");
                 break;
+            }
+
+            let (phase, count) = lifecycle.load();
+
+            match phase {
+                Phase::Idle => {
+                    drain_start = None;
+                    if state
+                        .read()
+                        .await
+                        .as_ref()
+                        .is_some_and(|s| s.pipeline.is_some())
+                    {
+                        if let Some(old) = state.write().await.take() {
+                            tokio::task::spawn_blocking(move || drop(old));
+                        }
+                    }
+                    continue;
+                }
+
+                Phase::Waking => {
+                    drain_start = None;
+                    debug!(
+                        "Waking handler entered: consumers={count}, error_count={}, backoff will be computed on error",
+                        lifecycle.error_count()
+                    );
+
+                    // Await the old pipeline teardown so GStreamer resources
+                    // are fully released before creating the new pipeline.
+                    // Bounded to avoid blocking the watcher indefinitely if
+                    // rtspsrc hangs during its NULL state change.
+                    if let Some(old) = state.write().await.take() {
+                        let handle = tokio::task::spawn_blocking(move || drop(old));
+                        if tokio::time::timeout(tokio::time::Duration::from_secs(10), handle)
+                            .await
+                            .is_err()
+                        {
+                            warn!("Pipeline teardown timed out in Waking handler, proceeding with pipeline creation");
+                        }
+                    }
+
+                    let video_and_stream_information_cloned =
+                        video_and_stream_information.read().await.clone();
+
+                    // Re-probe configuration for sources that support it (Redirect, Onvif)
+                    match refresh_source_configuration(&video_and_stream_information_cloned).await {
+                        Ok(Some(capture_configuration)) => {
+                            *error_status.write().await = Ok(());
+
+                            video_and_stream_information
+                                .write()
+                                .await
+                                .stream_information
+                                .configuration = capture_configuration;
+                        }
+                        Ok(None) => {
+                            // No probing needed (Gst) or handled separately (Local)
+                        }
+                        Err(error) => {
+                            let error_message = format!(
+                                "Failed getting CaptureConfiguration from source. Error: {error:?}. Trying again soon..."
+                            );
+
+                            warn!(error_message);
+                            *error_status.write().await = Err(anyhow!(error_message));
+
+                            let backoff = lifecycle.handle_pipeline_error();
+                            warn!("Waking: CaptureConfiguration error, backoff={backoff:?}, error_count={}", lifecycle.error_count());
+                            tokio::time::sleep(backoff).await;
+                            notify.notify_one();
+                            continue;
+                        }
+                    }
+
+                    // If it's a local camera, try to update the device
+                    if matches!(
+                        video_and_stream_information_cloned.video_source,
+                        VideoSourceType::Local(_)
+                    ) {
+                        let mut streams = vec![video_and_stream_information_cloned.clone()];
+                        let mut candidates = cameras_available().await;
+
+                        // Discards any source from other running streams, otherwise we'd be trying to create a stream from a device in use (which is not possible)
+                        let current_running_streams = manager::streams()
+                            .await
+                            .unwrap()
+                            .iter()
+                            .filter_map(|status| {
+                                status
+                                    .running
+                                    .then_some(status.video_and_stream.video_source.clone())
+                            })
+                            .collect::<Vec<VideoSourceType>>();
+                        candidates.retain(|candidate| !current_running_streams.contains(candidate));
+
+                        let should_report =
+                            std::time::Instant::now() - last_report_time >= report_interval;
+
+                        // Find the best candidate
+                        manager::update_devices(&mut streams, &mut candidates, should_report).await;
+                        *video_and_stream_information.write().await =
+                            streams.first().unwrap().clone();
+
+                        // Check if the chosen video source is available
+                        match crate::video::video_source::get_video_source(
+                            video_and_stream_information_cloned
+                                .video_source
+                                .inner()
+                                .source_string(),
+                        )
+                        .await
+                        {
+                            Ok(best_candidate) => {
+                                video_and_stream_information.write().await.video_source =
+                                    best_candidate;
+                            }
+                            Err(error) => {
+                                if should_report {
+                                    let error_message = format!(
+                                        "Failed to recreate the stream {pipeline_id:?}: {error:?}. Is the device connected? Trying again each second until the success or stream is removed. Next report in {report_interval:?} to reduce log size."
+                                    );
+                                    warn!(error_message);
+                                    *error_status.write().await = Err(anyhow!(error_message));
+
+                                    last_report_time = std::time::Instant::now();
+                                    report_interval *= report_interval_mult;
+                                    if report_interval
+                                        > std::time::Duration::from_secs(report_interval_max)
+                                    {
+                                        report_interval =
+                                            std::time::Duration::from_secs(report_interval_max);
+                                    }
+                                }
+
+                                let backoff = lifecycle.handle_pipeline_error();
+                                warn!("Waking: Local device error, backoff={backoff:?}, error_count={}", lifecycle.error_count());
+                                tokio::time::sleep(backoff).await;
+                                notify.notify_one();
+                                continue;
+                            }
+                        }
+                    }
+
+                    let new_state = match StreamState::try_new(
+                        video_and_stream_information.clone(),
+                        pipeline_id.clone(),
+                        lifecycle.clone(),
+                        notify.clone(),
+                        persistent_rtsp.clone(),
+                    )
+                    .await
+                    {
+                        Ok(state) => state,
+                        Err(error) => {
+                            let error_message = format!(
+                                "Failed to recreate the stream {pipeline_id:?}: {error:#?}. Trying again soon..."
+                            );
+                            warn!(error_message);
+                            *error_status.write().await = Err(anyhow!(error_message));
+                            let backoff = lifecycle.handle_pipeline_error();
+                            warn!("Waking: StreamState::try_new error, backoff={backoff:?}, error_count={}", lifecycle.error_count());
+                            tokio::time::sleep(backoff).await;
+                            notify.notify_one();
+                            continue;
+                        }
+                    };
+
+                    if persistent_rtsp.is_none() {
+                        if let Some(ref pipeline) = new_state.pipeline {
+                            for s in pipeline.inner_state_as_ref().sinks.values() {
+                                if let sink::Sink::Rtsp(rtsp) = s {
+                                    persistent_rtsp = Some(sink::rtsp_sink::RtspSinkPersistent {
+                                        appsrc: Some(rtsp.rtsp_appsrc()),
+                                        pts_offset: Some(rtsp.pts_offset()),
+                                        flow_handle: Some(rtsp.flow_handle()),
+                                    });
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    state.write().await.replace(new_state);
+
+                    // Create MavlinkCamera once on first successful wake;
+                    // it persists across idle/wake cycles.
+                    if mavlink_camera.read().await.is_none() {
+                        let vsi = video_and_stream_information.read().await.clone();
+                        let mavlink_enabled = vsi
+                            .stream_information
+                            .extended_configuration
+                            .as_ref()
+                            .map(|e| !e.disable_mavlink)
+                            .unwrap_or(true);
+
+                        if mavlink_enabled {
+                            match MavlinkCamera::try_new(&vsi).await {
+                                Ok(cam) => {
+                                    mavlink_camera.write().await.replace(cam);
+                                }
+                                Err(error) => {
+                                    warn!("Failed to create MavlinkCamera: {error:?}");
+                                }
+                            }
+                        }
+                    }
+
+                    lifecycle.transition_to_running();
+                    lifecycle.reset_error_backoff();
+                    *error_status.write().await = Ok(());
+                    report_interval = std::time::Duration::from_secs(1);
+                    debug!("Pipeline {pipeline_id:?} started successfully");
+                }
+
+                Phase::Running => {
+                    drain_start = None;
+                    let is_running = state.read().await.as_ref().is_some_and(|s| {
+                        s.pipeline
+                            .as_ref()
+                            .map(|p| p.is_running())
+                            .unwrap_or_default()
+                    });
+                    if !is_running {
+                        warn!("Pipeline {pipeline_id:?} stopped unexpectedly while Running, handling error");
+                        // Mark RTSP sinks for preservation before dropping
+                        if let Some(ref old_st) = *state.read().await {
+                            if let Some(ref pipeline) = old_st.pipeline {
+                                for s in pipeline.inner_state_as_ref().sinks.values() {
+                                    if let sink::Sink::Rtsp(rtsp) = s {
+                                        rtsp.set_preserve_factory(true);
+                                    }
+                                }
+                            }
+                        }
+                        let backoff = lifecycle.handle_pipeline_error();
+                        warn!(
+                            "Running: pipeline stopped, backoff={backoff:?}, error_count={}",
+                            lifecycle.error_count()
+                        );
+                        tokio::time::sleep(backoff).await;
+                        notify.notify_one();
+                    }
+                }
+
+                Phase::Draining => {
+                    let since = drain_start.get_or_insert(std::time::Instant::now());
+                    if since.elapsed() >= idle_grace_period {
+                        debug!("Lazy pipeline {pipeline_id:?}: grace period expired, transitioning to Idle");
+                        if lifecycle.transition_to_idle() {
+                            // Successfully transitioned -- tear down pipeline
+                            // Mark RTSP sinks for preservation
+                            if let Some(ref old_st) = *state.read().await {
+                                if let Some(ref pipeline) = old_st.pipeline {
+                                    for s in pipeline.inner_state_as_ref().sinks.values() {
+                                        if let sink::Sink::Rtsp(rtsp) = s {
+                                            rtsp.set_preserve_factory(true);
+                                        }
+                                    }
+                                }
+                            }
+                            if let Some(old) = state.write().await.take() {
+                                tokio::task::spawn_blocking(move || drop(old));
+                            }
+                            drain_start = None;
+                        } else {
+                            // A consumer reconnected -- CAS failed harmlessly
+                            drain_start = None;
+                        }
+                    }
+                }
             }
         }
 
@@ -406,7 +608,6 @@ impl StreamState {
             pipeline_id,
             pipeline: None,
             video_and_stream_information,
-            mavlink_camera: None,
         })
     }
 
@@ -414,6 +615,9 @@ impl StreamState {
     pub async fn try_new(
         video_and_stream_information: Arc<RwLock<VideoAndStreamInformation>>,
         pipeline_id: Arc<uuid::Uuid>,
+        lifecycle: Arc<LifecycleState>,
+        notify: Arc<tokio::sync::Notify>,
+        persistent_rtsp: Option<sink::rtsp_sink::RtspSinkPersistent>,
     ) -> Result<Self> {
         let mut stream =
             Self::try_default(video_and_stream_information.clone(), pipeline_id.clone()).await?;
@@ -433,7 +637,9 @@ impl StreamState {
             let endpoints = &video_and_stream_information.stream_information.endpoints;
 
             // Disable concurrent RTSP and UDP sinks creation, as it is failing.
-            if endpoints.iter().any(|endpoint| endpoint.scheme() == "udp")
+            if endpoints
+                .iter()
+                .any(|endpoint| matches!(endpoint.scheme(), "udp" | "udp265"))
                 && endpoints.iter().any(|endpoint| endpoint.scheme() == "rtsp")
             {
                 return Err(anyhow!(
@@ -441,7 +647,10 @@ impl StreamState {
                 ));
             }
 
-            if endpoints.iter().any(|endpoint| endpoint.scheme() == "udp") {
+            if endpoints
+                .iter()
+                .any(|endpoint| matches!(endpoint.scheme(), "udp" | "udp265"))
+            {
                 let sink_id = Arc::new(Manager::generate_uuid(None));
                 match create_udp_sink(sink_id.clone(), &video_and_stream_information) {
                     Ok(sink) => {
@@ -461,6 +670,9 @@ impl StreamState {
                         ));
                     }
                 }
+                // UDP sinks are fire-and-forget: hold a permanent +1 so
+                // the stream never enters Draining/Idle.
+                lifecycle.add_consumer(&*notify);
             }
 
             if endpoints
@@ -468,7 +680,13 @@ impl StreamState {
                 .any(|endpoint| RTSPScheme::try_from(endpoint.scheme()).is_ok())
             {
                 let sink_id = Arc::new(Manager::generate_uuid(None));
-                match create_rtsp_sink(sink_id.clone(), &video_and_stream_information) {
+                match create_rtsp_sink(
+                    sink_id.clone(),
+                    &video_and_stream_information,
+                    lifecycle.clone(),
+                    notify.clone(),
+                    persistent_rtsp,
+                ) {
                     Ok(sink) => {
                         if let Some(pipeline) = stream.pipeline.as_mut() {
                             if let Err(reason) = pipeline.add_sink(sink).await {
@@ -552,6 +770,9 @@ impl StreamState {
                         } else {
                             return Err(anyhow!("No Pipeline available to add Zenoh sink"));
                         }
+                        // Zenoh sinks are fire-and-forget: hold a permanent +1 so
+                        // the stream never enters Draining/Idle.
+                        lifecycle.add_consumer(&*notify);
                     }
                     Err(reason) => {
                         return Err(anyhow!(
@@ -585,24 +806,6 @@ impl StreamState {
             }
         }
 
-        // Only create the MavlinkCamera when MAVLink is not disabled
-        if video_and_stream_information
-            .stream_information
-            .extended_configuration
-            .as_ref()
-            .map(|e| !e.disable_mavlink)
-            .unwrap_or_default()
-        {
-            match MavlinkCamera::try_new(&video_and_stream_information).await {
-                Ok(mavlink_camera) => {
-                    stream.mavlink_camera.replace(mavlink_camera);
-                }
-                Err(error) => {
-                    warn!("Failed to create MavlinkCamera: {error:?}");
-                }
-            }
-        }
-
         Ok(stream)
     }
 }
@@ -617,25 +820,60 @@ impl Drop for StreamState {
         let pipeline_state = pipeline.inner_state_as_ref();
         let pipeline = &pipeline_state.pipeline;
 
+        // Post EOS so elements can flush gracefully.
         let pipeline_weak = pipeline.downgrade();
-        std::thread::spawn(move || {
-            let pipeline = pipeline_weak.upgrade().unwrap();
-            if let Err(error) = pipeline.post_message(::gst::message::Eos::new()) {
-                error!("Failed posting Eos message into Pipeline bus. Reason: {error:?}");
+        let eos_handle = std::thread::Builder::new()
+            .name("PipelineEos".into())
+            .spawn(move || {
+                if let Some(pipeline) = pipeline_weak.upgrade() {
+                    if let Err(error) = pipeline.post_message(::gst::message::Eos::new()) {
+                        error!("Failed posting Eos message into Pipeline bus. Reason: {error:?}");
+                    }
+                }
+            })
+            .ok();
+
+        // Run set_state(Null) in a separate thread so we can bound the wait.
+        // rtspsrc can block here indefinitely when the remote RTSP server is
+        // unresponsive or when jitterbuffer excision races with teardown.
+        let pipeline_clone = pipeline.clone();
+        let null_handle = std::thread::Builder::new()
+            .name("PipelineSetNull".into())
+            .spawn(move || {
+                if let Err(error) = pipeline_clone.set_state(::gst::State::Null) {
+                    error!("Failed setting Pipeline state to Null. Reason: {error:?}");
+                }
+            });
+
+        const NULL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+        if let Ok(handle) = null_handle {
+            let start = std::time::Instant::now();
+            while !handle.is_finished() {
+                if start.elapsed() >= NULL_TIMEOUT {
+                    warn!(
+                        "set_state(Null) timed out after {NULL_TIMEOUT:?}, \
+                         continuing cleanup; teardown thread will finish in background"
+                    );
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
             }
-        });
-
-        if let Err(error) = pipeline.set_state(::gst::State::Null) {
-            error!("Failed setting Pipeline state to Null. Reason: {error:?}");
-        }
-        if let Err(error) =
-            wait_for_element_state(pipeline.downgrade(), ::gst::State::Null, 100, 10)
-        {
-            let _ = pipeline.set_state(::gst::State::Null);
-            error!("Failed setting Pipeline state to Null. Reason: {error:?}");
         }
 
-        // Remove all Sinks
+        if pipeline.current_state() != ::gst::State::Null {
+            if let Err(error) =
+                wait_for_element_state(pipeline.downgrade(), ::gst::State::Null, 100, 5)
+            {
+                warn!("Pipeline did not reach Null state: {error:?}");
+            }
+        }
+
+        if let Some(handle) = eos_handle {
+            let _ = handle.join();
+        }
+        let _ = pipeline_state;
+
+        // Remove all Sinks after the pipeline is stopped
         let pipeline_state = self
             .pipeline
             .as_mut()
@@ -704,9 +942,10 @@ fn validate_endpoints(video_and_stream_information: &VideoAndStreamInformation) 
                     "Endpoint with rtsp scheme should contain host, port, and path. Endpoint: {endpoint:?}"
                 ));
             }
-            if endpoint.port() != Some(RTSP_SERVER_PORT) {
+            let expected_port = RTSPServer::port();
+            if endpoint.port() != Some(expected_port) {
                 return Some(anyhow!(
-                    "Endpoint with rtsp scheme should use port {RTSP_SERVER_PORT:?}. Endpoint: {endpoint:?}"
+                    "Endpoint with rtsp scheme should use port {expected_port:?}. Endpoint: {endpoint:?}"
                 ));
             }
 
@@ -760,6 +999,18 @@ mod tests {
     #[cfg(target_os = "linux")]
     use crate::video::video_source_local::{VideoSourceLocal, VideoSourceLocalType};
     use crate::video::video_source_redirect::{VideoSourceRedirect, VideoSourceRedirectType};
+
+    fn default_video_capture_configuration(encode: VideoEncodeType) -> VideoCaptureConfiguration {
+        VideoCaptureConfiguration {
+            encode,
+            height: 480,
+            width: 640,
+            frame_interval: FrameInterval {
+                numerator: 1,
+                denominator: 30,
+            },
+        }
+    }
 
     fn test_stream_information() -> StreamInformation {
         StreamInformation {

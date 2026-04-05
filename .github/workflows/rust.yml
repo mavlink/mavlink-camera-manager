@@ -86,7 +86,11 @@ jobs:
           gstreamer1.0-x \
           gstreamer1.0-nice \
           gstreamer1.0-libav \
-          gstreamer1.0-plugins-ugly
+          gstreamer1.0-plugins-ugly \
+          gstreamer1.0-plugins-bad
+
+    - name: Install nextest
+      uses: taiki-e/install-action@nextest
 
     - name: Run tests
-      run: cargo test --verbose --locked
+      run: cargo nextest run --verbose --no-fail-fast --locked

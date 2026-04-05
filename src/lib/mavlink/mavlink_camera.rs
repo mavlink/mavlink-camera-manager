@@ -372,49 +372,49 @@ impl MavlinkCameraInner {
         match data.command {
             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_INFORMATION => {
                 send_ack(
-                    &camera,
+                    camera,
                     &sender,
                     their_header,
                     data.command,
                     mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                 );
-                send_message(&camera, &sender, build_camera_information(&camera));
+                send_message(camera, &sender, build_camera_information(camera));
             }
             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_SETTINGS => {
                 send_ack(
-                    &camera,
+                    camera,
                     &sender,
                     their_header,
                     data.command,
                     mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                 );
-                send_message(&camera, &sender, build_camera_settings());
+                send_message(camera, &sender, build_camera_settings());
             }
             mavlink::common::MavCmd::MAV_CMD_REQUEST_STORAGE_INFORMATION => {
                 send_ack(
-                    &camera,
+                    camera,
                     &sender,
                     their_header,
                     data.command,
                     mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                 );
-                send_message(&camera, &sender, build_storage_information());
+                send_message(camera, &sender, build_storage_information());
             }
             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_CAPTURE_STATUS => {
                 send_ack(
-                    &camera,
+                    camera,
                     &sender,
                     their_header,
                     data.command,
                     mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                 );
-                send_message(&camera, &sender, build_camera_capture_status());
+                send_message(camera, &sender, build_camera_capture_status());
             }
             mavlink::common::MavCmd::MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION => {
-                if !validate_stream_id(&camera, data.param2) {
+                if !validate_stream_id(camera, data.param2) {
                     warn!("Unknown stream id: {:#?}.", data.param2);
                     send_ack(
-                        &camera,
+                        camera,
                         &sender,
                         their_header,
                         data.command,
@@ -423,17 +423,17 @@ impl MavlinkCameraInner {
                     return;
                 }
                 send_ack(
-                    &camera,
+                    camera,
                     &sender,
                     their_header,
                     data.command,
                     mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                 );
-                send_message(&camera, &sender, build_video_stream_information(&camera));
+                send_message(camera, &sender, build_video_stream_information(camera));
             }
             mavlink::common::MavCmd::MAV_CMD_RESET_CAMERA_SETTINGS => {
                 send_ack(
-                    &camera,
+                    camera,
                     &sender,
                     their_header,
                     data.command,
@@ -449,17 +449,17 @@ impl MavlinkCameraInner {
                     }
                 };
 
-                send_ack(&camera, &sender, their_header, data.command, result);
+                send_ack(camera, &sender, their_header, data.command, result);
             }
             mavlink::common::MavCmd::MAV_CMD_REQUEST_VIDEO_STREAM_STATUS => {
                 send_ack(
-                    &camera,
+                    camera,
                     &sender,
                     their_header,
                     data.command,
                     mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                 );
-                send_message(&camera, &sender, build_video_stream_status(&camera));
+                send_message(camera, &sender, build_video_stream_status(camera));
             }
             mavlink::common::MavCmd::MAV_CMD_REQUEST_MESSAGE => {
                 const CAMERA_INFORMATION_ID: u32 = 259;
@@ -474,49 +474,49 @@ impl MavlinkCameraInner {
                 match requested_msg_id {
                     CAMERA_INFORMATION_ID => {
                         send_ack(
-                            &camera,
+                            camera,
                             &sender,
                             their_header,
                             data.command,
                             mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                         );
-                        send_message(&camera, &sender, build_camera_information(&camera));
+                        send_message(camera, &sender, build_camera_information(camera));
                     }
                     CAMERA_SETTINGS_ID => {
                         send_ack(
-                            &camera,
+                            camera,
                             &sender,
                             their_header,
                             data.command,
                             mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                         );
-                        send_message(&camera, &sender, build_camera_settings());
+                        send_message(camera, &sender, build_camera_settings());
                     }
                     STORAGE_INFORMATION_ID => {
                         send_ack(
-                            &camera,
+                            camera,
                             &sender,
                             their_header,
                             data.command,
                             mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                         );
-                        send_message(&camera, &sender, build_storage_information());
+                        send_message(camera, &sender, build_storage_information());
                     }
                     CAMERA_CAPTURE_STATUS_ID => {
                         send_ack(
-                            &camera,
+                            camera,
                             &sender,
                             their_header,
                             data.command,
                             mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                         );
-                        send_message(&camera, &sender, build_camera_capture_status());
+                        send_message(camera, &sender, build_camera_capture_status());
                     }
                     VIDEO_STREAM_INFORMATION_ID => {
-                        if !validate_stream_id(&camera, data.param2) {
+                        if !validate_stream_id(camera, data.param2) {
                             warn!("MAV_CMD_REQUEST_MESSAGE(VIDEO_STREAM_INFORMATION): unknown stream id: {:#?}.", data.param2);
                             send_ack(
-                                &camera,
+                                camera,
                                 &sender,
                                 their_header,
                                 data.command,
@@ -525,27 +525,27 @@ impl MavlinkCameraInner {
                             return;
                         }
                         send_ack(
-                            &camera,
+                            camera,
                             &sender,
                             their_header,
                             data.command,
                             mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                         );
-                        send_message(&camera, &sender, build_video_stream_information(&camera));
+                        send_message(camera, &sender, build_video_stream_information(camera));
                     }
                     VIDEO_STREAM_STATUS_ID => {
                         send_ack(
-                            &camera,
+                            camera,
                             &sender,
                             their_header,
                             data.command,
                             mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                         );
-                        send_message(&camera, &sender, build_video_stream_status(&camera));
+                        send_message(camera, &sender, build_video_stream_status(camera));
                     }
                     _ => {
                         send_ack(
-                            &camera,
+                            camera,
                             &sender,
                             their_header,
                             data.command,
@@ -559,7 +559,7 @@ impl MavlinkCameraInner {
             }
             message => {
                 send_ack(
-                    &camera,
+                    camera,
                     &sender,
                     their_header,
                     data.command,
@@ -610,7 +610,7 @@ impl MavlinkCameraInner {
         let control_value = control_value_from_param_value(&data.param_value, &data.param_type);
         let (Some(control_id), Some(control_value)) = (control_id, control_value) else {
             let result = mavlink::common::ParamAck::PARAM_ACK_VALUE_UNSUPPORTED;
-            send_ack(&camera, &sender, data, result);
+            send_ack(camera, &sender, data, result);
 
             return;
         };
@@ -627,7 +627,7 @@ impl MavlinkCameraInner {
             }
         };
 
-        send_ack(&camera, &sender, data, result);
+        send_ack(camera, &sender, data, result);
     }
 
     #[instrument(level = "trace", skip(sender))]

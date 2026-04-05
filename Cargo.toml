@@ -1,7 +1,8 @@
 [workspace]
 members = [
     ".",
-    "bindings"
+    "bindings",
+    "clients",
 ]
 
 [package]
@@ -19,11 +20,13 @@ repository = "https://github.com/patrickelectric/mavlink-camera-manager"
 
 default-run = "mavlink-camera-manager"
 build = "build.rs"
+autobenches = false
+autotests = false
 
 [features]
 default = []
 # WebDriver-based WebRTC test
-webrtc-test = ["dep:thirtyfour", "tokio/process"]
+webrtc-test = ["dep:thirtyfour", "tokio/process", "stream-clients/webrtc-test"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -35,6 +38,11 @@ path = "src/lib/mod.rs"
 bench = false
 name = "mavlink-camera-manager"
 path = "src/main.rs"
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
+harness = true
 
 [workspace.dependencies]
 regex = "1.10.4"
@@ -119,6 +127,7 @@ gst-sdp = { package = "gstreamer-sdp", version = "0.25", features=["v1_16"] }
 gst-webrtc = { package = "gstreamer-webrtc", version = "0.25", features = ["v1_16"] }
 gst-rtsp = { package = "gstreamer-rtsp", version = "0.25", features = ["v1_16"] }
 gst-rtsp-server = { package = "gstreamer-rtsp-server", version = "0.25", features = ["v1_16"] }
+gst-rtp = { package = "gstreamer-rtp", version = "0.25", features = ["v1_16"] }
 gst-video = { package = "gstreamer-video", version = "0.25", features = ["v1_16"] }
 webrtc-sdp = "0.3.13"
 constcat = "0.5.0"
@@ -129,16 +138,30 @@ libc = "0.2"
 v4l = "0.14.0"
 
 [dev-dependencies]
+proptest = "1"
 rand = "0.8.5"
 serial_test = "0.10"
 tracing-test = "0.2"
+reqwest = { version = "0.12", features = ["json"] }
+tokio-tungstenite = "0.26"
+anyhow = "1"
+futures = "0.3"
+tempfile = "3"
+thirtyfour = "0.32"
+zenoh = "1.5.1"
+stream-clients = { path = "clients" }
+gst-rtsp-server = { package = "gstreamer-rtsp-server", version = "0.25", features = ["v1_16"] }
 
 [build-dependencies]
-vergen-gix = { version = "1.0.9", default-features = false, features = ["build", "cargo"] }
+vergen-gix = { version = "9.1.0", default-features = false, features = ["build", "cargo"] }
 ts-rs = { version = "8.1.0", default-features = false, features = ["serde-compat", "uuid-impl"] }
 uuid = { version = "1.8", features = ["v4", "serde"] }
 serde = { version = "1.0", features = ["derive"] }
 regex = "1"
+
+[[example]]
+name = "stream_latency"
+path = "examples/stream_latency/main.rs"
 
 [profile.release]
 lto = true
