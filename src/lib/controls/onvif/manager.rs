@@ -102,6 +102,9 @@ impl Manager {
     // Construct our manager, should be done inside main
     #[instrument(level = "debug")]
     pub async fn init() {
+        if crate::cli::manager::is_onvif_disabled() {
+            return;
+        }
         MANAGER.as_ref();
     }
 
@@ -110,6 +113,10 @@ impl Manager {
         device_uuid: uuid::Uuid,
         credentials: Option<Credentials>,
     ) -> Result<()> {
+        if crate::cli::manager::is_onvif_disabled() {
+            return Err(anyhow!("ONVIF is disabled by --disable-onvif"));
+        }
+
         let mcontext = MANAGER.read().await.mcontext.clone();
         let mut mcontext = mcontext.write().await;
 
@@ -153,6 +160,10 @@ impl Manager {
 
     #[instrument(level = "debug")]
     pub async fn onvif_devices() -> Vec<OnvifDevice> {
+        if crate::cli::manager::is_onvif_disabled() {
+            return vec![];
+        }
+
         let mcontext = MANAGER.read().await.mcontext.clone();
         let mcontext = mcontext.read().await;
 
@@ -539,6 +550,10 @@ impl Manager {
 
     #[instrument(level = "debug")]
     pub async fn get_formats(stream_uri: &StreamURI) -> Result<Vec<Format>> {
+        if crate::cli::manager::is_onvif_disabled() {
+            return Err(anyhow!("ONVIF is disabled by --disable-onvif"));
+        }
+
         let mcontext = MANAGER.read().await.mcontext.clone();
         let mcontext = mcontext.read().await;
 
@@ -567,6 +582,10 @@ impl Manager {
 
     #[instrument(level = "debug")]
     pub async fn streams_available() -> Vec<VideoSourceType> {
+        if crate::cli::manager::is_onvif_disabled() {
+            return vec![];
+        }
+
         let mcontext = MANAGER.read().await.mcontext.clone();
         let mcontext = mcontext.read().await;
 
@@ -597,6 +616,10 @@ impl Manager {
 
     #[instrument(level = "debug")]
     pub(crate) async fn remove_camera(device_uuid: uuid::Uuid) -> Result<()> {
+        if crate::cli::manager::is_onvif_disabled() {
+            return Ok(());
+        }
+
         let mcontext = MANAGER.read().await.mcontext.clone();
 
         let mut cameras_to_remove = vec![];
@@ -623,6 +646,10 @@ impl Manager {
 
     #[instrument(level = "debug")]
     pub async fn reset() -> Result<()> {
+        if crate::cli::manager::is_onvif_disabled() {
+            return Ok(());
+        }
+
         let mut manager = MANAGER.write().await;
         manager._task.abort();
 
