@@ -1,0 +1,105 @@
+name: GStreamer Compatibility
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    container: ${{ matrix.container }}
+    name: "GStreamer ${{ matrix.gst }} (${{ matrix.container }})"
+    env:
+      DEBIAN_FRONTEND: noninteractive
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { gst: "1.20", container: "ubuntu:22.04" }
+          - { gst: "1.24", container: "ubuntu:24.04" }
+          - { gst: "1.26", container: "ubuntu:25.04" }
+          - { gst: "1.28", container: "ubuntu:devel" }
+
+    steps:
+    - name: Install build dependencies
+      run: |
+        apt-get update -y
+        apt-get install -y --no-install-recommends \
+          libunwind-dev \
+          libclang-dev \
+          pkg-config \
+          build-essential \
+          curl \
+          wget \
+          gnupg \
+          git \
+          ca-certificates \
+          libgit2-dev \
+          libmount-dev \
+          libsepol-dev \
+          libselinux1-dev \
+          libglib2.0-dev \
+          libgudev-1.0-dev \
+          libgstreamer1.0-dev \
+          libgstreamer-plugins-base1.0-dev \
+          libgstreamer-plugins-bad1.0-dev \
+          libgstrtspserver-1.0-dev \
+          unzip
+
+    - name: Install runtime dependencies
+      run: |
+        apt-get install -y --no-install-recommends \
+          gstreamer1.0-tools \
+          gstreamer1.0-x \
+          gstreamer1.0-nice \
+          gstreamer1.0-libav \
+          gstreamer1.0-plugins-ugly \
+          gstreamer1.0-plugins-bad
+
+    - name: Print GStreamer and libnice versions
+      run: |
+        dpkg -l 'libgstreamer*' '*libnice*' 2>/dev/null | grep '^ii' || true
+        pkg-config --modversion gstreamer-1.0 || true
+        pkg-config --modversion nice || true
+
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set directory to safe for git
+      run: git config --global --add safe.directory $GITHUB_WORKSPACE
+
+    - name: Install build dependencies - Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain stable -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Use cached dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: "compat-gst-${{ matrix.gst }}"
+
+    - name: Generate bindings
+      run: cargo run --package=bindings --verbose --locked
+
+    - name: Build
+      run: cargo build --verbose --locked
+
+    - name: Install nextest
+      uses: taiki-e/install-action@nextest
+
+    - name: Run tests
+      env:
+        GST_DEBUG: "2"
+        GST_DEBUG_NO_COLOR: "1"
+        RUST_BACKTRACE: "1"
+      run: cargo nextest run --verbose --no-fail-fast --success-output final --failure-output final --locked

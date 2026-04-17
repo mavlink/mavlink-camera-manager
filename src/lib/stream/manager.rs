@@ -13,6 +13,7 @@ use tracing::*;
 use crate::{
     settings,
     stream::{
+        recording,
         sink::{webrtc_sink::WebRTCSink, Sink, SinkInterface},
         types::CaptureConfiguration,
         webrtc::signalling_protocol::BindAnswer,
@@ -112,6 +113,10 @@ pub async fn start_default() -> Result<()> {
     // Update all local video sources to make sure that they are available
     let mut candidates = video_source::cameras_available().await;
     update_devices(&mut streams, &mut candidates, true).await;
+
+    if crate::cli::manager::is_onvif_disabled() {
+        streams.retain(|stream| !matches!(&stream.video_source, VideoSourceType::Onvif(_)));
+    }
 
     // Remove all invalid video_sources
     let streams: Vec<VideoAndStreamInformation> = streams
@@ -440,6 +445,18 @@ pub async fn add_stream_and_start(
         .video_source
         .inner()
         .source_string();
+
+    if crate::cli::manager::is_onvif_disabled()
+        && matches!(
+            &video_and_stream_information.video_source,
+            VideoSourceType::Onvif(_)
+        )
+    {
+        return Err(anyhow!(
+            "Source {source_string:?} cannot be used while --disable-onvif is set"
+        ));
+    }
+
     if is_source_blocked(source_string) {
         return Err(anyhow!(
             "Source {source_string:?} needs to be unblocked to be used"
@@ -896,6 +913,33 @@ impl Manager {
                     .as_ref()
                     .map(|m| m.into());
 
+                let recording_unavailable_reason = {
+                    if video_and_stream
+                        .stream_information
+                        .extended_configuration
+                        .as_ref()
+                        .is_some_and(|ec| ec.disable_recording)
+                    {
+                        Some("Recording disabled".to_string())
+                    } else if let super::types::CaptureConfiguration::Video(config) =
+                        &video_and_stream.stream_information.configuration
+                    {
+                        use crate::video::types::VideoEncodeType;
+                        match &config.encode {
+                            VideoEncodeType::H264 | VideoEncodeType::H265 => None,
+                            VideoEncodeType::Mjpg => Some("MJPEG not supported".to_string()),
+                            VideoEncodeType::Yuyv | VideoEncodeType::Rgb => {
+                                Some("Raw video not supported".to_string())
+                            }
+                            VideoEncodeType::Unknown(unknown) => {
+                                Some(format!("Unknown encoding: {unknown:?}"))
+                            }
+                        }
+                    } else {
+                        None
+                    }
+                };
+
                 Some(StreamStatus {
                     id,
                     running,
@@ -903,6 +947,7 @@ impl Manager {
                     error,
                     video_and_stream,
                     mavlink,
+                    recording_unavailable_reason,
                 })
             })
             .collect()
@@ -949,5 +994,164 @@ impl Manager {
             .collect::<Vec<String>>();
 
         Some((dot_main, dot_children))
+    }
+
+    /// Start recording for a stream by its name (synchronous with retries)
+    #[instrument(level = "debug")]
+    pub async fn start_recording_by_name(stream_name: &str) -> Result<String> {
+        let stream_id = get_stream_id_from_name(stream_name).await?;
+        Self::start_recording(&stream_id).await
+    }
+
+    /// Start recording for a stream by its ID (synchronous with retries).
+    /// Returns the file path of the recording.
+    #[instrument(level = "debug")]
+    pub async fn start_recording(stream_id: &uuid::Uuid) -> Result<String> {
+        let video_and_stream_information = {
+            let manager = MANAGER.read().await;
+            let stream = manager
+                .streams
+                .get(stream_id)
+                .context(format!("Stream {stream_id:?} not found"))?;
+            let info = stream.video_and_stream_information.read().await.clone();
+            info
+        };
+
+        let file_sink =
+            recording::Manager::start_recording(*stream_id, &video_and_stream_information).await?;
+
+        let file_path = recording::Manager::get_recording_file_path(stream_id)
+            .await
+            .unwrap_or_default();
+
+        let mut manager = MANAGER.write().await;
+
+        let stream = manager
+            .streams
+            .get_mut(stream_id)
+            .context(format!("Stream {stream_id:?} not found"))?;
+
+        let mut state_guard = stream.state.write().await;
+        let state_mut = state_guard.as_mut().context("Stream without State")?;
+
+        state_mut
+            .pipeline
+            .as_mut()
+            .context("No Pipeline")?
+            .add_sink(file_sink)
+            .await?;
+
+        info!("Recording started for stream {stream_id}");
+        Ok(file_path)
+    }
+
+    /// Stop recording for a stream by its name
+    #[instrument(level = "debug")]
+    pub async fn stop_recording_by_name(stream_name: &str) -> Result<()> {
+        let stream_id = get_stream_id_from_name(stream_name).await?;
+        Self::stop_recording(&stream_id).await
+    }
+
+    /// Stop recording for a stream by its ID
+    #[instrument(level = "debug")]
+    pub async fn stop_recording(stream_id: &uuid::Uuid) -> Result<()> {
+        let sink_id = recording::Manager::stop_recording(stream_id).await?;
+        Self::remove_recording_sink(stream_id, sink_id).await?;
+        info!("Recording stopped for stream {stream_id}");
+        Ok(())
+    }
+
+    /// Rotate the active recording to a new file. Called by the deletion
+    /// watcher when it detects the output file has been removed or
+    /// replaced. Reuses the normal add/remove pipeline machinery: the
+    /// new recording gets a fresh `%Y%m%d_%H%M%S` filename.
+    ///
+    /// Uses [`recording::Manager::stop_recording_for_rotation`] so the
+    /// rotation-history cap cumulates across successive rotations.
+    #[instrument(level = "debug")]
+    pub async fn rotate_recording(stream_id: &uuid::Uuid, stream_name: &str) -> Result<()> {
+        let sink_id = recording::Manager::stop_recording_for_rotation(stream_id).await?;
+        Self::remove_recording_sink(stream_id, sink_id).await?;
+        Self::start_recording(stream_id).await?;
+        info!("Recording rotated for stream {stream_id} ({stream_name})");
+        Ok(())
+    }
+
+    async fn remove_recording_sink(stream_id: &uuid::Uuid, sink_id: uuid::Uuid) -> Result<()> {
+        let mut manager = MANAGER.write().await;
+
+        let stream = manager
+            .streams
+            .get_mut(stream_id)
+            .context(format!("Stream {stream_id:?} not found"))?;
+
+        let mut state_guard = stream.state.write().await;
+        let state_mut = state_guard.as_mut().context("Stream without State")?;
+
+        state_mut
+            .pipeline
+            .as_mut()
+            .context("No Pipeline")?
+            .remove_sink(&sink_id)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Consume any pending stop reason for a stream. Returns `Some(reason)`
+    /// when the recording ended abnormally (e.g. rotation cap exceeded)
+    /// and `None` when it was stopped cleanly by the user.
+    pub async fn take_recording_stop_reason(stream_id: &uuid::Uuid) -> Option<String> {
+        recording::Manager::take_stop_reason(stream_id).await
+    }
+
+    /// Check if a stream is currently recording
+    #[instrument(level = "debug")]
+    pub async fn is_recording(stream_id: &uuid::Uuid) -> bool {
+        recording::Manager::is_recording(stream_id).await
+    }
+
+    /// Get the recording duration in milliseconds for a stream
+    #[instrument(level = "debug")]
+    pub async fn get_recording_duration_ms(stream_id: &uuid::Uuid) -> u64 {
+        recording::Manager::get_recording_duration_ms(stream_id).await
+    }
+
+    /// Check if recording is available for a stream by name.
+    pub async fn is_recording_available_by_name(stream_name: &str) -> bool {
+        let stream_id = match get_stream_id_from_name(stream_name).await {
+            Ok(id) => id,
+            Err(_) => return false,
+        };
+
+        let manager = MANAGER.read().await;
+        let Some(stream) = manager.streams.get(&stream_id) else {
+            return false;
+        };
+
+        let video_and_stream = stream.video_and_stream_information.read().await;
+
+        if video_and_stream
+            .stream_information
+            .extended_configuration
+            .as_ref()
+            .is_some_and(|ec| ec.disable_recording)
+        {
+            return false;
+        }
+
+        if let super::types::CaptureConfiguration::Video(config) =
+            &video_and_stream.stream_information.configuration
+        {
+            use crate::video::types::VideoEncodeType;
+            matches!(config.encode, VideoEncodeType::H264 | VideoEncodeType::H265)
+        } else {
+            false
+        }
+    }
+
+    /// Get the stream ID by stream name (public wrapper)
+    pub async fn get_stream_id_by_name(stream_name: &str) -> Result<uuid::Uuid> {
+        get_stream_id_from_name(stream_name).await
     }
 }

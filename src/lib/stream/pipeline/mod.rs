@@ -194,7 +194,7 @@ impl PipelineState {
         // Request a new src pad for the used Tee
         // Note: Here we choose if the sink will receive a Video or RTP packages
         let tee = match sink {
-            Sink::Image(_) | Sink::Zenoh(_) | Sink::Rtsp(_) => &self.video_tee,
+            Sink::Image(_) | Sink::Zenoh(_) | Sink::Rtsp(_) | Sink::File(_) => &self.video_tee,
             Sink::Udp(_) | Sink::WebRTC(_) => &self.rtp_tee,
         };
 
@@ -284,7 +284,18 @@ impl PipelineState {
             }
         }
 
-        self.sinks.insert(**sink_id, sink);
+        let sink_uuid = **sink_id;
+        self.sinks.insert(sink_uuid, sink);
+
+        // Start the sink's own pipeline_runner (no-op for Rtsp/WebRTC, flips
+        // the proxy-isolated child pipeline to Playing for Udp/Image/Zenoh/File).
+        // This makes dynamic adds (e.g. recording, WebRTC sessions) symmetric
+        // with the static start loop in `Stream::try_new`.
+        if let Some(sink) = self.sinks.get(&sink_uuid) {
+            if let Err(error) = sink.start() {
+                warn!("Failed to start sink {sink_uuid}: {error:?}");
+            }
+        }
 
         Ok(())
     }
