@@ -6485,6 +6485,7 @@ dependencies = [
  "gstreamer-app",
  "gstreamer-sdp",
  "gstreamer-webrtc",
+ "mavlink",
  "reqwest",
  "serde",
  "serde_json",
