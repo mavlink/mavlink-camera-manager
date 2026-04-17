@@ -6,14 +6,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use sysinfo::{DiskExt, System, SystemExt};
-use tokio::sync::{oneshot, RwLock};
+use tokio::sync::{RwLock, oneshot};
 use tracing::*;
 
 use crate::{
     cli,
-    stream::sink::{create_file_sink, Sink},
+    stream::sink::{Sink, create_file_sink},
     video_stream::types::VideoAndStreamInformation,
 };
 

@@ -5,7 +5,7 @@ use std::{
 
 use crate::common::{
     api::McmClient,
-    mcm::{allocate_udp_ports, McmProcess},
+    mcm::{McmProcess, allocate_udp_ports},
     types::*,
 };
 

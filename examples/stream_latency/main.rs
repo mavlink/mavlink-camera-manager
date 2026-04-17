@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use clap::{Parser, ValueEnum};
 use stream_clients::FrameSample;
 use tokio::sync::mpsc;
