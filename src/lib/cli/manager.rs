@@ -92,6 +92,14 @@ struct Args {
     #[arg(long)]
     enable_thread_counter: bool,
 
+    /// Sets the default path for video recordings.
+    #[arg(long, value_name = "PATH", default_value = "./recordings")]
+    recording_path: String,
+
+    /// Minimum percentage of disk space that must remain free to allow recording (0 to disable).
+    #[arg(long, value_name = "PERCENT", default_value = "10")]
+    min_free_disk_percent: u8,
+
     /// Sets the MAVLink System ID.
     #[arg(long, value_name = "SYSTEM_ID", default_value = "1")]
     mavlink_system_id: u8,
@@ -264,6 +272,23 @@ pub fn default_settings() -> Option<custom::CustomEnvironment> {
 
 pub fn enable_thread_counter() -> bool {
     MANAGER.clap_matches.enable_thread_counter
+}
+
+#[cfg(feature = "webrtc-test")]
+pub fn enable_webrtc_task_test() -> Option<u16> {
+    MANAGER.clap_matches.enable_webrtc_task_test
+}
+
+pub fn recording_path() -> String {
+    let recording_path = MANAGER.clap_matches.recording_path.clone();
+
+    shellexpand::full(&recording_path)
+        .expect("Failed to expand path")
+        .to_string()
+}
+
+pub fn min_free_disk_percent() -> u8 {
+    MANAGER.clap_matches.min_free_disk_percent
 }
 
 pub fn mavlink_system_id() -> u8 {
