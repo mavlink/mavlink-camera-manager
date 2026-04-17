@@ -1,4 +1,5 @@
 mod qr;
+mod recording;
 mod redirect;
 mod rtsp;
 mod thumbnail;
