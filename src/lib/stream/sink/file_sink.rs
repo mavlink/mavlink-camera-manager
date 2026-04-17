@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use gst::prelude::*;
 use tokio::sync::RwLock;
 use tracing::*;
@@ -12,7 +12,7 @@ use crate::{
     video_stream::types::VideoAndStreamInformation,
 };
 
-use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
+use super::{SinkInterface, link_sink_to_tee, unlink_sink_from_tee};
 
 /// Recording state for the file sink
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -124,7 +124,9 @@ impl SinkInterface for FileSink {
                 .all_headers(true)
                 .build();
             if !tee_src_pad.send_event(event) {
-                warn!("FileSink: UpstreamForceKeyUnitEvent not handled; first frame may not be a keyframe");
+                warn!(
+                    "FileSink: UpstreamForceKeyUnitEvent not handled; first frame may not be a keyframe"
+                );
             }
         } else {
             warn!("FileSink: tee_src_pad not set; cannot request keyframe");
@@ -197,7 +199,9 @@ impl SinkInterface for FileSink {
         match eos_rx.recv_timeout(std::time::Duration::from_secs(2)) {
             Ok(()) => {}
             Err(error) => {
-                warn!("FileSink: EOS did not reach filesink in time ({error}); file may be unfinalised");
+                warn!(
+                    "FileSink: EOS did not reach filesink in time ({error}); file may be unfinalised"
+                );
                 if let Some(id) = probe_id {
                     filesink_sink_pad.remove_probe(id);
                 }
@@ -287,7 +291,9 @@ impl FileSink {
                         element.set_property("max-size-time", 5_000_000_000u64);
                     }
                     None => {
-                        warn!("Failed to customize proxysrc's queue: Failed to find queue in proxysrc");
+                        warn!(
+                            "Failed to customize proxysrc's queue: Failed to find queue in proxysrc"
+                        );
                     }
                 }
             }
