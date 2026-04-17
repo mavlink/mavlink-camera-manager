@@ -36,6 +36,7 @@ pub(super) const NON_LAZY: ExtendedConfiguration = ExtendedConfiguration {
     disable_zenoh: true,
     disable_thumbnails: false,
     disable_lazy: true,
+    disable_recording: false,
 };
 
 /// Drain all pending samples from the channel and return them.
