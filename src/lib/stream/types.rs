@@ -61,6 +61,8 @@ pub struct StreamStatus {
     pub error: Option<String>,
     pub video_and_stream: VideoAndStreamInformation,
     pub mavlink: Option<MavlinkComponent>,
+    /// Why recording is unavailable for this stream (None = recording available)
+    pub recording_unavailable_reason: Option<String>,
 }
 
 #[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
