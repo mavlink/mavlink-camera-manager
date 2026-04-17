@@ -13,6 +13,7 @@ pub struct McmProcess {
     pub signalling_port: u16,
     pub rtsp_port: u16,
     pub zenoh_port: Option<u16>,
+    pub mavlink_port: Option<u16>,
     _settings_dir: tempfile::TempDir,
 }
 
@@ -27,7 +28,7 @@ impl McmProcess {
     pub async fn start_with_zenoh() -> Result<Self> {
         let mut last_err = None;
         for attempt in 0..START_RETRIES {
-            match Self::try_start_inner(None, true).await {
+            match Self::try_start_inner(None, true, None).await {
                 Ok(mcm) => return Ok(mcm),
                 Err(e) => {
                     eprintln!(
@@ -42,6 +43,32 @@ impl McmProcess {
         Err(last_err.unwrap_or_else(|| anyhow::anyhow!("McmProcess::start_with_zenoh failed")))
     }
 
+    /// Spawn an MCM instance with MAVLink on a TCP port and recording enabled.
+    /// The caller provides `recording_path` (e.g. from a `tempfile::TempDir`);
+    /// MCM's file_sink will create any subdirectories it needs under that path.
+    pub async fn start_with_recording(mavlink_port: u16, recording_path: &str) -> Result<Self> {
+        let mavlink_endpoint = format!("tcpin:0.0.0.0:{mavlink_port}");
+        let mut last_err = None;
+        for attempt in 0..START_RETRIES {
+            match Self::try_start_inner(Some(&mavlink_endpoint), false, Some(recording_path)).await
+            {
+                Ok(mut mcm) => {
+                    mcm.mavlink_port = Some(mavlink_port);
+                    return Ok(mcm);
+                }
+                Err(e) => {
+                    eprintln!(
+                        "McmProcess start_with_recording attempt {}/{START_RETRIES} failed: {e:#}",
+                        attempt + 1
+                    );
+                    last_err = Some(e);
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                }
+            }
+        }
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("McmProcess::start_with_recording failed")))
+    }
+
     /// Spawn an MCM instance with freshly allocated ephemeral ports.
     ///
     /// Retries up to [`START_RETRIES`] times to handle the TOCTOU race
@@ -50,7 +77,7 @@ impl McmProcess {
     pub async fn start_with_options(mavlink_endpoint: Option<&str>) -> Result<Self> {
         let mut last_err = None;
         for attempt in 0..START_RETRIES {
-            match Self::try_start_inner(mavlink_endpoint, false).await {
+            match Self::try_start_inner(mavlink_endpoint, false, None).await {
                 Ok(mcm) => return Ok(mcm),
                 Err(e) => {
                     eprintln!(
@@ -84,7 +111,11 @@ impl McmProcess {
         config
     }
 
-    async fn try_start_inner(mavlink_endpoint: Option<&str>, enable_zenoh: bool) -> Result<Self> {
+    async fn try_start_inner(
+        mavlink_endpoint: Option<&str>,
+        enable_zenoh: bool,
+        recording_path: Option<&str>,
+    ) -> Result<Self> {
         let tcp_count = if enable_zenoh { 4 } else { 3 };
         let ports = allocate_ports(tcp_count)?;
         let rest_port = ports[0];
@@ -128,6 +159,10 @@ impl McmProcess {
             "--disable-onvif",
         ]);
 
+        if let Some(path) = recording_path {
+            cmd.args(["--recording-path", path]);
+        }
+
         if let Some(port) = zenoh_port {
             let zenoh_config_path = settings_dir.path().join("zenoh_config.json5");
             std::fs::write(
@@ -160,6 +195,7 @@ impl McmProcess {
             signalling_port,
             rtsp_port,
             zenoh_port,
+            mavlink_port: None,
             _settings_dir: settings_dir,
         };
 
@@ -207,6 +243,34 @@ impl McmProcess {
                 "RTSP server at {addr} not accepting TCP within {timeout:?}"
             );
             tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
+
+    /// Send SIGKILL immediately and reap the child. Used to simulate hard
+    /// process death (OOM killer, hardware poweroff) without any graceful
+    /// teardown. Intended for robustness tests.
+    #[cfg(unix)]
+    pub fn kill9(&mut self) {
+        unsafe {
+            libc::kill(self.child.id() as i32, libc::SIGKILL);
+        }
+        let _ = self.child.wait();
+    }
+
+    /// Freeze the MCM process (SIGSTOP). Resume with [`Self::cont`].
+    /// Used by robustness tests to simulate source freezes/stutters.
+    #[cfg(unix)]
+    pub fn sigstop(&self) {
+        unsafe {
+            libc::kill(self.child.id() as i32, libc::SIGSTOP);
+        }
+    }
+
+    /// Resume an MCM process previously frozen via [`Self::sigstop`].
+    #[cfg(unix)]
+    pub fn sigcont(&self) {
+        unsafe {
+            libc::kill(self.child.id() as i32, libc::SIGCONT);
         }
     }
 
