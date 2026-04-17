@@ -18,6 +18,7 @@ cdr = "0.2.4"
 chrono = "0.4"
 url = "2.5.0"
 reqwest = { version = "0.12" }
+mavlink = { version = "0.13.1", features = ["default", "emit-extensions"] }
 
 gst = { package = "gstreamer", version = "0.25", features = ["v1_16"] }
 gst-app = { package = "gstreamer-app", version = "0.25", features = ["v1_16"] }

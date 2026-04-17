@@ -1,4 +1,5 @@
 pub mod protocol;
+pub mod recording_client;
 pub mod rtsp_client;
 pub mod udp_client;
 pub mod webrtc_client;
