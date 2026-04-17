@@ -284,7 +284,18 @@ impl PipelineState {
             }
         }
 
-        self.sinks.insert(**sink_id, sink);
+        let sink_uuid = **sink_id;
+        self.sinks.insert(sink_uuid, sink);
+
+        // Start the sink's own pipeline_runner (no-op for Rtsp/WebRTC, flips
+        // the proxy-isolated child pipeline to Playing for Udp/Image/Zenoh/File).
+        // This makes dynamic adds (e.g. recording, WebRTC sessions) symmetric
+        // with the static start loop in `Stream::try_new`.
+        if let Some(sink) = self.sinks.get(&sink_uuid) {
+            if let Err(error) = sink.start() {
+                warn!("Failed to start sink {sink_uuid}: {error:?}");
+            }
+        }
 
         Ok(())
     }
