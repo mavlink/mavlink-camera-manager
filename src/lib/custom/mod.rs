@@ -1,6 +1,6 @@
 mod bluerov;
 #[cfg(feature = "webrtc-test")]
-mod test;
+pub mod test;
 
 use clap::ValueEnum;
 
