@@ -63,7 +63,7 @@ thiserror = "2.0"
 
 ## FINAL
 sysinfo = "0.29"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 lazy_static = "1.4.0"
 include_dir = "0.7.3"
 paperclip = { version = "0.8", features = ["paperclip-actix", "actix4",  "swagger-ui", "url", "uuid"] }
