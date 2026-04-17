@@ -1,5 +1,6 @@
 mod qr;
 mod recording;
+mod recording_robustness;
 mod redirect;
 mod rtsp;
 mod thumbnail;
