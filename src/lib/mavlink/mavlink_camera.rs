@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use mavlink::{common::MavMessage, MavHeader};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, RwLock};
 use tracing::*;
 use url::Url;
 
@@ -28,6 +28,8 @@ struct MavlinkCameraInner {
     video_stream_uri: Url,
     video_stream_name: String,
     video_source_type: VideoSourceType,
+    /// Task handle for streaming CAMERA_CAPTURE_STATUS during video recording
+    capture_status_task: RwLock<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl MavlinkCamera {
@@ -103,6 +105,7 @@ impl MavlinkCameraInner {
             video_stream_uri,
             video_stream_name,
             video_source_type,
+            capture_status_task: RwLock::new(None),
         };
 
         debug!("Starting new MAVLink camera: {this:#?}");
@@ -263,14 +266,22 @@ impl MavlinkCameraInner {
             return;
         }
 
-        fn build_camera_information(camera: &Arc<MavlinkCameraInner>) -> MavMessage {
+        fn build_camera_information(
+            camera: &Arc<MavlinkCameraInner>,
+            recording_available: bool,
+        ) -> MavMessage {
+            let mut flags = mavlink::common::CameraCapFlags::CAMERA_CAP_FLAGS_HAS_VIDEO_STREAM;
+            if recording_available {
+                flags |= mavlink::common::CameraCapFlags::CAMERA_CAP_FLAGS_CAPTURE_VIDEO;
+            }
+
             MavMessage::CAMERA_INFORMATION(mavlink::common::CAMERA_INFORMATION_DATA {
                 time_boot_ms: super::sys_info::sys_info().time_boot_ms,
                 firmware_version: camera.component.firmware_version,
                 focal_length: 0.0,
                 sensor_size_h: 0.0,
                 sensor_size_v: 0.0,
-                flags: mavlink::common::CameraCapFlags::CAMERA_CAP_FLAGS_HAS_VIDEO_STREAM,
+                flags,
                 resolution_h: camera.component.resolution_h,
                 resolution_v: camera.component.resolution_v,
                 cam_definition_version: 0,
@@ -378,7 +389,16 @@ impl MavlinkCameraInner {
                     data.command,
                     mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                 );
-                send_message(camera, &sender, build_camera_information(camera));
+                let recording_available =
+                    crate::stream::manager::Manager::is_recording_available_by_name(
+                        &camera.video_stream_name,
+                    )
+                    .await;
+                send_message(
+                    camera,
+                    &sender,
+                    build_camera_information(camera, recording_available),
+                );
             }
             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_SETTINGS => {
                 send_ack(
@@ -408,7 +428,37 @@ impl MavlinkCameraInner {
                     data.command,
                     mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                 );
-                send_message(camera, &sender, build_camera_capture_status());
+
+                let sys_info = super::sys_info::sys_info();
+
+                let stream_name = camera.video_stream_name.clone();
+                let (video_status, recording_time_ms) =
+                    match crate::stream::manager::Manager::get_stream_id_by_name(&stream_name).await
+                    {
+                        Ok(stream_id) => {
+                            let is_recording =
+                                crate::stream::manager::Manager::is_recording(&stream_id).await;
+                            let duration_ms =
+                                crate::stream::manager::Manager::get_recording_duration_ms(
+                                    &stream_id,
+                                )
+                                .await;
+                            (if is_recording { 1u8 } else { 0u8 }, duration_ms)
+                        }
+                        Err(_) => (0u8, 0u64),
+                    };
+
+                let message = MavMessage::CAMERA_CAPTURE_STATUS(
+                    mavlink::common::CAMERA_CAPTURE_STATUS_DATA {
+                        time_boot_ms: sys_info.time_boot_ms,
+                        image_interval: 0.0,
+                        recording_time_ms: recording_time_ms as u32,
+                        available_capacity: sys_info.available_capacity,
+                        image_status: 0,
+                        video_status,
+                    },
+                );
+                send_message(camera, &sender, message);
             }
             mavlink::common::MavCmd::MAV_CMD_REQUEST_VIDEO_STREAM_INFORMATION => {
                 if !validate_stream_id(camera, data.param2) {
@@ -480,7 +530,16 @@ impl MavlinkCameraInner {
                             data.command,
                             mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                         );
-                        send_message(camera, &sender, build_camera_information(camera));
+                        let recording_available =
+                            crate::stream::manager::Manager::is_recording_available_by_name(
+                                &camera.video_stream_name,
+                            )
+                            .await;
+                        send_message(
+                            camera,
+                            &sender,
+                            build_camera_information(camera, recording_available),
+                        );
                     }
                     CAMERA_SETTINGS_ID => {
                         send_ack(
@@ -557,6 +616,108 @@ impl MavlinkCameraInner {
                     }
                 }
             }
+            mavlink::common::MavCmd::MAV_CMD_VIDEO_START_CAPTURE => {
+                // param1: Stream ID (0 for all streams)
+                // param2: Status Frequency Hz (rate at which CAMERA_CAPTURE_STATUS should be sent)
+                // param3: Target Camera ID (0 for all cameras)
+                let stream_name = camera.video_stream_name.clone();
+                let status_frequency_hz = data.param2;
+
+                let result =
+                    match crate::stream::manager::Manager::start_recording_by_name(&stream_name)
+                        .await
+                    {
+                        Ok(file_path) => {
+                            info!("Recording started for stream: {stream_name}");
+
+                            let filename = std::path::Path::new(&file_path)
+                                .file_name()
+                                .and_then(|f| f.to_str())
+                                .unwrap_or(&file_path);
+                            send_statustext(
+                                &sender,
+                                camera.component.header(),
+                                mavlink::common::MavSeverity::MAV_SEVERITY_INFO,
+                                &format!("REC START {filename}"),
+                            );
+
+                            if status_frequency_hz > 0.0 {
+                                // Cancel any existing capture status task
+                                if let Some(handle) =
+                                    camera.capture_status_task.write().await.take()
+                                {
+                                    handle.abort();
+                                }
+
+                                let interval_ms = (1000.0 / status_frequency_hz) as u64;
+                                let task_handle = tokio::spawn(capture_status_streaming_task(
+                                    camera.clone(),
+                                    stream_name.clone(),
+                                    interval_ms,
+                                    sender.clone(),
+                                ));
+
+                                *camera.capture_status_task.write().await = Some(task_handle);
+                                debug!(
+                                    "Started capture status streaming at {status_frequency_hz} Hz"
+                                );
+                            }
+
+                            mavlink::common::MavResult::MAV_RESULT_ACCEPTED
+                        }
+                        Err(error) => {
+                            error!("Failed to start recording for stream {stream_name}: {error:?}");
+                            send_statustext(
+                                &sender,
+                                camera.component.header(),
+                                mavlink::common::MavSeverity::MAV_SEVERITY_WARNING,
+                                &format!("REC ERROR {error:#}"),
+                            );
+                            mavlink::common::MavResult::MAV_RESULT_DENIED
+                        }
+                    };
+
+                send_ack(&camera, &sender, their_header, data.command, result);
+            }
+            mavlink::common::MavCmd::MAV_CMD_VIDEO_STOP_CAPTURE => {
+                // param1: Stream ID (0 for all streams)
+                // param2: Target Camera ID (0 for all cameras)
+                let stream_name = camera.video_stream_name.clone();
+
+                // Stop capture status streaming task if running
+                if let Some(handle) = camera.capture_status_task.write().await.take() {
+                    handle.abort();
+                    debug!("Stopped capture status streaming");
+                }
+
+                let result =
+                    match crate::stream::manager::Manager::stop_recording_by_name(&stream_name)
+                        .await
+                    {
+                        Ok(_) => {
+                            info!("Recording stopped for stream: {stream_name}");
+                            send_statustext(
+                                &sender,
+                                camera.component.header(),
+                                mavlink::common::MavSeverity::MAV_SEVERITY_INFO,
+                                "REC STOP user_request",
+                            );
+                            mavlink::common::MavResult::MAV_RESULT_ACCEPTED
+                        }
+                        Err(error) => {
+                            error!("Failed to stop recording for stream {stream_name}: {error:?}");
+                            send_statustext(
+                                &sender,
+                                camera.component.header(),
+                                mavlink::common::MavSeverity::MAV_SEVERITY_WARNING,
+                                &format!("REC ERROR {error:#}"),
+                            );
+                            mavlink::common::MavResult::MAV_RESULT_DENIED
+                        }
+                    };
+
+                send_ack(&camera, &sender, their_header, data.command, result);
+            }
             message => {
                 send_ack(
                     camera,
@@ -569,7 +730,123 @@ impl MavlinkCameraInner {
             }
         }
     }
+}
 
+fn send_statustext(
+    sender: &broadcast::Sender<Message>,
+    header: MavHeader,
+    severity: mavlink::common::MavSeverity,
+    text: &str,
+) {
+    let text_bytes: [u8; 50] = from_string_to_sized_u8_array_with_null_terminator(text);
+    let msg = MavMessage::STATUSTEXT(mavlink::common::STATUSTEXT_DATA {
+        severity,
+        text: text_bytes,
+    });
+    if let Err(error) = sender.send(Message::ToBeSent((header, msg))) {
+        warn!("Failed to send STATUSTEXT: {error:?}");
+    }
+}
+
+/// Async task that periodically streams CAMERA_CAPTURE_STATUS messages while recording.
+/// Stops automatically when recording ends.
+#[instrument(level = "debug", skip(camera, sender))]
+async fn capture_status_streaming_task(
+    camera: Arc<MavlinkCameraInner>,
+    stream_name: String,
+    interval_ms: u64,
+    sender: broadcast::Sender<Message>,
+) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_millis(
+        interval_ms.max(100), // Minimum 100ms interval (max 10Hz)
+    ));
+
+    // Require two consecutive `is_recording == false` observations before
+    // tearing down this task. The recording-deletion watcher rotates by
+    // calling `stop_recording` followed by `start_recording`, which means
+    // there is a short window (a few hundred milliseconds) where
+    // `is_recording` legitimately returns false even though the user's
+    // recording session is still ongoing. Without this tolerance we would
+    // drop the status stream on every rotation and the client would lose
+    // the live feed of `CAMERA_CAPTURE_STATUS` messages.
+    let mut missed_reads = 0u8;
+    const MISSED_READS_BEFORE_EXIT: u8 = 2;
+
+    loop {
+        interval.tick().await;
+
+        // Check if still recording
+        let (is_recording, stream_id_opt) =
+            match crate::stream::manager::Manager::get_stream_id_by_name(&stream_name).await {
+                Ok(stream_id) => (
+                    crate::stream::manager::Manager::is_recording(&stream_id).await,
+                    Some(stream_id),
+                ),
+                Err(_) => (false, None),
+            };
+
+        if !is_recording {
+            missed_reads = missed_reads.saturating_add(1);
+            if missed_reads < MISSED_READS_BEFORE_EXIT {
+                continue;
+            }
+
+            // A pending stop reason indicates the recording ended
+            // abnormally (e.g. the rotation cap was exceeded). Surface
+            // it to the client as a `REC ERROR` STATUSTEXT; a clean
+            // user-initiated stop emits its own `REC STOP user_request`
+            // from the MAV_CMD_VIDEO_STOP_CAPTURE handler above.
+            if let Some(stream_id) = stream_id_opt {
+                if let Some(reason) =
+                    crate::stream::manager::Manager::take_recording_stop_reason(&stream_id).await
+                {
+                    send_statustext(
+                        &sender,
+                        camera.component.header(),
+                        mavlink::common::MavSeverity::MAV_SEVERITY_WARNING,
+                        &format!("REC ERROR {reason}"),
+                    );
+                }
+            }
+
+            debug!("Recording stopped, ending capture status streaming");
+            break;
+        }
+
+        missed_reads = 0;
+
+        // Send CAMERA_CAPTURE_STATUS
+        let sys_info = super::sys_info::sys_info();
+        let (video_status, recording_time_ms) =
+            match crate::stream::manager::Manager::get_stream_id_by_name(&stream_name).await {
+                Ok(stream_id) => {
+                    let duration_ms =
+                        crate::stream::manager::Manager::get_recording_duration_ms(&stream_id)
+                            .await;
+                    (1u8, duration_ms)
+                }
+                Err(_) => (0u8, 0u64),
+            };
+
+        let header = camera.component.header();
+
+        let message =
+            MavMessage::CAMERA_CAPTURE_STATUS(mavlink::common::CAMERA_CAPTURE_STATUS_DATA {
+                time_boot_ms: sys_info.time_boot_ms,
+                image_interval: 0.0,
+                recording_time_ms: recording_time_ms as u32,
+                available_capacity: sys_info.available_capacity,
+                image_status: 0,
+                video_status,
+            });
+
+        if let Err(error) = sender.send(Message::ToBeSent((header, message))) {
+            warn!("Failed to send CAMERA_CAPTURE_STATUS: {error:?}");
+        }
+    }
+}
+
+impl MavlinkCameraInner {
     #[instrument(level = "trace", skip(sender))]
     #[instrument(level = "debug", skip(sender, camera), fields(component_id = camera.component.component_id))]
     async fn handle_param_ext_set(
