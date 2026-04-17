@@ -1,7 +1,7 @@
 use std::{future::Future, time::Duration};
 
 pub(super) use crate::common::{
-    api::{zenoh_topic, McmClient, StateMonitor},
+    api::{McmClient, StateMonitor, zenoh_topic},
     mcm::McmProcess,
     types::*,
 };

@@ -13,8 +13,8 @@ pub(super) use tokio::sync::mpsc;
 pub(super) use url::Url;
 
 pub(super) use crate::common::{
-    api::{zenoh_topic, McmClient, StateMonitor},
-    mcm::{allocate_ports, allocate_udp_ports, McmProcess},
+    api::{McmClient, StateMonitor, zenoh_topic},
+    mcm::{McmProcess, allocate_ports, allocate_udp_ports},
     types::*,
 };
 
