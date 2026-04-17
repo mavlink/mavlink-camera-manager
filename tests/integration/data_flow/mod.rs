@@ -39,6 +39,7 @@ pub(super) const NON_LAZY: ExtendedConfiguration = ExtendedConfiguration {
     disable_zenoh: true,
     disable_thumbnails: false,
     disable_lazy: true,
+    disable_recording: false,
 };
 
 /// Collect frames over `duration`, asserting no gap exceeds `max_gap`.
