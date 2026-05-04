@@ -11,9 +11,13 @@ pub struct SysInfo {
 
 #[instrument(level = "debug")]
 pub fn sys_info() -> SysInfo {
-    //Both uses KB
-    let mut local_total_capacity = 0;
-    let mut local_available_capacity = 0;
+    // `sysinfo` reports disk space in bytes; MAVLink
+    // `STORAGE_INFORMATION` and `CAMERA_CAPTURE_STATUS` expect MiB,
+    // so divide by 2^20. The previous divisor (2^10) assumed KB and
+    // produced values 1024× too large (e.g. QGC showing "87.48 TB"
+    // for an 85 GiB free partition).
+    let mut local_total_capacity: u64 = 0;
+    let mut local_available_capacity: u64 = 0;
 
     let mut system = System::new_all();
     system.refresh_disks();
@@ -35,11 +39,11 @@ pub fn sys_info() -> SysInfo {
 
     let boottime_ms = system.boot_time() * 1000;
 
+    const BYTES_PER_MIB: f32 = (1u64 << 20) as f32;
     SysInfo {
         time_boot_ms: boottime_ms as u32,
-        total_capacity: local_total_capacity as f32 / f32::powf(2.0, 10.0),
-        used_capacity: ((local_total_capacity - local_available_capacity) as f32)
-            / f32::powf(2.0, 10.0),
-        available_capacity: local_available_capacity as f32 / f32::powf(2.0, 10.0),
+        total_capacity: local_total_capacity as f32 / BYTES_PER_MIB,
+        used_capacity: (local_total_capacity - local_available_capacity) as f32 / BYTES_PER_MIB,
+        available_capacity: local_available_capacity as f32 / BYTES_PER_MIB,
     }
 }

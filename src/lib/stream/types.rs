@@ -35,6 +35,7 @@ pub struct ExtendedConfiguration {
     pub disable_zenoh: bool,
     pub disable_thumbnails: bool,
     pub disable_lazy: bool,
+    pub disable_recording: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Apiv2Schema)]
@@ -60,6 +61,8 @@ pub struct StreamStatus {
     pub error: Option<String>,
     pub video_and_stream: VideoAndStreamInformation,
     pub mavlink: Option<MavlinkComponent>,
+    /// Why recording is unavailable for this stream (None = recording available)
+    pub recording_unavailable_reason: Option<String>,
 }
 
 #[derive(Apiv2Schema, Debug, Deserialize, Serialize)]

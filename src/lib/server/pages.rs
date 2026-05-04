@@ -153,6 +153,16 @@ use include_dir::{include_dir, Dir};
 
 static DIST: Dir<'_> = include_dir!("frontend/dist");
 
+fn ensure_onvif_enabled() -> Result<()> {
+    if crate::cli::manager::is_onvif_disabled() {
+        return Err(Error::NotFound(
+            "ONVIF endpoints are disabled. Start without --disable-onvif to enable them.".into(),
+        ));
+    }
+
+    Ok(())
+}
+
 fn load_file(file_name: &str) -> Option<&'static str> {
     DIST.get_file(file_name)
         .and_then(|file| file.contents_utf8())
@@ -570,6 +580,8 @@ pub async fn log(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse>
 
 #[api_v2_operation]
 pub async fn onvif_devices() -> Result<HttpResponse> {
+    ensure_onvif_enabled()?;
+
     let onvif_devices = crate::controls::onvif::manager::Manager::onvif_devices().await;
 
     let json = serde_json::to_string_pretty(&onvif_devices)
@@ -584,6 +596,8 @@ pub async fn onvif_devices() -> Result<HttpResponse> {
 pub async fn authenticate_onvif_device(
     query: web::Query<AuthenticateOnvifDeviceRequest>,
 ) -> Result<HttpResponse> {
+    ensure_onvif_enabled()?;
+
     crate::controls::onvif::manager::Manager::register_credentials(
         query.device_uuid,
         Some(onvif::soap::client::Credentials {
@@ -601,6 +615,8 @@ pub async fn authenticate_onvif_device(
 pub async fn unauthenticate_onvif_device(
     query: web::Query<UnauthenticateOnvifDeviceRequest>,
 ) -> Result<HttpResponse> {
+    ensure_onvif_enabled()?;
+
     crate::controls::onvif::manager::Manager::register_credentials(query.device_uuid, None)
         .await
         .map_err(|error| Error::Internal(format!("{error:?}")))?;
