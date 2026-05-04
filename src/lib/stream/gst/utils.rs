@@ -113,8 +113,8 @@ pub fn check_all_plugins() -> Result<()> {
                 missing_required.push(requirement_display);
             }
             (false, false) => {
-                warn!(
-                    "Optional GStreamer plugin requirement {requirement_display} is not met: Some features may not be available"
+                debug!(
+                    "Optional GStreamer plugin {requirement_display} is not present: related features will be unavailable"
                 );
             }
             _ => (),
