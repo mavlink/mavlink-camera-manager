@@ -24,6 +24,9 @@ async fn async_main() -> Result<(), std::io::Error> {
     // Settings should start before everybody else to ensure that the CLI are stored
     settings::manager::init(Some(&cli::manager::settings_file())).await;
 
+    // Initialize GIO TLS backend before any libnice/webrtcbin activity.
+    helper::tls::ensure_tls_backend_initialized();
+
     stream::gst::utils::check_all_plugins().unwrap();
 
     mavlink::manager::Manager::init();
