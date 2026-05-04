@@ -4086,6 +4086,7 @@ dependencies = [
  "directories",
  "enum_dispatch",
  "futures",
+ "gio",
  "glib 0.22.3",
  "gstreamer 0.25.1",
  "gstreamer-app",
