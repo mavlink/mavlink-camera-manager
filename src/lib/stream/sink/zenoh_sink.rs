@@ -13,12 +13,10 @@ use crate::{
     },
     video::types::VideoEncodeType,
     video_stream::types::VideoAndStreamInformation,
+    zenoh::foxglove_messages::{CompressedVideo, Timestamp},
 };
 
-use super::{
-    link_sink_to_tee, types::zenoh_message::CompressedVideo, types::zenoh_message::Timestamp,
-    unlink_sink_from_tee, SinkInterface,
-};
+use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
 
 #[derive(Debug)]
 pub struct ZenohSink {

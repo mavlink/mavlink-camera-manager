@@ -2,7 +2,7 @@ use serde::Serialize;
 
 /// A timestamp, represented as an offset from a user-defined epoch.
 /// <https://docs.foxglove.dev/docs/visualization/message-schemas/built-in-types#time>
-#[derive(Debug, Serialize)]
+#[derive(Clone, PartialEq, Debug, Serialize)]
 pub struct Timestamp {
     /// Seconds since epoch.
     sec: u32,
@@ -26,7 +26,7 @@ impl Timestamp {
 
 /// A single frame of a compressed video bitstream
 /// <https://docs.foxglove.dev/docs/visualization/message-schemas/compressed-video>
-#[derive(Debug, Serialize)]
+#[derive(Clone, PartialEq, Debug, Serialize)]
 pub struct CompressedVideo {
     /// Timestamp of video frame
     pub timestamp: Timestamp,
@@ -64,4 +64,41 @@ pub struct CompressedVideo {
     ///
     /// Note: compressed video support is subject to hardware limitations and patent licensing, so not all encodings may be supported on all platforms. See more about [H.265 support](<https://caniuse.com/hevc>), [VP9 support](<https://caniuse.com/webm>), and [AV1 support](<https://caniuse.com/av1>).
     pub format: String,
+}
+
+/// A log message
+/// <https://docs.foxglove.dev/docs/visualization/message-schemas/log>
+#[derive(Clone, PartialEq, Debug, Serialize)]
+pub struct Log {
+    /// Timestamp of log message
+    pub timestamp: Timestamp,
+    /// Log level
+    pub level: Level,
+    /// Log message
+    pub message: String,
+    /// Process or node name
+    pub name: String,
+    /// Filename
+    pub file: String,
+    /// Line number in the file
+    pub line: u32,
+}
+
+/// Log level
+/// <https://docs.foxglove.dev/docs/sdk/schemas/log-level>
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[repr(i32)]
+pub enum Level {
+    /// Unknown log level
+    Unknown = 0,
+    /// Debug log level
+    Debug = 1,
+    /// Info log level
+    Info = 2,
+    /// Warning log level
+    Warning = 3,
+    /// Error log level
+    Error = 4,
+    /// Fatal log level
+    Fatal = 5,
 }

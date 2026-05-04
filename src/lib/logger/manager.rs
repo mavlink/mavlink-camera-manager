@@ -1,85 +1,30 @@
-use std::{
-    io::{self, Write},
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
-use ringbuffer::{AllocRingBuffer, RingBuffer};
-use tokio::sync::broadcast::{Receiver, Sender};
 use tracing::{metadata::LevelFilter, *};
 use tracing_log::LogTracer;
 use tracing_subscriber::{
-    fmt::{self, MakeWriter},
+    fmt::{self},
     layer::SubscriberExt,
     EnvFilter, Layer,
 };
 
-use crate::cli;
+use crate::{
+    cli,
+    logger::{
+        foxglove_layer::FoxgloveLayer,
+        history::{BroadcastWriter, History},
+        zenoh_log_publisher::ZenohLogPublisher,
+    },
+};
 
-struct BroadcastWriter {
-    sender: Sender<String>,
-}
-
-impl Write for BroadcastWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let message = String::from_utf8_lossy(buf).to_string();
-        let _ = self.sender.send(message);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-struct BroadcastMakeWriter {
-    sender: Sender<String>,
-}
-
-impl<'a> MakeWriter<'a> for BroadcastMakeWriter {
-    type Writer = BroadcastWriter;
-
-    fn make_writer(&'a self) -> Self::Writer {
-        BroadcastWriter {
-            sender: self.sender.clone(),
-        }
-    }
+lazy_static! {
+    static ref MANAGER: Arc<Mutex<Manager>> = Default::default();
+    pub static ref HISTORY: Arc<Mutex<History>> = Default::default();
 }
 
 #[derive(Debug, Default)]
 pub struct Manager {
     pub process: Option<tokio::task::JoinHandle<()>>,
-}
-
-pub struct History {
-    pub history: AllocRingBuffer<String>,
-    pub sender: Sender<String>,
-}
-
-impl Default for History {
-    fn default() -> Self {
-        let (sender, _receiver) = tokio::sync::broadcast::channel(100);
-        Self {
-            history: AllocRingBuffer::new(10 * 1024),
-            sender,
-        }
-    }
-}
-
-impl History {
-    pub fn push(&mut self, message: String) {
-        self.history.push(message.clone());
-        let _ = self.sender.send(message);
-    }
-
-    pub fn subscribe(&self) -> (Receiver<String>, Vec<String>) {
-        let reader = self.sender.subscribe();
-        (reader, self.history.to_vec())
-    }
-}
-
-lazy_static! {
-    static ref MANAGER: Arc<Mutex<Manager>> = Default::default();
-    pub static ref HISTORY: Arc<Mutex<History>> = Default::default();
 }
 
 // Start logger, should be done inside main
@@ -134,7 +79,7 @@ pub fn init() {
     };
     let (tx, mut rx) = tokio::sync::broadcast::channel(100);
     let server_layer = fmt::Layer::new()
-        .with_writer(BroadcastMakeWriter { sender: tx.clone() })
+        .with_writer(BroadcastWriter::new(tx))
         .with_ansi(false)
         .with_file(true)
         .with_line_number(true)
@@ -158,27 +103,27 @@ pub fn init() {
         }
     }));
 
-    // Configure the default subscriber
-    match cli::manager::is_tracy() {
-        true => {
-            let tracy_layer = tracing_tracy::TracyLayer::default();
-            let subscriber = tracing_subscriber::registry()
-                .with(console_layer)
-                .with(file_layer)
-                .with(server_layer)
-                .with(tracy_layer);
-            tracing::subscriber::set_global_default(subscriber)
-                .expect("Unable to set a global subscriber");
-        }
-        false => {
-            let subscriber = tracing_subscriber::registry()
-                .with(console_layer)
-                .with(file_layer)
-                .with(server_layer);
-            tracing::subscriber::set_global_default(subscriber)
-                .expect("Unable to set a global subscriber");
-        }
+    // Optional tracy layer
+    let tracy_layer = cli::manager::is_tracy().then_some(tracing_tracy::TracyLayer::default());
+
+    // Configure the zenoh log
+    let zenoh_log_publisher = ZenohLogPublisher::new("services/mavlink-camera-manager/log", true);
+    let zenoh_env_filter = if cli::manager::is_tracing() {
+        EnvFilter::new(LevelFilter::TRACE.to_string())
+    } else {
+        EnvFilter::new(LevelFilter::DEBUG.to_string())
     };
+    let zenoh_layer = FoxgloveLayer::new(zenoh_log_publisher.sender())
+        .with_filter(filter_unwanted_crates(zenoh_env_filter));
+
+    // Configure the default subscriber
+    let subscriber = tracing_subscriber::registry()
+        .with(console_layer)
+        .with(file_layer)
+        .with(server_layer)
+        .with(zenoh_layer)
+        .with(tracy_layer);
+    tracing::subscriber::set_global_default(subscriber).expect("Unable to set a global subscriber");
 
     // Configure GSTreamer logs integration
     gst::log::remove_default_log_function();
