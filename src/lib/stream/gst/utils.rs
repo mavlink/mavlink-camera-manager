@@ -659,24 +659,24 @@ pub fn excise_single_element(element: &gst::Element) -> Result<()> {
         .unwrap_or_default();
 
     debug!(
-        "Excising {name}: unlinking {upstream_elem}:{} → {name} → {downstream_elem}:{}",
+        "Excising {name}: unlinking {upstream_elem}:{} -> {name} -> {downstream_elem}:{}",
         upstream_pad.name(),
         downstream_pad.name(),
     );
 
     upstream_pad
         .unlink(&sink_pad)
-        .map_err(|e| anyhow!("unlink upstream→element: {e}"))?;
+        .map_err(|e| anyhow!("unlink upstream->element: {e}"))?;
     src_pad
         .unlink(&downstream_pad)
-        .map_err(|e| anyhow!("unlink element→downstream: {e}"))?;
+        .map_err(|e| anyhow!("unlink element->downstream: {e}"))?;
 
     upstream_pad
         .link(&downstream_pad)
-        .map_err(|e| anyhow!("relink upstream→downstream: {e:?}"))?;
+        .map_err(|e| anyhow!("relink upstream->downstream: {e:?}"))?;
 
     debug!(
-        "Excising {name}: relinked {upstream_elem}:{} → {downstream_elem}:{}",
+        "Excising {name}: relinked {upstream_elem}:{} -> {downstream_elem}:{}",
         upstream_pad.name(),
         downstream_pad.name(),
     );
