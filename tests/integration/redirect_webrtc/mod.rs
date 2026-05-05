@@ -1,3 +1,5 @@
+mod h264_profile;
+mod h265_profile;
 mod thumbnail;
 mod webrtc;
 mod zenoh;
