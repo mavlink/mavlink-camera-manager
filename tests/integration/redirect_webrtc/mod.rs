@@ -1,3 +1,5 @@
+mod h264_profile;
+mod h265_profile;
 mod thumbnail;
 mod webrtc;
 mod zenoh;
@@ -231,6 +233,47 @@ pub(super) fn drain_zenoh(rx: &mut mpsc::UnboundedReceiver<FrameSample>) -> Vec<
         samples.push(s);
     }
     samples
+}
+
+/// Wait for the server's `Negotiation` message on `ws_stream` and return
+/// the raw offer SDP text from `/content/sdp/sdp`. Panics if no offer is
+/// received within 10s or if the JSON does not carry the expected field.
+/// Shared by the profile-preservation tests, which all need the same
+/// extraction after `start_webrtc_session_for_producer`.
+pub(super) async fn read_offer_sdp_text(
+    ws_stream: &mut futures::stream::SplitStream<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    >,
+) -> String {
+    use futures::StreamExt;
+
+    let sdp_offer = tokio::time::timeout(Duration::from_secs(10), async {
+        while let Some(Ok(msg)) = ws_stream.next().await {
+            let text = match msg.into_text() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            let proto: Result<SignallingProtocol, _> = serde_json::from_str(&text);
+            let Ok(proto) = proto else { continue };
+            if let SignallingMessage::Negotiation(ref val) = proto.message {
+                return Some(val.clone());
+            }
+        }
+        None
+    })
+    .await;
+
+    let sdp_json = sdp_offer
+        .expect("should receive negotiation message within 10s")
+        .expect("ws stream should not close before SDP offer");
+
+    sdp_json
+        .pointer("/content/sdp/sdp")
+        .and_then(|v| v.as_str())
+        .expect("negotiation message should contain /content/sdp/sdp field")
+        .to_string()
 }
 
 pub(super) async fn wait_first_zenoh_frame(
