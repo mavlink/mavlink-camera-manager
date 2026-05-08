@@ -330,19 +330,26 @@ pub async fn get_jpeg_thumbnail_from_source(
                 // If not, add a new consumer and record that we need to
                 // spawn the cooldown cleanup thread later.
                 let first_request;
-                let phase_before;
                 {
                     let mut guard = cooldown.lock().unwrap();
                     first_request = guard.is_none();
-                    phase_before = lifecycle.snapshot().phase;
                     *guard = Some(std::time::Instant::now());
                 }
-                if first_request {
-                    if let Err(error) = lifecycle.add_consumer().await {
-                        let _ = tx.send(Some(Err(Arc::new(error))));
-                        return;
+
+                let need_position_advance = if first_request {
+                    match lifecycle.add_consumer().await {
+                        Ok(snapshot) => {
+                            matches!(snapshot.phase, crate::stream::lifecycle::Phase::Waking)
+                                && snapshot.consumers == 1
+                        }
+                        Err(error) => {
+                            let _ = tx.send(Some(Err(Arc::new(error))));
+                            return;
+                        }
                     }
-                }
+                } else {
+                    false
+                };
 
                 // Wait for the pipeline to be alive and Playing.
                 // Truly-idle streams need full Waking (pipeline recreation +
@@ -351,8 +358,6 @@ pub async fn get_jpeg_thumbnail_from_source(
                 {
                     let deadline =
                         tokio::time::Instant::now() + tokio::time::Duration::from_secs(30);
-                    let need_position_advance =
-                        first_request && phase_before == crate::stream::lifecycle::Phase::Idle;
                     let mut last_position: Option<gst::ClockTime> = None;
                     loop {
                         if tokio::time::Instant::now() > deadline {
