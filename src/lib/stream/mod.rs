@@ -626,6 +626,8 @@ impl Stream {
 impl Drop for Stream {
     #[instrument(level = "debug", skip(self))]
     fn drop(&mut self) {
+        self.lifecycle.shutdown_in_background();
+        let video_and_stream_information = self.video_and_stream_information.clone();
         if let Some(handle) = self.watcher_handle.take() {
             let state = self.state.clone();
             let terminated = self.terminated.clone();
@@ -651,6 +653,21 @@ impl Drop for Stream {
                         // });
                     } else {
                         debug!(pipeline_id, "PipelineWatcher task nicely finished!");
+                    }
+
+                    let endpoints = video_and_stream_information
+                        .blocking_read()
+                        .stream_information
+                        .endpoints
+                        .clone();
+                    for endpoint in endpoints {
+                        if RTSPScheme::try_from(endpoint.scheme()).is_err() {
+                            continue;
+                        }
+                        let path = endpoint.path();
+                        if let Err(error) = RTSPServer::stop_pipeline(path) {
+                            debug!(pipeline_id, path, "RTSP factory cleanup failed: {error}");
+                        }
                     }
                 })
                 .unwrap()
