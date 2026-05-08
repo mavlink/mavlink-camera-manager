@@ -35,7 +35,7 @@ use crate::{
 
 use self::{
     gst::utils::wait_for_element_state,
-    lifecycle::{LifecycleState, Phase},
+    lifecycle::{LifecycleHandle, Phase},
     rtsp::{rtsp_scheme::RTSPScheme, rtsp_server::RTSPServer},
     sink::SinkInterface,
 };
@@ -47,8 +47,7 @@ pub struct Stream {
     error: Arc<RwLock<anyhow::Result<()>>>,
     terminated: Arc<RwLock<bool>>,
     watcher_handle: Option<tokio::task::JoinHandle<()>>,
-    pub lifecycle: Arc<LifecycleState>,
-    pub notify: Arc<tokio::sync::Notify>,
+    pub lifecycle: LifecycleHandle,
     /// Tracks the timestamp of the last thumbnail request so the pipeline
     /// stays alive for a cooldown period after the thumbnail is served.
     pub thumbnail_cooldown: Arc<Mutex<Option<std::time::Instant>>>,
@@ -171,8 +170,19 @@ impl Stream {
             Arc::new(RwLock::new(video_and_stream_information))
         };
 
-        let lifecycle = Arc::new(LifecycleState::new());
-        let notify = Arc::new(tokio::sync::Notify::new());
+        let disable_lazy = video_and_stream_information
+            .read()
+            .await
+            .stream_information
+            .extended_configuration
+            .as_ref()
+            .map(|ext| ext.disable_lazy)
+            .unwrap_or(false);
+        let lifecycle = if disable_lazy {
+            LifecycleHandle::eager()
+        } else {
+            LifecycleHandle::lazy()
+        };
 
         let state = Arc::new(RwLock::new(Some(
             StreamState::try_default(video_and_stream_information.clone(), pipeline_id.clone())
@@ -192,7 +202,6 @@ impl Stream {
             let state = state.clone();
             let pipeline_id = pipeline_id.clone();
             let lifecycle = lifecycle.clone();
-            let notify = notify.clone();
             let mavlink_camera = mavlink_camera.clone();
 
             async move {
@@ -204,7 +213,6 @@ impl Stream {
                     state,
                     terminated,
                     lifecycle,
-                    notify,
                     mavlink_camera,
                 )
                 .await
@@ -220,17 +228,9 @@ impl Stream {
         // drains to Idle if no real consumers connect within the grace period.
         // For non-lazy streams (disable_lazy=true) we keep the phantom consumer so
         // the pipeline transitions to Running(1) and stays alive indefinitely.
-        let disable_lazy = video_and_stream_information
-            .read()
-            .await
-            .stream_information
-            .extended_configuration
-            .as_ref()
-            .map(|ext| ext.disable_lazy)
-            .unwrap_or(false);
-        lifecycle.add_consumer(&*notify);
         if !disable_lazy {
-            lifecycle.remove_consumer(true);
+            lifecycle.add_consumer().await?;
+            lifecycle.remove_consumer().await?;
         }
 
         Ok(Self {
@@ -241,17 +241,13 @@ impl Stream {
             terminated,
             watcher_handle,
             lifecycle,
-            notify,
             thumbnail_cooldown: Arc::new(Mutex::new(None)),
             mavlink_camera,
             active_webrtc_sessions: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
-    #[instrument(
-        level = "debug",
-        skip(state, terminated, lifecycle, notify, mavlink_camera)
-    )]
+    #[instrument(level = "debug", skip(state, terminated, lifecycle, mavlink_camera))]
     #[allow(clippy::too_many_arguments)]
     async fn watcher(
         video_and_stream_information: Arc<RwLock<VideoAndStreamInformation>>,
@@ -259,8 +255,7 @@ impl Stream {
         error_status: Arc<RwLock<anyhow::Result<()>>>,
         state: Arc<RwLock<Option<StreamState>>>,
         terminated: Arc<RwLock<bool>>,
-        lifecycle: Arc<LifecycleState>,
-        notify: Arc<tokio::sync::Notify>,
+        lifecycle: LifecycleHandle,
         mavlink_camera: Arc<RwLock<Option<MavlinkCamera>>>,
     ) -> Result<()> {
         let report_interval_mult = 2;
@@ -273,12 +268,13 @@ impl Stream {
         let idle_grace_period = std::time::Duration::from_secs(5);
         let mut drain_start: Option<std::time::Instant> = None;
         let mut period = tokio::time::interval(tokio::time::Duration::from_millis(100));
+        let mut lifecycle_events = lifecycle.subscribe();
 
         let mut persistent_rtsp: Option<sink::rtsp_sink::RtspSinkPersistent> = None;
 
         loop {
             tokio::select! {
-                _ = notify.notified() => {}
+                _ = lifecycle_events.changed() => {}
                 _ = period.tick() => {}
             }
 
@@ -286,7 +282,8 @@ impl Stream {
                 break;
             }
 
-            let (phase, count) = lifecycle.load();
+            let snapshot = lifecycle.snapshot();
+            let (phase, count) = (snapshot.phase, snapshot.consumers);
 
             match phase {
                 Phase::Idle => {
@@ -307,7 +304,7 @@ impl Stream {
                     drain_start = None;
                     debug!(
                         "Waking handler entered: consumers={count}, error_count={}, backoff will be computed on error",
-                        lifecycle.error_count()
+                        snapshot.error_count
                     );
 
                     // Await the old pipeline teardown so GStreamer resources
@@ -359,13 +356,12 @@ impl Stream {
                                 return Ok(());
                             }
 
-                            let backoff = lifecycle.handle_pipeline_error();
+                            let backoff = lifecycle.pipeline_error().await?;
                             warn!(
                                 "Waking: CaptureConfiguration error, backoff={backoff:?}, error_count={}",
                                 lifecycle.error_count()
                             );
                             tokio::time::sleep(backoff).await;
-                            notify.notify_one();
                             continue;
                         }
                     }
@@ -438,13 +434,12 @@ impl Stream {
                                     return Ok(());
                                 }
 
-                                let backoff = lifecycle.handle_pipeline_error();
+                                let backoff = lifecycle.pipeline_error().await?;
                                 warn!(
                                     "Waking: Local device error, backoff={backoff:?}, error_count={}",
                                     lifecycle.error_count()
                                 );
                                 tokio::time::sleep(backoff).await;
-                                notify.notify_one();
                                 continue;
                             }
                         }
@@ -454,7 +449,6 @@ impl Stream {
                         video_and_stream_information.clone(),
                         pipeline_id.clone(),
                         lifecycle.clone(),
-                        notify.clone(),
                         persistent_rtsp.clone(),
                     )
                     .await
@@ -474,13 +468,12 @@ impl Stream {
                             ) {
                                 return Ok(());
                             }
-                            let backoff = lifecycle.handle_pipeline_error();
+                            let backoff = lifecycle.pipeline_error().await?;
                             warn!(
                                 "Waking: StreamState::try_new error, backoff={backoff:?}, error_count={}",
                                 lifecycle.error_count()
                             );
                             tokio::time::sleep(backoff).await;
-                            notify.notify_one();
                             continue;
                         }
                     };
@@ -525,8 +518,8 @@ impl Stream {
                         }
                     }
 
-                    if lifecycle.transition_from_waking() {
-                        lifecycle.reset_error_backoff();
+                    if lifecycle.pipeline_ready().await? {
+                        lifecycle.reset_error_backoff().await?;
                         recreate_failures.reset();
                         *error_status.write().await = Ok(());
                         report_interval = std::time::Duration::from_secs(1);
@@ -556,13 +549,12 @@ impl Stream {
                                 }
                             }
                         }
-                        let backoff = lifecycle.handle_pipeline_error();
+                        let backoff = lifecycle.pipeline_error().await?;
                         warn!(
                             "Running: pipeline stopped, backoff={backoff:?}, error_count={}",
                             lifecycle.error_count()
                         );
                         tokio::time::sleep(backoff).await;
-                        notify.notify_one();
                     }
                 }
 
@@ -572,7 +564,7 @@ impl Stream {
                         debug!(
                             "Lazy pipeline {pipeline_id:?}: grace period expired, transitioning to Idle"
                         );
-                        if lifecycle.transition_to_idle() {
+                        if lifecycle.drain_expired().await? {
                             // Successfully transitioned -- tear down pipeline
                             // Mark RTSP sinks for preservation
                             if let Some(ref old_st) = *state.read().await
@@ -690,8 +682,7 @@ impl StreamState {
     pub async fn try_new(
         video_and_stream_information: Arc<RwLock<VideoAndStreamInformation>>,
         pipeline_id: Arc<uuid::Uuid>,
-        lifecycle: Arc<LifecycleState>,
-        notify: Arc<tokio::sync::Notify>,
+        lifecycle: LifecycleHandle,
         persistent_rtsp: Option<sink::rtsp_sink::RtspSinkPersistent>,
     ) -> Result<Self> {
         let mut stream =
@@ -747,7 +738,7 @@ impl StreamState {
                 }
                 // UDP sinks are fire-and-forget: hold a permanent +1 so
                 // the stream never enters Draining/Idle.
-                lifecycle.add_consumer(&*notify);
+                lifecycle.add_consumer().await?;
             }
 
             if endpoints
@@ -759,7 +750,6 @@ impl StreamState {
                     sink_id.clone(),
                     &video_and_stream_information,
                     lifecycle.clone(),
-                    notify.clone(),
                     persistent_rtsp,
                 ) {
                     Ok(sink) => {
@@ -847,7 +837,7 @@ impl StreamState {
                         }
                         // Zenoh sinks are fire-and-forget: hold a permanent +1 so
                         // the stream never enters Draining/Idle.
-                        lifecycle.add_consumer(&*notify);
+                        lifecycle.add_consumer().await?;
                     }
                     Err(reason) => {
                         return Err(anyhow!(
@@ -1259,8 +1249,7 @@ mod tests {
             error: Arc::new(RwLock::new(Ok(()))),
             terminated: Arc::new(RwLock::new(false)),
             watcher_handle: None,
-            lifecycle: Arc::new(LifecycleState::new()),
-            notify: Arc::new(tokio::sync::Notify::new()),
+            lifecycle: LifecycleHandle::lazy(),
             thumbnail_cooldown: Arc::new(Mutex::new(None)),
             mavlink_camera: Arc::new(RwLock::new(None)),
             active_webrtc_sessions: Arc::new(Mutex::new(std::collections::HashSet::new())),

@@ -13,7 +13,7 @@ use gst::prelude::*;
 use tracing::*;
 
 use crate::{
-    stream::{gst::utils::wait_for_element_state, lifecycle::LifecycleState},
+    stream::{gst::utils::wait_for_element_state, lifecycle::LifecycleHandle},
     video_stream::types::VideoAndStreamInformation,
 };
 
@@ -95,8 +95,7 @@ pub fn create_udp_sink(
 pub fn create_rtsp_sink(
     id: Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
-    lifecycle: Arc<LifecycleState>,
-    notify: Arc<tokio::sync::Notify>,
+    lifecycle: LifecycleHandle,
     persistent: Option<rtsp_sink::RtspSinkPersistent>,
 ) -> Result<Sink> {
     let addresses = video_and_stream_information
@@ -105,7 +104,7 @@ pub fn create_rtsp_sink(
         .clone();
 
     Ok(Sink::Rtsp(RtspSink::try_new(
-        id, addresses, lifecycle, notify, persistent,
+        id, addresses, lifecycle, persistent,
     )?))
 }
 
