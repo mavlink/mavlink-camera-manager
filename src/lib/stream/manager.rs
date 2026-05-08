@@ -935,7 +935,7 @@ impl Manager {
             .filter_map(|stream| async move {
                 let id = *stream.pipeline_id;
 
-                let state = stream.lifecycle.stream_status();
+                let state = stream.compute_status();
                 let running = matches!(state, super::types::StreamStatusState::Running);
 
                 let error = stream

@@ -246,6 +246,17 @@ impl Stream {
         })
     }
 
+    #[instrument(level = "trace", skip(self))]
+    pub fn compute_status(&self) -> StreamStatusState {
+        let snapshot = self.lifecycle.snapshot();
+        match snapshot.phase {
+            Phase::Idle | Phase::Draining => StreamStatusState::Idle,
+            Phase::Running => StreamStatusState::Running,
+            Phase::Waking if snapshot.error_count == 0 => StreamStatusState::Running,
+            Phase::Waking => StreamStatusState::Stopped,
+        }
+    }
+
     #[instrument(level = "debug", skip(state, terminated, lifecycle, mavlink_camera))]
     #[allow(clippy::too_many_arguments)]
     async fn watcher(
@@ -379,9 +390,13 @@ impl Stream {
                             .unwrap()
                             .iter()
                             .filter_map(|status| {
-                                status
-                                    .running
-                                    .then_some(status.video_and_stream.video_source.clone())
+                                use crate::stream::types::StreamStatusState;
+
+                                matches!(
+                                    status.state,
+                                    StreamStatusState::Running | StreamStatusState::Stopped
+                                )
+                                .then_some(status.video_and_stream.video_source.clone())
                             })
                             .collect::<Vec<VideoSourceType>>();
                         candidates.retain(|candidate| !current_running_streams.contains(candidate));

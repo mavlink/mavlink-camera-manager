@@ -4,8 +4,6 @@ use anyhow::{Result, anyhow};
 use tokio::sync::{mpsc, oneshot, watch};
 use tracing::*;
 
-use super::types::StreamStatusState;
-
 mod actor;
 mod protocol;
 mod states;
@@ -68,13 +66,6 @@ impl LifecycleHandle {
 
     pub fn error_count(&self) -> u32 {
         self.snapshot().error_count
-    }
-
-    pub fn stream_status(&self) -> StreamStatusState {
-        match self.snapshot().phase {
-            Phase::Idle | Phase::Draining => StreamStatusState::Idle,
-            Phase::Waking | Phase::Running => StreamStatusState::Running,
-        }
     }
 
     pub fn subscribe(&self) -> watch::Receiver<LifecycleSnapshot> {
