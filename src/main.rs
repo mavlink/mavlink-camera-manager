@@ -29,6 +29,8 @@ async fn async_main() -> Result<(), std::io::Error> {
 
     stream::gst::utils::check_all_plugins().unwrap();
 
+    mavlink_camera_manager::video::gst_device_monitor::init().unwrap();
+
     mavlink::manager::Manager::init();
 
     stream::manager::init();
