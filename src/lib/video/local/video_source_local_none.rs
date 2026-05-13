@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
@@ -23,8 +25,9 @@ pub struct VideoSourceLocal {
 impl VideoSourceLocal {
     pub async fn try_identify_device(
         &mut self,
-        capture_configuration: &VideoCaptureConfiguration,
-        candidates: &[VideoSourceType],
+        _capture_configuration: &VideoCaptureConfiguration,
+        _candidates: &[VideoSourceType],
+        _formats: &HashMap<String, Vec<Format>>,
     ) -> Result<Option<String>> {
         Ok(None)
     }

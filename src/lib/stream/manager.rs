@@ -17,7 +17,10 @@ use crate::{
         types::CaptureConfiguration,
         webrtc::signalling_protocol::BindAnswer,
     },
-    video::{types::VideoSourceType, video_source},
+    video::{
+        types::{Format, VideoSourceType},
+        video_source::{self, VideoSourceFormats},
+    },
     video_stream::types::VideoAndStreamInformation,
 };
 
@@ -151,8 +154,24 @@ pub async fn update_devices(
             continue;
         };
 
+        // Only resolve formats for candidates sharing the source name so that mismatched
+        // candidates (which are filtered out by name first) don't trigger device probing.
+        let mut formats: HashMap<String, Vec<Format>> = HashMap::new();
+        for candidate in candidates.iter() {
+            let VideoSourceType::Local(camera) = candidate else {
+                continue;
+            };
+            if camera.name != source.name {
+                continue;
+            }
+            formats.insert(
+                candidate.inner().source_string().to_string(),
+                candidate.formats().await,
+            );
+        }
+
         match source
-            .try_identify_device(capture_configuration, candidates)
+            .try_identify_device(capture_configuration, candidates, &formats)
             .await
         {
             Ok(Some(candidate_source_string)) => {
