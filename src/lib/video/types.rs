@@ -1,4 +1,3 @@
-use gst;
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +17,17 @@ pub enum VideoSourceType {
     Redirect(VideoSourceRedirect),
 }
 
-#[derive(Apiv2Schema, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(
+    Apiv2Schema, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Hash,
+)]
+pub struct Format {
+    pub encode: VideoEncodeType,
+    pub sizes: Vec<Size>,
+}
+
+#[derive(
+    Apiv2Schema, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Hash,
+)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum VideoEncodeType {
     H264,
@@ -29,32 +38,21 @@ pub enum VideoEncodeType {
     Yuyv,
 }
 
-#[derive(Apiv2Schema, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
-pub struct Format {
-    pub encode: VideoEncodeType,
-    pub sizes: Vec<Size>,
-}
-
-#[derive(Apiv2Schema, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(
+    Apiv2Schema, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Hash,
+)]
 pub struct Size {
     pub width: u32,
     pub height: u32,
     pub intervals: Vec<FrameInterval>,
 }
 
-#[derive(Apiv2Schema, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(
+    Apiv2Schema, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Hash,
+)]
 pub struct FrameInterval {
     pub numerator: u32,
     pub denominator: u32,
-}
-
-impl From<gst::Fraction> for FrameInterval {
-    fn from(fraction: gst::Fraction) -> Self {
-        FrameInterval {
-            numerator: fraction.numer() as u32,
-            denominator: fraction.denom() as u32,
-        }
-    }
 }
 
 impl VideoSourceType {
@@ -88,7 +86,7 @@ impl std::str::FromStr for VideoEncodeType {
             "H264" => VideoEncodeType::H264,
             "H265" | "HEVC" => VideoEncodeType::H265,
             "MJPG" => VideoEncodeType::Mjpg,
-            "YUYV" => VideoEncodeType::Yuyv,
+            "YUYV" | "YUY2" => VideoEncodeType::Yuyv,
             _ => VideoEncodeType::Unknown(fourcc),
         };
 
