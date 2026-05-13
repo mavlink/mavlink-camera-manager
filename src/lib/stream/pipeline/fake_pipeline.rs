@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use gst::prelude::*;
 use tracing::*;
 
@@ -14,8 +14,8 @@ use crate::{
 };
 
 use super::{
-    PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_RTP_TEE_NAME,
-    PIPELINE_VIDEO_TEE_NAME,
+    PIPELINE_FILTER_NAME, PIPELINE_RTP_TEE_NAME, PIPELINE_VIDEO_TEE_NAME,
+    PipelineGstreamerInterface, PipelineState,
 };
 
 #[derive(Debug)]
@@ -35,7 +35,7 @@ impl FakePipeline {
         {
             CaptureConfiguration::Video(configuration) => configuration,
             unsupported => {
-                return Err(anyhow!("{unsupported:?} is not supported as Fake Pipeline"))
+                return Err(anyhow!("{unsupported:?} is not supported as Fake Pipeline"));
             }
         };
 
@@ -44,7 +44,7 @@ impl FakePipeline {
             unsupported => {
                 return Err(anyhow!(
                     "VideoSourceType {unsupported:?} is not supported as Fake Pipeline"
-                ))
+                ));
             }
         };
 
@@ -53,7 +53,7 @@ impl FakePipeline {
             unsupported => {
                 return Err(anyhow!(
                     "VideoSourceGstType {unsupported:?} is not supported as Fake Pipeline"
-                ))
+                ));
             }
         };
 
@@ -84,7 +84,8 @@ impl FakePipeline {
                 let h264_encoder =
                     " ! x264enc tune=zerolatency speed-preset=ultrafast bitrate=5000";
 
-                format!(concat!(
+                format!(
+                    concat!(
                         "videotestsrc pattern={pattern} is-live=true do-timestamp=true",
                         " ! timeoverlay",
                         " ! video/x-raw,format={format}",
@@ -125,7 +126,8 @@ impl FakePipeline {
                 let h265_encoder =
                     " ! x265enc tune=zerolatency speed-preset=ultrafast bitrate=5000";
 
-                format!(concat!(
+                format!(
+                    concat!(
                         "videotestsrc pattern={pattern} is-live=true do-timestamp=true",
                         " ! timeoverlay",
                         " ! video/x-raw,format={format}",
@@ -198,7 +200,7 @@ impl FakePipeline {
             unsupported => {
                 return Err(anyhow!(
                     "Encode {unsupported:?} is not supported for Test Pipeline"
-                ))
+                ));
             }
         };
 

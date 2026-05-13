@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use gst::prelude::*;
 use tracing::*;
 
@@ -9,7 +9,7 @@ use crate::{
     video_stream::types::VideoAndStreamInformation,
 };
 
-use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
+use super::{SinkInterface, link_sink_to_tee, unlink_sink_from_tee};
 
 #[derive(Debug)]
 pub struct UdpSink {
@@ -47,16 +47,17 @@ impl SinkInterface for UdpSink {
         link_sink_to_tee(tee_src_pad, pipeline, elements)?;
 
         if let Some(queue) = &self.proxysrc_queue
-            && let Some(src_pad) = queue.static_pad("src") {
-                let queue_weak = queue.downgrade();
-                src_pad.add_probe(
-                    gst::PadProbeType::BUFFER | gst::PadProbeType::BUFFER_LIST,
-                    move |_pad, _info| {
-                        excise_proxysrc_queue(&queue_weak);
-                        gst::PadProbeReturn::Remove
-                    },
-                );
-            }
+            && let Some(src_pad) = queue.static_pad("src")
+        {
+            let queue_weak = queue.downgrade();
+            src_pad.add_probe(
+                gst::PadProbeType::BUFFER | gst::PadProbeType::BUFFER_LIST,
+                move |_pad, _info| {
+                    excise_proxysrc_queue(&queue_weak);
+                    gst::PadProbeReturn::Remove
+                },
+            );
+        }
 
         Ok(())
     }

@@ -3,8 +3,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::{anyhow, Context, Result};
-use async_tungstenite::{tokio::TokioAdapter, tungstenite, WebSocketStream};
+use anyhow::{Context, Result, anyhow};
+use async_tungstenite::{WebSocketStream, tokio::TokioAdapter, tungstenite};
 use futures::{SinkExt, StreamExt};
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -343,11 +343,12 @@ impl SignallingServer {
         };
 
         if let Some(answer) = answer
-            && let Err(reason) = sender.send(Ok(Message::from(answer))) {
-                return Err(anyhow!(
-                    "Failed sending message to mpsc channel. Reason: {reason:}"
-                ));
-            }
+            && let Err(reason) = sender.send(Ok(Message::from(answer)))
+        {
+            return Err(anyhow!(
+                "Failed sending message to mpsc channel. Reason: {reason:}"
+            ));
+        }
 
         Ok(())
     }

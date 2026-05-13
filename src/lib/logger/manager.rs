@@ -8,9 +8,9 @@ use tokio::sync::broadcast::{Receiver, Sender};
 use tracing::{metadata::LevelFilter, *};
 use tracing_log::LogTracer;
 use tracing_subscriber::{
+    EnvFilter, Layer,
     fmt::{self, MakeWriter},
     layer::SubscriberExt,
-    EnvFilter, Layer,
 };
 
 use crate::cli;

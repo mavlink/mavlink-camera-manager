@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use gst::prelude::*;
 use tracing::*;
 
@@ -228,11 +228,12 @@ impl PipelineRunner {
                 )?;
 
                 if pipeline.current_state() != gst::State::Playing
-                    && let Err(error) = pipeline.set_state(gst::State::Playing) {
-                        return Err(anyhow!(
-                            "Failed setting Pipeline {pipeline_name:?} to Playing state. Reason: {error:?}"
-                        ));
-                    }
+                    && let Err(error) = pipeline.set_state(gst::State::Playing)
+                {
+                    return Err(anyhow!(
+                        "Failed setting Pipeline {pipeline_name:?} to Playing state. Reason: {error:?}"
+                    ));
+                }
 
                 if let Err(error) =
                     wait_for_element_state_async(pipeline_weak.clone(), gst::State::Playing, 100, 5)
@@ -262,7 +263,9 @@ impl PipelineRunner {
                         frame_interval.numerator as f64 / frame_interval.denominator as f64,
                     )
                 } else {
-                    warn!("Invalid frame_interval {frame_interval:?}, using fallback of 1 FPS (Pipeline {pipeline_name:?})");
+                    warn!(
+                        "Invalid frame_interval {frame_interval:?}, using fallback of 1 FPS (Pipeline {pipeline_name:?})"
+                    );
                     std::time::Duration::from_secs(1)
                 }
             }
@@ -512,7 +515,9 @@ async fn bus_watcher_task(
                     let latency_ms = time.nseconds() as f64 / 1_000_000.0;
 
                     if latency_ms > 100.0 {
-                        warn!("High latency detected for Pipeline {pipeline_name:?}: {latency_ms:.2}ms - may cause noticeable delay");
+                        warn!(
+                            "High latency detected for Pipeline {pipeline_name:?}: {latency_ms:.2}ms - may cause noticeable delay"
+                        );
                     } else {
                         debug!("Current Pipeline ({pipeline_name:?}) latency: {latency_ms:.2}ms");
                     }
@@ -533,18 +538,27 @@ async fn bus_watcher_task(
                             }
                             (None, Some(new)) => {
                                 let new_ms = new.nseconds() as f64 / 1_000_000.0;
-                                debug!("Latency established for Pipeline {pipeline_name:?}: {new_ms:.2}ms"                                    );
+                                debug!(
+                                    "Latency established for Pipeline {pipeline_name:?}: {new_ms:.2}ms"
+                                );
                                 if new_ms > 100.0 {
-                                    warn!("High latency detected for Pipeline {pipeline_name:?}: {:.2}ms - may cause noticeable delay", new_ms);
+                                    warn!(
+                                        "High latency detected for Pipeline {pipeline_name:?}: {:.2}ms - may cause noticeable delay",
+                                        new_ms
+                                    );
                                 }
                             }
                             _ => {
-                                debug!("Latency recalculation completed for Pipeline {pipeline_name:?}, no change in value");
+                                debug!(
+                                    "Latency recalculation completed for Pipeline {pipeline_name:?}, no change in value"
+                                );
                             }
                         }
                     }
                     Err(error) => {
-                        warn!("Failed to recalculate latency for Pipeline {pipeline_name:?}: {error:?}");
+                        warn!(
+                            "Failed to recalculate latency for Pipeline {pipeline_name:?}: {error:?}"
+                        );
                     }
                 }
             }

@@ -8,7 +8,7 @@ pub mod v4l_pipeline;
 
 use std::{collections::HashMap, sync::Arc};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use enum_dispatch::enum_dispatch;
 use gst::prelude::*;
 use tracing::*;
@@ -214,12 +214,13 @@ impl PipelineState {
 
         // Start the pipeline if not playing yet
         if pipeline.current_state() != gst::State::Playing
-            && let Err(error) = pipeline.set_state(gst::State::Playing) {
-                sink.unlink(pipeline, pipeline_id)?;
-                return Err(anyhow!(
-                    "Failed starting Pipeline {pipeline_id}. Reason: {error:#?}"
-                ));
-            }
+            && let Err(error) = pipeline.set_state(gst::State::Playing)
+        {
+            sink.unlink(pipeline, pipeline_id)?;
+            return Err(anyhow!(
+                "Failed starting Pipeline {pipeline_id}. Reason: {error:#?}"
+            ));
+        }
 
         if let Err(error) = wait_for_element_state_async(
             gst::prelude::ObjectExt::downgrade(pipeline),
@@ -278,9 +279,10 @@ impl PipelineState {
         // and all other sinks need it to work without freezing when dynamically
         // added.
         if !matches!(&sink, Sink::Image(..))
-            && let Err(error) = pipeline.sync_children_states() {
-                error!("Failed to syncronize children states. Reason: {error:?}");
-            }
+            && let Err(error) = pipeline.sync_children_states()
+        {
+            error!("Failed to syncronize children states. Reason: {error:?}");
+        }
 
         self.sinks.insert(**sink_id, sink);
 

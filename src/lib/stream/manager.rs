@@ -1,11 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{Context, Error, Result, anyhow};
 use cached::proc_macro::cached;
 use futures::stream::StreamExt;
 use gst::{
-    prelude::{ElementExtManual, GstBinExtManual},
     DebugGraphDetails,
+    prelude::{ElementExtManual, GstBinExtManual},
 };
 use tokio::sync::RwLock;
 use tracing::*;
@@ -13,7 +13,7 @@ use tracing::*;
 use crate::{
     settings,
     stream::{
-        sink::{webrtc_sink::WebRTCSink, Sink, SinkInterface},
+        sink::{Sink, SinkInterface, webrtc_sink::WebRTCSink},
         types::CaptureConfiguration,
         webrtc::signalling_protocol::BindAnswer,
     },
@@ -22,9 +22,9 @@ use crate::{
 };
 
 use super::{
+    Stream,
     types::StreamStatus,
     webrtc::{self, signalling_protocol::RTCSessionDescription},
-    Stream,
 };
 
 type ClonableResult<T> = Result<T, Arc<Error>>;
@@ -73,7 +73,12 @@ fn config_gst_plugins() {
                 name = config.name,
                 rank = config.rank,
             ),
-            Err(error) => error!("Error when trying to configure plugin {name:?} rank to {rank:?}. Reason: {error:?}", name = config.name, rank = config.rank, error=error.to_string()),
+            Err(error) => error!(
+                "Error when trying to configure plugin {name:?} rank to {rank:?}. Reason: {error:?}",
+                name = config.name,
+                rank = config.rank,
+                error = error.to_string()
+            ),
         }
     }
 }
@@ -157,12 +162,16 @@ pub async fn update_devices(
                             .then_some((idx, candidate))
                     })
                 else {
-                    error!("CRITICAL: The device was identified as {candidate_source_string:?}, but it is not the candidates list"); // This shouldn't ever be reachable, otherwise the above logic is flawed
+                    error!(
+                        "CRITICAL: The device was identified as {candidate_source_string:?}, but it is not the candidates list"
+                    ); // This shouldn't ever be reachable, otherwise the above logic is flawed
                     continue;
                 };
 
                 let VideoSourceType::Local(camera) = candidate else {
-                    error!("CRITICAL: The device was identified as {candidate_source_string:?}, but it is not a Local device"); // This shouldn't ever be reachable, otherwise the above logic is flawed
+                    error!(
+                        "CRITICAL: The device was identified as {candidate_source_string:?}, but it is not a Local device"
+                    ); // This shouldn't ever be reachable, otherwise the above logic is flawed
                     continue;
                 };
                 *source = camera.clone();
@@ -404,18 +413,20 @@ pub async fn get_jpeg_thumbnail_from_source(
                     let lifecycle_arc = lifecycle.clone();
                     std::thread::Builder::new()
                         .name("ThumbnailCooldown".into())
-                        .spawn(move || loop {
-                            std::thread::sleep(THUMBNAIL_COOLDOWN);
-                            let mut guard = cooldown_arc.lock().unwrap();
-                            match *guard {
-                                Some(last) if last.elapsed() >= THUMBNAIL_COOLDOWN => {
-                                    *guard = None;
-                                    drop(guard);
-                                    lifecycle_arc.remove_consumer(true);
-                                    break;
+                        .spawn(move || {
+                            loop {
+                                std::thread::sleep(THUMBNAIL_COOLDOWN);
+                                let mut guard = cooldown_arc.lock().unwrap();
+                                match *guard {
+                                    Some(last) if last.elapsed() >= THUMBNAIL_COOLDOWN => {
+                                        *guard = None;
+                                        drop(guard);
+                                        lifecycle_arc.remove_consumer(true);
+                                        break;
+                                    }
+                                    None => break,
+                                    _ => {}
                                 }
-                                None => break,
-                                _ => {}
                             }
                         })
                         .ok();

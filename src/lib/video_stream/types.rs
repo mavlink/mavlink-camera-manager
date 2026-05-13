@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use paperclip::actix::Apiv2Schema;
 use serde::{Deserialize, Serialize};
 

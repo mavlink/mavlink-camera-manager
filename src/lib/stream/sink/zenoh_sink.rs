@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use gst::prelude::*;
 use tokio::task::JoinHandle;
 use tracing::*;
@@ -16,8 +16,8 @@ use crate::{
 };
 
 use super::{
-    link_sink_to_tee, types::zenoh_message::CompressedVideo, types::zenoh_message::Timestamp,
-    unlink_sink_from_tee, SinkInterface,
+    SinkInterface, link_sink_to_tee, types::zenoh_message::CompressedVideo,
+    types::zenoh_message::Timestamp, unlink_sink_from_tee,
 };
 
 #[derive(Debug)]
@@ -64,16 +64,17 @@ impl SinkInterface for ZenohSink {
         link_sink_to_tee(tee_src_pad, pipeline, elements)?;
 
         if let Some(queue) = &self.proxysrc_queue
-            && let Some(src_pad) = queue.static_pad("src") {
-                let queue_weak = queue.downgrade();
-                src_pad.add_probe(
-                    gst::PadProbeType::BUFFER | gst::PadProbeType::BUFFER_LIST,
-                    move |_pad, _info| {
-                        excise_proxysrc_queue(&queue_weak);
-                        gst::PadProbeReturn::Remove
-                    },
-                );
-            }
+            && let Some(src_pad) = queue.static_pad("src")
+        {
+            let queue_weak = queue.downgrade();
+            src_pad.add_probe(
+                gst::PadProbeType::BUFFER | gst::PadProbeType::BUFFER_LIST,
+                move |_pad, _info| {
+                    excise_proxysrc_queue(&queue_weak);
+                    gst::PadProbeReturn::Remove
+                },
+            );
+        }
 
         Ok(())
     }
@@ -205,7 +206,7 @@ impl ZenohSink {
             _ => {
                 return Err(anyhow!(
                     "Unsupported video encoding for ZenohSink: {video_encoding:?}. The supported are: H264 and H265"
-                ))
+                ));
             }
         }
 

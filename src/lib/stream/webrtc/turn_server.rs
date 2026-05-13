@@ -9,10 +9,10 @@ use anyhow::{Context, Result};
 use tokio::net::UdpSocket;
 use tracing::*;
 use turn::{
+    Error,
     auth::*,
     relay::relay_static::*,
     server::{config::*, *},
-    Error,
 };
 use webrtc_util::vnet::net::Net;
 

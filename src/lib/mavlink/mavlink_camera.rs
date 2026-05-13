@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
-use mavlink::{common::MavMessage, MavHeader};
+use anyhow::{Context, Result, anyhow};
+use mavlink::{MavHeader, common::MavMessage};
 use tokio::sync::broadcast;
 use tracing::*;
 use url::Url;
@@ -187,7 +187,9 @@ impl MavlinkCameraInner {
                 }
                 Ok(Message::ToBeSent(_)) => (),
                 Err(error) => {
-                    error!("Failed receiving from broadcast channel: {error:#?}. Resubscribing to the channel...");
+                    error!(
+                        "Failed receiving from broadcast channel: {error:#?}. Resubscribing to the channel..."
+                    );
 
                     receiver = receiver.resubscribe();
                 }
@@ -444,7 +446,10 @@ impl MavlinkCameraInner {
                 let result = match crate::video::video_source::reset_controls(source_string).await {
                     Ok(_) => mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
                     Err(error) => {
-                        error!("Failed to reset {source_string:?} controls with its default values as {:#?}:{:#?}. Reason: {error:?}", camera.component.system_id, camera.component.component_id);
+                        error!(
+                            "Failed to reset {source_string:?} controls with its default values as {:#?}:{:#?}. Reason: {error:?}",
+                            camera.component.system_id, camera.component.component_id
+                        );
                         mavlink::common::MavResult::MAV_RESULT_DENIED
                     }
                 };
@@ -514,7 +519,10 @@ impl MavlinkCameraInner {
                     }
                     VIDEO_STREAM_INFORMATION_ID => {
                         if !validate_stream_id(camera, data.param2) {
-                            warn!("MAV_CMD_REQUEST_MESSAGE(VIDEO_STREAM_INFORMATION): unknown stream id: {:#?}.", data.param2);
+                            warn!(
+                                "MAV_CMD_REQUEST_MESSAGE(VIDEO_STREAM_INFORMATION): unknown stream id: {:#?}.",
+                                data.param2
+                            );
                             send_ack(
                                 camera,
                                 &sender,
@@ -622,7 +630,10 @@ impl MavlinkCameraInner {
         {
             Ok(_) => mavlink::common::ParamAck::PARAM_ACK_ACCEPTED,
             Err(error) => {
-                error!("Failed to set parameter {control_id:?} with value {control_value:?} for {:#?}. Reason: {error:?}", camera.component.component_id);
+                error!(
+                    "Failed to set parameter {control_id:?} with value {control_value:?} for {:#?}. Reason: {error:?}",
+                    camera.component.component_id
+                );
                 mavlink::common::ParamAck::PARAM_ACK_FAILED
             }
         };

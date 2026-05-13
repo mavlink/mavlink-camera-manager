@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use gst::prelude::*;
 use tracing::*;
 
@@ -11,8 +11,8 @@ use crate::{
 };
 
 use super::{
-    PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_RTP_TEE_NAME,
-    PIPELINE_VIDEO_TEE_NAME,
+    PIPELINE_FILTER_NAME, PIPELINE_RTP_TEE_NAME, PIPELINE_VIDEO_TEE_NAME,
+    PipelineGstreamerInterface, PipelineState,
 };
 
 #[derive(Debug)]
@@ -34,7 +34,7 @@ impl RedirectPipeline {
             unsupported => {
                 return Err(anyhow!(
                     "{unsupported:?} is not supported as Redirect Pipeline"
-                ))
+                ));
             }
         };
 
@@ -43,7 +43,7 @@ impl RedirectPipeline {
             unsupported => {
                 return Err(anyhow!(
                     "SourceType {unsupported:?} is not supported as V4l Pipeline"
-                ))
+                ));
             }
         };
 
@@ -100,7 +100,7 @@ impl RedirectPipeline {
             unsupported => {
                 return Err(anyhow!(
                     "Scheme {unsupported:#?} is not supported for Redirect Pipelines"
-                ))
+                ));
             }
         };
 
@@ -157,7 +157,7 @@ impl RedirectPipeline {
             unsupported => {
                 return Err(anyhow!(
                     "Encode {unsupported:?} is not supported for Redirect Pipeline"
-                ))
+                ));
             }
         };
 

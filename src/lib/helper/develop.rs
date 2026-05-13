@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use thirtyfour::prelude::*;
 use tokio::{process::Command, runtime::Runtime, sync::RwLock};
 use tracing::*;
@@ -255,8 +255,8 @@ async fn task(session_cycles: i32) -> Result<()> {
             // Ignore first cycle
             if current_cycle > 0 {
                 return Err(anyhow!(
-                "Thread leak detected on cycle {current_cycle}:\n{new_tasks_since_last_cycle:#?}\n{tasks_alive_from_last_cycle:#?}"
-            ));
+                    "Thread leak detected on cycle {current_cycle}:\n{new_tasks_since_last_cycle:#?}\n{tasks_alive_from_last_cycle:#?}"
+                ));
             }
         };
 
@@ -274,8 +274,12 @@ async fn task(session_cycles: i32) -> Result<()> {
         info!("Tasks alive since last cycle: {number_of_tasks_alive_from_last_cycle}");
 
         if number_of_new_tasks_since_last_cycle > 0 || number_of_tasks_alive_from_last_cycle > 0 {
-            info!("The following tasks were created since last cycle:\n{new_tasks_since_last_cycle:#?}");
-            info!("The following tasks were alive since last cycle:\n{tasks_alive_from_last_cycle:#?}")
+            info!(
+                "The following tasks were created since last cycle:\n{new_tasks_since_last_cycle:#?}"
+            );
+            info!(
+                "The following tasks were alive since last cycle:\n{tasks_alive_from_last_cycle:#?}"
+            )
         }
     }
 

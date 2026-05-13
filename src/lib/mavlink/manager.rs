@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex, RwLock},
 };
 
-use mavlink::{common::MavMessage, MavConnection, MavHeader};
+use mavlink::{MavConnection, MavHeader, common::MavMessage};
 
 use anyhow::{Context, Result};
 use tokio::sync::broadcast;
@@ -155,7 +155,9 @@ impl Manager {
                         );
                     }
                     Err(broadcast::error::RecvError::Lagged(samples)) => {
-                        warn!("Channel is lagged behind by {samples} messages. Expect degraded performance on the mavlink responsiviness.");
+                        warn!(
+                            "Channel is lagged behind by {samples} messages. Expect degraded performance on the mavlink responsiviness."
+                        );
                         continue;
                     }
                 };

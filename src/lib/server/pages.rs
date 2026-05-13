@@ -1,12 +1,12 @@
 use actix_web::{
+    HttpRequest, HttpResponse,
     http::header,
     rt,
     web::{self, Json},
-    HttpRequest, HttpResponse,
 };
 use actix_ws::Message;
 use futures::StreamExt;
-use paperclip::actix::{api_v2_operation, Apiv2Schema, CreatedJson};
+use paperclip::actix::{Apiv2Schema, CreatedJson, api_v2_operation};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::time::Duration;
@@ -149,7 +149,7 @@ pub struct UnauthenticateOnvifDeviceRequest {
 
 use std::{ffi::OsStr, path::Path};
 
-use include_dir::{include_dir, Dir};
+use include_dir::{Dir, include_dir};
 
 static DIST: Dir<'_> = include_dir!("frontend/dist");
 

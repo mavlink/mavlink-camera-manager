@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use gst::prelude::*;
 use tokio::sync::mpsc;
 use tracing::*;
@@ -110,7 +110,9 @@ pub fn check_all_plugins() -> Result<()> {
                 missing_required.push(requirement_display);
             }
             (false, false) => {
-                warn!("Optional GStreamer plugin requirement {requirement_display} is not met: Some features may not be available");
+                warn!(
+                    "Optional GStreamer plugin requirement {requirement_display} is not met: Some features may not be available"
+                );
             }
             _ => (),
         }
@@ -257,23 +259,17 @@ pub async fn wait_for_element_state_async(
 
 fn make_source_description_from_stream_uri(stream_uri: &url::Url) -> Result<String> {
     match stream_uri.scheme() {
-        "rtsp" => {
-            Ok(format!(
-                "rtspsrc name=source location={stream_uri} is-live=true latency=0 do-retransmission=false"
-            ))
-        }
-        "udp" => {
-            Ok(format!(
-                "udpsrc name=source address={address} port={port} auto-multicast=true do-timestamp=true",
-                address = stream_uri.host().context("URI without host")?,
-                port = stream_uri.port().context("URI without port")?,
-            ))
-        }
-        unsupported => {
-            Err(anyhow!(
-                "Scheme {unsupported:#?} is not supported for Redirect Pipelines"
-            ))
-        }
+        "rtsp" => Ok(format!(
+            "rtspsrc name=source location={stream_uri} is-live=true latency=0 do-retransmission=false"
+        )),
+        "udp" => Ok(format!(
+            "udpsrc name=source address={address} port={port} auto-multicast=true do-timestamp=true",
+            address = stream_uri.host().context("URI without host")?,
+            port = stream_uri.port().context("URI without port")?,
+        )),
+        unsupported => Err(anyhow!(
+            "Scheme {unsupported:#?} is not supported for Redirect Pipelines"
+        )),
     }
 }
 
@@ -498,11 +494,12 @@ fn setup_pad_and_probe(pad: &gst::Pad, tx: mpsc::Sender<gst::Caps>) -> Option<gs
 
         move |_pad, info| {
             if let Some(gst::PadProbeData::Event(ref ev)) = info.data
-                && let gst::EventView::Caps(caps_event) = ev.view() {
-                    let caps = caps_event.caps();
+                && let gst::EventView::Caps(caps_event) = ev.view()
+            {
+                let caps = caps_event.caps();
 
-                    let _ = tx.try_send(caps.to_owned());
-                }
+                let _ = tx.try_send(caps.to_owned());
+            }
             gst::PadProbeReturn::Ok
         }
     });
@@ -679,10 +676,9 @@ pub fn excise_single_element(element: &gst::Element) -> Result<()> {
             false
         }
     };
-    if null_ok
-        && let Err(error) = wait_for_element_state_sync(element, gst::State::Null, 100, 2) {
-            warn!("Excising {name}: {error}");
-        }
+    if null_ok && let Err(error) = wait_for_element_state_sync(element, gst::State::Null, 100, 2) {
+        warn!("Excising {name}: {error}");
+    }
 
     debug!("Excising {name}: done (null={null_ok}, removed={removed})");
 

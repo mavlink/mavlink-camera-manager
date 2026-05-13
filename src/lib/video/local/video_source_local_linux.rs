@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use lazy_static::lazy_static;
 use paperclip::actix::Apiv2Schema;
 use regex::Regex;
@@ -77,7 +77,9 @@ impl VideoSourceLocalType {
             return result;
         }
 
-        let msg = format!("Unable to identify the local camera connection type, please report the problem: {description:?}");
+        let msg = format!(
+            "Unable to identify the local camera connection type, please report the problem: {description:?}"
+        );
         if description == "platform:bcm2835-isp" {
             // Filter out the log for this particular device, because regarding to Raspberry Pis, it will always be there and we will never use it.
             trace!(msg);
@@ -184,7 +186,9 @@ impl VideoSourceLocal {
         // Then in the next reboot, `Alpha` changed to port B, and `Beta` was changed to port A, then it's
         // impossible to differentiate them using only the name.
         trace!("Outcome n.5!");
-        warn!("There is more than one camera with the same name and encode, which means that their identification/configurations could have been swaped");
+        warn!(
+            "There is more than one camera with the same name and encode, which means that their identification/configurations could have been swaped"
+        );
         Ok(None)
     }
 
@@ -454,7 +458,9 @@ impl VideoSourceFormats for VideoSourceLocal {
             // To prevent it, we are currently constraining it
             // to a max. of 1920 x 1080 px, and a max. 30 FPS.
             if matches!(typ, VideoSourceLocalType::LegacyRpiCam(_)) {
-                warn!("To support Raspiberry Pi Cameras in Legacy Camera Mode without bugs, resolution is constrained to 1920 x 1080 @ 30 FPS.");
+                warn!(
+                    "To support Raspiberry Pi Cameras in Legacy Camera Mode without bugs, resolution is constrained to 1920 x 1080 @ 30 FPS."
+                );
                 let max_width = 1920;
                 let max_height = 1080;
                 let max_fps = 30;
@@ -1144,12 +1150,14 @@ mod device_identification_tests {
                 unreachable!("Wrong setup")
             };
 
-            assert!(source
-                .to_owned()
-                .try_identify_device(capture_configuration, &candidates)
-                .await
-                .expect("Failed to identify the only device with the same name and encode")
-                .is_none())
+            assert!(
+                source
+                    .to_owned()
+                    .try_identify_device(capture_configuration, &candidates)
+                    .await
+                    .expect("Failed to identify the only device with the same name and encode")
+                    .is_none()
+            )
         }
 
         VIDEO_FORMATS.lock().unwrap().clear();

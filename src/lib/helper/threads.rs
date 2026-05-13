@@ -43,9 +43,11 @@ pub fn process_tasks() -> HashMap<u32, String> {
 }
 
 pub fn start_thread_counter_thread() {
-    thread::spawn(move || loop {
-        info!("Number of child processes: {}", process_task_counter());
-        thread::sleep(Duration::from_secs(1));
+    thread::spawn(move || {
+        loop {
+            info!("Number of child processes: {}", process_task_counter());
+            thread::sleep(Duration::from_secs(1));
+        }
     });
 }
 

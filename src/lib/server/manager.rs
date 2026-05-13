@@ -1,11 +1,11 @@
 use actix_cors::Cors;
 use actix_extensible_rate_limit::{
-    backend::{memory::InMemoryBackend, SimpleInputFunctionBuilder},
     RateLimiter,
+    backend::{SimpleInputFunctionBuilder, memory::InMemoryBackend},
 };
-use actix_web::{error::JsonPayloadError, App, HttpRequest, HttpServer};
+use actix_web::{App, HttpRequest, HttpServer, error::JsonPayloadError};
 use paperclip::{
-    actix::{web, OpenApiExt},
+    actix::{OpenApiExt, web},
     v2::models::{Api, Info},
 };
 use tracing::*;

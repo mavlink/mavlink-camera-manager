@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     controls::types::Control,
-    stream::gst::utils::{is_gst_plugin_available, PluginRequirement},
+    stream::gst::utils::{PluginRequirement, is_gst_plugin_available},
 };
 
 use super::{

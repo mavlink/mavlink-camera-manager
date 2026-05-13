@@ -1,9 +1,9 @@
 use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, Mutex,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use gst::prelude::*;
 use tracing::*;
 
@@ -11,7 +11,7 @@ use crate::stream::{
     gst::utils::try_set_property, lifecycle::LifecycleState, rtsp::rtsp_scheme::RTSPScheme,
 };
 
-use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
+use super::{SinkInterface, link_sink_to_tee, unlink_sink_from_tee};
 
 pub type SharedAppSrc = Arc<Mutex<Option<gst_app::AppSrc>>>;
 pub type SharedPtsOffset = Arc<Mutex<Option<gst::ClockTime>>>;

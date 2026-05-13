@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use tokio::sync::OnceCell;
 use tracing::*;
-use zenoh::{config::ZenohId, Config, Session};
+use zenoh::{Config, Session, config::ZenohId};
 
 static SESSION: OnceCell<Session> = OnceCell::const_new();
 

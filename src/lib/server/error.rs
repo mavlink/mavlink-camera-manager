@@ -1,4 +1,4 @@
-use actix_web::{http::StatusCode, ResponseError};
+use actix_web::{ResponseError, http::StatusCode};
 
 use paperclip::actix::api_v2_errors;
 use validator::ValidationErrors;

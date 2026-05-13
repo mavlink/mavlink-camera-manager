@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use futures::StreamExt as _;
 use onvif::soap::client::Credentials;
 use serde::Serialize;
@@ -205,7 +205,9 @@ impl Manager {
                                 Ok::<(), onvif::discovery::Error>(()) // Indicate success (discovery part)
                             }
                             Err(error) => {
-                                warn!("Task failed: ONVIF discovery failed on interface IP '{ip_addr}': {error:?}");
+                                warn!(
+                                    "Task failed: ONVIF discovery failed on interface IP '{ip_addr}': {error:?}"
+                                );
                                 Err(error)
                             }
                         }
@@ -222,15 +224,21 @@ impl Manager {
             for (iface_name, ip_addr, task_handle) in discovery_tasks {
                 match task_handle.await {
                     Ok(Ok(())) => {
-                        trace!("Discovery task for interface '{iface_name}' (IP: {ip_addr}) completed successfully.");
+                        trace!(
+                            "Discovery task for interface '{iface_name}' (IP: {ip_addr}) completed successfully."
+                        );
                     }
                     Ok(Err(discovery_error)) => {
                         // The task ran, but the discovery itself failed
-                        warn!("Discovery task for interface '{iface_name}' (IP: {ip_addr}) reported failure: {discovery_error:?}");
+                        warn!(
+                            "Discovery task for interface '{iface_name}' (IP: {ip_addr}) reported failure: {discovery_error:?}"
+                        );
                     }
                     Err(join_error) => {
                         // The task itself panicked or was cancelled
-                        error!("Discovery task for interface '{iface_name}' (IP: {ip_addr}) panicked or was cancelled: {join_error:?}");
+                        error!(
+                            "Discovery task for interface '{iface_name}' (IP: {ip_addr}) panicked or was cancelled: {join_error:?}"
+                        );
                     }
                 }
             }
@@ -278,9 +286,7 @@ impl Manager {
                         let ip_addr = IpAddr::V4(ipv4_network.ip());
                         trace!(
                             "Found suitable IPv4 address on interface '{}': {} (Subnet: {})",
-                            interface.name,
-                            ip_addr,
-                            ipv4_network
+                            interface.name, ip_addr, ipv4_network
                         );
                         // Return Some tuple, which will be collected and deduplicated by the HashSet
                         Some((interface.name.clone(), ip_addr))
@@ -448,7 +454,10 @@ impl Manager {
         trace!("Device credentials lookup result for UUID={device_uuid:?}: {credentials:?}");
 
         // Iterate through the device's URLs (e.g., different service endpoints)
-        trace!("Attempting to create OnvifCamera instances for device UUID={device_uuid:?}, IP={device_ip}, found {} URL(s)", device.urls.len());
+        trace!(
+            "Attempting to create OnvifCamera instances for device UUID={device_uuid:?}, IP={device_ip}, found {} URL(s)",
+            device.urls.len()
+        );
         for (index, url) in device.urls.iter().enumerate() {
             trace!(
                 "Processing URL {}/{} for device UUID={device_uuid:?}: {url}",
@@ -486,7 +495,9 @@ impl Manager {
             );
 
             let Some(streams_informations) = streams_information_option else {
-                error!("Failed getting stream information (streams_information is None) for camera created from URL: {url}");
+                error!(
+                    "Failed getting stream information (streams_information is None) for camera created from URL: {url}"
+                );
                 continue; // Move to the next URL
             };
 

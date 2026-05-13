@@ -4,10 +4,10 @@ use std::{
     thread,
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use gst::prelude::*;
 use gst_rtsp::RTSPLowerTrans;
-use gst_rtsp_server::{prelude::*, RTSPTransportMode};
+use gst_rtsp_server::{RTSPTransportMode, prelude::*};
 use tracing::*;
 
 use crate::stream::sink::rtsp_sink::RtspFlowHandle;
@@ -194,7 +194,7 @@ impl RTSPServer {
             unsupported => {
                 return Err(anyhow!(
                     "Video caps {unsupported:?} not supported for RTSP Sink"
-                ))
+                ));
             }
         };
 
@@ -253,7 +253,9 @@ impl RTSPServer {
             .path_to_factory
             .insert(path.to_string(), factory)
         {
-            return Err(anyhow!("Error: required path already exists! The older was updated with the new configurations: {server:#?}"));
+            return Err(anyhow!(
+                "Error: required path already exists! The older was updated with the new configurations: {server:#?}"
+            ));
         }
 
         Ok(())

@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{Error, Result, anyhow};
 use gst::prelude::*;
 use tracing::*;
 
@@ -15,7 +15,7 @@ use crate::{
     video_stream::types::VideoAndStreamInformation,
 };
 
-use super::{link_sink_to_tee, unlink_sink_from_tee, SinkInterface};
+use super::{SinkInterface, link_sink_to_tee, unlink_sink_from_tee};
 
 type ClonableResult<T> = Result<T, Arc<Error>>;
 
@@ -39,9 +39,10 @@ struct CachedThumbnails {
 impl CachedThumbnails {
     pub fn try_get(&self, settings: &ThumbnailSettings) -> Result<Option<Vec<u8>>> {
         if let Some(thumbnail) = self.map.get(settings)
-            && std::time::Instant::now() - thumbnail.instant < std::time::Duration::from_secs(1) {
-                return Ok(Some(thumbnail.image.to_vec()));
-            }
+            && std::time::Instant::now() - thumbnail.instant < std::time::Duration::from_secs(1)
+        {
+            return Ok(Some(thumbnail.image.to_vec()));
+        }
 
         Ok(None)
     }
@@ -166,15 +167,17 @@ impl SinkInterface for ImageSink {
             .name("EOS".to_string())
             .spawn(move || {
                 if let Some(pipeline) = pipeline_weak.upgrade()
-                    && let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
-                        error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
-                    }
+                    && let Err(error) = pipeline.post_message(gst::message::Eos::new())
+                {
+                    error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
+                }
                 if let Some(pipeline) = encode_pipeline_weak.upgrade()
-                    && let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
-                        error!(
-                            "Failed posting Eos message into encode pipeline bus. Reason: {error:?}"
-                        );
-                    }
+                    && let Err(error) = pipeline.post_message(gst::message::Eos::new())
+                {
+                    error!(
+                        "Failed posting Eos message into encode pipeline bus. Reason: {error:?}"
+                    );
+                }
             })
             .expect("Failed spawning EOS thread")
             .join()
@@ -230,7 +233,9 @@ impl ImageSink {
                         element.set_property("max-size-time", 0u64);
                     }
                     None => {
-                        warn!("Failed to customize proxysrc's queue: Failed to find queue in proxysrc");
+                        warn!(
+                            "Failed to customize proxysrc's queue: Failed to find queue in proxysrc"
+                        );
                     }
                 }
             }
@@ -279,9 +284,9 @@ impl ImageSink {
             VideoEncodeType::H265 => {
                 // For h265, we need to filter-out unwanted non-key frames here, before decoding it.
                 let filter = gst::ElementFactory::make("identity")
-                .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
-                .property("sync", false)
-                .build()?;
+                    .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
+                    .property("sync", false)
+                    .build()?;
                 let decoder = gst::ElementFactory::make("avdec_h265").build()?;
                 try_set_property(&decoder, "lowres", 2); // (0) is 'full'; (1) is '1/2-size'; (2) is '1/4-size'
                 try_set_property(&decoder, "skip-frame", 32); // (0) is 'default'; (8) is 'non-ref'; (16) is 'bidir'; (24) is 'non-intra'; (32) is 'non-key'; (48) is 'all'
@@ -306,7 +311,7 @@ impl ImageSink {
             _ => {
                 return Err(anyhow!(
                     "Unsupported video encoding for ImageSink: {encoding:?}. The supported are: H264, H265, MJPG, RGB and YUYV"
-                ))
+                ));
             }
         };
 
@@ -532,9 +537,10 @@ impl ImageSink {
 
         // Unblock the queue's src pad to allow data to flow to the decoder
         if let Some(blocker) = self.pad_blocker.lock().unwrap().take()
-            && let Some(queue_src_pad) = self.queue.static_pad("src") {
-                queue_src_pad.remove_probe(blocker);
-            }
+            && let Some(queue_src_pad) = self.queue.static_pad("src")
+        {
+            queue_src_pad.remove_probe(blocker);
+        }
 
         // Request an immediate keyframe from the upstream encoder so the
         // decoder can produce a frame without waiting for the next natural

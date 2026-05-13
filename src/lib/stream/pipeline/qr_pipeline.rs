@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use gst::prelude::*;
 use tracing::*;
 
@@ -14,8 +14,8 @@ use crate::{
 };
 
 use super::{
-    PipelineGstreamerInterface, PipelineState, PIPELINE_FILTER_NAME, PIPELINE_RTP_TEE_NAME,
-    PIPELINE_VIDEO_TEE_NAME,
+    PIPELINE_FILTER_NAME, PIPELINE_RTP_TEE_NAME, PIPELINE_VIDEO_TEE_NAME,
+    PipelineGstreamerInterface, PipelineState,
 };
 
 #[derive(Debug)]
@@ -37,7 +37,7 @@ impl QrPipeline {
             unsupported => {
                 return Err(anyhow!(
                     "{unsupported:?} is not supported as QrTimeStamp Pipeline"
-                ))
+                ));
             }
         };
 
@@ -46,7 +46,7 @@ impl QrPipeline {
             unsupported => {
                 return Err(anyhow!(
                     "VideoSourceType {unsupported:?} is not supported as QrTimeStamp Pipeline"
-                ))
+                ));
             }
         };
 
@@ -55,7 +55,7 @@ impl QrPipeline {
             unsupported => {
                 return Err(anyhow!(
                     "VideoSourceGstType {unsupported:?} is not supported as QrTimeStamp Pipeline"
-                ))
+                ));
             }
         };
 
@@ -65,7 +65,8 @@ impl QrPipeline {
 
         let description = match &configuration.encode {
             VideoEncodeType::H264 => {
-                format!(concat!(
+                format!(
+                    concat!(
                         "qrtimestampsrc",
                         " ! video/x-raw,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! videoconvert",
@@ -106,7 +107,7 @@ impl QrPipeline {
             unsupported => {
                 return Err(anyhow!(
                     "Encode {unsupported:?} is not supported for Test Pipeline"
-                ))
+                ));
             }
         };
 

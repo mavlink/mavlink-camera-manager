@@ -14,7 +14,7 @@ use std::{
 };
 
 use ::gst::prelude::*;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use gst::utils::get_capture_configuration_from_stream_uri;
 use manager::Manager;
 use pipeline::{Pipeline, PipelineGstreamerInterface};
@@ -28,7 +28,7 @@ use crate::{
     mavlink::mavlink_camera::MavlinkCamera,
     video::{
         types::{FrameInterval, VideoEncodeType, VideoSourceType},
-        video_source::{cameras_available, VideoSource},
+        video_source::{VideoSource, cameras_available},
     },
     video_stream::types::VideoAndStreamInformation,
 };
@@ -296,9 +296,10 @@ impl Stream {
                         .await
                         .as_ref()
                         .is_some_and(|s| s.pipeline.is_some())
-                        && let Some(old) = state.write().await.take() {
-                            tokio::task::spawn_blocking(move || drop(old));
-                        }
+                        && let Some(old) = state.write().await.take()
+                    {
+                        tokio::task::spawn_blocking(move || drop(old));
+                    }
                     continue;
                 }
 
@@ -319,7 +320,9 @@ impl Stream {
                             .await
                             .is_err()
                         {
-                            warn!("Pipeline teardown timed out in Waking handler, proceeding with pipeline creation");
+                            warn!(
+                                "Pipeline teardown timed out in Waking handler, proceeding with pipeline creation"
+                            );
                         }
                     }
 
@@ -357,7 +360,10 @@ impl Stream {
                             }
 
                             let backoff = lifecycle.handle_pipeline_error();
-                            warn!("Waking: CaptureConfiguration error, backoff={backoff:?}, error_count={}", lifecycle.error_count());
+                            warn!(
+                                "Waking: CaptureConfiguration error, backoff={backoff:?}, error_count={}",
+                                lifecycle.error_count()
+                            );
                             tokio::time::sleep(backoff).await;
                             notify.notify_one();
                             continue;
@@ -433,7 +439,10 @@ impl Stream {
                                 }
 
                                 let backoff = lifecycle.handle_pipeline_error();
-                                warn!("Waking: Local device error, backoff={backoff:?}, error_count={}", lifecycle.error_count());
+                                warn!(
+                                    "Waking: Local device error, backoff={backoff:?}, error_count={}",
+                                    lifecycle.error_count()
+                                );
                                 tokio::time::sleep(backoff).await;
                                 notify.notify_one();
                                 continue;
@@ -466,7 +475,10 @@ impl Stream {
                                 return Ok(());
                             }
                             let backoff = lifecycle.handle_pipeline_error();
-                            warn!("Waking: StreamState::try_new error, backoff={backoff:?}, error_count={}", lifecycle.error_count());
+                            warn!(
+                                "Waking: StreamState::try_new error, backoff={backoff:?}, error_count={}",
+                                lifecycle.error_count()
+                            );
                             tokio::time::sleep(backoff).await;
                             notify.notify_one();
                             continue;
@@ -474,18 +486,19 @@ impl Stream {
                     };
 
                     if persistent_rtsp.is_none()
-                        && let Some(ref pipeline) = new_state.pipeline {
-                            for s in pipeline.inner_state_as_ref().sinks.values() {
-                                if let sink::Sink::Rtsp(rtsp) = s {
-                                    persistent_rtsp = Some(sink::rtsp_sink::RtspSinkPersistent {
-                                        appsrc: Some(rtsp.rtsp_appsrc()),
-                                        pts_offset: Some(rtsp.pts_offset()),
-                                        flow_handle: Some(rtsp.flow_handle()),
-                                    });
-                                    break;
-                                }
+                        && let Some(ref pipeline) = new_state.pipeline
+                    {
+                        for s in pipeline.inner_state_as_ref().sinks.values() {
+                            if let sink::Sink::Rtsp(rtsp) = s {
+                                persistent_rtsp = Some(sink::rtsp_sink::RtspSinkPersistent {
+                                    appsrc: Some(rtsp.rtsp_appsrc()),
+                                    pts_offset: Some(rtsp.pts_offset()),
+                                    flow_handle: Some(rtsp.flow_handle()),
+                                });
+                                break;
                             }
                         }
+                    }
 
                     state.write().await.replace(new_state);
 
@@ -530,16 +543,19 @@ impl Stream {
                             .unwrap_or_default()
                     });
                     if !is_running {
-                        warn!("Pipeline {pipeline_id:?} stopped unexpectedly while Running, handling error");
+                        warn!(
+                            "Pipeline {pipeline_id:?} stopped unexpectedly while Running, handling error"
+                        );
                         // Mark RTSP sinks for preservation before dropping
                         if let Some(ref old_st) = *state.read().await
-                            && let Some(ref pipeline) = old_st.pipeline {
-                                for s in pipeline.inner_state_as_ref().sinks.values() {
-                                    if let sink::Sink::Rtsp(rtsp) = s {
-                                        rtsp.set_preserve_factory(true);
-                                    }
+                            && let Some(ref pipeline) = old_st.pipeline
+                        {
+                            for s in pipeline.inner_state_as_ref().sinks.values() {
+                                if let sink::Sink::Rtsp(rtsp) = s {
+                                    rtsp.set_preserve_factory(true);
                                 }
                             }
+                        }
                         let backoff = lifecycle.handle_pipeline_error();
                         warn!(
                             "Running: pipeline stopped, backoff={backoff:?}, error_count={}",
@@ -553,18 +569,21 @@ impl Stream {
                 Phase::Draining => {
                     let since = drain_start.get_or_insert(std::time::Instant::now());
                     if since.elapsed() >= idle_grace_period {
-                        debug!("Lazy pipeline {pipeline_id:?}: grace period expired, transitioning to Idle");
+                        debug!(
+                            "Lazy pipeline {pipeline_id:?}: grace period expired, transitioning to Idle"
+                        );
                         if lifecycle.transition_to_idle() {
                             // Successfully transitioned -- tear down pipeline
                             // Mark RTSP sinks for preservation
                             if let Some(ref old_st) = *state.read().await
-                                && let Some(ref pipeline) = old_st.pipeline {
-                                    for s in pipeline.inner_state_as_ref().sinks.values() {
-                                        if let sink::Sink::Rtsp(rtsp) = s {
-                                            rtsp.set_preserve_factory(true);
-                                        }
+                                && let Some(ref pipeline) = old_st.pipeline
+                            {
+                                for s in pipeline.inner_state_as_ref().sinks.values() {
+                                    if let sink::Sink::Rtsp(rtsp) = s {
+                                        rtsp.set_preserve_factory(true);
                                     }
                                 }
+                            }
                             if let Some(old) = state.write().await.take() {
                                 tokio::task::spawn_blocking(move || drop(old));
                             }
@@ -776,8 +795,8 @@ impl StreamState {
                     if let Some(pipeline) = stream.pipeline.as_mut() {
                         if let Err(reason) = pipeline.add_sink(sink).await {
                             return Err(anyhow!(
-                            "Failed to add Sink of type Image to the Pipeline. Reason: {reason}"
-                        ));
+                                "Failed to add Sink of type Image to the Pipeline. Reason: {reason}"
+                            ));
                         }
                     } else {
                         return Err(anyhow!("No Pipeline available to add Image sink"));
@@ -820,8 +839,8 @@ impl StreamState {
                         if let Some(pipeline) = stream.pipeline.as_mut() {
                             if let Err(reason) = pipeline.add_sink(sink).await {
                                 return Err(anyhow!(
-                                "Failed to add Sink of type Zenoh to the Pipeline. Reason: {reason}"
-                            ));
+                                    "Failed to add Sink of type Zenoh to the Pipeline. Reason: {reason}"
+                                ));
                             }
                         } else {
                             return Err(anyhow!("No Pipeline available to add Zenoh sink"));
@@ -885,11 +904,10 @@ impl Drop for StreamState {
 
                 move || {
                     if let Some(pipeline) = pipeline_weak.upgrade()
-                        && let Err(error) = pipeline.post_message(::gst::message::Eos::new()) {
-                            error!(
-                                "Failed posting Eos message into Pipeline bus. Reason: {error:?}"
-                            );
-                        }
+                        && let Err(error) = pipeline.post_message(::gst::message::Eos::new())
+                    {
+                        error!("Failed posting Eos message into Pipeline bus. Reason: {error:?}");
+                    }
                 }
             })
             .ok();
@@ -904,9 +922,10 @@ impl Drop for StreamState {
 
                 move || {
                     if let Some(pipeline) = pipeline_weak.upgrade()
-                        && let Err(error) = pipeline.set_state(::gst::State::Null) {
-                            error!("Failed setting Pipeline state to Null. Reason: {error:?}");
-                        }
+                        && let Err(error) = pipeline.set_state(::gst::State::Null)
+                    {
+                        error!("Failed setting Pipeline state to Null. Reason: {error:?}");
+                    }
                 }
             });
 
@@ -933,14 +952,15 @@ impl Drop for StreamState {
         if pipeline.current_state() != ::gst::State::Null
             && let Err(error) =
                 wait_for_element_state(pipeline.downgrade(), ::gst::State::Null, 100, 5)
-            {
-                warn!("Pipeline did not reach Null state: {error:?}");
-            }
+        {
+            warn!("Pipeline did not reach Null state: {error:?}");
+        }
 
         if let Some(join_handle) = eos_handle
-            && let Err(error) = join_handle.join() {
-                warn!("Failed joining EOS task: {error:?}");
-            }
+            && let Err(error) = join_handle.join()
+        {
+            warn!("Failed joining EOS task: {error:?}");
+        }
 
         // Remove all Sinks after the pipeline is stopped
         let pipeline_state = self

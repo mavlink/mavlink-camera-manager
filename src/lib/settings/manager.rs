@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use tracing::*;
@@ -116,7 +116,9 @@ async fn fallback_settings_with_backup_file(file_name: &str) -> SettingsStruct {
     let backup_file_name = format!("{file_name}.bak");
 
     if std::fs::metadata(file_name).is_ok() {
-        info!("The settings file {file_name:?} will be backed-up as {backup_file_name:?}, and a new (empty) settings file will be created in its place.");
+        info!(
+            "The settings file {file_name:?} will be backed-up as {backup_file_name:?}, and a new (empty) settings file will be created in its place."
+        );
 
         if let Err(error) = std::fs::copy(file_name, backup_file_name.as_str()) {
             error!("Failed to create backup file {backup_file_name:?}. Reason: {error:#?}");
@@ -145,9 +147,10 @@ async fn load_settings_from_file(file_name: &str) -> SettingsStruct {
 fn create_directories(file_name: &str) -> Result<()> {
     let path = Path::new(&file_name);
     if let Some(parent) = path.parent()
-        && let Err(error) = std::fs::create_dir_all(parent) {
-            return Err(anyhow!("Error creating directories: {error:#?}"));
-        }
+        && let Err(error) = std::fs::create_dir_all(parent)
+    {
+        return Err(anyhow!("Error creating directories: {error:#?}"));
+    }
 
     Ok(())
 }
