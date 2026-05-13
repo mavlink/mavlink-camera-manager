@@ -324,23 +324,32 @@ pub async fn get_jpeg_thumbnail_from_source(
                 const THUMBNAIL_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(15);
 
                 let lifecycle = stream.lifecycle.clone();
-                let notify = stream.notify.clone();
                 let cooldown = stream.thumbnail_cooldown.clone();
 
                 // Check whether a cooldown consumer is already active.
                 // If not, add a new consumer and record that we need to
                 // spawn the cooldown cleanup thread later.
                 let first_request;
-                let phase_before;
                 {
                     let mut guard = cooldown.lock().unwrap();
                     first_request = guard.is_none();
-                    phase_before = lifecycle.load().0;
-                    if first_request {
-                        lifecycle.add_consumer(&*notify);
-                    }
                     *guard = Some(std::time::Instant::now());
                 }
+
+                let need_position_advance = if first_request {
+                    match lifecycle.add_consumer().await {
+                        Ok(snapshot) => {
+                            matches!(snapshot.phase, crate::stream::lifecycle::Phase::Waking)
+                                && snapshot.consumers == 1
+                        }
+                        Err(error) => {
+                            let _ = tx.send(Some(Err(Arc::new(error))));
+                            return;
+                        }
+                    }
+                } else {
+                    false
+                };
 
                 // Wait for the pipeline to be alive and Playing.
                 // Truly-idle streams need full Waking (pipeline recreation +
@@ -349,16 +358,20 @@ pub async fn get_jpeg_thumbnail_from_source(
                 {
                     let deadline =
                         tokio::time::Instant::now() + tokio::time::Duration::from_secs(30);
-                    let need_position_advance =
-                        first_request && phase_before == crate::stream::lifecycle::Phase::Idle;
                     let mut last_position: Option<gst::ClockTime> = None;
                     loop {
                         if tokio::time::Instant::now() > deadline {
                             debug!("Pipeline did not resume in time for thumbnail");
                             if first_request {
-                                let mut guard = cooldown.lock().unwrap();
-                                *guard = None;
-                                lifecycle.remove_consumer(true);
+                                {
+                                    let mut guard = cooldown.lock().unwrap();
+                                    *guard = None;
+                                }
+                                if let Err(error) = lifecycle.remove_consumer().await {
+                                    warn!(
+                                        "Failed to remove thumbnail consumer after timeout: {error}"
+                                    );
+                                }
                             }
                             let _ = tx.send(Some(Err(Arc::new(anyhow!(
                                 "Pipeline did not resume in time for thumbnail"
@@ -440,7 +453,7 @@ pub async fn get_jpeg_thumbnail_from_source(
                                     Some(last) if last.elapsed() >= THUMBNAIL_COOLDOWN => {
                                         *guard = None;
                                         drop(guard);
-                                        lifecycle_arc.remove_consumer(true);
+                                        lifecycle_arc.remove_consumer_in_background();
                                         break;
                                     }
                                     None => break,
@@ -585,7 +598,7 @@ impl Manager {
     ) -> Result<webrtc::signalling_protocol::SessionId> {
         let producer_id = bind.producer_id;
 
-        // add_consumer handles Idle→Waking (with notify) atomically.
+        // add_consumer handles Idle->Waking through the lifecycle actor.
         // After bumping the consumer count, wait for the pipeline to be
         // Playing and data to be flowing before adding the WebRTC sink.
         {
@@ -593,7 +606,7 @@ impl Manager {
             let stream = manager.streams.get(&producer_id).context(format!(
                 "Cannot find any stream with producer {producer_id:?}"
             ))?;
-            stream.lifecycle.add_consumer(&*stream.notify);
+            stream.lifecycle.add_consumer().await?;
             drop(manager);
 
             let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(30);
@@ -649,7 +662,15 @@ impl Manager {
                 if tokio::time::Instant::now() >= deadline {
                     let mgr = MANAGER.read().await;
                     if let Some(s) = mgr.streams.get(&producer_id) {
-                        s.lifecycle.remove_consumer(true);
+                        let lifecycle = s.lifecycle.clone();
+                        drop(mgr);
+                        if let Err(error) = lifecycle.remove_consumer().await {
+                            warn!(
+                                "Failed to remove consumer for {producer_id:?} after readiness timeout: {error}"
+                            );
+                        }
+                    } else {
+                        drop(mgr);
                     }
                     return Err(anyhow::anyhow!(
                         "Pipeline for {producer_id:?} did not become ready in time"
@@ -698,7 +719,13 @@ impl Manager {
         if result.is_err() {
             let mgr = MANAGER.read().await;
             if let Some(s) = mgr.streams.get(&producer_id) {
-                s.lifecycle.remove_consumer(true);
+                let lifecycle = s.lifecycle.clone();
+                drop(mgr);
+                if let Err(error) = lifecycle.remove_consumer().await {
+                    warn!(
+                        "Failed to remove consumer for {producer_id:?} after sink setup failure: {error}"
+                    );
+                }
             }
         }
 
@@ -768,7 +795,8 @@ impl Manager {
             }
         }
 
-        lifecycle.remove_consumer(true);
+        drop(manager);
+        lifecycle.remove_consumer().await?;
 
         Ok(())
     }
@@ -906,7 +934,7 @@ impl Manager {
             .filter_map(|stream| async move {
                 let id = *stream.pipeline_id;
 
-                let state = stream.lifecycle.stream_status();
+                let state = stream.compute_status();
                 let running = matches!(state, super::types::StreamStatusState::Running);
 
                 let error = stream

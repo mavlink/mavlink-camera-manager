@@ -8,7 +8,7 @@ use gst::prelude::*;
 use tracing::*;
 
 use crate::stream::{
-    gst::utils::try_set_property, lifecycle::LifecycleState, rtsp::rtsp_scheme::RTSPScheme,
+    gst::utils::try_set_property, lifecycle::LifecycleHandle, rtsp::rtsp_scheme::RTSPScheme,
 };
 
 use super::{SinkInterface, link_sink_to_tee, unlink_sink_from_tee};
@@ -36,21 +36,15 @@ pub struct RtspSinkPersistent {
 pub struct RtspFlowHandle {
     valve: Arc<Mutex<gst::Element>>,
     client_count: Arc<AtomicUsize>,
-    lifecycle: Arc<LifecycleState>,
-    notify: Arc<tokio::sync::Notify>,
+    lifecycle: LifecycleHandle,
 }
 
 impl RtspFlowHandle {
-    fn new(
-        valve: gst::Element,
-        lifecycle: Arc<LifecycleState>,
-        notify: Arc<tokio::sync::Notify>,
-    ) -> Self {
+    fn new(valve: gst::Element, lifecycle: LifecycleHandle) -> Self {
         Self {
             valve: Arc::new(Mutex::new(valve)),
             client_count: Arc::new(AtomicUsize::new(0)),
             lifecycle,
-            notify,
         }
     }
 
@@ -70,7 +64,7 @@ impl RtspFlowHandle {
             }
         }
         drop(valve);
-        self.lifecycle.add_consumer(&*self.notify);
+        self.lifecycle.add_consumer_in_background();
     }
 
     pub fn on_client_disconnected(&self) {
@@ -79,7 +73,7 @@ impl RtspFlowHandle {
             self.valve.lock().unwrap().set_property("drop", true);
             debug!("RTSP: last client disconnected, valve closed");
         }
-        self.lifecycle.remove_consumer(true);
+        self.lifecycle.remove_consumer_in_background();
     }
 
     /// Replace the inner valve element (used during lazy pipeline
@@ -187,8 +181,7 @@ impl RtspSink {
     pub fn try_new(
         id: Arc<uuid::Uuid>,
         addresses: Vec<url::Url>,
-        lifecycle: Arc<LifecycleState>,
-        notify: Arc<tokio::sync::Notify>,
+        lifecycle: LifecycleHandle,
         persistent: Option<RtspSinkPersistent>,
     ) -> Result<Self> {
         let valve = gst::ElementFactory::make("valve")
@@ -289,7 +282,7 @@ impl RtspSink {
             persistent.update_valve(valve);
             persistent
         } else {
-            RtspFlowHandle::new(valve, lifecycle, notify)
+            RtspFlowHandle::new(valve, lifecycle)
         };
 
         Ok(Self {
