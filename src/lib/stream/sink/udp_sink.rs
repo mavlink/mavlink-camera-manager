@@ -46,8 +46,8 @@ impl SinkInterface for UdpSink {
         let elements = &[&self.proxysink];
         link_sink_to_tee(tee_src_pad, pipeline, elements)?;
 
-        if let Some(queue) = &self.proxysrc_queue {
-            if let Some(src_pad) = queue.static_pad("src") {
+        if let Some(queue) = &self.proxysrc_queue
+            && let Some(src_pad) = queue.static_pad("src") {
                 let queue_weak = queue.downgrade();
                 src_pad.add_probe(
                     gst::PadProbeType::BUFFER | gst::PadProbeType::BUFFER_LIST,
@@ -57,7 +57,6 @@ impl SinkInterface for UdpSink {
                     },
                 );
             }
-        }
 
         Ok(())
     }

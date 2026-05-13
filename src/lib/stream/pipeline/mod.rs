@@ -213,14 +213,13 @@ impl PipelineState {
         let sink_id = &sink.get_id();
 
         // Start the pipeline if not playing yet
-        if pipeline.current_state() != gst::State::Playing {
-            if let Err(error) = pipeline.set_state(gst::State::Playing) {
+        if pipeline.current_state() != gst::State::Playing
+            && let Err(error) = pipeline.set_state(gst::State::Playing) {
                 sink.unlink(pipeline, pipeline_id)?;
                 return Err(anyhow!(
                     "Failed starting Pipeline {pipeline_id}. Reason: {error:#?}"
                 ));
             }
-        }
 
         if let Err(error) = wait_for_element_state_async(
             gst::prelude::ObjectExt::downgrade(pipeline),
@@ -278,11 +277,10 @@ impl PipelineState {
         // Skipping ImageSink syncronization because it goes to some wrong state,
         // and all other sinks need it to work without freezing when dynamically
         // added.
-        if !matches!(&sink, Sink::Image(..)) {
-            if let Err(error) = pipeline.sync_children_states() {
+        if !matches!(&sink, Sink::Image(..))
+            && let Err(error) = pipeline.sync_children_states() {
                 error!("Failed to syncronize children states. Reason: {error:?}");
             }
-        }
 
         self.sinks.insert(**sink_id, sink);
 

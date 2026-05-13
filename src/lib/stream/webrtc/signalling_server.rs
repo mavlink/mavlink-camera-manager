@@ -342,13 +342,12 @@ impl SignallingServer {
             },
         };
 
-        if let Some(answer) = answer {
-            if let Err(reason) = sender.send(Ok(Message::from(answer))) {
+        if let Some(answer) = answer
+            && let Err(reason) = sender.send(Ok(Message::from(answer))) {
                 return Err(anyhow!(
                     "Failed sending message to mpsc channel. Reason: {reason:}"
                 ));
             }
-        }
 
         Ok(())
     }

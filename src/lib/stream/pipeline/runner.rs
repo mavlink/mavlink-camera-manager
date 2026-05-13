@@ -227,13 +227,12 @@ impl PipelineRunner {
                     "Unable to access the Pipeline ({pipeline_name:?}) from its weak reference",
                 )?;
 
-                if pipeline.current_state() != gst::State::Playing {
-                    if let Err(error) = pipeline.set_state(gst::State::Playing) {
+                if pipeline.current_state() != gst::State::Playing
+                    && let Err(error) = pipeline.set_state(gst::State::Playing) {
                         return Err(anyhow!(
                             "Failed setting Pipeline {pipeline_name:?} to Playing state. Reason: {error:?}"
                         ));
                     }
-                }
 
                 if let Err(error) =
                     wait_for_element_state_async(pipeline_weak.clone(), gst::State::Playing, 100, 5)

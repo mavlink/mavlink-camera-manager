@@ -38,11 +38,10 @@ struct CachedThumbnails {
 
 impl CachedThumbnails {
     pub fn try_get(&self, settings: &ThumbnailSettings) -> Result<Option<Vec<u8>>> {
-        if let Some(thumbnail) = self.map.get(settings) {
-            if std::time::Instant::now() - thumbnail.instant < std::time::Duration::from_secs(1) {
+        if let Some(thumbnail) = self.map.get(settings)
+            && std::time::Instant::now() - thumbnail.instant < std::time::Duration::from_secs(1) {
                 return Ok(Some(thumbnail.image.to_vec()));
             }
-        }
 
         Ok(None)
     }
@@ -166,18 +165,16 @@ impl SinkInterface for ImageSink {
         if let Err(error) = std::thread::Builder::new()
             .name("EOS".to_string())
             .spawn(move || {
-                if let Some(pipeline) = pipeline_weak.upgrade() {
-                    if let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
+                if let Some(pipeline) = pipeline_weak.upgrade()
+                    && let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
                         error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
                     }
-                }
-                if let Some(pipeline) = encode_pipeline_weak.upgrade() {
-                    if let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
+                if let Some(pipeline) = encode_pipeline_weak.upgrade()
+                    && let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
                         error!(
                             "Failed posting Eos message into encode pipeline bus. Reason: {error:?}"
                         );
                     }
-                }
             })
             .expect("Failed spawning EOS thread")
             .join()
@@ -534,11 +531,10 @@ impl ImageSink {
         let mut receiver = self.flat_samples_sender.subscribe();
 
         // Unblock the queue's src pad to allow data to flow to the decoder
-        if let Some(blocker) = self.pad_blocker.lock().unwrap().take() {
-            if let Some(queue_src_pad) = self.queue.static_pad("src") {
+        if let Some(blocker) = self.pad_blocker.lock().unwrap().take()
+            && let Some(queue_src_pad) = self.queue.static_pad("src") {
                 queue_src_pad.remove_probe(blocker);
             }
-        }
 
         // Request an immediate keyframe from the upstream encoder so the
         // decoder can produce a frame without waiting for the next natural

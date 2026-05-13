@@ -144,11 +144,10 @@ async fn load_settings_from_file(file_name: &str) -> SettingsStruct {
 
 fn create_directories(file_name: &str) -> Result<()> {
     let path = Path::new(&file_name);
-    if let Some(parent) = path.parent() {
-        if let Err(error) = std::fs::create_dir_all(parent) {
+    if let Some(parent) = path.parent()
+        && let Err(error) = std::fs::create_dir_all(parent) {
             return Err(anyhow!("Error creating directories: {error:#?}"));
         }
-    }
 
     Ok(())
 }

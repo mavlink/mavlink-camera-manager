@@ -543,11 +543,10 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
                 }
             };
 
-            if let Some(webrtcbin) = webrtcbin_weak.upgrade() {
-                if let Err(error) = this.on_offer_created(&webrtcbin, &offer) {
+            if let Some(webrtcbin) = webrtcbin_weak.upgrade()
+                && let Err(error) = this.on_offer_created(&webrtcbin, &offer) {
                     error!("Failed to send SDP offer: {error}");
                 }
-            }
         });
 
         webrtcbin.emit_by_name::<()>("create-offer", &[&None::<gst::Structure>, &promise]);
@@ -732,15 +731,14 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         };
 
         // This avoids a negotiation loop when the browser doesn't accept the SDP we sent
-        if let Some(remote_sdp) = remote_sdp {
-            if gst_webrtc::WebRTCSDPType::Answer == remote_sdp.type_()
+        if let Some(remote_sdp) = remote_sdp
+            && gst_webrtc::WebRTCSDPType::Answer == remote_sdp.type_()
                 && remote_sdp.type_() == sdp.type_()
             {
                 debug!("Skipping SDP because this session already has an SDP answer");
 
                 return Ok(());
             }
-        }
 
         let sdp = gst_webrtc::WebRTCSessionDescription::new(sdp.type_(), sanitize_sdp(sdp.sdp())?);
 
@@ -950,16 +948,14 @@ fn strip_fec_and_red_from_media(media: &mut gst_sdp::SDPMediaRef) {
     let mut fec_red_pts: Vec<String> = Vec::new();
 
     for attr in media.attributes() {
-        if attr.key() == "rtpmap" {
-            if let Some(value) = attr.value() {
+        if attr.key() == "rtpmap"
+            && let Some(value) = attr.value() {
                 let lower = value.to_lowercase();
-                if lower.contains(" red/") || lower.contains(" ulpfec/") {
-                    if let Some(pt) = value.split_whitespace().next() {
+                if (lower.contains(" red/") || lower.contains(" ulpfec/"))
+                    && let Some(pt) = value.split_whitespace().next() {
                         fec_red_pts.push(pt.to_string());
                     }
-                }
             }
-        }
     }
 
     if fec_red_pts.is_empty() {
@@ -970,15 +966,12 @@ fn strip_fec_and_red_from_media(media: &mut gst_sdp::SDPMediaRef) {
 
     let mut attr_indices: Vec<usize> = Vec::new();
     for (idx, attr) in media.attributes().enumerate() {
-        if matches!(attr.key(), "rtpmap" | "fmtp") {
-            if let Some(value) = attr.value() {
-                if let Some(pt) = value.split_whitespace().next() {
-                    if fec_red_pts.iter().any(|p| p == pt) {
+        if matches!(attr.key(), "rtpmap" | "fmtp")
+            && let Some(value) = attr.value()
+                && let Some(pt) = value.split_whitespace().next()
+                    && fec_red_pts.iter().any(|p| p == pt) {
                         attr_indices.push(idx);
                     }
-                }
-            }
-        }
     }
     for idx in attr_indices.into_iter().rev() {
         let _ = media.remove_attribute(idx as u32);
@@ -986,11 +979,10 @@ fn strip_fec_and_red_from_media(media: &mut gst_sdp::SDPMediaRef) {
 
     let mut fmt_indices: Vec<u32> = Vec::new();
     for i in 0..media.formats_len() {
-        if let Some(fmt) = media.format(i) {
-            if fec_red_pts.iter().any(|p| p == fmt) {
+        if let Some(fmt) = media.format(i)
+            && fec_red_pts.iter().any(|p| p == fmt) {
                 fmt_indices.push(i);
             }
-        }
     }
     for idx in fmt_indices.into_iter().rev() {
         let _ = media.remove_format(idx);
@@ -1084,11 +1076,10 @@ fn optimise_send_path(webrtcbin: &gst::Element, queue: &gst::Element) {
         gst::PadProbeReturn::Remove
     });
 
-    if crate::cli::manager::is_dot_enabled() {
-        if let Some(bin) = webrtcbin.downcast_ref::<gst::Bin>() {
+    if crate::cli::manager::is_dot_enabled()
+        && let Some(bin) = webrtcbin.downcast_ref::<gst::Bin>() {
             crate::stream::gst::utils::dump_bin_elements(bin, "WebRTCBin internals");
         }
-    }
 }
 
 /// Send a ForceKeyUnit event upstream so the encoder produces a fresh keyframe

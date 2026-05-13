@@ -497,13 +497,12 @@ fn setup_pad_and_probe(pad: &gst::Pad, tx: mpsc::Sender<gst::Caps>) -> Option<gs
         let tx = tx.clone();
 
         move |_pad, info| {
-            if let Some(gst::PadProbeData::Event(ref ev)) = info.data {
-                if let gst::EventView::Caps(caps_event) = ev.view() {
+            if let Some(gst::PadProbeData::Event(ref ev)) = info.data
+                && let gst::EventView::Caps(caps_event) = ev.view() {
                     let caps = caps_event.caps();
 
                     let _ = tx.try_send(caps.to_owned());
                 }
-            }
             gst::PadProbeReturn::Ok
         }
     });
@@ -680,11 +679,10 @@ pub fn excise_single_element(element: &gst::Element) -> Result<()> {
             false
         }
     };
-    if null_ok {
-        if let Err(error) = wait_for_element_state_sync(element, gst::State::Null, 100, 2) {
+    if null_ok
+        && let Err(error) = wait_for_element_state_sync(element, gst::State::Null, 100, 2) {
             warn!("Excising {name}: {error}");
         }
-    }
 
     debug!("Excising {name}: done (null={null_ok}, removed={removed})");
 

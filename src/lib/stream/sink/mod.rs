@@ -272,11 +272,10 @@ pub fn unlink_sink_from_tee(
         // Unlink the tee src pad from whatever downstream pad it is connected to
         // (normally the queue's sink pad, but may be the webrtcbin's sink pad if
         // the queue was excised at runtime).
-        if let Some(peer_pad) = tee_src_pad.peer() {
-            if let Err(unlink_err) = tee_src_pad.unlink(&peer_pad) {
+        if let Some(peer_pad) = tee_src_pad.peer()
+            && let Err(unlink_err) = tee_src_pad.unlink(&peer_pad) {
                 warn!("Failed unlinking tee src pad from peer: {unlink_err:?}");
             }
-        }
 
         if let Some(parent) = tee_src_pad.parent_element() {
             parent.release_request_pad(tee_src_pad)
