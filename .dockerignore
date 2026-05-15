@@ -1,0 +1,35 @@
+.git
+.github
+
+# Rust/Cargo
+/target
+**/target
+
+# Node
+node_modules
+**/node_modules
+dist
+
+# Editor/IDE
+.vscode
+.idea
+.DS_Store
+
+# Docker/dev containers
+.devcontainer
+docker-compose*.yml
+docker/
+.dockerignore
+
+# Logs, envs, caches
+*.log
+*.env
+.env.local
+/.cache
+
+# Temporary files
+*/tmp/*
+*/.tmp/*
+
+# Ignore OS files
+Thumbs.db
