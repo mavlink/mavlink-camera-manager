@@ -6,7 +6,10 @@ use tracing::*;
 
 use crate::{
     stream::types::CaptureConfiguration,
-    video::types::{VideoEncodeType, VideoSourceType},
+    video::{
+        gst_device_monitor,
+        types::{VideoEncodeType, VideoSourceType},
+    },
     video_stream::types::VideoAndStreamInformation,
 };
 
@@ -47,7 +50,7 @@ impl V4lPipeline {
             }
         };
 
-        let device = video_source.device_path.as_str();
+        let device_path = video_source.device_path.as_str();
         let width = configuration.width;
         let height = configuration.height;
         let interval_numerator = configuration.frame_interval.numerator;
@@ -56,18 +59,33 @@ impl V4lPipeline {
         let video_tee_name = format!("{PIPELINE_VIDEO_TEE_NAME}-{pipeline_id}");
         let rtp_tee_name = format!("{PIPELINE_RTP_TEE_NAME}-{pipeline_id}");
 
+        debug!("Building Local pipeline for device path: {device_path}");
+
+        let device = gst_device_monitor::local_device_with_path(device_path)?
+            .upgrade()
+            .context("Device disappeared between selection and pipeline build")?;
+
+        let factory_name = device
+            .create_element(None)
+            .context("Failed to probe device factory")?
+            .factory()
+            .map(|f| f.name().to_string())
+            .context("Source element has no factory")?;
+
+        debug!("Local pipeline source factory: {factory_name}");
+
         let description = match &configuration.encode {
             VideoEncodeType::H264 => {
                 format!(
                     concat!(
-                        "v4l2src device={device} do-timestamp=true",
+                        "{factory_name} name=source",
                         " ! h264parse config-interval=-1", // Here we need the parse to help the stream-format and alignment part, which is being fixated here because avc/au seems to reduce the CPU usage in the RTP payloading part.
                         " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtph264pay aggregate-mode=zero-latency config-interval=-1 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
-                    device = device,
+                    factory_name = factory_name,
                     width = width,
                     height = height,
                     interval_denominator = interval_denominator,
@@ -80,14 +98,14 @@ impl V4lPipeline {
             VideoEncodeType::H265 => {
                 format!(
                     concat!(
-                        "v4l2src device={device} do-timestamp=true",
+                        "{factory_name} name=source",
                         " ! h265parse",
                         " ! capsfilter name={filter_name} caps=video/x-h265,stream-format=byte-stream,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtph265pay aggregate-mode=zero-latency config-interval=-1 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
-                    device = device,
+                    factory_name = factory_name,
                     width = width,
                     height = height,
                     interval_denominator = interval_denominator,
@@ -100,14 +118,14 @@ impl V4lPipeline {
             VideoEncodeType::Yuyv | VideoEncodeType::Nv12 => {
                 format!(
                     concat!(
-                        "v4l2src device={device} do-timestamp=true",
+                        "{factory_name} name=source",
                         " ! videoconvert",
                         " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtpvrawpay pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
-                    device = device,
+                    factory_name = factory_name,
                     width = width,
                     height = height,
                     interval_denominator = interval_denominator,
@@ -120,14 +138,14 @@ impl V4lPipeline {
             VideoEncodeType::Mjpg => {
                 format!(
                     concat!(
-                        "v4l2src device={device} do-timestamp=true",
+                        "{factory_name} name=source",
                         // We don't need a jpegparse, as it leads to incompatible caps, spoiling the negotiation.
                         " ! capsfilter name={filter_name} caps=image/jpeg,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtpjpegpay pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
-                    device = device,
+                    factory_name = factory_name,
                     width = width,
                     height = height,
                     interval_denominator = interval_denominator,
