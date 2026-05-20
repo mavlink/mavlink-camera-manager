@@ -307,10 +307,10 @@ impl ImageSink {
                 try_set_property(&decoder, "discard-corrupted-frames", true);
                 _transcoding_elements.push(decoder);
             }
-            VideoEncodeType::Rgb | VideoEncodeType::Yuyv => {}
+            VideoEncodeType::Rgb | VideoEncodeType::Yuyv | VideoEncodeType::Nv12 => {}
             _ => {
                 return Err(anyhow!(
-                    "Unsupported video encoding for ImageSink: {encoding:?}. The supported are: H264, H265, MJPG, RGB and YUYV"
+                    "Unsupported video encoding for ImageSink: {encoding:?}. The supported are: H264, H265, MJPG, RGB, YUYV and NV12"
                 ));
             }
         };
