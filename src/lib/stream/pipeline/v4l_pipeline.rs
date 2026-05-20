@@ -93,7 +93,7 @@ impl V4lPipeline {
                     rtp_tee_name = rtp_tee_name,
                 )
             }
-            VideoEncodeType::Yuyv => {
+            VideoEncodeType::Yuyv | VideoEncodeType::Nv12 => {
                 format!(
                     concat!(
                         "v4l2src device={device} do-timestamp=true",
