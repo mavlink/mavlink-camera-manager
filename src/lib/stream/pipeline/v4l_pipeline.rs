@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use gst::prelude::*;
 use tracing::*;
 
@@ -169,6 +169,41 @@ impl V4lPipeline {
         let pipeline = pipeline
             .downcast::<gst::Pipeline>()
             .expect("Couldn't downcast pipeline");
+
+        let source = pipeline
+            .by_name("source")
+            .context("Failed to find source element after parse::launch")?;
+
+        // `do-timestamp` only exists on GstBaseSrc subclasses (v4l2src does, libcamerasrc doesn't).
+        if source.has_property("do-timestamp") {
+            source.set_property("do-timestamp", true);
+        }
+
+        // The v4l2 device provider's `reconfigure_element` vfunc is broken
+        // upstream (it compares the factory name against the GType name), so
+        // set the device-identifying property directly from the known path.
+        // Other factories fall back to `reconfigure_element`, which is our
+        // best-effort for now.
+        // In the next iteration, we should refactor the pipeline construction
+        // so we create the pipeline's element programatically, and then we
+        // can use the given Device factory directly.
+        match factory_name.as_str() {
+            "v4l2src" => {
+                source.set_property("device", device_path);
+                debug!("Applied v4l2src device={device_path:?}");
+            }
+            "libcamerasrc" => {
+                let camera_name = device.display_name();
+                source.set_property("camera-name", camera_name.as_str());
+                debug!("Applied libcamerasrc camera-name={camera_name:?}");
+            }
+            other => {
+                device.reconfigure_element(&source).with_context(|| {
+                    format!("Failed to apply device configuration to {other} source")
+                })?;
+                debug!("Applied device configuration via reconfigure_element for {other}");
+            }
+        }
 
         pipeline.set_property("name", format!("pipeline-local-{pipeline_id}"));
 
