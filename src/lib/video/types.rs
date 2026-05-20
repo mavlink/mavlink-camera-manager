@@ -96,6 +96,8 @@ impl std::str::FromStr for VideoEncodeType {
     }
 }
 
+pub static DEFAULT_FRAME_INTERVALS: &[u32; 6] = &[60, 30, 24, 16, 10, 5];
+
 pub static STANDARD_SIZES: &[(u32, u32); 16] = &[
     (7680, 4320),
     (7200, 3060),
