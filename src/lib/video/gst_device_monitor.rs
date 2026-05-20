@@ -46,7 +46,9 @@ pub(crate) fn video_devices() -> Result<Vec<glib::WeakRef<gst::Device>>> {
         .devices()
         .iter()
         .filter_map(|device| {
-            if device.device_class().ne("Video/Source") {
+            // The canonical class is "Video/Source" but libcamera-gst reports
+            let class = device.device_class();
+            if class.ne("Video/Source") && class.ne("Source/Video") {
                 return None;
             }
 
@@ -66,13 +68,16 @@ pub fn local_devices() -> Result<Vec<glib::WeakRef<gst::Device>>> {
                 return false;
             };
 
-            device.properties().iter().any(|s| {
-                let Ok(api) = s.get::<String>("device.api") else {
-                    return false;
-                };
+            // Identify by source factory rather than `device.api`, since
+            // libcamera-gst does not expose `device.api`.
+            let Ok(probe) = device.create_element(None) else {
+                return false;
+            };
+            let Some(factory) = probe.factory() else {
+                return false;
+            };
 
-                api.eq("v4l2")
-            })
+            matches!(factory.name().as_str(), "v4l2src" | "libcamerasrc")
         })
         .cloned()
         .collect();
@@ -89,13 +94,15 @@ pub fn local_device_with_path(device_path: &str) -> Result<glib::WeakRef<gst::De
                 return false;
             };
 
-            device.properties().iter().any(|s| {
-                let Ok(path) = s.get::<String>("device.path") else {
-                    return false;
-                };
+            // Match against `device.path` (v4l2-style) or the device's
+            // display name (libcamera-style, e.g. "/base/soc/...").
+            let by_property = device.properties().iter().any(|s| {
+                s.get::<String>("device.path")
+                    .map(|p| p.eq(device_path))
+                    .unwrap_or(false)
+            });
 
-                path.eq(device_path)
-            })
+            by_property || device.display_name().eq(device_path)
         })
         .cloned()
         .context("Device not found")
