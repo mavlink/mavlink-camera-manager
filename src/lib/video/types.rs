@@ -33,6 +33,7 @@ pub enum VideoEncodeType {
     H264,
     H265,
     Mjpg,
+    Nv12,
     Rgb,
     Unknown(String),
     Yuyv,
@@ -86,6 +87,7 @@ impl std::str::FromStr for VideoEncodeType {
             "H264" => VideoEncodeType::H264,
             "H265" | "HEVC" => VideoEncodeType::H265,
             "MJPG" => VideoEncodeType::Mjpg,
+            "NV12" => VideoEncodeType::Nv12,
             "YUYV" | "YUY2" => VideoEncodeType::Yuyv,
             _ => VideoEncodeType::Unknown(fourcc),
         };
