@@ -497,8 +497,16 @@ fn get_device_formats_using_gstreamer(
                 }
             },
             Err(error) => {
-                info!("No framerate: {structure:#?}: {error:?}");
-                return;
+                trace!(
+                    "Caps without framerate, using defaults: {structure:#?}: {error:?}"
+                );
+                DEFAULT_FRAME_INTERVALS
+                    .iter()
+                    .map(|&denominator| FrameInterval {
+                        numerator: 1,
+                        denominator,
+                    })
+                    .collect()
             }
         };
 
