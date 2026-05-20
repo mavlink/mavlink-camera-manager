@@ -58,7 +58,7 @@ pub(crate) fn video_devices() -> Result<Vec<glib::WeakRef<gst::Device>>> {
 }
 
 #[instrument(level = "debug")]
-pub fn v4l_devices() -> Result<Vec<glib::WeakRef<gst::Device>>> {
+pub fn local_devices() -> Result<Vec<glib::WeakRef<gst::Device>>> {
     let devices = video_devices()?
         .iter()
         .filter(|device_weak| {
@@ -81,8 +81,8 @@ pub fn v4l_devices() -> Result<Vec<glib::WeakRef<gst::Device>>> {
 }
 
 #[instrument(level = "debug")]
-pub fn v4l_device_with_path(device_path: &str) -> Result<glib::WeakRef<gst::Device>> {
-    v4l_devices()?
+pub fn local_device_with_path(device_path: &str) -> Result<glib::WeakRef<gst::Device>> {
+    local_devices()?
         .iter()
         .find(|device_weak| {
             let Some(device) = device_weak.upgrade() else {
