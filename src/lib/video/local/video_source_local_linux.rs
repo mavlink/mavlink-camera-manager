@@ -288,7 +288,7 @@ fn get_device_formats_using_gstreamer(
     device_path: &str,
     _typ: &VideoSourceLocalType,
 ) -> Result<Vec<Format>> {
-    let device = gst_device_monitor::v4l_device_with_path(device_path)?;
+    let device = gst_device_monitor::local_device_with_path(device_path)?;
 
     let caps = gst_device_monitor::device_caps(&device)?;
 
@@ -821,7 +821,7 @@ impl VideoSource for VideoSourceLocal {
 impl VideoSourceAvailable for VideoSourceLocal {
     #[instrument(level = "debug")]
     async fn cameras_available() -> Vec<VideoSourceType> {
-        gst_device_monitor::v4l_devices()
+        gst_device_monitor::local_devices()
             .unwrap_or_default()
             .iter()
             .filter_map(|device_weak| {
