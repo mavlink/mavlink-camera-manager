@@ -31,14 +31,18 @@ impl V4lPipeline {
             .configuration
         {
             CaptureConfiguration::Video(configuration) => configuration,
-            unsupported => return Err(anyhow!("{unsupported:?} is not supported as V4l Pipeline")),
+            unsupported => {
+                return Err(anyhow!(
+                    "{unsupported:?} is not supported as Local Pipeline"
+                ));
+            }
         };
 
         let video_source = match &video_and_stream_information.video_source {
             VideoSourceType::Local(source) => source,
             unsupported => {
                 return Err(anyhow!(
-                    "SourceType {unsupported:?} is not supported as V4l Pipeline"
+                    "SourceType {unsupported:?} is not supported as Local Pipeline"
                 ));
             }
         };
@@ -135,7 +139,7 @@ impl V4lPipeline {
             }
             unsupported => {
                 return Err(anyhow!(
-                    "Encode {unsupported:?} is not supported for V4L2 Pipeline"
+                    "Encode {unsupported:?} is not supported for Local Pipeline"
                 ));
             }
         };
@@ -148,7 +152,7 @@ impl V4lPipeline {
             .downcast::<gst::Pipeline>()
             .expect("Couldn't downcast pipeline");
 
-        pipeline.set_property("name", format!("pipeline-v4l2-{pipeline_id}"));
+        pipeline.set_property("name", format!("pipeline-local-{pipeline_id}"));
 
         Ok(pipeline)
     }
