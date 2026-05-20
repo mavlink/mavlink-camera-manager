@@ -540,6 +540,7 @@ fn get_device_formats_using_gstreamer(
 
     Ok(formats)
 }
+
 #[instrument(level = "debug")]
 fn validate_control(control: &Control, value: i64) -> Result<(), String> {
     if control.state.is_inactive {
