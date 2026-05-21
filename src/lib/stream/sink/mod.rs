@@ -210,7 +210,7 @@ pub fn force_sync_false_on_element_tree(element: &gst::Element) {
 }
 
 pub fn force_sync_false_on_element(element: &gst::Element) -> bool {
-    if element.find_property("sync").is_none() || element.static_pad("src").is_some() {
+    if element.find_property("sync").is_none() {
         return false;
     }
 
