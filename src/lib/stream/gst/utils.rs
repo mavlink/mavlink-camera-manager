@@ -685,39 +685,6 @@ pub fn excise_single_element(element: &gst::Element) -> Result<()> {
     Ok(())
 }
 
-/// Excises the internal queue that `proxysrc` creates, eliminating one frame of
-/// intermediate buffering. Must be called from a pad-probe on the queue's src pad
-/// once the first buffer has flowed.
-pub fn excise_proxysrc_queue(queue: &glib::WeakRef<gst::Element>) {
-    let Some(queue_ref) = queue.upgrade() else {
-        return;
-    };
-
-    let Some(upstream_pad) = queue_ref
-        .static_pad("sink")
-        .and_then(|sink_pad| sink_pad.peer())
-    else {
-        warn!("Failed to find upstream pad for proxysrc queue excision");
-        return;
-    };
-
-    info!("Proxysrc queue excision: Installing BLOCK_DOWNSTREAM probe");
-
-    let queue = queue.clone();
-    upstream_pad.add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, move |_pad, _info| {
-        let Some(queue_ref) = queue.upgrade() else {
-            return gst::PadProbeReturn::Remove;
-        };
-
-        match excise_single_element(&queue_ref) {
-            Ok(()) => info!("Proxysrc queue excision: Queue successfully excised"),
-            Err(error) => warn!("Failed to excise proxysrc queue: {error:?}"),
-        }
-
-        gst::PadProbeReturn::Remove
-    });
-}
-
 /// Hooks into the pipeline to excise every `rtpjitterbuffer` that `rtspsrc`'s
 /// internal `rtpbin` creates. Without the jitterbuffer, retransmission (NACK)
 /// cannot function, so `do-retransmission` is also forced to `false`.
