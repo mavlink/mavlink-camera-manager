@@ -675,7 +675,13 @@ impl Manager {
                 session_id,
             };
 
-            let sink = Sink::WebRTC(WebRTCSink::try_new(bind, sender)?);
+            let video_and_stream_information =
+                stream.video_and_stream_information.read().await.clone();
+            let sink = Sink::WebRTC(WebRTCSink::try_new(
+                bind,
+                sender,
+                &video_and_stream_information,
+            )?);
 
             let mut state_guard = stream.state.write().await;
 
