@@ -37,7 +37,6 @@ use self::{
     gst::utils::wait_for_element_state,
     lifecycle::{LifecycleState, Phase},
     rtsp::{rtsp_scheme::RTSPScheme, rtsp_server::RTSPServer},
-    sink::SinkInterface,
 };
 
 pub struct Stream {
@@ -870,16 +869,6 @@ impl StreamState {
             .inner_state_as_ref()
             .pipeline_runner
             .start()?;
-
-        // Start all the sinks
-        if let Some(pipeline) = stream.pipeline.as_mut() {
-            let pipeline_state = pipeline.inner_state_mut();
-            for sink in pipeline_state.sinks.values() {
-                if let Err(error) = sink.start() {
-                    warn!("Failed to start sink: {error:?}");
-                }
-            }
-        }
 
         Ok(stream)
     }

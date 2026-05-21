@@ -284,6 +284,11 @@ impl PipelineState {
             error!("Failed to syncronize children states. Reason: {error:?}");
         }
 
+        // Start the sink's own sub-pipeline runner
+        if let Err(error) = sink.start() {
+            warn!("Failed to start sink {sink_id}: {error:?}");
+        }
+
         self.sinks.insert(**sink_id, sink);
 
         Ok(())
