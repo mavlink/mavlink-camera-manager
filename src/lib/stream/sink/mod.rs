@@ -130,6 +130,31 @@ pub async fn create_zenoh_sink(
     ))
 }
 
+#[instrument(level = "debug")]
+pub fn make_proxy_bridge() -> Result<[gst::Element; 2]> {
+    let proxysink = gst::ElementFactory::make("proxysink").build()?;
+    let proxysrc = gst::ElementFactory::make("proxysrc")
+        .property("proxysink", &proxysink)
+        .build()?;
+
+    let queue = proxysrc
+        .downcast_ref::<gst::Bin>()
+        .and_then(|bin| {
+            bin.children()
+                .into_iter()
+                .find(|element| element.name().starts_with("queue"))
+        })
+        .context("Failed to find queue inside proxysrc")?;
+
+    queue.set_property_from_str("leaky", "downstream");
+    queue.set_property("flush-on-eos", true);
+    queue.set_property("max-size-buffers", 0u32);
+    queue.set_property("max-size-bytes", 0u32);
+    queue.set_property("max-size-time", gst::ClockTime::from_seconds(5).nseconds());
+
+    Ok([proxysink, proxysrc])
+}
+
 #[instrument(level = "debug", skip_all)]
 pub fn link_sink_to_tee(
     tee_src_pad: &gst::Pad,
