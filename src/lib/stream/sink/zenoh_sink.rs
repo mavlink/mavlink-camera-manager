@@ -14,7 +14,7 @@ use crate::{
 };
 
 use super::{
-    SinkInterface, link_sink_to_tee, types::zenoh_message::CompressedVideo,
+    SinkInterface, link_sink_to_tee, make_proxy_bridge, types::zenoh_message::CompressedVideo,
     types::zenoh_message::Timestamp, unlink_sink_from_tee,
 };
 
@@ -129,29 +129,7 @@ impl ZenohSink {
         sink_id: Arc<uuid::Uuid>,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
-        // Create a pair of proxies. The proxysink will be used in the source's pipeline,
-        // while the proxysrc will be used in this sink's pipeline
-        let proxysink = gst::ElementFactory::make("proxysink").build()?;
-        let _proxysrc: gst::Element = gst::ElementFactory::make("proxysrc")
-            .property("proxysink", &proxysink)
-            .build()?;
-
-        // Configure proxysrc's queue, skips if fails
-        let proxysrc_queue = _proxysrc.downcast_ref::<gst::Bin>().and_then(|bin| {
-            bin.children()
-                .into_iter()
-                .find(|element| element.name().starts_with("queue"))
-        });
-        if let Some(queue) = &proxysrc_queue {
-            queue.set_property_from_str("leaky", "downstream");
-            queue.set_property("silent", true);
-            queue.set_property("flush-on-eos", true);
-            queue.set_property("max-size-buffers", 1u32);
-            queue.set_property("max-size-bytes", 0u32);
-            queue.set_property("max-size-time", 0u64);
-        } else {
-            warn!("Failed to find queue inside proxysrc");
-        }
+        let [proxysink, _proxysrc] = make_proxy_bridge()?;
 
         let video_encoding = match &video_and_stream_information
             .stream_information

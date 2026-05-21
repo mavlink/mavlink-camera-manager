@@ -8,7 +8,7 @@ use crate::{
     stream::pipeline::runner::PipelineRunner, video_stream::types::VideoAndStreamInformation,
 };
 
-use super::{SinkInterface, link_sink_to_tee, unlink_sink_from_tee};
+use super::{SinkInterface, link_sink_to_tee, make_proxy_bridge, unlink_sink_from_tee};
 
 #[derive(Debug)]
 pub struct UdpSink {
@@ -145,26 +145,7 @@ impl UdpSink {
         sink_id: Arc<uuid::Uuid>,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
-        let proxysink = gst::ElementFactory::make("proxysink").build()?;
-        let _proxysrc = gst::ElementFactory::make("proxysrc")
-            .property("proxysink", &proxysink)
-            .build()?;
-
-        let proxysrc_queue = _proxysrc.downcast_ref::<gst::Bin>().and_then(|bin| {
-            bin.children()
-                .into_iter()
-                .find(|element| element.name().starts_with("queue"))
-        });
-        if let Some(queue) = &proxysrc_queue {
-            queue.set_property_from_str("leaky", "downstream");
-            queue.set_property("silent", true);
-            queue.set_property("flush-on-eos", true);
-            queue.set_property("max-size-buffers", 1u32);
-            queue.set_property("max-size-bytes", 0u32);
-            queue.set_property("max-size-time", 0u64);
-        } else {
-            warn!("Failed to find queue inside proxysrc");
-        }
+        let [proxysink, _proxysrc] = make_proxy_bridge()?;
 
         let addresses = video_and_stream_information
             .stream_information
