@@ -605,6 +605,10 @@ impl WebRTCSink {
             .handle_ice(&self.webrtcbin, sdp_m_line_index, candidate)
     }
 
+    pub fn bind(&self) -> &BindAnswer {
+        &self.bind
+    }
+
     #[cfg(test)]
     pub(crate) fn runner_stop_flag(&self) -> Arc<AtomicBool> {
         self.pipeline_runner.stop_flag()
