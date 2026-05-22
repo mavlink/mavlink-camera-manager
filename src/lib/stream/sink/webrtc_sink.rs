@@ -164,71 +164,6 @@ impl SinkInterface for WebRTCSink {
             transceiver.set_property("fec-type", gst_webrtc::WebRTCFECType::None);
         }
 
-        // Provide codec-preferences so webrtcbin can create an SDP offer
-        // without waiting for buffer caps on the sink pad.  The queue src
-        // pad carries a BLOCK probe that prevents buffers (and their
-        // associated sticky caps) from reaching webrtcbin until the
-        // RED/FEC/RTX encoders are excised on Connected.  Without
-        // codec-preferences, on-negotiation-needed never fires because
-        // webrtcbin defers negotiation until caps arrive.
-        //
-        // Walk upstream: tee sink pad -> peer (payloader src) to discover
-        // the encoding-name, then build fixed caps (webrtcbin needs caps
-        // without ranges to produce a valid SDP media section).
-        let codec_caps = tee_src_pad
-            .parent_element()
-            .and_then(|tee| tee.static_pad("sink"))
-            .and_then(|tee_sink| {
-                let negotiated = tee_sink.current_caps();
-                let caps = negotiated.or_else(|| {
-                    tee_sink.peer().and_then(|peer| {
-                        let queried = peer.query_caps(None);
-                        (!queried.is_any() && queried.size() > 0).then_some(queried)
-                    })
-                })?;
-
-                let s = caps.structure(0)?;
-                let encoding = s.get::<&str>("encoding-name").ok()?;
-                let clock_rate = s.get::<i32>("clock-rate").unwrap_or(90000);
-                let payload = s.get::<i32>("payload").unwrap_or(96);
-
-                debug!(
-                    session_id = %self.bind.session_id,
-                    encoding,
-                    profile_level_id = s.get::<&str>("profile-level-id").ok().unwrap_or("?"),
-                    profile_id = s.get::<&str>("profile-id").ok().unwrap_or("?"),
-                    tier_flag = s.get::<&str>("tier-flag").ok().unwrap_or("?"),
-                    level_id = s.get::<&str>("level-id").ok().unwrap_or("?"),
-                    "Observed upstream RTP caps before codec-preferences whitelist",
-                );
-                if let Ok(mut stats) = self.stats.lock() {
-                    stats.upstream_encoding = Some(encoding.to_string());
-                }
-
-                Some(
-                    gst::Caps::builder("application/x-rtp")
-                        .field("media", "video")
-                        .field("encoding-name", encoding)
-                        .field("clock-rate", clock_rate)
-                        .field("payload", payload)
-                        .build(),
-                )
-            });
-        if let Some(caps) = codec_caps {
-            debug!(
-                session_id = %self.bind.session_id,
-                "Setting codec-preferences: {caps}",
-            );
-            if transceiver.find_property("codec-preferences").is_some() {
-                transceiver.set_property("codec-preferences", &caps);
-            }
-        } else {
-            warn!(
-                session_id = %self.bind.session_id,
-                "No caps available upstream of tee for codec-preferences",
-            );
-        }
-
         self.tee_src_pad.replace(tee_src_pad);
         let Some(tee_src_pad) = &self.tee_src_pad else {
             unreachable!()
@@ -236,6 +171,82 @@ impl SinkInterface for WebRTCSink {
 
         let elements = &[&self.proxysink];
         link_sink_to_tee(tee_src_pad, pipeline, elements)?;
+
+        // Provide codec-preferences so webrtcbin can create an SDP offer
+        // without waiting for buffer caps on the sink pad. `add_sink()` waits
+        // for fixed upstream RTP caps before calling this sync path.
+        if let Some(caps) = tee_src_pad
+            .parent_element()
+            .and_then(|tee| tee.static_pad("sink"))
+            .and_then(|tee_sink| {
+                tee_sink
+                    .current_caps()
+                    .or_else(|| tee_sink.peer().and_then(|peer| peer.current_caps()))
+            })
+        {
+            if let Some(structure) = caps.structure(0) {
+                let encoding = structure.get::<&str>("encoding-name").unwrap_or("");
+                let mut codec_caps = gst::Caps::builder("application/x-rtp")
+                    .field("media", "video")
+                    .field("encoding-name", encoding)
+                    .field(
+                        "clock-rate",
+                        structure.get::<i32>("clock-rate").unwrap_or(90000),
+                    )
+                    .field("payload", structure.get::<i32>("payload").unwrap_or(96))
+                    .build();
+
+                if let Some(codec_structure) = codec_caps.make_mut().structure_mut(0) {
+                    match encoding {
+                        "H264" => {
+                            for key in [
+                                "profile-level-id",
+                                "packetization-mode",
+                                "sprop-parameter-sets",
+                            ] {
+                                if let Ok(value) = structure.get::<&str>(key) {
+                                    codec_structure.set(key, value);
+                                }
+                            }
+                        }
+                        "H265" => {
+                            for key in [
+                                "profile-id",
+                                "profile-space",
+                                "tier-flag",
+                                "level-id",
+                                "sprop-vps",
+                                "sprop-sps",
+                                "sprop-pps",
+                            ] {
+                                if let Ok(value) = structure.get::<&str>(key) {
+                                    codec_structure.set(key, value);
+                                }
+                            }
+                        }
+                        _ => (),
+                    }
+                }
+
+                if let Ok(mut stats) = self.stats.lock()
+                    && !encoding.is_empty()
+                {
+                    stats.upstream_encoding = Some(encoding.to_string());
+                }
+                debug!(
+                    session_id = %self.bind.session_id,
+                    "Setting codec-preferences: {codec_caps}",
+                );
+                if transceiver.find_property("codec-preferences").is_some() {
+                    transceiver.set_property("codec-preferences", &codec_caps);
+                }
+            }
+        } else {
+            warn!(
+                session_id = %self.bind.session_id,
+                "No profile caps available upstream of tee for codec-preferences",
+            );
+        }
 
         // Block data at the boundary between the proxy bridge and webrtcbin
         // so no buffers reach the internal RED/FEC/RTX encoders before they
@@ -1270,6 +1281,10 @@ fn panic_message(panic: &Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
+fn is_well_formed_profile_level_id(plid: &str) -> bool {
+    plid.len() == 6 && plid.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 #[instrument(level = "debug", skip_all)]
 fn customize_sent_sdp(
     sdp: &gst_sdp::SDPMessageRef,
@@ -1334,44 +1349,68 @@ fn customize_sent_sdp(
                         .split(';')
                         .map(|v| v.to_string())
                         .collect::<Vec<String>>();
-                    new_configs.retain(|v| {
-                        v.starts_with("sprop-parameter-sets")
-                            || v.starts_with("sprop-vps")
-                            || v.starts_with("sprop-sps")
-                            || v.starts_with("sprop-pps")
+                    let retained_fmtp_fields = [
+                        "profile-level-id",
+                        "sprop-parameter-sets",
+                        "sprop-vps",
+                        "sprop-sps",
+                        "sprop-pps",
+                        "packetization-mode",
+                        "level-asymmetry-allowed",
+                        "profile-id",
+                        "profile-space",
+                        "tier-flag",
+                        "level-id",
+                        "profile-compatibility-indicator",
+                        "interop-constraints",
+                    ];
+                    new_configs.retain(|config| {
+                        let Some((key, value)) = config.split_once('=') else {
+                            return false;
+                        };
+                        if key == "profile-level-id" {
+                            return is_well_formed_profile_level_id(value);
+                        }
+                        retained_fmtp_fields.contains(&key)
                     });
 
                     trace!("fmtp attribute parsed: payload: {payload:?}, values: {new_configs:?}");
 
-                    match encoding {
-                        "H264" => {
-                            // Reference: https://www.iana.org/assignments/media-types/video/H264
-                            let original_plid = configs_str
-                                .split(';')
-                                .find_map(|kv| kv.strip_prefix("profile-level-id="))
-                                .unwrap_or("unknown");
-                            let level = original_plid.get(4..6).unwrap_or("1f");
-                            let new_plid = format!("42e0{level}");
-                            new_configs.push("packetization-mode=1".to_string());
-                            new_configs.push(format!("profile-level-id={new_plid}"));
-                            new_configs.push("level-asymmetry-allowed=1".to_string());
+                    if encoding == "H264" {
+                        let h264_fmtp_defaults = [
+                            ("packetization-mode", "1"),
+                            ("level-asymmetry-allowed", "1"),
+                        ];
+                        // IANA video/H264 defines these offer/answer fmtp
+                        // parameters; video/H265 uses profile/tier/level
+                        // fields instead.
+                        // Reference: https://www.iana.org/assignments/media-types/video/H264
+                        for (key, value) in h264_fmtp_defaults {
+                            if !new_configs
+                                .iter()
+                                .any(|v| v.starts_with(&format!("{key}=")))
+                            {
+                                new_configs.push(format!("{key}={value}"));
+                            }
                         }
-                        "H265" => {
-                            // Rererence: https://www.iana.org/assignments/media-types/video/H265
-                            const LEVEL_ID: u8 = 93;
-                            new_configs.push(format!("level-id={LEVEL_ID}"));
-                        }
-                        _ => (),
                     }
 
                     let new_configs_str = new_configs.join(";");
                     let new_value = [payload, &new_configs_str].join(" ");
 
-                    debug!(
-                        session_id = ?session.map(|(bind, _)| bind.session_id),
-                        encoding,
-                        "Rewrote fmtp line in outgoing SDP\nfrom: {value}\nto:   {new_value}",
-                    );
+                    if value != new_value {
+                        debug!(
+                            session_id = ?session.map(|(bind, _)| bind.session_id),
+                            encoding,
+                            "Rewrote fmtp line in outgoing SDP\nfrom: {value}\nto:   {new_value}",
+                        );
+                    } else {
+                        trace!(
+                            session_id = ?session.map(|(bind, _)| bind.session_id),
+                            encoding,
+                            "Preserved fmtp line in outgoing SDP: {value}",
+                        );
+                    }
 
                     let new_fmtp_attribute = gst_sdp::SDPAttribute::new("fmtp", Some(&new_value));
 
@@ -1380,7 +1419,7 @@ fn customize_sent_sdp(
                         warn!("fmtp customization failed: {error:?}");
                     }
 
-                    trace!("fmtp attribute changed \nfrom: {value:?}\nto: {new_value:?}");
+                    trace!("fmtp attribute customized \nfrom: {value:?}\nto: {new_value:?}");
                 }
             });
         });
