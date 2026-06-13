@@ -35,6 +35,7 @@ pub struct ExtendedConfiguration {
     pub disable_zenoh: bool,
     pub disable_thumbnails: bool,
     pub disable_lazy: bool,
+    pub disable_recording: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Apiv2Schema)]
