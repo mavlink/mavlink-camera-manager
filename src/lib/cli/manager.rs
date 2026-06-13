@@ -6,7 +6,7 @@ use tracing::error;
 
 use crate::{custom, stream::gst::utils::PluginRankConfig};
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use constcat::concat;
 
 #[derive(Parser, Debug)]
@@ -151,6 +151,17 @@ struct Args {
         value_parser = stream_recreation_failure_timeout_validator
     )]
     stream_recreation_failure_timeout: StreamRecreationFailureTimeoutArg,
+
+    /// Video recording backend. With `external`, recording capability is
+    /// advertised via MAVLink but handled by an external service (e.g. BlueOS
+    /// Recorder).
+    #[arg(long, value_name = "external")]
+    recorder: Option<RecorderMode>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum RecorderMode {
+    External,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -381,6 +392,10 @@ pub fn stream_recreation_failure_timeout() -> Option<Duration> {
         StreamRecreationFailureTimeoutArg::Never => None,
         StreamRecreationFailureTimeoutArg::Seconds(secs) => Some(Duration::from_secs(secs)),
     }
+}
+
+pub fn recorder_mode() -> Option<RecorderMode> {
+    MANAGER.clap_matches.recorder
 }
 
 fn gst_feature_rank_validator(val: &str) -> Result<String, String> {
