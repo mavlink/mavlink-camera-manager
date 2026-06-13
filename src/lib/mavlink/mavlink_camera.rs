@@ -28,6 +28,7 @@ struct MavlinkCameraInner {
     video_stream_uri: Url,
     video_stream_name: String,
     video_source_type: VideoSourceType,
+    advertise_recording: bool,
 }
 
 impl MavlinkCamera {
@@ -97,12 +98,20 @@ impl MavlinkCameraInner {
         let component =
             MavlinkCameraComponent::try_new(video_and_stream_information, component_id)?;
 
+        let advertise_recording = cli::manager::recorder_mode().is_some()
+            && !video_and_stream_information
+                .stream_information
+                .extended_configuration
+                .as_ref()
+                .is_some_and(|extended_configuration| extended_configuration.disable_recording);
+
         let this = Self {
             component,
             mavlink_stream_type,
             video_stream_uri,
             video_stream_name,
             video_source_type,
+            advertise_recording,
         };
 
         debug!("Starting new MAVLink camera: {this:#?}");
@@ -266,13 +275,18 @@ impl MavlinkCameraInner {
         }
 
         fn build_camera_information(camera: &Arc<MavlinkCameraInner>) -> MavMessage {
+            let mut flags = mavlink::common::CameraCapFlags::CAMERA_CAP_FLAGS_HAS_VIDEO_STREAM;
+            if camera.advertise_recording {
+                flags |= mavlink::common::CameraCapFlags::CAMERA_CAP_FLAGS_CAPTURE_VIDEO;
+            }
+
             MavMessage::CAMERA_INFORMATION(mavlink::common::CAMERA_INFORMATION_DATA {
                 time_boot_ms: super::sys_info::sys_info().time_boot_ms,
                 firmware_version: camera.component.firmware_version,
                 focal_length: 0.0,
                 sensor_size_h: 0.0,
                 sensor_size_v: 0.0,
-                flags: mavlink::common::CameraCapFlags::CAMERA_CAP_FLAGS_HAS_VIDEO_STREAM,
+                flags,
                 resolution_h: camera.component.resolution_h,
                 resolution_v: camera.component.resolution_v,
                 cam_definition_version: 0,
@@ -403,6 +417,17 @@ impl MavlinkCameraInner {
                 send_message(camera, &sender, build_storage_information());
             }
             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_CAPTURE_STATUS => {
+                if matches!(
+                    cli::manager::recorder_mode(),
+                    Some(cli::manager::RecorderMode::External)
+                ) {
+                    trace!(
+                        "Ignoring {command:?}, handled by external recorder",
+                        command = data.command
+                    );
+                    return;
+                }
+
                 send_ack(
                     camera,
                     &sender,
@@ -508,6 +533,16 @@ impl MavlinkCameraInner {
                         send_message(camera, &sender, build_storage_information());
                     }
                     CAMERA_CAPTURE_STATUS_ID => {
+                        if matches!(
+                            cli::manager::recorder_mode(),
+                            Some(cli::manager::RecorderMode::External)
+                        ) {
+                            trace!(
+                                "Ignoring MAV_CMD_REQUEST_MESSAGE(CAMERA_CAPTURE_STATUS), handled by external recorder"
+                            );
+                            return;
+                        }
+
                         send_ack(
                             camera,
                             &sender,
@@ -564,6 +599,31 @@ impl MavlinkCameraInner {
                         );
                     }
                 }
+            }
+            mavlink::common::MavCmd::MAV_CMD_VIDEO_START_CAPTURE
+            | mavlink::common::MavCmd::MAV_CMD_VIDEO_STOP_CAPTURE => {
+                if matches!(
+                    cli::manager::recorder_mode(),
+                    Some(cli::manager::RecorderMode::External)
+                ) {
+                    trace!(
+                        "Ignoring {command:?}, handled by external recorder",
+                        command = data.command
+                    );
+                    return;
+                }
+
+                send_ack(
+                    camera,
+                    &sender,
+                    their_header,
+                    data.command,
+                    mavlink::common::MavResult::MAV_RESULT_UNSUPPORTED,
+                );
+                trace!(
+                    "Ignoring unsupported recording command: {command:?}",
+                    command = data.command
+                );
             }
             message => {
                 send_ack(
