@@ -351,6 +351,10 @@ export default defineComponent({
         ", Disable Lazy: " +
         (video_and_stream.stream_information.extended_configuration
           ?.disable_lazy ?? false);
+      response +=
+        ", Disable Recording: " +
+        (video_and_stream.stream_information.extended_configuration
+          ?.disable_recording ?? false);
       return response;
     },
     async requestData() {
@@ -466,6 +470,9 @@ export default defineComponent({
             ),
             disable_lazy: Boolean(
               stream.extended_configuration.disable_lazy
+            ),
+            disable_recording: Boolean(
+              stream.extended_configuration.disable_recording
             ),
           },
         },
