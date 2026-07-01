@@ -83,6 +83,13 @@
         v-model="stream_setting.extended_configuration.disable_thumbnails"
       />
     </div>
+    <div>
+      <label>Disable Lazy: </label>
+      <input
+        type="checkbox"
+        v-model="stream_setting.extended_configuration.disable_lazy"
+      />
+    </div>
 
     <p>
       <label>Endpoints: </label>
@@ -177,6 +184,10 @@ export default defineComponent({
           this.stream.video_and_stream.stream_information
             .extended_configuration?.disable_thumbnails
         );
+        this.stream_setting.extended_configuration.disable_lazy = Boolean(
+          this.stream.video_and_stream.stream_information
+            .extended_configuration?.disable_lazy
+        );
       },
       deep: true,
     },
@@ -248,6 +259,7 @@ export default defineComponent({
           disable_mavlink: undefined as boolean | undefined,
           disable_zenoh: undefined as boolean | undefined,
           disable_thumbnails: undefined as boolean | undefined,
+          disable_lazy: undefined as boolean | undefined,
         },
       },
       stream_options: {
