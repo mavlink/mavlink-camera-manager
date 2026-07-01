@@ -1,0 +1,273 @@
+name: Test and Build
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+  # Cross Linux images ship GStreamer 1.18.4; 1.18.6 is the closest Windows MSI release.
+  GSTREAMER_VERSION: "1.18.6"
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.3
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2.9.1
+        with:
+          shared-key: frontend
+          cache-bin: true
+          cache-on-failure: true
+
+      - name: Generate bindings
+        run: cargo run --package=bindings --locked
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.22
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Stage frontend artifact
+        run: |
+          mkdir -p ci-frontend
+          cp -r frontend/dist ci-frontend/
+          cp -r frontend/bindings ci-frontend/
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: frontend-dist
+          path: ci-frontend
+          if-no-files-found: error
+          retention-days: 1
+
+  test:
+    needs: frontend
+    runs-on: ubuntu-24.04
+    env:
+      SKIP_WEB: 1
+    steps:
+      - uses: actions/checkout@v6.0.3
+        with:
+          submodules: recursive
+
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: frontend-dist
+          path: frontend
+
+      - name: Install build dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: |
+            libunwind-dev \
+            libclang-dev \
+            pkg-config \
+            build-essential \
+            libgit2-dev \
+            libmount-dev \
+            libsepol-dev \
+            libselinux1-dev \
+            libglib2.0-dev \
+            libgudev-1.0-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libgstreamer-plugins-bad1.0-dev \
+            libgstrtspserver-1.0-dev
+
+      - name: Set directory to safe for git
+        run: git config --global --add safe.directory $GITHUB_WORKSPACE
+
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2.9.1
+        with:
+          shared-key: test
+          cache-bin: true
+          cache-on-failure: true
+
+      - name: Check code style
+        run: cargo fmt -- --check
+
+      - name: Check clippy
+        run: cargo clippy --all-features --locked
+
+      - name: Install runtime dependencies
+        uses: awalsh128/cache-apt-pkgs-action@v1
+        with:
+          packages: |
+            gstreamer1.0-tools \
+            gstreamer1.0-x \
+            gstreamer1.0-nice \
+            gstreamer1.0-libav \
+            gstreamer1.0-plugins-ugly \
+            gstreamer1.0-plugins-bad \
+            libblas3
+
+      - name: Run tests
+        run: cargo test --verbose --locked
+
+  build:
+    needs: frontend
+    runs-on: ${{ matrix.OS }}
+    env:
+      SKIP_WEB: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - OS: ubuntu-24.04
+            TARGET: x86_64-unknown-linux-gnu
+            SUFFIX: linux-desktop
+
+          - OS: ubuntu-24.04
+            TARGET: armv7-unknown-linux-gnueabihf
+            SUFFIX: armv7
+
+          - OS: ubuntu-24.04
+            TARGET: aarch64-unknown-linux-gnu
+            SUFFIX: aarch64
+
+          - OS: macos-15-intel
+            TARGET: x86_64-apple-darwin
+            SUFFIX: macos
+
+          - OS: windows-2022
+            TARGET: x86_64-pc-windows-msvc
+            SUFFIX: x86_64-pc-windows
+            EXTENSION: .exe
+
+    steps:
+      - name: Building ${{ matrix.TARGET }}
+        run: echo "${{ matrix.TARGET }}"
+
+      - uses: actions/checkout@v6.0.3
+        with:
+          submodules: recursive
+
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: frontend-dist
+          path: frontend
+
+      - name: Set directory to safe for git
+        if: ${{ !contains(matrix.TARGET, 'windows') }}
+        run: git config --global --add safe.directory $GITHUB_WORKSPACE
+
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          targets: ${{ matrix.TARGET }}
+
+      - name: Set Rust default host for Windows MSVC
+        if: ${{ contains(matrix.TARGET, 'windows-msvc') }}
+        run: rustup default stable-x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2.9.1
+        with:
+          shared-key: build-${{ matrix.TARGET }}
+          cache-bin: true
+          cache-on-failure: true
+
+      - uses: cargo-bins/cargo-binstall@v1.20.0
+        if: ${{ contains(matrix.TARGET, 'linux') }}
+        with:
+          version: "1.20.0"
+
+      - name: Install cross
+        if: ${{ contains(matrix.TARGET, 'linux') }}
+        run: |
+          if [[ ! -x "$CARGO_HOME/bin/cross" ]]; then
+            cargo binstall -y cross --force
+          fi
+
+      - name: Install GStreamer
+        if: ${{ contains(matrix.TARGET, 'darwin') }}
+        run: |
+          brew install gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-libav gst-rtsp-server
+
+      - name: Install GStreamer
+        if: ${{ contains(matrix.TARGET, 'windows') }}
+        shell: pwsh
+        run: |
+          # Mirrors blinemedical/setup-gstreamer Windows logic (MSI install + env vars).
+          $version = $env:GSTREAMER_VERSION
+          $arch = "x86_64"
+          $drive = ($env:GITHUB_WORKSPACE -split ':')[0] + ':'
+          $installDir = Join-Path $drive 'gstreamer'
+          $msiBase = "https://gstreamer.freedesktop.org/data/pkg/windows/$version/msvc"
+          $installers = @(
+            "gstreamer-1.0-msvc-$arch-$version.msi",
+            "gstreamer-1.0-devel-msvc-$arch-$version.msi"
+          )
+
+          foreach ($installer in $installers) {
+            $url = "$msiBase/$installer"
+            $msiPath = Join-Path $env:RUNNER_TEMP $installer
+            Invoke-WebRequest $url -OutFile $msiPath
+            Start-Process msiexec.exe -ArgumentList '/passive', "INSTALLDIR=$installDir", 'ADDLOCAL=ALL', '/i', $msiPath -Wait
+          }
+
+          $gstreamerPath = Join-Path $installDir "1.0\msvc_$arch"
+          $gstreamerBinPath = Join-Path $gstreamerPath 'bin'
+          $gstreamerPkgConfigPath = Join-Path $gstreamerPath 'lib\pkgconfig'
+
+          "GSTREAMER_1_0_ROOT_MSVC_X86_64=$gstreamerPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $pkgConfigPath = $gstreamerPkgConfigPath
+          if ($env:PKG_CONFIG_PATH) {
+            $pkgConfigPath = "$($env:PKG_CONFIG_PATH):$gstreamerPkgConfigPath"
+          }
+          "PKG_CONFIG_PATH=$pkgConfigPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $gstreamerBinPath | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Install WinPcap development files
+        if: ${{ contains(matrix.TARGET, 'windows') }}
+        run: |
+          Invoke-WebRequest -UseBasicParsing https://www.winpcap.org/install/bin/WpdPack_4_1_2.zip -OutFile "${Env:TEMP}\wpd.zip"
+          Expand-Archive -LiteralPath "${Env:TEMP}\wpd.zip" -DestinationPath "${Env:TEMP}\wpd"
+          Move-Item -LiteralPath "${Env:TEMP}\wpd\WpdPack\Lib" -Destination lib
+
+      - name: Building linux for ${{ matrix.TARGET }}
+        if: ${{ contains(matrix.TARGET, 'linux') }}
+        run: cross build --release --locked --target ${{ matrix.TARGET }} --verbose
+
+      - name: Building non-linux for ${{ matrix.TARGET }}
+        if: ${{ !contains(matrix.TARGET, 'linux') }}
+        run: cargo build --release --locked --target ${{ matrix.TARGET }} --verbose
+
+      - name: Prepare files
+        shell: bash
+        run: |
+          mkdir -p upload
+          cp target/${{ matrix.TARGET }}/release/mavlink-camera-manager${{ matrix.EXTENSION }} upload/mavlink-camera-manager-${{ matrix.SUFFIX }}${{ matrix.EXTENSION }}
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: mavlink-camera-manager-${{ matrix.SUFFIX }}
+          path: upload/*
+
+      - uses: svenstaro/upload-release-action@2.11.5
+        name: Upload binaries to release
+        if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: upload/mavlink-camera-manager-*
+          asset_name: mavlink-camera-manager-${{ matrix.SUFFIX }}
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
