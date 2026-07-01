@@ -347,6 +347,10 @@ export default defineComponent({
         ", Disable Thumbnails: " +
         (video_and_stream.stream_information.extended_configuration
           ?.disable_thumbnails ?? false);
+      response +=
+        ", Disable Lazy: " +
+        (video_and_stream.stream_information.extended_configuration
+          ?.disable_lazy ?? false);
       return response;
     },
     async requestData() {
@@ -459,6 +463,9 @@ export default defineComponent({
             ),
             disable_thumbnails: Boolean(
               stream.extended_configuration.disable_thumbnails
+            ),
+            disable_lazy: Boolean(
+              stream.extended_configuration.disable_lazy
             ),
           },
         },
