@@ -90,6 +90,13 @@
         v-model="stream_setting.extended_configuration.disable_lazy"
       />
     </div>
+    <div>
+      <label>Disable Recording: </label>
+      <input
+        type="checkbox"
+        v-model="stream_setting.extended_configuration.disable_recording"
+      />
+    </div>
 
     <p>
       <label>Endpoints: </label>
@@ -188,6 +195,10 @@ export default defineComponent({
           this.stream.video_and_stream.stream_information
             .extended_configuration?.disable_lazy
         );
+        this.stream_setting.extended_configuration.disable_recording = Boolean(
+          this.stream.video_and_stream.stream_information
+            .extended_configuration?.disable_recording
+        );
       },
       deep: true,
     },
@@ -260,6 +271,7 @@ export default defineComponent({
           disable_zenoh: undefined as boolean | undefined,
           disable_thumbnails: undefined as boolean | undefined,
           disable_lazy: undefined as boolean | undefined,
+          disable_recording: undefined as boolean | undefined,
         },
       },
       stream_options: {
