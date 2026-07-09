@@ -156,16 +156,23 @@ struct Args {
     )]
     stream_recreation_failure_timeout: StreamRecreationFailureTimeoutArg,
 
-    /// Video recording backend. With `external`, recording capability is
+    /// Video recording backend. With `internal` (default), recording is handled
+    /// by mavlink-camera-manager. With `external`, recording capability is
     /// advertised via MAVLink but handled by an external service (e.g. BlueOS
-    /// Recorder).
-    #[arg(long, value_name = "external")]
-    recorder: Option<RecorderMode>,
+    /// Recorder). With `disabled`, recording is not advertised or handled.
+    #[arg(
+        long,
+        value_name = "internal|external|disabled",
+        default_value = "internal"
+    )]
+    recorder: RecorderMode,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum RecorderMode {
+    Internal,
     External,
+    Disabled,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -406,7 +413,7 @@ pub fn stream_recreation_failure_timeout() -> Option<Duration> {
     }
 }
 
-pub fn recorder_mode() -> Option<RecorderMode> {
+pub fn recorder_mode() -> RecorderMode {
     MANAGER.clap_matches.recorder
 }
 
