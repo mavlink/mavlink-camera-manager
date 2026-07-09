@@ -100,7 +100,8 @@ impl MavlinkCameraInner {
         let component =
             MavlinkCameraComponent::try_new(video_and_stream_information, component_id)?;
 
-        let advertise_recording = cli::manager::recorder_mode().is_some()
+        let advertise_recording = cli::manager::recorder_mode()
+            != cli::manager::RecorderMode::Disabled
             && !video_and_stream_information
                 .stream_information
                 .extended_configuration
@@ -434,7 +435,7 @@ impl MavlinkCameraInner {
             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_CAPTURE_STATUS => {
                 if matches!(
                     cli::manager::recorder_mode(),
-                    Some(cli::manager::RecorderMode::External)
+                    cli::manager::RecorderMode::External
                 ) {
                     trace!(
                         "Ignoring {command:?}, handled by external recorder",
@@ -589,7 +590,7 @@ impl MavlinkCameraInner {
                     CAMERA_CAPTURE_STATUS_ID => {
                         if matches!(
                             cli::manager::recorder_mode(),
-                            Some(cli::manager::RecorderMode::External)
+                            cli::manager::RecorderMode::External
                         ) {
                             trace!(
                                 "Ignoring MAV_CMD_REQUEST_MESSAGE(CAMERA_CAPTURE_STATUS), handled by external recorder"
@@ -657,7 +658,7 @@ impl MavlinkCameraInner {
             mavlink::common::MavCmd::MAV_CMD_VIDEO_START_CAPTURE => {
                 if matches!(
                     cli::manager::recorder_mode(),
-                    Some(cli::manager::RecorderMode::External)
+                    cli::manager::RecorderMode::External
                 ) {
                     trace!(
                         "Ignoring {command:?}, handled by external recorder",
