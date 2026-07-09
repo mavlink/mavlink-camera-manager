@@ -6,6 +6,8 @@ env:
   CARGO_TERM_COLOR: always
   # Cross Linux images ship GStreamer 1.18.4; 1.18.6 is the closest Windows MSI release.
   GSTREAMER_VERSION: "1.18.6"
+  # Only master should write caches. Other branches can read.
+  CACHE_SAVE: ${{ github.ref == 'refs/heads/master' }}
 
 jobs:
   frontend:
@@ -24,6 +26,7 @@ jobs:
           shared-key: frontend
           cache-bin: true
           cache-on-failure: true
+          save-if: ${{ env.CACHE_SAVE }}
 
       - name: Generate bindings
         run: cargo run --package=bindings --locked
@@ -98,6 +101,7 @@ jobs:
           shared-key: test
           cache-bin: true
           cache-on-failure: true
+          save-if: ${{ env.CACHE_SAVE }}
 
       - name: Check code style
         run: cargo fmt -- --check
@@ -181,6 +185,7 @@ jobs:
           shared-key: build-${{ matrix.TARGET }}
           cache-bin: true
           cache-on-failure: true
+          save-if: ${{ env.CACHE_SAVE }}
 
       - uses: cargo-bins/cargo-binstall@v1.20.0
         if: ${{ contains(matrix.TARGET, 'linux') }}
