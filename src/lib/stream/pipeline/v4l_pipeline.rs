@@ -196,6 +196,10 @@ impl V4lPipeline {
                 let camera_name = device.display_name();
                 source.set_property("camera-name", camera_name.as_str());
                 debug!("Applied libcamerasrc camera-name={camera_name:?}");
+                crate::video::local::libcamera_controls::apply_pending_to_element(
+                    camera_name.as_str(),
+                    &source,
+                );
             }
             other => {
                 device.reconfigure_element(&source).with_context(|| {
