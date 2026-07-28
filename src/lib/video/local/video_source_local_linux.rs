@@ -644,11 +644,28 @@ impl VideoSource for VideoSourceLocal {
     #[instrument(level = "debug")]
     fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()> {
         if matches!(self.typ, VideoSourceLocalType::Libcamera(_)) {
-            debug!("Controls not supported for libcamera devices, skipping");
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Controls not supported for libcamera devices",
-            ));
+            let Some(control) =
+                super::libcamera_controls::find_control(&self.device_path, control_id)
+            else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!(
+                        "Control ID {control_id:?} was not found for libcamera device {:?}",
+                        self.device_path
+                    ),
+                ));
+            };
+            if let Err(error) = validate_control(&control, value) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Unsupported,
+                    format!("Failed setting {control_id:?} to {value:?}: {error}"),
+                ));
+            }
+            return super::libcamera_controls::set_control_by_name(
+                &self.device_path,
+                &control.name,
+                value,
+            );
         }
 
         let Some(control) = self
@@ -712,11 +729,7 @@ impl VideoSource for VideoSourceLocal {
     #[instrument(level = "debug")]
     fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64> {
         if matches!(self.typ, VideoSourceLocalType::Libcamera(_)) {
-            debug!("Controls not supported for libcamera devices, skipping");
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Controls not supported for libcamera devices",
-            ));
+            return super::libcamera_controls::control_value_by_id(&self.device_path, control_id);
         }
 
         let device_path = self.device_path.clone();
@@ -739,8 +752,7 @@ impl VideoSource for VideoSourceLocal {
         let mut controls: Vec<Control> = vec![];
 
         if matches!(self.typ, VideoSourceLocalType::Libcamera(_)) {
-            debug!("Controls not supported for libcamera devices, returning empty list");
-            return controls;
+            return super::libcamera_controls::list_controls(&self.device_path);
         }
 
         //TODO: create function to encapsulate device
