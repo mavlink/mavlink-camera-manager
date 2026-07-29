@@ -47,6 +47,7 @@ pub fn check_all_plugins() -> Result<()> {
         PluginRequirement::new("timeoverlay"),
         PluginRequirement::new("queue"),
         PluginRequirement::new("tee"),
+        PluginRequirement::new("valve"),
         PluginRequirement::new("identity"),
         // Parsers
         PluginRequirement::new("h264parse"),
