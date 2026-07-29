@@ -21,9 +21,12 @@ default-run = "mavlink-camera-manager"
 build = "build.rs"
 
 [features]
-default = []
+default = ["libcamera-native"]
 # WebDriver-based WebRTC test
 webrtc-test = ["dep:thirtyfour", "tokio/process"]
+# Enumerate native sensor modes via libcamera (rpicam-apps style). Requires
+# libcamera at build/link time matching the target (BlueOS vendored 0.7.x).
+libcamera-native = ["dep:libcamera"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -129,6 +132,7 @@ gio = "0.22"
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
 v4l = "0.14.0"
+libcamera = { version = "0.7", default-features = false, features = ["libcamera_semver_versioning"], optional = true }
 
 [dev-dependencies]
 rand = "0.8.5"
