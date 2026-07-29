@@ -70,14 +70,17 @@ pub struct ImageSink {
     // Capture pipeline: proxysrc -> [decoders] -> appsink(enable-last-sample)
     pipeline: gst::Pipeline,
     queue: gst::Element,
+    /// Drops frames when closed so the tee branch never backpressures the main stream.
+    valve: gst::Element,
     proxysink: gst::Element,
     _proxysrc: gst::Element,
     _transcoding_elements: Vec<gst::Element>,
     appsink: gst_app::AppSink,
     source_width: u32,
     source_height: u32,
+    /// Compressed sources need a force-keyunit; raw ISP formats do not.
+    needs_keyframe: bool,
     tee_src_pad: Arc<Mutex<Option<gst::Pad>>>,
-    pad_blocker: Arc<Mutex<Option<gst::PadProbeId>>>,
     pipeline_runner: PipelineRunner,
     flat_samples_sender: tokio::sync::broadcast::Sender<ClonableResult<()>>,
     // Encoding pipeline: appsrc -> videoscale -> capsfilter -> videoconvert -> jpegenc -> jpeg_appsink
@@ -114,7 +117,7 @@ impl SinkInterface for ImageSink {
             guard.replace(tee_src_pad.clone());
         }
 
-        let elements = &[&self.queue, &self.proxysink];
+        let elements = &[&self.queue, &self.valve, &self.proxysink];
         link_sink_to_tee(&tee_src_pad, pipeline, elements)?;
 
         Ok(())
@@ -128,7 +131,7 @@ impl SinkInterface for ImageSink {
             return Ok(());
         };
 
-        let elements = &[&self.queue, &self.proxysink];
+        let elements = &[&self.queue, &self.valve, &self.proxysink];
         unlink_sink_from_tee(tee_src_pad, pipeline, elements)?;
 
         if let Err(error) = self.pipeline.set_state(::gst::State::Null) {
@@ -209,6 +212,11 @@ impl ImageSink {
             .property("max-size-time", 0u64)
             .build()?;
 
+        // Drop when closed: never backpressure the main tee (unlike BLOCK probes).
+        let valve = gst::ElementFactory::make("valve")
+            .property("drop", true)
+            .build()?;
+
         // Create a pair of proxies. The proxysink will be used in the source's pipeline,
         // while the proxysrc will be used in this sink's pipeline
         let proxysink = gst::ElementFactory::make("proxysink").build()?;
@@ -262,6 +270,10 @@ impl ImageSink {
 
         // Depending of the sources' format we need different elements to transform it into a raw format
         let mut _transcoding_elements: Vec<gst::Element> = Default::default();
+        let needs_keyframe = matches!(
+            encoding,
+            VideoEncodeType::H264 | VideoEncodeType::H265 | VideoEncodeType::Mjpg
+        );
         match encoding {
             VideoEncodeType::H264 => {
                 // For h264, we need to filter-out unwanted non-key frames here, before decoding it.
@@ -315,11 +327,8 @@ impl ImageSink {
             }
         };
 
-        // Raw capture appsink + callback
-        let pad_blocker: Arc<Mutex<Option<gst::PadProbeId>>> = Default::default();
-        let pad_blocker_clone = pad_blocker.clone();
         let tee_src_pad: Arc<Mutex<Option<gst::Pad>>> = Default::default();
-        let queue_clone = queue.clone();
+        let valve_for_callback = valve.clone();
 
         let (sender, _) = tokio::sync::broadcast::channel(1);
         let flat_samples_sender = sender.clone();
@@ -327,18 +336,9 @@ impl ImageSink {
 
         let appsink_callbacks = gst_app::AppSinkCallbacks::builder()
             .new_sample(move |_appsink| {
-                // Always re-block to stop data flow regardless of listener state
-                if let Some(queue_src_pad) = queue_clone.static_pad("src") {
-                    // Got a valid frame, block any further frame until next request
-                    if let Some(old_blocker) = queue_src_pad
-                        .add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, |_pad, _info| {
-                            gst::PadProbeReturn::Ok
-                        })
-                        .and_then(|blocker| pad_blocker_clone.lock().unwrap().replace(blocker))
-                    {
-                        queue_src_pad.remove_probe(old_blocker);
-                    }
-                }
+                // Close the valve after one frame — drops further buffers without
+                // blocking the main tee (BLOCK probes did, and stalled RTSP).
+                valve_for_callback.set_property("drop", true);
 
                 // Only process if requested
                 if sender.receiver_count() == 0 || pending {
@@ -392,8 +392,13 @@ impl ImageSink {
             return Err(anyhow!("Failed linking ImageSink's elements: {link_err:?}"));
         }
 
-        let pipeline_runner =
-            PipelineRunner::try_new(&pipeline, &sink_id, true, video_and_stream_information)?;
+        // Background priority: thumbnail work must not preempt the live stream.
+        let pipeline_runner = PipelineRunner::try_new_background(
+            &pipeline,
+            &sink_id,
+            true,
+            video_and_stream_information,
+        )?;
 
         // Build encoding pipeline
         let (enc_sender, _) = tokio::sync::broadcast::channel(1);
@@ -488,14 +493,15 @@ impl ImageSink {
             sink_id: sink_id.clone(),
             pipeline,
             queue,
+            valve,
             proxysink,
             _proxysrc,
             _transcoding_elements,
             appsink,
             source_width,
             source_height,
+            needs_keyframe,
             tee_src_pad,
-            pad_blocker,
             pipeline_runner,
             flat_samples_sender,
             encode_pipeline,
@@ -511,13 +517,12 @@ impl ImageSink {
         })
     }
 
-    /// Unblock the source pad, wait for a single raw frame to arrive at
-    /// `appsink` (stored via `enable-last-sample`), then re-block.
+    /// Open the valve, wait for a single raw frame to arrive at `appsink`
+    /// (stored via `enable-last-sample`), then close the valve again.
     #[instrument(level = "debug", skip(self))]
     async fn capture_raw_frame(&self) -> Result<()> {
         // The capture pipeline stays in Playing between snapshots.
-        // A pad blocker on the queue's src pad prevents data from
-        // reaching the decoder when idle, so CPU usage is negligible.
+        // A closed valve drops buffers without backpressuring the main tee.
         // Cycling through Null would lose the proxy's sticky events
         // (stream-start, caps, segment) which cannot be reliably
         // restored, causing "data flow before stream-start" warnings
@@ -532,28 +537,28 @@ impl ImageSink {
                 .map_err(|error| anyhow!("Capture pipeline failed to reach Playing: {error:?}"))?;
         }
 
-        // Subscribe BEFORE unblocking to guarantee we receive the notification
+        // Subscribe BEFORE opening the valve to guarantee we receive the notification
         let mut receiver = self.flat_samples_sender.subscribe();
 
-        // Unblock the queue's src pad to allow data to flow to the decoder
-        if let Some(blocker) = self.pad_blocker.lock().unwrap().take()
-            && let Some(queue_src_pad) = self.queue.static_pad("src")
-        {
-            queue_src_pad.remove_probe(blocker);
-        }
+        // Let one (or a few) frames through; appsink callback closes the valve.
+        self.valve.set_property("drop", false);
 
-        // Request an immediate keyframe from the upstream encoder so the
-        // decoder can produce a frame without waiting for the next natural
-        // keyframe (which may be many seconds away with x264enc defaults).
-        if let Some(queue_src_pad) = self.queue.static_pad("src") {
+        // Only compressed streams need an upstream keyframe request. Sending
+        // ForceKeyUnit into a raw libcamerasrc path stalls the main pipeline.
+        if self.needs_keyframe
+            && let Some(valve_src_pad) = self.valve.static_pad("src")
+        {
             let event = gst_video::UpstreamForceKeyUnitEvent::builder()
                 .all_headers(true)
                 .build();
-            queue_src_pad.send_event(event);
+            valve_src_pad.send_event(event);
         }
 
         let result =
             tokio::time::timeout(tokio::time::Duration::from_secs(15), receiver.recv()).await;
+
+        // Always re-close, including on timeout, so the tee stays unloaded.
+        self.valve.set_property("drop", true);
 
         result??.map_err(anyhow::Error::msg)
     }
