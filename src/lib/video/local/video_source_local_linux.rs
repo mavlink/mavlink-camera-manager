@@ -285,6 +285,18 @@ impl From<gst::Fraction> for FrameInterval {
     }
 }
 
+fn filter_isp_streamable_formats(formats: Vec<Format>) -> Vec<Format> {
+    formats
+        .into_iter()
+        .filter(|format| {
+            matches!(
+                format.encode,
+                VideoEncodeType::Nv12 | VideoEncodeType::Rgb | VideoEncodeType::Yuyv
+            )
+        })
+        .collect()
+}
+
 fn get_device_formats_using_gstreamer(
     device_path: &str,
     _typ: &VideoSourceLocalType,
@@ -338,24 +350,8 @@ fn get_device_formats_using_gstreamer(
             "image/jpeg" => vec![VideoEncodeType::Mjpg],
             "video/x-h264" => vec![VideoEncodeType::H264],
             "video/x-h265" => vec![VideoEncodeType::H265],
-            // Listed for discovery; Local Pipeline does not stream Bayer yet.
-            "video/x-bayer" => match structure.value("format") {
-                Ok(sendvalue) => match sendvalue.get::<String>() {
-                    Ok(fourcc) => {
-                        vec![VideoEncodeType::from_str(&fourcc).expect("irrefutable")]
-                    }
-                    Err(error) => {
-                        warn!(
-                            "Failed reading video/x-bayer format as gchararray: {structure:#?}: {error:?}"
-                        );
-                        return;
-                    }
-                },
-                Err(error) => {
-                    warn!("No format on video/x-bayer: {structure:#?}: {error:?}");
-                    return;
-                }
-            },
+            // Bayer is not streamable via the ISP path we support; omit from listing.
+            "video/x-bayer" => return,
             other => {
                 info!("unknown format: {other:?}");
 
@@ -619,13 +615,25 @@ impl VideoSourceFormats for VideoSourceLocal {
 
         if matches!(typ, VideoSourceLocalType::Libcamera(_)) {
             return match super::libcamera_formats::list_formats(device_path) {
-                Ok(formats) => formats,
+                Ok(formats) if !formats.is_empty() => formats,
+                Ok(_) => {
+                    warn!(
+                        "libcamera native formats empty for {device_path:?}; falling back to GStreamer caps (ISP streamables only)"
+                    );
+                    match get_device_formats_using_gstreamer(device_path, typ) {
+                        Ok(formats) => filter_isp_streamable_formats(formats),
+                        Err(error) => {
+                            warn!("Failed getting formats for device {device_path:?}: {error:?}");
+                            vec![]
+                        }
+                    }
+                }
                 Err(error) => {
                     warn!(
                         "Failed getting libcamera native formats for {device_path:?}: {error:?}; falling back to GStreamer caps"
                     );
                     match get_device_formats_using_gstreamer(device_path, typ) {
-                        Ok(formats) => formats,
+                        Ok(formats) => filter_isp_streamable_formats(formats),
                         Err(error) => {
                             warn!("Failed getting formats for device {device_path:?}: {error:?}");
                             vec![]
