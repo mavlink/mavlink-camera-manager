@@ -115,7 +115,7 @@ impl V4lPipeline {
                     rtp_tee_name = rtp_tee_name,
                 )
             }
-            VideoEncodeType::Yuyv | VideoEncodeType::Nv12 => {
+            VideoEncodeType::Yuyv | VideoEncodeType::Nv12 | VideoEncodeType::Rgb => {
                 format!(
                     concat!(
                         "{factory_name} name=source",
