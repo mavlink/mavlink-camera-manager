@@ -3,3 +3,5 @@
 .vscode
 logs
 dev
+.libcamera-aarch64
+.blueos-aarch64-sysroot
