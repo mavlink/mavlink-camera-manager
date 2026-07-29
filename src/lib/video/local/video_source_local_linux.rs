@@ -617,13 +617,31 @@ impl VideoSourceFormats for VideoSourceLocal {
         let device_path = &self.device_path;
         let typ = &self.typ;
 
-        return match get_device_formats_using_gstreamer(device_path, typ) {
-            Ok(devices) => devices,
+        if matches!(typ, VideoSourceLocalType::Libcamera(_)) {
+            return match super::libcamera_formats::list_formats(device_path) {
+                Ok(formats) => formats,
+                Err(error) => {
+                    warn!(
+                        "Failed getting libcamera native formats for {device_path:?}: {error:?}; falling back to GStreamer caps"
+                    );
+                    match get_device_formats_using_gstreamer(device_path, typ) {
+                        Ok(formats) => formats,
+                        Err(error) => {
+                            warn!("Failed getting formats for device {device_path:?}: {error:?}");
+                            vec![]
+                        }
+                    }
+                }
+            };
+        }
+
+        match get_device_formats_using_gstreamer(device_path, typ) {
+            Ok(formats) => formats,
             Err(error) => {
                 warn!("Failed getting formats for device {device_path:?}: {error:?}");
                 vec![]
             }
-        };
+        }
     }
 }
 
