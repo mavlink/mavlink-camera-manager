@@ -338,6 +338,24 @@ fn get_device_formats_using_gstreamer(
             "image/jpeg" => vec![VideoEncodeType::Mjpg],
             "video/x-h264" => vec![VideoEncodeType::H264],
             "video/x-h265" => vec![VideoEncodeType::H265],
+            // Listed for discovery; Local Pipeline does not stream Bayer yet.
+            "video/x-bayer" => match structure.value("format") {
+                Ok(sendvalue) => match sendvalue.get::<String>() {
+                    Ok(fourcc) => {
+                        vec![VideoEncodeType::from_str(&fourcc).expect("irrefutable")]
+                    }
+                    Err(error) => {
+                        warn!(
+                            "Failed reading video/x-bayer format as gchararray: {structure:#?}: {error:?}"
+                        );
+                        return;
+                    }
+                },
+                Err(error) => {
+                    warn!("No format on video/x-bayer: {structure:#?}: {error:?}");
+                    return;
+                }
+            },
             other => {
                 info!("unknown format: {other:?}");
 
