@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use gst_app::prelude::*;
@@ -19,6 +22,7 @@ lazy_static! {
             .monitor
             .start()
             .expect("Failed to start the GStreamer device monitor");
+        wait_for_video_devices(&manager.monitor);
 
         Arc::new(Mutex::new(manager))
     };
@@ -113,6 +117,24 @@ pub fn device_caps(device: &glib::WeakRef<gst::Device>) -> Result<gst::Caps> {
         .context("Fail to access device")?
         .caps()
         .context("Caps not found")
+}
+
+/// Providers probe asynchronously via the GLib main context. Pump it briefly so early
+/// `cameras_available()` callers (default-stream creation) are not racing an empty list.
+fn wait_for_video_devices(monitor: &gst::DeviceMonitor) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let main_context = glib::MainContext::default();
+    while Instant::now() < deadline {
+        while main_context.iteration(false) {}
+        if monitor
+            .devices()
+            .iter()
+            .any(|device| device.device_class() == "Video/Source")
+        {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }
 
 #[cfg(test)]
