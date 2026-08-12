@@ -70,9 +70,9 @@ jobs:
           path: frontend
 
       - name: Install build dependencies
-        uses: awalsh128/cache-apt-pkgs-action@v1
-        with:
-          packages: |
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
             libunwind-dev \
             libclang-dev \
             pkg-config \
@@ -110,9 +110,9 @@ jobs:
         run: cargo clippy --all-features --locked
 
       - name: Install runtime dependencies
-        uses: awalsh128/cache-apt-pkgs-action@v1
-        with:
-          packages: |
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
             gstreamer1.0-tools \
             gstreamer1.0-x \
             gstreamer1.0-nice \
