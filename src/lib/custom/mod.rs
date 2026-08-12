@@ -1,6 +1,5 @@
 mod bluerov;
-#[cfg(feature = "webrtc-test")]
-mod test;
+pub mod test;
 
 use clap::ValueEnum;
 
@@ -11,16 +10,12 @@ use crate::{cli, video_stream::types::VideoAndStreamInformation};
 pub enum CustomEnvironment {
     BlueROVUDP,
     BlueROVRTSP,
-    #[cfg(feature = "webrtc-test")]
-    WebRTCTest,
 }
 
 pub async fn create_default_streams() -> Vec<VideoAndStreamInformation> {
     match cli::manager::default_settings() {
         Some(CustomEnvironment::BlueROVUDP) => bluerov::udp().await,
         Some(CustomEnvironment::BlueROVRTSP) => bluerov::rtsp().await,
-        #[cfg(feature = "webrtc-test")]
-        Some(CustomEnvironment::WebRTCTest) => test::take_webrtc_stream(),
         _ => vec![],
     }
 }
