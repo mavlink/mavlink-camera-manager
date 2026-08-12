@@ -9,7 +9,18 @@ lazy_static! {
         // Constructing `gst::DeviceMonitor` requires GStreamer to be initialized; ensure it is so
         // that callers like cameras_available() work even when the binary entry point hasn't run.
         gst::init().expect("Failed to initialize GStreamer");
-        Arc::new(Mutex::new(Manager::default()))
+
+        let manager = Manager::default();
+        // An unstarted monitor has no providers, and its `devices()` silently returns nothing —
+        // including during settings init, which builds default streams before `init()` runs.
+        manager.monitor.set_show_all_devices(true);
+        manager.monitor.set_show_all(true);
+        manager
+            .monitor
+            .start()
+            .expect("Failed to start the GStreamer device monitor");
+
+        Arc::new(Mutex::new(manager))
     };
 }
 
@@ -25,17 +36,11 @@ impl Drop for Manager {
 }
 
 #[instrument(level = "debug")]
-pub fn init() -> Result<()> {
+pub fn init() {
     let manager_guard = MANAGER.lock().unwrap();
-
-    manager_guard.monitor.set_show_all_devices(true);
-    manager_guard.monitor.set_show_all(true);
-    manager_guard.monitor.start()?;
 
     let providers = manager_guard.monitor.providers();
     info!("GST Device Providers: {providers:#?}");
-
-    Ok(())
 }
 
 #[instrument(level = "debug")]
@@ -108,4 +113,21 @@ pub fn device_caps(device: &glib::WeakRef<gst::Device>) -> Result<gst::Caps> {
         .context("Fail to access device")?
         .caps()
         .context("Caps not found")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn monitor_is_started_without_explicit_init() {
+        // An unstarted monitor has no providers and `devices()` returns nothing. Starting in
+        // the lazy_static means enumeration works before an explicit `init()` call.
+        let providers = {
+            let manager_guard = MANAGER.lock().unwrap();
+            manager_guard.monitor.providers()
+        };
+        assert!(!providers.is_empty());
+        assert!(video_devices().is_ok());
+    }
 }
