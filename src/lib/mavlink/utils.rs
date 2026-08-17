@@ -120,3 +120,36 @@ pub fn control_id_from_param_id<const N: usize>(param_id: &[u8; N]) -> Option<u6
 
     id_string.parse().ok()
 }
+
+/// Returns true if this component should handle a message with the given target address.
+///
+/// `target_system` 0 broadcasts to all systems. `target_component` 0 is `MAV_COMP_ID_ALL`.
+pub fn is_addressed_to(
+    target_system: u8,
+    target_component: u8,
+    our_system_id: u8,
+    our_component_id: u8,
+) -> bool {
+    let system_matches = target_system == 0 || target_system == our_system_id;
+    let component_matches = target_component
+        == mavlink::common::MavComponent::MAV_COMP_ID_ALL as u8
+        || target_component == our_component_id;
+    system_matches && component_matches
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_addressed_to_honors_broadcast_zero() {
+        assert!(is_addressed_to(1, 106, 1, 106));
+        assert!(is_addressed_to(1, 0, 1, 106));
+        assert!(is_addressed_to(0, 106, 1, 106));
+        assert!(is_addressed_to(0, 0, 1, 106));
+        assert!(!is_addressed_to(1, 107, 1, 106));
+        assert!(!is_addressed_to(2, 106, 1, 106));
+        assert!(!is_addressed_to(2, 0, 1, 106));
+        assert!(!is_addressed_to(0, 107, 1, 106));
+    }
+}

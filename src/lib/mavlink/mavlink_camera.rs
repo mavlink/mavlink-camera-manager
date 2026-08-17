@@ -267,9 +267,12 @@ impl MavlinkCameraInner {
             }
         }
 
-        if data.target_system != camera.component.system_id
-            || data.target_component != camera.component.component_id
-        {
+        if !is_addressed_to(
+            data.target_system,
+            data.target_component,
+            camera.component.system_id,
+            camera.component.component_id,
+        ) {
             trace!("Ignoring {data:?}, wrong command id or system id");
             return;
         }
@@ -667,9 +670,12 @@ impl MavlinkCameraInner {
             }
         }
 
-        if data.target_system != camera.component.system_id
-            || data.target_component != camera.component.component_id
-        {
+        if !is_addressed_to(
+            data.target_system,
+            data.target_component,
+            camera.component.system_id,
+            camera.component.component_id,
+        ) {
             trace!("Ignoring {data:?}, wrong command id or system id");
             return;
         }
@@ -709,9 +715,12 @@ impl MavlinkCameraInner {
         header: &MavHeader,
         data: &mavlink::common::PARAM_EXT_REQUEST_READ_DATA,
     ) {
-        if data.target_system != camera.component.system_id
-            || data.target_component != camera.component.component_id
-        {
+        if !is_addressed_to(
+            data.target_system,
+            data.target_component,
+            camera.component.system_id,
+            camera.component.component_id,
+        ) {
             trace!("Ignoring {data:?}, wrong command id or system id");
             return;
         }
@@ -760,9 +769,12 @@ impl MavlinkCameraInner {
     ) {
         let our_header = camera.component.header();
 
-        if data.target_system != our_header.system_id
-            || data.target_component != our_header.component_id
-        {
+        if !is_addressed_to(
+            data.target_system,
+            data.target_component,
+            our_header.system_id,
+            our_header.component_id,
+        ) {
             trace!("Ignoring {data:?}, wrong command id or system id");
             return;
         }
