@@ -746,6 +746,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "bindgen"
+version = "0.70.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f49d8fed880d473ea71efb9bf597651e77201bdd4893efe54c9e5d65ae04ce6f"
+dependencies = [
+ "bitflags 2.10.0",
+ "cexpr",
+ "clang-sys",
+ "itertools 0.13.0",
+ "log",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "rustc-hash 1.1.0",
+ "shlex",
+ "syn 2.0.113",
+]
+
+[[package]]
 name = "bindings"
 version = "0.1.0"
 dependencies = [
@@ -1585,6 +1605,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "drm-fourcc"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0aafbcdb8afc29c1a7ee5fbe53b5d62f4565b35a042a662ca9fecd0b54dae6f4"
+
+[[package]]
 name = "dtoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2069,7 +2095,7 @@ dependencies = [
  "gix-utils",
  "itoa",
  "thiserror 2.0.17",
- "winnow",
+ "winnow 0.7.14",
 ]
 
 [[package]]
@@ -2150,7 +2176,7 @@ dependencies = [
  "smallvec",
  "thiserror 2.0.17",
  "unicode-bom",
- "winnow",
+ "winnow 0.7.14",
 ]
 
 [[package]]
@@ -2397,7 +2423,7 @@ dependencies = [
  "itoa",
  "smallvec",
  "thiserror 2.0.17",
- "winnow",
+ "winnow 0.7.14",
 ]
 
 [[package]]
@@ -2494,7 +2520,7 @@ dependencies = [
  "gix-utils",
  "maybe-async",
  "thiserror 2.0.17",
- "winnow",
+ "winnow 0.7.14",
 ]
 
 [[package]]
@@ -2526,7 +2552,7 @@ dependencies = [
  "gix-validate",
  "memmap2",
  "thiserror 2.0.17",
- "winnow",
+ "winnow 0.7.14",
 ]
 
 [[package]]
@@ -2796,7 +2822,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4429b0277a14ae9751350ad9b658b1be0abb5b54faa5bcdf6e74a3372582fad7"
 dependencies = [
  "heck 0.5.0",
- "proc-macro-crate",
+ "proc-macro-crate 3.4.0",
  "proc-macro2",
  "quote",
  "syn 2.0.113",
@@ -3903,6 +3929,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c5a2d376baa530d1238d133232d15e239abad80d05838b4b59354e5268af431f"
 
 [[package]]
+name = "libcamera"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0af3de3417824209a2f1619bce9c2b19aca5bdeb4233376208fcea87e6104f36"
+dependencies = [
+ "bitflags 2.10.0",
+ "drm-fourcc",
+ "libc",
+ "libcamera-sys",
+ "num_enum",
+ "pkg-config",
+ "semver",
+ "smallvec",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "libcamera-sys"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb33a6d621530b7d10c25d8871d86615e84249854d8e5974812ca77458df9253"
+dependencies = [
+ "bindgen 0.70.1",
+ "cc",
+ "pkg-config",
+]
+
+[[package]]
 name = "libloading"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4084,6 +4138,7 @@ dependencies = [
  "include_dir",
  "lazy_static",
  "libc",
+ "libcamera",
  "mavlink",
  "onvif",
  "paperclip",
@@ -4423,6 +4478,27 @@ checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
 dependencies = [
  "hermit-abi",
  "libc",
+]
+
+[[package]]
+name = "num_enum"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a015b430d3c108a207fd776d2e2196aaf8b1cf8cf93253e3a097ff3085076a1"
+dependencies = [
+ "num_enum_derive",
+]
+
+[[package]]
+name = "num_enum_derive"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96667db765a921f7b295ffee8b60472b686a51d4f21c2ee4ffdb94c7013b65a6"
+dependencies = [
+ "proc-macro-crate 1.3.1",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.113",
 ]
 
 [[package]]
@@ -5045,6 +5121,16 @@ checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
 dependencies = [
  "proc-macro2",
  "syn 2.0.113",
+]
+
+[[package]]
+name = "proc-macro-crate"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f4c021e1093a56626774e81216a4ce732a735e5bad4868a03f3ed65ca0c3919"
+dependencies = [
+ "once_cell",
+ "toml_edit 0.19.15",
 ]
 
 [[package]]
@@ -6295,7 +6381,7 @@ version = "72.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a768b1e51e4dbfa4fa52ae5c01241c0a41e2938fdffbb84add0c8238092f9091"
 dependencies = [
- "proc-macro-crate",
+ "proc-macro-crate 3.4.0",
  "proc-macro2",
  "quote",
  "rand 0.8.5",
@@ -6873,7 +6959,7 @@ dependencies = [
  "toml_datetime 0.7.5+spec-1.1.0",
  "toml_parser",
  "toml_writer",
- "winnow",
+ "winnow 0.7.14",
 ]
 
 [[package]]
@@ -6896,6 +6982,17 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
+version = "0.19.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b5bb770da30e5cbfde35a2d7b9b8a2c4b8ef89548a7a6aeab5c9a576e3e7421"
+dependencies = [
+ "indexmap 2.12.1",
+ "toml_datetime 0.6.11",
+ "winnow 0.5.40",
+]
+
+[[package]]
+name = "toml_edit"
 version = "0.22.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41fe8c660ae4257887cf66394862d21dbca4a6ddd26f04a3560410406a2f819a"
@@ -6904,7 +7001,7 @@ dependencies = [
  "serde",
  "serde_spanned 0.6.9",
  "toml_datetime 0.6.11",
- "winnow",
+ "winnow 0.7.14",
 ]
 
 [[package]]
@@ -6916,7 +7013,7 @@ dependencies = [
  "indexmap 2.12.1",
  "toml_datetime 0.7.5+spec-1.1.0",
  "toml_parser",
- "winnow",
+ "winnow 0.7.14",
 ]
 
 [[package]]
@@ -6925,7 +7022,7 @@ version = "1.0.6+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3198b4b0a8e11f09dd03e133c0280504d0801269e9afa46362ffde1cbeebf44"
 dependencies = [
- "winnow",
+ "winnow 0.7.14",
 ]
 
 [[package]]
@@ -7447,7 +7544,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6779878362b9bacadc7893eac76abe69612e8837ef746573c4a5239daf11990b"
 dependencies = [
- "bindgen",
+ "bindgen 0.65.1",
 ]
 
 [[package]]
@@ -8367,6 +8464,15 @@ name = "windows_x86_64_msvc"
 version = "0.53.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
+
+[[package]]
+name = "winnow"
+version = "0.5.40"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f593a95398737aeed53e489c785df13f3618e41dbcd6718c6addbf1395aa6876"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "winnow"

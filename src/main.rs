@@ -5,6 +5,15 @@ use mavlink_camera_manager::{
 use tracing::*;
 
 fn main() -> Result<(), std::io::Error> {
+    // Child process path for libcamera format enumeration while the parent holds
+    // GStreamer's CameraManager (only one CameraManager per process is allowed).
+    #[cfg(all(target_os = "linux", feature = "libcamera-native"))]
+    if let Ok(camera_name) =
+        std::env::var(mavlink_camera_manager::video::libcamera_formats::DUMP_ENV)
+    {
+        return mavlink_camera_manager::video::libcamera_formats::dump_to_stdout(&camera_name);
+    }
+
     helper::threads::lower_thread_priority();
 
     tokio::runtime::Builder::new_multi_thread()

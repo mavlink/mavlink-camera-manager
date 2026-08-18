@@ -33,6 +33,7 @@ pub enum VideoEncodeType {
     H264,
     H265,
     Mjpg,
+    Nv12,
     Rgb,
     Unknown(String),
     Yuyv,
@@ -86,6 +87,12 @@ impl std::str::FromStr for VideoEncodeType {
             "H264" => VideoEncodeType::H264,
             "H265" | "HEVC" => VideoEncodeType::H265,
             "MJPG" => VideoEncodeType::Mjpg,
+            "NV12" => VideoEncodeType::Nv12,
+            // ISP / libcamera processed RGB aliases (BGR888 is common on Pi).
+            "RGB" | "RGB888" | "BGR" | "BGR888" | "RGBX" | "BGRX" | "RGBA" | "BGRA" | "XRGB"
+            | "XBGR" | "ARGB" | "ABGR" | "XBGR8888" | "XRGB8888" | "RGBX8888" | "BGRX8888" => {
+                VideoEncodeType::Rgb
+            }
             "YUYV" | "YUY2" => VideoEncodeType::Yuyv,
             _ => VideoEncodeType::Unknown(fourcc),
         };
@@ -93,6 +100,8 @@ impl std::str::FromStr for VideoEncodeType {
         Ok(res)
     }
 }
+
+pub static DEFAULT_FRAME_INTERVALS: &[u32; 6] = &[60, 30, 24, 16, 10, 5];
 
 pub static STANDARD_SIZES: &[(u32, u32); 16] = &[
     (7680, 4320),
@@ -112,3 +121,37 @@ pub static STANDARD_SIZES: &[(u32, u32); 16] = &[
     (320, 240),
     (256, 144),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn from_str_maps_isp_aliases() {
+        assert_eq!(
+            VideoEncodeType::from_str("NV12").unwrap(),
+            VideoEncodeType::Nv12
+        );
+        assert_eq!(
+            VideoEncodeType::from_str("YUY2").unwrap(),
+            VideoEncodeType::Yuyv
+        );
+        assert_eq!(
+            VideoEncodeType::from_str("BGR888").unwrap(),
+            VideoEncodeType::Rgb
+        );
+        assert_eq!(
+            VideoEncodeType::from_str("RGB").unwrap(),
+            VideoEncodeType::Rgb
+        );
+        assert_eq!(
+            VideoEncodeType::from_str("XBGR8888").unwrap(),
+            VideoEncodeType::Rgb
+        );
+        assert!(matches!(
+            VideoEncodeType::from_str("SRGGB10_CSI2P").unwrap(),
+            VideoEncodeType::Unknown(_)
+        ));
+    }
+}
