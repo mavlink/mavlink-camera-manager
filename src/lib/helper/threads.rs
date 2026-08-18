@@ -1,18 +1,22 @@
 use std::{collections::HashMap, thread, time::Duration};
 
 use cached::proc_macro::cached;
-use sysinfo::{PidExt, ProcessExt, System, SystemExt};
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
 use tracing::*;
 
 #[cached(time = 1)]
 pub fn process_task_counter() -> usize {
-    let mut system = System::new_all();
+    let mut system = System::new();
     let pid = sysinfo::get_current_pid().expect("Failed to get current PID.");
-    system.refresh_process(pid);
+    refresh_tasks_of(&mut system, &[pid]);
 
     #[cfg(target_os = "linux")]
     {
-        system.process(pid).unwrap().tasks.len()
+        system
+            .process(pid)
+            .unwrap()
+            .tasks()
+            .map_or(0, |tasks| tasks.len())
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -23,16 +27,30 @@ pub fn process_task_counter() -> usize {
 
 #[cached(time = 1)]
 pub fn process_tasks() -> HashMap<u32, String> {
-    let mut system = System::new_all();
+    let mut system = System::new();
     let pid = sysinfo::get_current_pid().expect("Failed to get current PID.");
-    system.refresh_process(pid);
+    refresh_tasks_of(&mut system, &[pid]);
 
     #[cfg(target_os = "linux")]
     {
-        let tasks = &system.process(pid).unwrap().tasks;
+        let Some(tasks) = system
+            .process(pid)
+            .unwrap()
+            .tasks()
+            .map(|tasks| tasks.iter().copied().collect::<Vec<_>>())
+        else {
+            return HashMap::new();
+        };
+
+        // Task names are only populated by refreshing each task as a process.
+        refresh_tasks_of(&mut system, &tasks);
+
         tasks
             .iter()
-            .map(|(pid, process)| (pid.as_u32(), process.name().to_string()))
+            .filter_map(|task| {
+                let process = system.process(*task)?;
+                Some((task.as_u32(), process.name().to_string_lossy().to_string()))
+            })
             .collect()
     }
 
@@ -40,6 +58,16 @@ pub fn process_tasks() -> HashMap<u32, String> {
     {
         HashMap::new()
     }
+}
+
+/// Refreshes only the given processes: refreshing all of them (as
+/// `System::new_all` does) costs milliseconds of `/proc` walking per call.
+fn refresh_tasks_of(system: &mut System, pids: &[sysinfo::Pid]) {
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(pids),
+        false,
+        ProcessRefreshKind::nothing(),
+    );
 }
 
 pub fn start_thread_counter_thread() {
