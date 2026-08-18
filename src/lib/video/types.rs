@@ -33,6 +33,7 @@ pub enum VideoEncodeType {
     H264,
     H265,
     Mjpg,
+    Nv12,
     Rgb,
     Unknown(String),
     Yuyv,
@@ -86,6 +87,7 @@ impl std::str::FromStr for VideoEncodeType {
             "H264" => VideoEncodeType::H264,
             "H265" | "HEVC" => VideoEncodeType::H265,
             "MJPG" => VideoEncodeType::Mjpg,
+            "NV12" => VideoEncodeType::Nv12,
             "YUYV" | "YUY2" => VideoEncodeType::Yuyv,
             _ => VideoEncodeType::Unknown(fourcc),
         };
@@ -93,6 +95,8 @@ impl std::str::FromStr for VideoEncodeType {
         Ok(res)
     }
 }
+
+pub static DEFAULT_FRAME_INTERVALS: &[u32; 6] = &[60, 30, 24, 16, 10, 5];
 
 pub static STANDARD_SIZES: &[(u32, u32); 16] = &[
     (7680, 4320),
