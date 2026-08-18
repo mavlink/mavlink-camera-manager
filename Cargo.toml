@@ -62,7 +62,7 @@ validator = { version = "0.16", features = ["derive"] }
 thiserror = "2.0"
 
 ## FINAL
-sysinfo = "0.29"
+sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
 chrono = "0.4"
 lazy_static = "1.4.0"
 include_dir = "0.7.3"
