@@ -197,6 +197,7 @@ pub fn init() {
         option_env!("VERGEN_GIT_SHA").unwrap_or("?"),
         env!("VERGEN_BUILD_TIMESTAMP")
     );
+    info!("GStreamer {}", gst::version_string());
     info!(
         "Starting at {}",
         chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
