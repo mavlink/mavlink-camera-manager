@@ -105,6 +105,9 @@
             >
               <p>{{ endpoint }}</p>
             </div>
+            <p v-if="sdpHref(stream)">
+              <a :href="sdpHref(stream)" target="_blank">SDP</a>
+            </p>
           </div>
           <div>
             <p>Configuration:</p>
@@ -309,6 +312,38 @@ export default defineComponent({
     },
     openWebsiteInTab(url: string) {
       window.open(url, "_blank");
+    },
+    sdpHref(stream: any): string | undefined {
+      if (!stream.running) {
+        return undefined;
+      }
+      const endpoints =
+        stream.video_and_stream?.stream_information?.endpoints ?? [];
+      if (
+        !endpoints.some((endpoint: string) =>
+          /^udp(265)?:\/\//.test(endpoint)
+        )
+      ) {
+        return undefined;
+      }
+      const video_source = stream.video_and_stream?.video_source;
+      // Redirect pipelines have no sinks, so /sdp always 500s.
+      if (video_source?.Redirect) {
+        return undefined;
+      }
+      const gst_source = video_source?.Gst?.source;
+      const source =
+        video_source?.Local?.device_path ??
+        video_source?.Onvif?.source?.Onvif ??
+        gst_source?.Local?.device_path ??
+        gst_source?.Fake ??
+        gst_source?.QR;
+      if (!source) {
+        return undefined;
+      }
+      const url = new URL("/sdp", window.location.href);
+      url.searchParams.set("source", source);
+      return url.toString();
     },
     getVideoDescription(video_and_stream: any): string {
       let response = "";
