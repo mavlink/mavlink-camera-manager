@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, ffi::OsString, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use clap;
@@ -9,11 +9,12 @@ use crate::{custom, stream::gst::utils::PluginRankConfig};
 use clap::{Parser, ValueEnum};
 use constcat::concat;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(
     version = env!("CARGO_PKG_VERSION"),
     author = env!("CARGO_PKG_AUTHORS"),
     about = env!("CARGO_PKG_DESCRIPTION"),
+    after_help = "Every argv element is expanded ($NAME, ${NAME}, ${NAME:-default}; $$ for a literal $). An unset var leaves the whole element as-is. MCM_ONVIF_AUTH and MCM_TURN_SERVERS are used as-is.",
 )]
 struct Args {
     /// Sets the mavlink connection string
@@ -52,8 +53,14 @@ struct Args {
     )]
     stun_server: String,
 
-    /// Sets the addresses for the turn servers
-    #[arg(long, value_name = "turn(s)://[<USERNAME>:<PASSWORD>@]<HOST>:<PORT>", value_delimiter = ',', value_parser = turn_servers_validator)]
+    /// Sets the addresses for the turn servers. Alternatively, this can be passed as `MCM_TURN_SERVERS` environment variable.
+    #[arg(
+        long,
+        value_name = "turn(s)://[<USERNAME>:<PASSWORD>@]<HOST>:<PORT>",
+        value_delimiter = ',',
+        env = "MCM_TURN_SERVERS",
+        hide_env_values = true
+    )]
     turn_servers: Vec<String>,
 
     /// Sets the address for the Signalling server API server
@@ -113,7 +120,13 @@ struct Args {
     mavlink_camera_component_id_range: std::ops::RangeInclusive<u8>,
 
     /// Sets Onvif authentications. Alternatively, this can be passed as `MCM_ONVIF_AUTH` environment variable.
-    #[clap(long, value_name = "onvif://<USERNAME>:<PASSWORD>@<HOST>", value_delimiter = ',', value_parser = onvif_auth_validator, env = "MCM_ONVIF_AUTH")]
+    #[clap(
+        long,
+        value_name = "onvif://<USERNAME>:<PASSWORD>@<HOST>",
+        value_delimiter = ',',
+        env = "MCM_ONVIF_AUTH",
+        hide_env_values = true
+    )]
     onvif_auth: Vec<String>,
 
     /// Enable the /dot WebSocket endpoint for GStreamer pipeline graph streaming.
@@ -192,11 +205,24 @@ lazy_static! {
 
 impl Manager {
     fn new() -> Self {
-        let clap_matches = if cfg!(test) {
-            Args::parse_from(["mavlink-camera-manager"])
-        } else {
-            Args::parse()
-        };
+        if cfg!(test) {
+            return Self {
+                clap_matches: Args::parse_from(["mavlink-camera-manager"]),
+            };
+        }
+
+        let (expanded_args, expand_errors) = expand_args(std::env::args_os());
+        // Keep the raw arg on failure, same as blueos-recorder.
+        for (index, error) in &expand_errors {
+            eprintln!(
+                "Failed expanding argv index {index}, using the non-expanded instead: {error}"
+            );
+        }
+
+        let clap_matches = Args::parse_from(expanded_args);
+        // Clap echoes the value on a value_parser error, so checks live here.
+        reject_invalid_urls(&clap_matches.turn_servers, turn_url_error);
+        reject_invalid_urls(&clap_matches.onvif_auth, onvif_url_error);
         Self { clap_matches }
     }
 }
@@ -230,23 +256,16 @@ pub fn mavlink_connection_string() -> String {
 }
 
 pub fn log_path() -> String {
-    let log_path =
-        MANAGER.clap_matches.log_path.clone().expect(
+    expand_tilde(
+        MANAGER.clap_matches.log_path.as_deref().expect(
             "Clap arg \"log-path\" should always be \"Some(_)\" because of the default value.",
-        );
-
-    shellexpand::full(&log_path)
-        .expect("Failed to expand path")
-        .to_string()
+        ),
+    )
 }
 
 // Return the desired settings file
 pub fn settings_file() -> String {
-    let settings_file = MANAGER.clap_matches.settings_file.clone();
-
-    shellexpand::full(&settings_file)
-        .expect("Failed to expand path")
-        .to_string()
+    expand_tilde(&MANAGER.clap_matches.settings_file)
 }
 
 // Return the desired address for the REST API
@@ -296,14 +315,77 @@ pub fn mavlink_camera_component_id_range() -> std::ops::RangeInclusive<u8> {
         .clone()
 }
 
-// Return the command line used to start this application
-pub fn command_line_string() -> String {
-    std::env::args().collect::<Vec<String>>().join(" ")
+// Debug dump of the parsed CLI. Passwords in this dump are redacted.
+pub fn command_line() -> String {
+    format!("{:#?}", redacted(&MANAGER.clap_matches))
 }
 
-// Return a clone of current Args struct
-pub fn command_line() -> String {
-    format!("{:#?}", MANAGER.clap_matches)
+fn redacted(args: &Args) -> Args {
+    let mut args = args.clone();
+    args.turn_servers = args
+        .turn_servers
+        .iter()
+        .map(|value| redact_url_password(value))
+        .collect();
+    args.onvif_auth = args
+        .onvif_auth
+        .iter()
+        .map(|value| redact_url_password(value))
+        .collect();
+    args
+}
+
+fn reject_invalid_urls(values: &[String], error_for: fn(&str) -> Option<String>) {
+    for (index, value) in values.iter().enumerate() {
+        if let Some(error) = error_for(value) {
+            eprintln!("{index}: {}: {error}", redact_url_password(value));
+            std::process::exit(2);
+        }
+    }
+}
+
+fn turn_url_error(value: &str) -> Option<String> {
+    let url = match url::Url::parse(value) {
+        Ok(url) => url,
+        Err(error) => return Some(format!("Failed parsing turn url: {error:?}")),
+    };
+    if !matches!(url.scheme().to_lowercase().as_str(), "turn" | "turns") {
+        return Some("Turn server scheme should be either \"turn\" or \"turns\"".to_owned());
+    }
+    if url.host_str().is_none() {
+        return Some("Turn server url should include a host".to_owned());
+    }
+    None
+}
+
+fn onvif_url_error(value: &str) -> Option<String> {
+    let url = match url::Url::parse(value) {
+        Ok(url) => url,
+        Err(error) => return Some(format!("Failed parsing onvif auth url: {error:?}")),
+    };
+    if !matches!(url.scheme().to_lowercase().as_str(), "onvif") {
+        return Some("Onvif authentication scheme should be \"onvif\"".to_owned());
+    }
+    if url.host_str().is_none() {
+        return Some("Onvif authentication url should include a host".to_owned());
+    }
+    None
+}
+
+fn redact_url_password(value: &str) -> String {
+    let Ok(mut parsed) = url::Url::parse(value) else {
+        return "***".to_owned();
+    };
+    if parsed.cannot_be_a_base() {
+        return format!("{}:***", parsed.scheme());
+    }
+    if parsed.password().is_none() {
+        return value.to_owned();
+    }
+    if parsed.set_password(Some("***")).is_err() {
+        return "***".to_owned();
+    }
+    parsed.to_string()
 }
 
 pub fn gst_feature_rank() -> Vec<PluginRankConfig> {
@@ -353,7 +435,10 @@ pub fn onvif_auth() -> HashMap<std::net::Ipv4Addr, onvif::soap::client::Credenti
                 match crate::controls::onvif::manager::Manager::credentials_from_url(&url) {
                     Ok((host, credentials)) => (host, credentials),
                     Err(error) => {
-                        error!("Failed to get credentials from url {url}: {error:?}");
+                        error!(
+                            "Failed to get credentials from url {}: {error:?}",
+                            redact_url_password(url.as_str())
+                        );
                         return None;
                     }
                 };
@@ -372,7 +457,11 @@ pub fn enable_zenoh() -> bool {
 }
 
 pub fn zenoh_config_file() -> Option<String> {
-    MANAGER.clap_matches.zenoh_config_file.clone()
+    MANAGER
+        .clap_matches
+        .zenoh_config_file
+        .as_ref()
+        .map(|path| expand_tilde(path))
 }
 
 pub fn enable_realtime_threads() -> bool {
@@ -398,6 +487,39 @@ pub fn recorder_mode() -> Option<RecorderMode> {
     MANAGER.clap_matches.recorder
 }
 
+fn expand_args(args: impl Iterator<Item = OsString>) -> (Vec<OsString>, Vec<(usize, String)>) {
+    let mut errors = Vec::new();
+    let expanded = args
+        .enumerate()
+        .map(|(index, arg)| match arg.into_string() {
+            Ok(arg) => match shellexpand::env(&arg) {
+                Ok(expanded) => expanded.into_owned().into(),
+                Err(error) => {
+                    errors.push((
+                        index,
+                        match error.cause {
+                            std::env::VarError::NotPresent => "variable not set".into(),
+                            std::env::VarError::NotUnicode(_) => {
+                                "variable value is not valid utf-8".into()
+                            }
+                        },
+                    ));
+                    arg.into()
+                }
+            },
+            Err(arg) => {
+                errors.push((index, "not valid utf-8".into()));
+                arg
+            }
+        })
+        .collect();
+    (expanded, errors)
+}
+
+fn expand_tilde(value: &str) -> String {
+    shellexpand::tilde(value).into_owned()
+}
+
 fn gst_feature_rank_validator(val: &str) -> Result<String, String> {
     if let Some((_key, value_str)) = val.split_once('=') {
         if value_str.parse::<i32>().is_err() {
@@ -407,26 +529,6 @@ fn gst_feature_rank_validator(val: &str) -> Result<String, String> {
         return Err("Unexpected format, it should be <GST_PLUGIN_NAME>=<GST_RANK_INT_VALUE>, where GST_PLUGIN_NAME is a string, and GST_RANK_INT_VALUE a valid 32 bits signed integer. Example: \"omxh264enc=264\" (without quotes).".to_string());
     }
     Ok(val.into())
-}
-
-fn turn_servers_validator(val: &str) -> Result<String, String> {
-    let url = url::Url::parse(val).map_err(|e| format!("Failed parsing turn url: {e:?}"))?;
-
-    if !matches!(url.scheme().to_lowercase().as_str(), "turn" | "turns") {
-        return Err("Turn server scheme should be either \"turn\" or \"turns\"".to_owned());
-    }
-
-    Ok(val.to_owned())
-}
-
-fn onvif_auth_validator(val: &str) -> Result<String, String> {
-    let url = url::Url::parse(val).map_err(|e| format!("Failed parsing onvif auth url: {e:?}"))?;
-
-    if !matches!(url.scheme().to_lowercase().as_str(), "onvif") {
-        return Err("Onvif authentication scheme should be \"onvif\"".to_owned());
-    }
-
-    Ok(val.to_owned())
 }
 
 fn mavlink_camera_component_id_range_validator(
@@ -500,5 +602,118 @@ mod tests {
             args.stream_recreation_failure_timeout,
             StreamRecreationFailureTimeoutArg::Seconds(0)
         );
+    }
+
+    #[test]
+    fn expand_args_keeps_plain() {
+        let (expanded, errors) = expand_args(["mcm", "plain"].map(OsString::from).into_iter());
+        assert_eq!(expanded, ["mcm", "plain"].map(OsString::from));
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn expand_args_substitutes_set_var() {
+        let path = std::env::var("PATH").expect("PATH");
+        let (expanded, errors) = expand_args(["mcm", "$PATH"].map(OsString::from).into_iter());
+        assert_eq!(expanded, [OsString::from("mcm"), OsString::from(path)]);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn expand_args_keeps_unset_var() {
+        assert!(std::env::var("MCM_EXPAND_UNSET_VAR_XYZ").is_err());
+        let (expanded, errors) = expand_args(
+            ["mcm", "$MCM_EXPAND_UNSET_VAR_XYZ"]
+                .map(OsString::from)
+                .into_iter(),
+        );
+        assert_eq!(
+            expanded,
+            ["mcm", "$MCM_EXPAND_UNSET_VAR_XYZ"].map(OsString::from)
+        );
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].0, 1);
+        assert!(!errors[0].1.contains("MCM_EXPAND_UNSET_VAR_XYZ"));
+    }
+
+    #[test]
+    fn expand_tilde_keeps_plain_path() {
+        assert_eq!(expand_tilde("plain/path"), "plain/path");
+    }
+
+    #[test]
+    fn expand_tilde_expands_home() {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .expect("HOME");
+        assert_eq!(expand_tilde("~/x"), format!("{home}/x"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn expand_args_keeps_non_utf8() {
+        use std::os::unix::ffi::OsStringExt;
+        let bad = OsString::from_vec(vec![0x2d, 0x2d, 0xff, 0xfe]);
+        let (expanded, errors) = expand_args([OsString::from("mcm"), bad.clone()].into_iter());
+        assert_eq!(expanded, [OsString::from("mcm"), bad]);
+        assert_eq!(errors, [(1, "not valid utf-8".into())]);
+    }
+
+    #[test]
+    fn redact_url_password_hides_password() {
+        assert_eq!(
+            redact_url_password("turn://user:s3cretpw@host:3478"),
+            "turn://user:***@host:3478"
+        );
+        assert_eq!(
+            redact_url_password("turn:user:s3cretpw@host:3478"),
+            "turn:***"
+        );
+        assert_eq!(redact_url_password("turn://host:3478"), "turn://host:3478");
+    }
+
+    #[test]
+    fn command_line_dump_hides_passwords() {
+        let args = Args::parse_from([
+            "mavlink-camera-manager",
+            "--turn-servers",
+            "turn://user:s3cretpw@host:3478",
+            "--onvif-auth",
+            "onvif://user:s3cretpw@1.2.3.4",
+        ]);
+        let redacted_args = redacted(&args);
+        assert_eq!(redacted_args.turn_servers, ["turn://user:***@host:3478"]);
+        assert_eq!(redacted_args.onvif_auth, ["onvif://user:***@1.2.3.4"]);
+        let dump = format!("{:#?}", redacted_args);
+        assert!(!dump.contains("s3cretpw"));
+    }
+
+    #[test]
+    fn turn_url_error_accepts_slashed_form() {
+        assert_eq!(turn_url_error("turn://host:3478"), None);
+        assert_eq!(turn_url_error("turns://user:s3cretpw@host:3478"), None);
+    }
+
+    #[test]
+    fn turn_url_error_rejects_scheme_and_rfc7065() {
+        assert_eq!(
+            turn_url_error("http://user:s3cretpw@host:3478"),
+            Some("Turn server scheme should be either \"turn\" or \"turns\"".into())
+        );
+        assert_eq!(
+            turn_url_error("turn:host:3478"),
+            Some("Turn server url should include a host".into())
+        );
+        assert!(turn_url_error("not a url").is_some());
+    }
+
+    #[test]
+    fn onvif_url_error_accepts_and_rejects() {
+        assert_eq!(onvif_url_error("onvif://user:s3cretpw@1.2.3.4"), None);
+        assert_eq!(
+            onvif_url_error("http://user:s3cretpw@1.2.3.4"),
+            Some("Onvif authentication scheme should be \"onvif\"".into())
+        );
+        assert!(onvif_url_error("onvif://user:s3cretpw@").is_some());
     }
 }
