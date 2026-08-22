@@ -13,6 +13,8 @@ pub struct VideoCaptureConfiguration {
     pub height: u32,
     pub width: u32,
     pub frame_interval: FrameInterval,
+    #[serde(default)]
+    pub force_non_compliant_url: bool,
 }
 
 #[deprecated(note = "The API will soon allow for optional CaptureConfiguration instead")]
