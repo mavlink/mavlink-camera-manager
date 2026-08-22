@@ -210,6 +210,15 @@ jobs:
         run: |
           brew install gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-libav gst-rtsp-server
 
+      - name: Cache GStreamer MSIs
+        if: ${{ contains(matrix.TARGET, 'windows') }}
+        uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/gstreamer-1.0-msvc-x86_64-${{ env.GSTREAMER_VERSION }}.msi
+            ${{ runner.temp }}/gstreamer-1.0-devel-msvc-x86_64-${{ env.GSTREAMER_VERSION }}.msi
+          key: gstreamer-msi-${{ env.GSTREAMER_VERSION }}-msvc-x86_64
+
       - name: Install GStreamer
         if: ${{ contains(matrix.TARGET, 'windows') }}
         shell: pwsh
@@ -228,13 +237,27 @@ jobs:
           foreach ($installer in $installers) {
             $url = "$msiBase/$installer"
             $msiPath = Join-Path $env:RUNNER_TEMP $installer
-            Invoke-WebRequest $url -OutFile $msiPath
-            Start-Process msiexec.exe -ArgumentList '/passive', "INSTALLDIR=$installDir", 'ADDLOCAL=ALL', '/i', $msiPath -Wait
+            if (-not (Test-Path $msiPath)) {
+              curl.exe -L --fail --retry 8 --retry-all-errors --retry-delay 5 --connect-timeout 30 -o $msiPath $url
+              if ($LASTEXITCODE -ne 0) { throw "Failed to download $url" }
+            }
+            if (-not (Test-Path $msiPath) -or (Get-Item $msiPath).Length -lt 1MB) {
+              if (Test-Path $msiPath) { Remove-Item -Force $msiPath }
+              throw "Invalid GStreamer MSI at $msiPath (missing or under 1MB)"
+            }
+            $msi = Start-Process msiexec.exe -ArgumentList '/passive', "INSTALLDIR=$installDir", 'ADDLOCAL=ALL', '/i', $msiPath -Wait -PassThru
+            if ($msi.ExitCode -notin @(0, 3010)) {
+              throw "msiexec failed for $installer with exit code $($msi.ExitCode)"
+            }
           }
 
           $gstreamerPath = Join-Path $installDir "1.0\msvc_$arch"
           $gstreamerBinPath = Join-Path $gstreamerPath 'bin'
           $gstreamerPkgConfigPath = Join-Path $gstreamerPath 'lib\pkgconfig'
+
+          if (-not (Test-Path (Join-Path $gstreamerBinPath 'pkg-config.exe'))) {
+            throw "GStreamer install missing pkg-config.exe under $gstreamerBinPath"
+          }
 
           "GSTREAMER_1_0_ROOT_MSVC_X86_64=$gstreamerPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
