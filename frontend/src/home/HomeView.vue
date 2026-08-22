@@ -7,6 +7,9 @@
         </div>
         <div>
           <p>Device: {{ item.source }}</p>
+          <p v-if="thumbnailHref(item.source)">
+            <a :href="thumbnailHref(item.source)" target="_blank">Snapshot</a>
+          </p>
         </div>
         <h4>Configure Stream:</h4>
         <div>
@@ -343,6 +346,40 @@ export default defineComponent({
       }
       const url = new URL("/sdp", window.location.href);
       url.searchParams.set("source", source);
+      return url.toString();
+    },
+    streamSource(stream: any): string | undefined {
+      const video_source = stream.video_and_stream?.video_source;
+      // Redirect is a placeholder source shared by every redirect stream.
+      if (video_source?.Redirect) {
+        return undefined;
+      }
+      const gst_source = video_source?.Gst?.source;
+      return (
+        video_source?.Local?.device_path ??
+        video_source?.Onvif?.source?.Onvif ??
+        gst_source?.Local?.device_path ??
+        gst_source?.Fake ??
+        gst_source?.QR
+      );
+    },
+    thumbnailHref(source: string): string | undefined {
+      const stream = this.streams.find(
+        (s: any) => this.streamSource(s) === source
+      );
+      if (!stream) {
+        return undefined;
+      }
+      if (
+        stream.video_and_stream?.stream_information?.extended_configuration
+          ?.disable_thumbnails
+      ) {
+        return undefined;
+      }
+      const url = new URL("/thumbnail", window.location.href);
+      url.searchParams.set("source", source);
+      url.searchParams.set("quality", "75");
+      url.searchParams.set("target_height", "240");
       return url.toString();
     },
     getVideoDescription(video_and_stream: any): string {
