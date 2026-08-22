@@ -61,12 +61,15 @@ impl RedirectPipeline {
             .first()
             .context("Failed to access the fisrt endpoint")?;
 
-        let encode = match &video_and_stream_information
+        let (encode, force) = match &video_and_stream_information
             .stream_information
             .configuration
         {
-            CaptureConfiguration::Video(configuration) => Some(configuration.encode.clone()),
-            _unknown => None,
+            CaptureConfiguration::Video(configuration) => (
+                Some(configuration.encode.clone()),
+                configuration.force_non_compliant_url,
+            ),
+            _unknown => (None, false),
         };
 
         let encoding_name = match &encode {
@@ -79,10 +82,11 @@ impl RedirectPipeline {
             "rtsp" => {
                 format!(
                     concat!(
-                        "rtspsrc location={location} is-live=true latency=0 buffer-mode=none do-retransmission=false udp-buffer-size=2621440",
+                        "rtspsrc location={location} is-live=true latency=0 buffer-mode=none do-retransmission=false udp-buffer-size=2621440{force}",
                         " ! application/x-rtp, media=(string)video{encoding_name}",
                     ),
                     location = url,
+                    force = crate::stream::gst::utils::force_non_compliant_url_property(force),
                     encoding_name = encoding_name,
                 )
             }

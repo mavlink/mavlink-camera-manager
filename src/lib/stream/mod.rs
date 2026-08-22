@@ -107,6 +107,7 @@ fn default_video_capture_configuration(encode: VideoEncodeType) -> VideoCaptureC
             numerator: 0,
             denominator: 0,
         },
+        force_non_compliant_url: false,
     }
 }
 
@@ -1131,6 +1132,7 @@ mod tests {
                 numerator: 1,
                 denominator: 30,
             },
+            force_non_compliant_url: false,
         }
     }
 
@@ -1566,6 +1568,7 @@ mod tests {
                         numerator: 1,
                         denominator: 30,
                     },
+                    force_non_compliant_url: false,
                 }),
                 extended_configuration: None,
             },

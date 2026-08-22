@@ -356,6 +356,7 @@ mod tests {
                         numerator: 17,
                         denominator: 47,
                     },
+                    force_non_compliant_url: false,
                 }),
                 extended_configuration: None,
             },

@@ -943,6 +943,7 @@ mod device_identification_tests {
                         numerator: 30,
                         denominator: 1,
                     },
+                    force_non_compliant_url: false,
                 }),
                 endpoints: vec![url::Url::parse("udp://0.0.0.0:5600").unwrap()],
                 extended_configuration: None,

@@ -258,10 +258,22 @@ pub async fn wait_for_element_state_async(
     Ok(())
 }
 
-fn make_source_description_from_stream_uri(stream_uri: &url::Url) -> Result<String> {
+pub fn force_non_compliant_url_property(force: bool) -> &'static str {
+    if force {
+        " force-non-compliant-url=true"
+    } else {
+        ""
+    }
+}
+
+fn make_source_description_from_stream_uri(
+    stream_uri: &url::Url,
+    force_non_compliant_url: bool,
+) -> Result<String> {
     match stream_uri.scheme() {
         "rtsp" => Ok(format!(
-            "rtspsrc name=source location={stream_uri} is-live=true latency=0 do-retransmission=false"
+            "rtspsrc name=source location={stream_uri} is-live=true latency=0 do-retransmission=false{force}",
+            force = force_non_compliant_url_property(force_non_compliant_url),
         )),
         "udp" => Ok(format!(
             "udpsrc name=source address={address} port={port} auto-multicast=true do-timestamp=true",
@@ -276,7 +288,36 @@ fn make_source_description_from_stream_uri(stream_uri: &url::Url) -> Result<Stri
 
 #[instrument(level = "debug", fields(stream_uri = %stream_uri))]
 pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Result<VideoEncodeType> {
-    let mut description = make_source_description_from_stream_uri(stream_uri)?;
+    get_encode_from_stream_uri_with_mode(stream_uri)
+        .await
+        .map(|(encode, _)| encode)
+}
+
+async fn get_encode_from_stream_uri_with_mode(
+    stream_uri: &url::Url,
+) -> Result<(VideoEncodeType, bool)> {
+    match get_encode_from_stream_uri_inner(stream_uri, false).await {
+        Ok(encode) => Ok((encode, false)),
+        Err(error) => {
+            if stream_uri.scheme() != "rtsp" {
+                return Err(error);
+            }
+            debug!(
+                "Failed getting encode without force-non-compliant-url, retrying with true: {error:?}"
+            );
+            get_encode_from_stream_uri_inner(stream_uri, true)
+                .await
+                .map(|encode| (encode, true))
+        }
+    }
+}
+
+async fn get_encode_from_stream_uri_inner(
+    stream_uri: &url::Url,
+    force_non_compliant_url: bool,
+) -> Result<VideoEncodeType> {
+    let mut description =
+        make_source_description_from_stream_uri(stream_uri, force_non_compliant_url)?;
 
     description.push_str(concat!(
         " ! application/x-rtp, media=(string)video",
@@ -362,21 +403,32 @@ async fn wait_for_encode(mut rx: mpsc::Receiver<gst::Caps>) -> Option<VideoEncod
 pub async fn get_capture_configuration_from_stream_uri(
     stream_uri: &url::Url,
 ) -> Result<CaptureConfiguration> {
-    let encodes_to_try = get_encode_from_stream_uri(stream_uri)
-        .await
-        .map(|encode| vec![encode])
-        .unwrap_or_else(|error| {
+    let candidates = match get_encode_from_stream_uri_with_mode(stream_uri).await {
+        Ok((encode, force)) => vec![(encode, force)],
+        Err(error) => {
             warn!(
                 "Failed getting encode from URI: {error:?}. Trying brute-force with H264 and H265"
             );
 
-            vec![VideoEncodeType::H264, VideoEncodeType::H265]
-        });
+            let mut candidates = vec![
+                (VideoEncodeType::H264, false),
+                (VideoEncodeType::H265, false),
+            ];
+            if stream_uri.scheme() == "rtsp" {
+                candidates.extend([(VideoEncodeType::H264, true), (VideoEncodeType::H265, true)]);
+            }
+            candidates
+        }
+    };
 
-    for encode in encodes_to_try {
-        trace!("Trying the encoding {encode:?}...");
+    for (encode, force_non_compliant_url) in candidates {
+        trace!(
+            "Trying the encoding {encode:?} with force-non-compliant-url={force_non_compliant_url}..."
+        );
 
-        match get_capture_configuration_using_encoding(stream_uri, encode).await {
+        match get_capture_configuration_using_encoding(stream_uri, encode, force_non_compliant_url)
+            .await
+        {
             video_capture_configuration @ Ok(_) => return video_capture_configuration,
             Err(error) => {
                 trace!("Failed getting capture configuration: {error:?}");
@@ -391,8 +443,10 @@ pub async fn get_capture_configuration_from_stream_uri(
 async fn get_capture_configuration_using_encoding(
     stream_uri: &url::Url,
     encode: VideoEncodeType,
+    force_non_compliant_url: bool,
 ) -> Result<CaptureConfiguration> {
-    let mut description = make_source_description_from_stream_uri(stream_uri)?;
+    let mut description =
+        make_source_description_from_stream_uri(stream_uri, force_non_compliant_url)?;
 
     match encode {
         VideoEncodeType::H264 => {
@@ -442,7 +496,7 @@ async fn get_capture_configuration_using_encoding(
 
     let video_capture_configuration = tokio::time::timeout(
         tokio::time::Duration::from_secs(15),
-        wait_for_video_capture_configuration(rx, &encode),
+        wait_for_video_capture_configuration(rx, &encode, force_non_compliant_url),
     )
     .await;
 
@@ -516,11 +570,13 @@ fn setup_pad_and_probe(pad: &gst::Pad, tx: mpsc::Sender<gst::Caps>) -> Option<gs
 async fn wait_for_video_capture_configuration(
     mut rx: mpsc::Receiver<gst::Caps>,
     encode: &VideoEncodeType,
+    force_non_compliant_url: bool,
 ) -> Option<CaptureConfiguration> {
     #[instrument(level = "debug", skip(structure))]
     async fn parse_structure(
         structure: &gst::StructureRef,
         encode: &VideoEncodeType,
+        force_non_compliant_url: bool,
     ) -> Result<CaptureConfiguration> {
         let width = structure.get::<i32>("width").context("No width")? as u32;
         let height = structure.get::<i32>("height").context("No height")? as u32;
@@ -536,6 +592,7 @@ async fn wait_for_video_capture_configuration(
                 numerator: framerate.denom() as u32,
                 denominator: framerate.numer() as u32,
             },
+            force_non_compliant_url,
         });
 
         return Ok(video_capture_configuration);
@@ -545,7 +602,7 @@ async fn wait_for_video_capture_configuration(
         trace!("Received caps: {caps:#?}");
 
         for structure in caps.iter() {
-            match parse_structure(structure, encode).await {
+            match parse_structure(structure, encode, force_non_compliant_url).await {
                 Ok(video_capture_configuration) => {
                     trace!(
                         "Found video_capture_configuration {video_capture_configuration:?} from caps: {caps:?}"

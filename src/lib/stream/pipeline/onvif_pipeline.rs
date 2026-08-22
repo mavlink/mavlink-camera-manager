@@ -55,12 +55,15 @@ impl OnvifPipeline {
             url.to_string()
         };
 
-        let encode = match &video_and_stream_information
+        let (encode, force) = match &video_and_stream_information
             .stream_information
             .configuration
         {
-            CaptureConfiguration::Video(configuration) => Some(configuration.encode.clone()),
-            _unknown => None,
+            CaptureConfiguration::Video(configuration) => (
+                Some(configuration.encode.clone()),
+                configuration.force_non_compliant_url,
+            ),
+            _unknown => (None, false),
         };
 
         let filter_name = format!("{PIPELINE_FILTER_NAME}-{pipeline_id}");
@@ -68,11 +71,13 @@ impl OnvifPipeline {
         let rtp_tee_name = format!("{PIPELINE_RTP_TEE_NAME}-{pipeline_id}");
         let raw_rtp_tee_name = format!("RawRtpTee-{pipeline_id}");
 
+        let force_property = crate::stream::gst::utils::force_non_compliant_url_property(force);
+
         let description = match encode {
             Some(VideoEncodeType::H264) => {
                 format!(
                     concat!(
-                        "rtspsrc location={location} is-live=true latency=0 buffer-mode=none do-retransmission=false udp-buffer-size=2621440",
+                        "rtspsrc location={location} is-live=true latency=0 buffer-mode=none do-retransmission=false udp-buffer-size=2621440{force}",
                         " ! application/x-rtp, media=(string)video",
                         " ! tee name={raw_rtp_tee} allow-not-linked=true",
                         " {raw_rtp_tee}.",
@@ -87,6 +92,7 @@ impl OnvifPipeline {
                         " ! tee name={rtp_tee_name} allow-not-linked=true",
                     ),
                     location = location,
+                    force = force_property,
                     raw_rtp_tee = raw_rtp_tee_name,
                     filter_name = filter_name,
                     video_tee_name = video_tee_name,
@@ -96,7 +102,7 @@ impl OnvifPipeline {
             Some(VideoEncodeType::H265) => {
                 format!(
                     concat!(
-                        "rtspsrc location={location} is-live=true latency=0 buffer-mode=none do-retransmission=false udp-buffer-size=2621440",
+                        "rtspsrc location={location} is-live=true latency=0 buffer-mode=none do-retransmission=false udp-buffer-size=2621440{force}",
                         " ! application/x-rtp, media=(string)video",
                         " ! tee name={raw_rtp_tee} allow-not-linked=true",
                         " {raw_rtp_tee}.",
@@ -111,6 +117,7 @@ impl OnvifPipeline {
                         " ! tee name={rtp_tee_name} allow-not-linked=true",
                     ),
                     location = location,
+                    force = force_property,
                     raw_rtp_tee = raw_rtp_tee_name,
                     filter_name = filter_name,
                     video_tee_name = video_tee_name,
