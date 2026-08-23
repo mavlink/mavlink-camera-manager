@@ -61,7 +61,7 @@ Download the mavlink-camera-manager binary for your architecture from our [relea
 ### 2. Installing:
 
 _note: We recommend GStreamer `1.24.0` or above. Previous versions have thread leaks when using WebRTC. You can check it by running `gst-launch-1.0 --version`. If the required version is not available on your operating system from their official store, follow the recommendations from [here](https://gstreamer.freedesktop.org/download)_
-_note 2: for a docker-based installation, use can use [this folder](master/docker) as an example_
+_note 2: for a docker-based installation, you can use [this folder](master/docker) as an example_
 
 **Linux (Ubuntu-based distros)**
 
@@ -224,7 +224,7 @@ This project is licensed under the [MIT License](/LICENSE).
 
 ## Project origins
 
-The Mavlink Camera Manager project originated as a personal experiment by [@patrickelectric](github.com/patrickelectric/), driven by the need to address a critical challenge in remotely operated vehicles – effectively managing and providing camera streams to the topside computer. At the time, there was a noticeable absence of open-source alternatives, which motivated the project's inception.
+The Mavlink Camera Manager project originated as a personal experiment by [@patrickelectric](https://github.com/patrickelectric/), driven by the need to address a critical challenge in remotely operated vehicles – effectively managing and providing camera streams to the topside computer. At the time, there was a noticeable absence of open-source alternatives, which motivated the project's inception.
 
 Over time, the project gained recognition and was officially embraced by [**Blue Robotics**](https://github.com/bluerobotics) as a core development effort. It became an integral part of their operating system, BlueOS, and was widely distributed worldwide. The adoption of the Mavlink Camera Manager by Blue Robotics served as a testament to its capabilities and value.
 

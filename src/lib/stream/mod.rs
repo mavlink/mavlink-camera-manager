@@ -1084,7 +1084,7 @@ fn validate_endpoints(video_and_stream_information: &VideoAndStreamInformation) 
             }
             "udp265" => {
                 if VideoEncodeType::H265 != encode {
-                    return Some(anyhow!("Endpoint with udp265 scheme only supports H265 encode. Encode: {encode:?}, Endpoint: {endpoints:?}"));
+                    return Some(anyhow!("Endpoint with udp265 scheme only supports H265 encode. Encode: {encode:?}, Endpoint: {endpoint:?}"));
                 }
             }
             _ => {

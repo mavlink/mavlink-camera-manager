@@ -183,7 +183,7 @@ impl PipelineRunner {
                             } else {
                                 let priority = thread_priority::get_current_thread_priority();
                                 let scheduler = thread_priority::get_thread_scheduling_attributes();
-                                info!("GStreamer stream thread sucessfully configured to MAX priority ({priority:?}) and real-time round robyn ({scheduler:?}). From element {:?}, from Pipeline {pipeline_name:?}", element.name());
+                                info!("GStreamer stream thread successfully configured to MAX priority ({priority:?}) and real-time round robin ({scheduler:?}). From element {:?}, from Pipeline {pipeline_name:?}", element.name());
                             }
                         } else {
                             crate::helper::threads::lower_to_background_priority();

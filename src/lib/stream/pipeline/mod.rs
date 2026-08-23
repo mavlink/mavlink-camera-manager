@@ -275,13 +275,13 @@ impl PipelineState {
             }
         }
 
-        // Skipping ImageSink syncronization because it goes to some wrong state,
+        // Skipping ImageSink synchronization because it goes to some wrong state,
         // and all other sinks need it to work without freezing when dynamically
         // added.
         if !matches!(&sink, Sink::Image(..))
             && let Err(error) = pipeline.sync_children_states()
         {
-            error!("Failed to syncronize children states. Reason: {error:?}");
+            error!("Failed to synchronize children states. Reason: {error:?}");
         }
 
         // Start the sink's own sub-pipeline runner
