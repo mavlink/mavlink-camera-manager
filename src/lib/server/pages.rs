@@ -20,6 +20,7 @@ use crate::{
     settings,
     stream::{gst as gst_stream, manager as stream_manager, types::StreamInformation},
     video::{
+        gst_device_monitor,
         types::{Format, VideoSourceType},
         video_source::{self, VideoSource, VideoSourceFormats},
         xml,
@@ -34,6 +35,8 @@ pub struct ApiVideoSource {
     formats: Vec<Format>,
     controls: Vec<Control>,
     blocked: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    usb_id: Option<String>,
 }
 
 #[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
@@ -221,6 +224,7 @@ pub async fn v4l() -> Result<Json<Vec<ApiVideoSource>>> {
                         formats: local.formats().await,
                         controls: local.controls(),
                         blocked,
+                        usb_id: gst_device_monitor::usb_id(local.source_string()),
                     },
                     VideoSourceType::Gst(gst) => ApiVideoSource {
                         name: gst.name().clone(),
@@ -228,6 +232,7 @@ pub async fn v4l() -> Result<Json<Vec<ApiVideoSource>>> {
                         formats: gst.formats().await,
                         controls: gst.controls(),
                         blocked,
+                        usb_id: None,
                     },
                     VideoSourceType::Onvif(onvif) => ApiVideoSource {
                         name: onvif.name().clone(),
@@ -235,6 +240,7 @@ pub async fn v4l() -> Result<Json<Vec<ApiVideoSource>>> {
                         formats: onvif.formats().await,
                         controls: onvif.controls(),
                         blocked,
+                        usb_id: None,
                     },
                     VideoSourceType::Redirect(redirect) => ApiVideoSource {
                         name: redirect.name().clone(),
@@ -242,6 +248,7 @@ pub async fn v4l() -> Result<Json<Vec<ApiVideoSource>>> {
                         formats: redirect.formats().await,
                         controls: redirect.controls(),
                         blocked,
+                        usb_id: None,
                     },
                 }
             }
