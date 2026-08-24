@@ -7,6 +7,7 @@
         </div>
         <div>
           <p>Device: {{ item.source }}</p>
+          <p v-if="item.usb_id">USB ID: {{ item.usb_id }}</p>
         </div>
         <h4>Configure Stream:</h4>
         <div>
