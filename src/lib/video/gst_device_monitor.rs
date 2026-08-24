@@ -111,6 +111,15 @@ pub fn v4l_device_with_path(device_path: &str) -> Result<glib::WeakRef<gst::Devi
 }
 
 #[instrument(level = "debug")]
+pub fn usb_id(device_path: &str) -> Option<String> {
+    let device = v4l_device_with_path(device_path).ok()?.upgrade()?;
+    let properties = device.properties()?;
+    let vendor = properties.get::<String>("device.vendor.id").ok()?;
+    let product = properties.get::<String>("device.product.id").ok()?;
+    Some(format!("{vendor}:{product}"))
+}
+
+#[instrument(level = "debug")]
 pub fn device_caps(device: &glib::WeakRef<gst::Device>) -> Result<gst::Caps> {
     device
         .upgrade()
