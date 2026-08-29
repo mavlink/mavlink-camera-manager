@@ -199,6 +199,10 @@ pub fn init() {
     );
     info!("GStreamer {}", gst::version_string());
     info!(
+        "Build dependencies details: {}",
+        env!("VERGEN_CARGO_DEPENDENCIES"),
+    );
+    info!(
         "Starting at {}",
         chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
     );
