@@ -639,7 +639,7 @@ pub async fn dot_stream(req: HttpRequest, stream: web::Payload) -> Result<HttpRe
 
                     match crate::stream::manager::streams().await {
                         Ok(streams) => {
-                            for stream_info in streams {
+                            for stream_info in &streams {
                                 if let Some((dot, children)) = crate::stream::manager::Manager::get_stream_dot_by_id(&stream_info.id).await {
                                     let id = stream_info.id.to_string();
                                     if last_dots.get(&id) != Some(&dot) {
@@ -653,6 +653,12 @@ pub async fn dot_stream(req: HttpRequest, stream: web::Payload) -> Result<HttpRe
                                     }
                                 }
                             }
+
+                            let current_ids: std::collections::HashSet<String> = streams
+                                .iter()
+                                .map(|s| s.id.to_string())
+                                .collect();
+                            last_dots.retain(|id, _| current_ids.contains(id));
                         }
                         Err(error) => {
                             warn!("Failed to get streams information: {error:?}");
