@@ -406,15 +406,12 @@ impl Stream {
 
                         // Find the best candidate
                         manager::update_devices(&mut streams, &mut candidates, should_report).await;
-                        *video_and_stream_information.write().await =
-                            streams.first().unwrap().clone();
+                        let updated_stream = streams.first().unwrap();
+                        *video_and_stream_information.write().await = updated_stream.clone();
 
                         // Check if the chosen video source is available
                         match crate::video::video_source::get_video_source(
-                            video_and_stream_information_cloned
-                                .video_source
-                                .inner()
-                                .source_string(),
+                            updated_stream.video_source.inner().source_string(),
                         )
                         .await
                         {
