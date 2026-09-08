@@ -76,11 +76,11 @@ fn config_gst_plugins() {
                 name = config.name,
                 rank = config.rank,
             ),
-            Err(error) => error!(
-                "Error when trying to configure plugin {name:?} rank to {rank:?}. Reason: {error:?}",
+            Err(error) => debug!(
+                "Plugin {name:?} not in Gstreamer registry; rank override {rank:?} ignored. {error}",
                 name = config.name,
                 rank = config.rank,
-                error = error.to_string()
+                error = error.to_string(),
             ),
         }
     }
@@ -120,6 +120,10 @@ pub async fn start_default() -> Result<()> {
     // Update all local video sources to make sure that they are available
     let mut candidates = video_source::cameras_available().await;
     update_devices(&mut streams, &mut candidates, true).await;
+
+    if crate::cli::manager::is_onvif_disabled() {
+        streams.retain(|stream| !matches!(&stream.video_source, VideoSourceType::Onvif(_)));
+    }
 
     // Remove all invalid video_sources
     let streams: Vec<VideoAndStreamInformation> = streams
@@ -483,6 +487,18 @@ pub async fn add_stream_and_start(
         .video_source
         .inner()
         .source_string();
+
+    if crate::cli::manager::is_onvif_disabled()
+        && matches!(
+            &video_and_stream_information.video_source,
+            VideoSourceType::Onvif(_)
+        )
+    {
+        return Err(anyhow!(
+            "Source {source_string:?} cannot be used while --disable-onvif is set"
+        ));
+    }
+
     if is_source_blocked(source_string) {
         return Err(anyhow!(
             "Source {source_string:?} needs to be unblocked to be used"
@@ -624,14 +640,14 @@ impl Manager {
             const LIVE_PLAYING_GRACE: tokio::time::Duration = tokio::time::Duration::from_secs(3);
             loop {
                 let flowing = 'check: {
-                    let mgr = MANAGER.read().await;
-                    let Some(s) = mgr.streams.get(&producer_id) else {
+                    let manager = MANAGER.read().await;
+                    let Some(stream) = manager.streams.get(&producer_id) else {
                         return Err(anyhow::anyhow!(
                             "Stream {producer_id:?} removed while waiting"
                         ));
                     };
 
-                    let state_guard = s.state.read().await;
+                    let state_guard = stream.state.read().await;
                     let Some(st) = state_guard.as_ref() else {
                         break 'check false;
                     };
@@ -660,17 +676,17 @@ impl Manager {
                     break;
                 }
                 if tokio::time::Instant::now() >= deadline {
-                    let mgr = MANAGER.read().await;
-                    if let Some(s) = mgr.streams.get(&producer_id) {
-                        let lifecycle = s.lifecycle.clone();
-                        drop(mgr);
+                    let manager = MANAGER.read().await;
+                    if let Some(stream) = manager.streams.get(&producer_id) {
+                        let lifecycle = stream.lifecycle.clone();
+                        drop(manager);
                         if let Err(error) = lifecycle.remove_consumer().await {
                             warn!(
                                 "Failed to remove consumer for {producer_id:?} after readiness timeout: {error}"
                             );
                         }
                     } else {
-                        drop(mgr);
+                        drop(manager);
                     }
                     return Err(anyhow::anyhow!(
                         "Pipeline for {producer_id:?} did not become ready in time"
@@ -681,9 +697,57 @@ impl Manager {
         }
 
         let result: Result<webrtc::signalling_protocol::SessionId> = async {
-            let mut manager = MANAGER.write().await;
-
             let consumer_id = bind.consumer_id;
+
+            // Dedupe by (producer_id, consumer_id). Client may retry
+            // `startSession` on WebSocket reconnect after transient errors
+            // (e.g. the 502 loop observed during stream manager startup).
+            // Without dedupe, each retry spawns a fresh WebRTCSink /
+            // NiceAgent / webrtcbin branch on the same consumer, leaving
+            // the previous one partially negotiated and competing for
+            // DTLS / ICE resources. Remove any stale session for this
+            // consumer before adding a new one.
+            let stale_sessions: Vec<_> = {
+                let manager = MANAGER.read().await;
+                let stream = manager.streams.get(&producer_id).context(format!(
+                    "Cannot find any stream with producer {producer_id:?}"
+                ))?;
+
+                let state_guard = stream.state.read().await;
+                state_guard
+                    .as_ref()
+                    .and_then(|st| st.pipeline.as_ref())
+                    .map(|pipeline| {
+                        pipeline
+                            .inner_state_as_ref()
+                            .sinks
+                            .values()
+                            .filter_map(|sink| match sink {
+                                Sink::WebRTC(s) if s.bind().consumer_id == consumer_id => {
+                                    Some(s.bind().clone())
+                                }
+                                _ => None,
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+
+            for stale_bind in stale_sessions {
+                warn!(
+                    "Dropping stale WebRTC session for consumer {consumer_id:?} \
+                     (session {:?}) before reattaching",
+                    stale_bind.session_id
+                );
+                if let Err(error) =
+                    Self::remove_session(&stale_bind, "superseded by new startSession".to_string())
+                        .await
+                {
+                    warn!("Failed removing stale session: {error:?}");
+                }
+            }
+
+            let mut manager = MANAGER.write().await;
             let session_id = Self::generate_uuid(None);
 
             let stream = manager.streams.get_mut(&producer_id).context(format!(
@@ -723,10 +787,10 @@ impl Manager {
         .await;
 
         if result.is_err() {
-            let mgr = MANAGER.read().await;
-            if let Some(s) = mgr.streams.get(&producer_id) {
-                let lifecycle = s.lifecycle.clone();
-                drop(mgr);
+            let manager = MANAGER.read().await;
+            if let Some(stream) = manager.streams.get(&producer_id) {
+                let lifecycle = stream.lifecycle.clone();
+                drop(manager);
                 if let Err(error) = lifecycle.remove_consumer().await {
                     warn!(
                         "Failed to remove consumer for {producer_id:?} after sink setup failure: {error}"
@@ -738,9 +802,13 @@ impl Manager {
         let session_id = result?;
 
         {
-            let mgr = MANAGER.read().await;
-            if let Some(s) = mgr.streams.get(&producer_id) {
-                s.active_webrtc_sessions.lock().unwrap().insert(session_id);
+            let manager = MANAGER.read().await;
+            if let Some(stream) = manager.streams.get(&producer_id) {
+                stream
+                    .active_webrtc_sessions
+                    .lock()
+                    .unwrap()
+                    .insert(session_id);
             }
         }
 

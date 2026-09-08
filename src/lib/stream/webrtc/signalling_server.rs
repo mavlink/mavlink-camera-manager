@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     net::SocketAddr,
     sync::{Arc, Mutex},
 };
@@ -19,6 +20,22 @@ use super::signalling_protocol::*;
 #[derive(Debug)]
 pub struct SignallingServer {
     handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+/// Per-connection signalling counters. A single client WebSocket can
+/// own several session_ids (one per producer). When the socket closes
+/// we emit a summary that answers "how chatty / silent was this
+/// client?" which is useful when diagnosing sessions that never sent
+/// an SDP answer or any ICE candidates.
+#[derive(Debug, Default, Clone)]
+struct SignallingStats {
+    pub messages_in: u32,
+    pub messages_out: u32,
+    pub questions_in: u32,
+    pub sdp_in: u32,
+    pub ice_in: u32,
+    pub parse_errors: u32,
+    pub sessions_seen: HashSet<uuid::Uuid>,
 }
 
 impl Drop for SignallingServer {
@@ -81,14 +98,14 @@ impl SignallingServer {
         while let Ok((stream, address)) = listener.accept().await {
             info!("Accepting connection from {address:?}");
 
-            tokio::spawn(Self::accept_connection(stream));
+            tokio::spawn(Self::accept_connection(stream, address));
         }
 
         Ok(())
     }
 
     #[instrument(level = "debug", skip(stream))]
-    async fn accept_connection(stream: TcpStream) {
+    async fn accept_connection(stream: TcpStream, peer: SocketAddr) {
         debug!("Accepting connection...");
 
         let stream = match async_tungstenite::tokio::accept_async(stream).await {
@@ -99,14 +116,17 @@ impl SignallingServer {
             }
         };
 
-        if let Err(error) = Self::handle_connection(stream).await {
+        if let Err(error) = Self::handle_connection(stream, peer).await {
             error!("Error processing connection: {error}");
         }
     }
 
     #[instrument(level = "debug", skip(stream))]
-    async fn handle_connection(stream: WebSocketStream<TokioAdapter<TcpStream>>) -> Result<()> {
-        info!("New Signalling connection");
+    async fn handle_connection(
+        stream: WebSocketStream<TokioAdapter<TcpStream>>,
+        peer: SocketAddr,
+    ) -> Result<()> {
+        info!(peer = %peer, "New Signalling connection");
 
         let (mut ws_sink, mut ws_stream) = stream.split();
 
@@ -114,15 +134,20 @@ impl SignallingServer {
         let (mpsc_sender, mut mpsc_receiver) = mpsc::unbounded_channel::<Result<Message>>();
 
         let active_sessions: Arc<Mutex<Vec<BindAnswer>>> = Arc::new(Mutex::new(Vec::new()));
+        let stats: Arc<Mutex<SignallingStats>> = Arc::new(Mutex::new(SignallingStats::default()));
 
         // Create a sender task, which receives from the mpsc channel
         let sender_sessions = active_sessions.clone();
+        let sender_stats = stats.clone();
         let mut sender_task_handle = tokio::spawn(async move {
             loop {
                 match tokio::time::timeout(std::time::Duration::from_secs(5), mpsc_receiver.recv())
                     .await
                 {
                     Ok(Some(Ok(message))) => {
+                        if let Ok(mut stats) = sender_stats.lock() {
+                            stats.messages_out += 1;
+                        }
                         if let Message::Question(Question::EndSession(ref end_session_question)) =
                             message
                         {
@@ -184,6 +209,7 @@ impl SignallingServer {
         });
 
         let receiver_sessions = active_sessions.clone();
+        let receiver_stats = stats.clone();
         let mut receiver_task_handle = tokio::spawn(async move {
             while let Some(msg) = ws_stream.next().await {
                 let msg = match msg {
@@ -203,8 +229,17 @@ impl SignallingServer {
                     }
                 };
 
-                if let Err(error) =
-                    Self::handle_message(msg.clone(), &mpsc_sender, &receiver_sessions).await
+                if let Ok(mut stats) = receiver_stats.lock() {
+                    stats.messages_in += 1;
+                }
+
+                if let Err(error) = Self::handle_message(
+                    msg.clone(),
+                    &mpsc_sender,
+                    &receiver_sessions,
+                    &receiver_stats,
+                )
+                .await
                 {
                     error!("Failed handling message: {error:#}");
                     break;
@@ -244,20 +279,38 @@ impl SignallingServer {
             }
         }
 
+        if let Ok(stats) = stats.lock() {
+            info!(
+                peer = %peer,
+                messages_in = stats.messages_in,
+                messages_out = stats.messages_out,
+                questions_in = stats.questions_in,
+                sdp_in = stats.sdp_in,
+                ice_in = stats.ice_in,
+                parse_errors = stats.parse_errors,
+                session_count = stats.sessions_seen.len(),
+                "Signalling connection closed",
+            );
+        }
+
         debug!("Signalling connection terminated");
 
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(sender, active_sessions))]
+    #[instrument(level = "debug", skip(sender, active_sessions, stats))]
     async fn handle_message(
         msg: String,
         sender: &mpsc::UnboundedSender<Result<Message>>,
         active_sessions: &Arc<Mutex<Vec<BindAnswer>>>,
+        stats: &Arc<Mutex<SignallingStats>>,
     ) -> Result<()> {
         let protocol = match serde_json::from_str::<Protocol>(&msg) {
             Ok(protocol) => protocol,
             Err(error) => {
+                if let Ok(mut stats) = stats.lock() {
+                    stats.parse_errors += 1;
+                }
                 // Parsing errors should not be propagated, otherwise it will close the WebSocket.
                 warn!("Ignoring received message {msg:?}. Reason: {error:#?}");
                 return Ok(());
@@ -267,6 +320,9 @@ impl SignallingServer {
         trace!("Received: {protocol:#?}");
         let answer = match protocol.message {
             Message::Question(question) => {
+                if let Ok(mut stats) = stats.lock() {
+                    stats.questions_in += 1;
+                }
                 match question {
                     Question::PeerId => Some(Answer::PeerId(PeerIdAnswer {
                         id: stream::Manager::generate_uuid(None),
@@ -319,6 +375,11 @@ impl SignallingServer {
                     let bind = negotiation.bind;
                     let sdp = negotiation.sdp;
 
+                    if let Ok(mut stats) = stats.lock() {
+                        stats.sdp_in += 1;
+                        stats.sessions_seen.insert(bind.session_id);
+                    }
+
                     stream::Manager::handle_sdp(&bind, &sdp)
                         .await
                         .context("Failed handling SDP")?;
@@ -332,6 +393,11 @@ impl SignallingServer {
                         .ice
                         .sdp_m_line_index
                         .context("Missing sdp_m_line_index")?;
+
+                    if let Ok(mut stats) = stats.lock() {
+                        stats.ice_in += 1;
+                        stats.sessions_seen.insert(bind.session_id);
+                    }
 
                     stream::Manager::handle_ice(&bind, sdp_m_line_index, &candidate)
                         .await

@@ -209,32 +209,35 @@ impl PipelineState {
 
         // Link the Sink
         let pipeline = &self.pipeline;
+        let start_before_link = matches!(sink, Sink::WebRTC(_));
+
+        // WebRTC negotiates as soon as codec-preferences are set in link(), so
+        // the pipeline must publish fixed upstream RTP caps before the sink is
+        // linked and allowed to build codec-preferences.
+        if start_before_link {
+            ensure_pipeline_playing(pipeline, pipeline_id)
+                .await
+                .context(format!(
+                    "Failed starting Pipeline {pipeline_id} before WebRTC link"
+                ))?;
+            let tee_sink = tee
+                .static_pad("sink")
+                .context(format!("No sink pad for RTP tee of Pipeline {pipeline_id}"))?;
+            wait_for_rtp_caps(&tee_sink).await?;
+        }
+
         sink.link(pipeline, pipeline_id, tee_src_pad)?;
         let sink_id = &sink.get_id();
 
         // Start the pipeline if not playing yet
-        if pipeline.current_state() != gst::State::Playing
-            && let Err(error) = pipeline.set_state(gst::State::Playing)
-        {
-            sink.unlink(pipeline, pipeline_id)?;
-            return Err(anyhow!(
-                "Failed starting Pipeline {pipeline_id}. Reason: {error:#?}"
-            ));
-        }
-
-        if let Err(error) = wait_for_element_state_async(
-            gst::prelude::ObjectExt::downgrade(pipeline),
-            gst::State::Playing,
-            100,
-            2,
-        )
-        .await
-        {
-            let _ = pipeline.set_state(gst::State::Null);
-            sink.unlink(pipeline, pipeline_id)?;
-            return Err(anyhow!(
-                "Failed setting Pipeline {pipeline_id} to Playing state. Reason: {error:?}"
-            ));
+        if !start_before_link {
+            if let Err(error) = ensure_pipeline_playing(pipeline, pipeline_id).await {
+                let _ = pipeline.set_state(gst::State::Null);
+                sink.unlink(pipeline, pipeline_id)?;
+                return Err(anyhow!(
+                    "Failed setting Pipeline {pipeline_id} to Playing state. Reason: {error:?}"
+                ));
+            }
         }
 
         if let Sink::Rtsp(sink) = &sink {
@@ -335,4 +338,74 @@ impl PipelineState {
 
         Ok(())
     }
+}
+
+async fn ensure_pipeline_playing(pipeline: &gst::Pipeline, pipeline_id: &uuid::Uuid) -> Result<()> {
+    if pipeline.current_state() != gst::State::Playing
+        && let Err(error) = pipeline.set_state(gst::State::Playing)
+    {
+        return Err(anyhow!(
+            "Failed starting Pipeline {pipeline_id}. Reason: {error:#?}"
+        ));
+    }
+
+    wait_for_element_state_async(
+        gst::prelude::ObjectExt::downgrade(pipeline),
+        gst::State::Playing,
+        100,
+        2,
+    )
+    .await
+    .map_err(|error| {
+        anyhow!("Failed setting Pipeline {pipeline_id} to Playing state. Reason: {error:?}")
+    })
+}
+
+async fn wait_for_rtp_caps(tee_sink: &gst::Pad) -> Result<()> {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+    let probe_id = tee_sink.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_pad, info| {
+        if let Some(gst::PadProbeData::Event(ref event)) = info.data
+            && let gst::EventView::Caps(caps_event) = event.view()
+            && let Some(structure) = caps_event.caps().structure(0)
+            && structure.name() == "application/x-rtp"
+            && structure
+                .get::<&str>("media")
+                .is_ok_and(|media| media == "video")
+            && matches!(
+                structure.get::<&str>("encoding-name").unwrap_or(""),
+                "H264" | "H265"
+            )
+        {
+            let _ = tx.send(());
+        }
+        gst::PadProbeReturn::Ok
+    });
+
+    if let Some(caps) = tee_sink.current_caps()
+        && let Some(structure) = caps.structure(0)
+        && structure.name() == "application/x-rtp"
+        && structure
+            .get::<&str>("media")
+            .is_ok_and(|media| media == "video")
+        && matches!(
+            structure.get::<&str>("encoding-name").unwrap_or(""),
+            "H264" | "H265"
+        )
+    {
+        if let Some(probe_id) = probe_id {
+            tee_sink.remove_probe(probe_id);
+        }
+        return Ok(());
+    }
+
+    rx.recv()
+        .await
+        .context("RTP tee caps probe closed before RTP caps were observed")?;
+
+    if let Some(probe_id) = probe_id {
+        tee_sink.remove_probe(probe_id);
+    }
+
+    Ok(())
 }

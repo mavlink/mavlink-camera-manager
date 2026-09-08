@@ -1155,6 +1155,23 @@ mod tests {
         }
     }
 
+    fn idle_redirect_stream(name: &str, endpoint: &str) -> Stream {
+        let video_and_stream_information = redirect_stream(name, endpoint);
+        let stream_id = generate_pipeline_id(&video_and_stream_information);
+        Stream {
+            state: Arc::new(RwLock::new(None)),
+            pipeline_id: Arc::new(stream_id),
+            video_and_stream_information: Arc::new(RwLock::new(video_and_stream_information)),
+            error: Arc::new(RwLock::new(Ok(()))),
+            terminated: Arc::new(RwLock::new(false)),
+            watcher_handle: None,
+            lifecycle: LifecycleHandle::lazy(),
+            thumbnail_cooldown: Arc::new(Mutex::new(None)),
+            mavlink_camera: Arc::new(RwLock::new(None)),
+            active_webrtc_sessions: Arc::new(Mutex::new(std::collections::HashSet::new())),
+        }
+    }
+
     fn settings_file() -> String {
         format!("/tmp/stream-tests-{}.json", uuid::Uuid::new_v4())
     }
@@ -1224,15 +1241,14 @@ mod tests {
         crate::settings::manager::clear_blocked_sources();
         crate::stream::manager::remove_all_streams().await.unwrap();
 
-        let first = redirect_stream("yard-east", "rtsp://127.0.0.1:8554/yard-east");
-        let second = redirect_stream("yard-west", "rtsp://127.0.0.1:8554/yard-west");
+        let first = idle_redirect_stream("yard-east", "rtsp://127.0.0.1:8554/yard-east");
+        let second = idle_redirect_stream("yard-west", "rtsp://127.0.0.1:8554/yard-west");
+        let first_id = *first.pipeline_id;
+        let second_id = *second.pipeline_id;
+        assert_ne!(first_id, second_id);
 
-        crate::stream::manager::add_stream_and_start(first)
-            .await
-            .unwrap();
-        crate::stream::manager::add_stream_and_start(second)
-            .await
-            .unwrap();
+        manager::Manager::add_stream(first).await.unwrap();
+        manager::Manager::add_stream(second).await.unwrap();
 
         let streams = crate::stream::manager::streams().await.unwrap();
         let stream_ids: std::collections::HashSet<_> =
@@ -1240,13 +1256,10 @@ mod tests {
 
         assert_eq!(streams.len(), 2);
         assert_eq!(stream_ids.len(), 2);
+        assert!(stream_ids.contains(&first_id));
+        assert!(stream_ids.contains(&second_id));
 
-        crate::stream::manager::remove_stream_by_name("yard-east")
-            .await
-            .unwrap();
-        crate::stream::manager::remove_stream_by_name("yard-west")
-            .await
-            .unwrap();
+        crate::stream::manager::remove_all_streams().await.unwrap();
     }
 
     #[tokio::test]

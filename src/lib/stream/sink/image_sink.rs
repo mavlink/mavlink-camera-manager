@@ -408,15 +408,19 @@ impl ImageSink {
             .new_sample(move |appsink| {
                 let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
                 let buffer = sample.buffer().ok_or_else(|| {
-                    let _ = enc_sender.send(Err(Arc::new(anyhow!(
+                    if let Err(send_error) = enc_sender.send(Err(Arc::new(anyhow!(
                         "Failed to get buffer from encode appsink"
-                    ))));
+                    )))) {
+                        debug!("No subscriber for encode buffer error: {send_error}");
+                    }
                     gst::FlowError::Error
                 })?;
                 let map = buffer.map_readable().map_err(|_| {
-                    let _ = enc_sender.send(Err(Arc::new(anyhow!(
+                    if let Err(send_error) = enc_sender.send(Err(Arc::new(anyhow!(
                         "Failed to map encode buffer readable"
-                    ))));
+                    )))) {
+                        debug!("No subscriber for encode map error: {send_error}");
+                    }
                     gst::FlowError::Error
                 })?;
                 let _ = enc_sender.send(Ok(map.as_slice().to_vec()));

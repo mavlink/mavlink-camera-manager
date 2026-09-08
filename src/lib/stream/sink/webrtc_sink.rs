@@ -33,6 +33,7 @@ const PLAYOUT_DELAY_EXT_ID: u8 = 13;
 pub struct WebRTCSinkWeakProxy {
     bind: BindAnswer,
     sender: WeakUnboundedSender<Result<Message>>,
+    stats: Arc<Mutex<SessionStats>>,
 }
 
 #[derive(Debug)]
@@ -50,10 +51,48 @@ pub struct WebRTCSink {
     block_probe_id: Arc<Mutex<Option<gst::PadProbeId>>>,
     block_pad: Arc<Mutex<Option<glib::WeakRef<gst::Pad>>>>,
     pipeline_runner: PipelineRunner,
+    /// Per-session observability counters updated by the various WebRTC
+    /// callbacks. Summarised in `Drop` for a single end-of-session log
+    /// line and consulted by the FailSafeKiller to explain timeouts.
+    stats: Arc<Mutex<SessionStats>>,
+    end_reason: Option<String>,
 }
 
 impl Drop for WebRTCSink {
     fn drop(&mut self) {
+        if let Ok(stats) = self.stats.lock() {
+            let duration_ms = stats.started_at.elapsed().as_millis() as u64;
+            let ms_since = |instant: Option<std::time::Instant>| -> Option<u128> {
+                instant.map(|t| t.duration_since(stats.started_at).as_millis())
+            };
+            info!(
+                session_id = %self.bind.session_id,
+                producer_id = %self.bind.producer_id,
+                consumer_id = %self.bind.consumer_id,
+                duration_ms,
+                peer_state = ?stats.peer_connection_state,
+                ice_state = ?stats.ice_connection_state,
+                gather_state = ?stats.ice_gathering_state,
+                upstream_encoding = stats.upstream_encoding.as_deref().unwrap_or("?"),
+                local_ice_total = stats.local_ice.total(),
+                local_ice_host = stats.local_ice.host,
+                local_ice_srflx = stats.local_ice.srflx,
+                local_ice_relay = stats.local_ice.relay,
+                remote_ice_total = stats.remote_ice.total(),
+                remote_ice_host = stats.remote_ice.host,
+                remote_ice_srflx = stats.remote_ice.srflx,
+                remote_ice_relay = stats.remote_ice.relay,
+                ms_to_offer = ?ms_since(stats.offer_sent_at),
+                ms_to_answer = ?ms_since(stats.answer_received_at),
+                ms_to_first_client_ice = ?ms_since(stats.first_client_ice_at),
+                ms_to_connected = ?ms_since(stats.connected_at),
+                ms_to_first_frame = ?ms_since(stats.first_frame_at),
+                reason = %stats.end_reason.as_deref()
+                    .or(self.end_reason.as_deref())
+                    .unwrap_or("dropped"),
+                "WebRTC session ended",
+            );
+        }
         if let Some(pad) = self.webrtcbin_sink_pad.take() {
             self.webrtcbin.release_request_pad(&pad);
         }
@@ -85,7 +124,7 @@ impl Drop for WebRTCSink {
     }
 }
 impl SinkInterface for WebRTCSink {
-    #[instrument(level = "debug", skip(self, pipeline))]
+    #[instrument(level = "debug", skip(self, pipeline), fields(session_id = %self.bind.session_id, producer_id = %self.bind.producer_id))]
     fn link(
         self: &mut WebRTCSink,
         pipeline: &gst::Pipeline,
@@ -106,6 +145,25 @@ impl SinkInterface for WebRTCSink {
             .context("webrtcbin_sink_pad already consumed")?;
         let transceiver =
             webrtcbin_sink_pad.property::<gst_webrtc::WebRTCRTPTransceiver>("transceiver");
+        let first_frame_stats = Arc::clone(&self.stats);
+        let first_frame_session_id = self.bind.session_id;
+        webrtcbin_sink_pad.add_probe(
+            gst::PadProbeType::BUFFER | gst::PadProbeType::BUFFER_LIST,
+            move |_pad, _info| {
+                if let Ok(mut stats) = first_frame_stats.lock() {
+                    if stats.first_frame_at.is_none() {
+                        stats.first_frame_at = Some(std::time::Instant::now());
+                        let ms_since_start = stats.started_at.elapsed().as_millis() as u64;
+                        debug!(
+                            session_id = %first_frame_session_id,
+                            ms_since_start,
+                            "First RTP buffer reached webrtcbin sink pad",
+                        );
+                    }
+                }
+                gst::PadProbeReturn::Ok
+            },
+        );
         transceiver.set_property(
             "direction",
             gst_webrtc::WebRTCRTPTransceiverDirection::Sendonly,
@@ -113,50 +171,12 @@ impl SinkInterface for WebRTCSink {
         transceiver.set_property("do-nack", true); // Enable retransmission (RFC4588)
         transceiver.set_property("fec-type", gst_webrtc::WebRTCFECType::None);
 
-        // Provide codec-preferences so webrtcbin can create an SDP offer
-        // without waiting for buffer caps on the sink pad.  The queue src
-        // pad carries a BLOCK probe that prevents buffers (and their
-        // associated sticky caps) from reaching webrtcbin until the
-        // RED/FEC/RTX encoders are excised on Connected.  Without
-        // codec-preferences, on-negotiation-needed never fires because
-        // webrtcbin defers negotiation until caps arrive.
-        //
-        // Walk upstream: tee sink pad → peer (payloader src) to discover
-        // the encoding-name, then build fixed caps (webrtcbin needs caps
-        // without ranges to produce a valid SDP media section).
-        let codec_caps = tee_src_pad
-            .parent_element()
-            .and_then(|tee| tee.static_pad("sink"))
-            .and_then(|tee_sink| {
-                let negotiated = tee_sink.current_caps();
-                let caps = negotiated.or_else(|| {
-                    tee_sink.peer().and_then(|peer| {
-                        let queried = peer.query_caps(None);
-                        (!queried.is_any() && queried.size() > 0).then_some(queried)
-                    })
-                })?;
-
-                let s = caps.structure(0)?;
-                let encoding = s.get::<&str>("encoding-name").ok()?;
-                let clock_rate = s.get::<i32>("clock-rate").unwrap_or(90000);
-                let payload = s.get::<i32>("payload").unwrap_or(96);
-
-                Some(
-                    gst::Caps::builder("application/x-rtp")
-                        .field("media", "video")
-                        .field("encoding-name", encoding)
-                        .field("clock-rate", clock_rate)
-                        .field("payload", payload)
-                        .build(),
-                )
-            });
-        if let Some(caps) = codec_caps {
-            debug!("Setting codec-preferences: {caps}");
-            transceiver.set_property("codec-preferences", &caps);
-        } else {
-            warn!("No caps available upstream of tee for codec-preferences");
+        if self.tee_src_pad.is_some() {
+            return Err(anyhow!(
+                "Tee's src pad from Sink {:?} has already been configured",
+                self.get_id()
+            ));
         }
-
         self.tee_src_pad.replace(tee_src_pad);
         let Some(tee_src_pad) = &self.tee_src_pad else {
             unreachable!()
@@ -164,6 +184,80 @@ impl SinkInterface for WebRTCSink {
 
         let elements = &[&self.proxysink];
         link_sink_to_tee(tee_src_pad, pipeline, elements)?;
+
+        // Provide codec-preferences so webrtcbin can create an SDP offer
+        // without waiting for buffer caps on the sink pad. `add_sink()` waits
+        // for fixed upstream RTP caps before calling this sync path.
+        if let Some(caps) = tee_src_pad
+            .parent_element()
+            .and_then(|tee| tee.static_pad("sink"))
+            .and_then(|tee_sink| {
+                tee_sink
+                    .current_caps()
+                    .or_else(|| tee_sink.peer().and_then(|peer| peer.current_caps()))
+            })
+        {
+            if let Some(structure) = caps.structure(0) {
+                let encoding = structure.get::<&str>("encoding-name").unwrap_or("");
+                let mut codec_caps = gst::Caps::builder("application/x-rtp")
+                    .field("media", "video")
+                    .field("encoding-name", encoding)
+                    .field(
+                        "clock-rate",
+                        structure.get::<i32>("clock-rate").unwrap_or(90000),
+                    )
+                    .field("payload", structure.get::<i32>("payload").unwrap_or(96))
+                    .build();
+
+                if let Some(codec_structure) = codec_caps.make_mut().structure_mut(0) {
+                    match encoding {
+                        "H264" => {
+                            for key in [
+                                "profile-level-id",
+                                "packetization-mode",
+                                "sprop-parameter-sets",
+                            ] {
+                                if let Ok(value) = structure.get::<&str>(key) {
+                                    codec_structure.set(key, value);
+                                }
+                            }
+                        }
+                        "H265" => {
+                            for key in [
+                                "profile-id",
+                                "profile-space",
+                                "tier-flag",
+                                "level-id",
+                                "sprop-vps",
+                                "sprop-sps",
+                                "sprop-pps",
+                            ] {
+                                if let Ok(value) = structure.get::<&str>(key) {
+                                    codec_structure.set(key, value);
+                                }
+                            }
+                        }
+                        _ => (),
+                    }
+                }
+
+                if let Ok(mut stats) = self.stats.lock()
+                    && !encoding.is_empty()
+                {
+                    stats.upstream_encoding = Some(encoding.to_string());
+                }
+                debug!(
+                    session_id = %self.bind.session_id,
+                    "Setting codec-preferences: {codec_caps}",
+                );
+                transceiver.set_property("codec-preferences", &codec_caps);
+            }
+        } else {
+            warn!(
+                session_id = %self.bind.session_id,
+                "No profile caps available upstream of tee for codec-preferences",
+            );
+        }
 
         // Block data at the boundary between the proxy bridge and webrtcbin
         // so no buffers reach the internal RED/FEC/RTX encoders before they
@@ -412,6 +506,17 @@ impl WebRTCSink {
 
         sender.send(Ok(Message::from(Answer::StartSession(bind.clone()))))?;
 
+        let stun = cli::manager::stun_server_address();
+        let turn_count = cli::manager::turn_server_addresses().len();
+        let stun_resolvable = resolve_webrtc_endpoint(&stun).is_ok();
+        info!(
+            session_id = %bind.session_id,
+            stun_url = %stun,
+            stun_resolvable,
+            turn_count,
+            "WebRTC session starting",
+        );
+
         let this = WebRTCSink {
             sink_id,
             pipeline,
@@ -425,36 +530,100 @@ impl WebRTCSink {
             block_probe_id: Arc::new(Mutex::new(None)),
             block_pad: Arc::new(Mutex::new(None)),
             pipeline_runner,
+            stats: Arc::new(Mutex::new(SessionStats::new())),
+            end_reason: None,
         };
 
-        let (peer_connected_tx, peer_connected_rx) = std::sync::mpsc::channel::<()>();
+        let (peer_connected_tx, peer_connected_rx) = std::sync::mpsc::channel::<PeerEvent>();
 
-        // End the stream if it doesn't complete the negotiation.
-        // Uses recv_timeout so the thread exits immediately when:
-        //  - the peer connects (Ok received),
-        //  - the session is torn down (channel Disconnected), or
-        //  - the 10-second timeout elapses (proceed to kill).
+        // Fallback killer: if neither the `connection-state` notify nor
+        // the ICE state callbacks reach a terminal state, this thread
+        // ends the session after the grace period. The previous 10-second
+        // timer was too aggressive -- on slower links DTLS/ICE routinely
+        // takes more than 10 s to reach Connected, racing the killer
+        // with the negotiator. The killer now also exits early on an
+        // explicit `PeerEvent::Failed` from the ICE / connection state
+        // callbacks, so we don't wait the full grace period for obvious
+        // failures.
+        const NEGOTIATION_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
         let weak_proxy = this.downgrade();
         std::thread::Builder::new()
             .name("FailSafeKiller".to_string())
             .spawn(move || {
-                debug!("Waiting for peer to be connected within 10 seconds...");
+                debug!(
+                    session_id = %weak_proxy.bind.session_id,
+                    "Waiting for peer to be connected within {}s...",
+                    NEGOTIATION_GRACE.as_secs(),
+                );
 
-                match peer_connected_rx.recv_timeout(std::time::Duration::from_secs(10)) {
-                    Ok(()) => {
-                        debug!("Peer connected. Disabling FailSafeKiller");
+                match peer_connected_rx.recv_timeout(NEGOTIATION_GRACE) {
+                    Ok(PeerEvent::Connected) => {
+                        debug!(
+                            session_id = %weak_proxy.bind.session_id,
+                            "Peer connected. Disabling FailSafeKiller",
+                        );
+                        return;
+                    }
+                    Ok(PeerEvent::Failed) => {
+                        warn!(
+                            session_id = %weak_proxy.bind.session_id,
+                            "ICE/DTLS reported terminal failure. FailSafeKiller ending session early.",
+                        );
+                        if let Err(error) =
+                            weak_proxy.terminate("ICE/DTLS failure".to_string())
+                        {
+                            error!("Failed sending EndSessionQuestion: {error}");
+                        }
                         return;
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                        debug!("Session ended before negotiation timeout. FailSafeKiller exiting.");
+                        debug!(
+                            session_id = %weak_proxy.bind.session_id,
+                            "Session ended before negotiation timeout. FailSafeKiller exiting.",
+                        );
                         return;
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 }
 
-                warn!("WebRTC negotiation timed out (10s), killing session");
+                let cause = weak_proxy
+                    .stats
+                    .lock()
+                    .map(|s| s.likely_cause_at_negotiation_timeout())
+                    .unwrap_or("stats lock poisoned");
 
-                if let Err(error) = weak_proxy.terminate("WebRTC negotiation timeout".to_string()) {
+                {
+                    let bind = &weak_proxy.bind;
+                    if let Ok(stats) = weak_proxy.stats.lock() {
+                        warn!(
+                            session_id = %bind.session_id,
+                            producer_id = %bind.producer_id,
+                            grace_secs = NEGOTIATION_GRACE.as_secs(),
+                            peer_state = ?stats.peer_connection_state,
+                            ice_state = ?stats.ice_connection_state,
+                            gather_state = ?stats.ice_gathering_state,
+                            local_ice_total = stats.local_ice.total(),
+                            local_ice_host = stats.local_ice.host,
+                            local_ice_srflx = stats.local_ice.srflx,
+                            local_ice_relay = stats.local_ice.relay,
+                            remote_ice_total = stats.remote_ice.total(),
+                            offer_sent = stats.offer_sent_at.is_some(),
+                            answer_received = stats.answer_received_at.is_some(),
+                            likely_cause = cause,
+                            "FailSafeKiller: WebRTC negotiation timed out, killing session",
+                        );
+                    } else {
+                        warn!(
+                            session_id = %bind.session_id,
+                            grace_secs = NEGOTIATION_GRACE.as_secs(),
+                            "FailSafeKiller: WebRTC negotiation timed out, killing session (stats unavailable)",
+                        );
+                    }
+                }
+
+                if let Err(error) = weak_proxy.terminate(format!(
+                    "WebRTC negotiation timeout: {cause}"
+                )) {
                     error!("Failed sending EndSessionQuestion: {error}");
                 }
             })
@@ -499,13 +668,24 @@ impl WebRTCSink {
                     webrtcbin.property::<gst_webrtc::WebRTCPeerConnectionState>("connection-state");
 
                 if matches!(state, gst_webrtc::WebRTCPeerConnectionState::Connected) {
-                    if let Err(error) = peer_connected_tx.send(()) {
+                    if let Err(error) = peer_connected_tx.send(PeerEvent::Connected) {
                         error!("Failed to disable FailSafeKiller: {error:?}");
                     }
 
                     optimise_send_path(webrtcbin, &block_pad_slot, &block_probe_slot);
 
                     send_force_key_unit_upstream(webrtcbin);
+                }
+
+                if matches!(
+                    state,
+                    gst_webrtc::WebRTCPeerConnectionState::Failed
+                        | gst_webrtc::WebRTCPeerConnectionState::Closed
+                        | gst_webrtc::WebRTCPeerConnectionState::Disconnected
+                ) {
+                    if let Err(error) = peer_connected_tx.send(PeerEvent::Failed) {
+                        debug!("Failed to notify FailSafeKiller of ICE failure: {error:?}");
+                    }
                 }
 
                 if let Err(error) = weak_proxy.on_connection_state_change(webrtcbin, &state) {
@@ -543,6 +723,7 @@ impl WebRTCSink {
         WebRTCSinkWeakProxy {
             bind: self.bind.clone(),
             sender: self.sender.downgrade(),
+            stats: Arc::clone(&self.stats),
         }
     }
 
@@ -556,6 +737,10 @@ impl WebRTCSink {
         self.downgrade()
             .handle_ice(&self.webrtcbin, sdp_m_line_index, candidate)
     }
+
+    pub fn bind(&self) -> &BindAnswer {
+        &self.bind
+    }
 }
 
 impl WebRTCSinkWeakProxy {
@@ -563,6 +748,12 @@ impl WebRTCSinkWeakProxy {
         let Some(sender) = self.sender.upgrade() else {
             return Err(anyhow!("Failed accessing MPSC Sender"));
         };
+
+        if let Ok(mut stats) = self.stats.lock() {
+            if stats.end_reason.is_none() {
+                stats.end_reason = Some(reason.clone());
+            }
+        }
 
         if !sender.is_closed() {
             sender.send(Ok(Message::Question(Question::EndSession(
@@ -624,7 +815,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
 
     // Once webrtcbin has create the offer SDP for us, handle it by sending it to the peer via the
     // WebSocket connection
-    #[instrument(level = "debug", skip_all)]
+    #[instrument(level = "debug", skip_all, fields(session_id = %self.bind.session_id))]
     fn on_offer_created(
         &self,
         webrtcbin: &gst::Element,
@@ -633,7 +824,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         // Recreate the SDP offer with our customized SDP
         let offer = gst_webrtc::WebRTCSessionDescription::new(
             offer.type_(),
-            customize_sent_sdp(offer.sdp())?,
+            customize_sent_sdp(offer.sdp(), Some((&self.bind, &self.stats)))?,
         );
 
         let Ok(sdp) = offer.sdp().as_text() else {
@@ -643,7 +834,16 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         // All good, then set local description
         webrtcbin.emit_by_name::<()>("set-local-description", &[&offer, &None::<gst::Promise>]);
 
-        debug!("Sending SDP offer to peer. Offer:\n{sdp}");
+        if let Ok(mut stats) = self.stats.lock() {
+            stats
+                .offer_sent_at
+                .get_or_insert_with(std::time::Instant::now);
+        }
+
+        debug!(
+            session_id = %self.bind.session_id,
+            "Sending SDP offer to peer. Offer:\n{sdp}",
+        );
 
         let message = MediaNegotiation {
             bind: self.bind.clone(),
@@ -661,7 +861,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
 
     // Once webrtcbin has create the answer SDP for us, handle it by sending it to the peer via the
     // WebSocket connection
-    #[instrument(level = "debug", skip(self, _webrtcbin))]
+    #[instrument(level = "debug", skip(self, _webrtcbin), fields(session_id = %self.bind.session_id))]
     fn on_answer_created(
         &self,
         _webrtcbin: &gst::Element,
@@ -670,14 +870,17 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         // Recreate the SDP answer with our customized SDP
         let answer = gst_webrtc::WebRTCSessionDescription::new(
             answer.type_(),
-            customize_sent_sdp(answer.sdp())?,
+            customize_sent_sdp(answer.sdp(), Some((&self.bind, &self.stats)))?,
         );
 
         let Ok(sdp) = answer.sdp().as_text() else {
             return Err(anyhow!("Failed reading the answer SDP"));
         };
 
-        debug!("Sending SDP answer to peer. Answer:\n{sdp}");
+        debug!(
+            session_id = %self.bind.session_id,
+            "Sending SDP answer to peer. Answer:\n{sdp}",
+        );
 
         // All good, then set local description
         let message = MediaNegotiation {
@@ -695,13 +898,18 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self, _webrtcbin))]
+    #[instrument(level = "debug", skip(self, _webrtcbin), fields(session_id = %self.bind.session_id))]
     fn on_ice_candidate(
         &self,
         _webrtcbin: &gst::Element,
         sdp_m_line_index: &u32,
         candidate: &str,
     ) -> Result<()> {
+        let kind = classify_ice_candidate(candidate);
+        if let Ok(mut stats) = self.stats.lock() {
+            stats.local_ice.increment(kind);
+        }
+
         let message = IceNegotiation {
             bind: self.bind.clone(),
             ice: RTCIceCandidateInit {
@@ -718,25 +926,35 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
             .context("Failed accessing MPSC Sender")?
             .send(Ok(message))?;
 
-        debug!("ICE candidate created!");
+        debug!(
+            session_id = %self.bind.session_id,
+            kind = kind.as_str(),
+            "Local ICE candidate created: {candidate}",
+        );
 
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self, _webrtcbin))]
+    #[instrument(level = "debug", skip(self, _webrtcbin), fields(session_id = %self.bind.session_id))]
     fn on_ice_gathering_state_change(
         &self,
         _webrtcbin: &gst::Element,
         state: &gst_webrtc::WebRTCICEGatheringState,
     ) -> Result<()> {
+        if let Ok(mut stats) = self.stats.lock() {
+            stats.ice_gathering_state = Some(*state);
+        }
         if let gst_webrtc::WebRTCICEGatheringState::Complete = state {
-            debug!("ICE gathering complete")
+            debug!(
+                session_id = %self.bind.session_id,
+                "ICE gathering complete",
+            )
         }
 
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self, webrtcbin))]
+    #[instrument(level = "debug", skip(self, webrtcbin), fields(session_id = %self.bind.session_id))]
     fn on_ice_connection_state_change(
         &self,
         webrtcbin: &gst::Element,
@@ -744,7 +962,13 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
     ) -> Result<()> {
         use gst_webrtc::WebRTCICEConnectionState::*;
 
-        debug!("ICE connection changed to {state:#?}");
+        if let Ok(mut stats) = self.stats.lock() {
+            stats.ice_connection_state = Some(*state);
+        }
+        debug!(
+            session_id = %self.bind.session_id,
+            "ICE connection changed to {state:#?}",
+        );
         match state {
             Completed => {
                 let srcpads = webrtcbin.src_pads();
@@ -765,7 +989,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self, _webrtcbin))]
+    #[instrument(level = "debug", skip(self, _webrtcbin), fields(session_id = %self.bind.session_id))]
     fn on_connection_state_change(
         &self,
         _webrtcbin: &gst::Element,
@@ -773,7 +997,19 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
     ) -> Result<()> {
         use gst_webrtc::WebRTCPeerConnectionState::*;
 
-        debug!("Connection changed to {state:#?}");
+        if let Ok(mut stats) = self.stats.lock() {
+            stats.peer_connection_state = Some(*state);
+            if matches!(state, Connected) {
+                stats
+                    .connected_at
+                    .get_or_insert_with(std::time::Instant::now);
+            }
+        }
+
+        debug!(
+            session_id = %self.bind.session_id,
+            "Connection changed to {state:#?}",
+        );
         match state {
             // TODO: This would be the desired workflow, but it is not being detected, so we are using a workaround connecting direcly to the DTLS Transport connection state in the Session constructor.
             Disconnected | Failed | Closed => {
@@ -785,7 +1021,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         Ok(())
     }
 
-    #[instrument(level = "debug", skip_all)]
+    #[instrument(level = "debug", skip_all, fields(session_id = %self.bind.session_id))]
     fn handle_sdp(
         &self,
         webrtcbin: &gst::Element,
@@ -793,6 +1029,14 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
     ) -> Result<()> {
         let remote_sdp = webrtcbin
             .property::<Option<gst_webrtc::WebRTCSessionDescription>>("remote-description");
+
+        if matches!(sdp.type_(), gst_webrtc::WebRTCSDPType::Answer) {
+            if let Ok(mut stats) = self.stats.lock() {
+                stats
+                    .answer_received_at
+                    .get_or_insert_with(std::time::Instant::now);
+            }
+        }
 
         if let Ok(sdp_str) = sdp.sdp().as_text() {
             trace!("Received SDP (type: {}):\n{sdp_str}", sdp.type_());
@@ -808,7 +1052,7 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
             return Ok(());
         }
 
-        let sdp = gst_webrtc::WebRTCSessionDescription::new(sdp.type_(), sanitize_sdp(sdp.sdp())?);
+        let sdp = gst_webrtc::WebRTCSessionDescription::new(sdp.type_(), sanitize_sdp(sdp)?);
 
         if let Ok(sdp_str) = sdp.sdp().as_text() {
             debug!(
@@ -817,36 +1061,174 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
             );
         };
 
-        webrtcbin.emit_by_name::<()>("set-remote-description", &[&sdp, &None::<gst::Promise>]);
+        // `set-remote-description` dispatches into webrtcbin / libnice / the
+        // SRTP negotiator. Pathological SDPs have historically aborted the
+        // whole process from inside this call with no Rust-side trace. Guard
+        // against any Rust panic that bubbles up through glib so we get a
+        // clean error instead of a silent process death. A native SIGSEGV
+        // is still covered by `helper::diagnostics::install_crash_handlers`.
+        let webrtcbin_for_panic = webrtcbin.clone();
+        let sdp_for_panic = sdp.clone();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            webrtcbin_for_panic.emit_by_name::<()>(
+                "set-remote-description",
+                &[&sdp_for_panic, &None::<gst::Promise>],
+            );
+        }));
+        if let Err(panic) = result {
+            let message = panic_message(&panic);
+            error!("Panic while calling set-remote-description: {message}");
+            return Err(anyhow!(
+                "Panic while applying remote SDP description: {message}"
+            ));
+        }
         Ok(())
     }
 
-    #[instrument(level = "debug", skip(self, webrtcbin))]
+    #[instrument(level = "debug", skip(self, webrtcbin), fields(session_id = %self.bind.session_id))]
     fn handle_ice(
         &self,
         webrtcbin: &gst::Element,
         sdp_m_line_index: &u32,
         candidate: &str,
     ) -> Result<()> {
+        let kind = classify_ice_candidate(candidate);
+        if let Ok(mut stats) = self.stats.lock() {
+            stats
+                .first_client_ice_at
+                .get_or_insert_with(std::time::Instant::now);
+            stats.remote_ice.increment(kind);
+        }
+
+        debug!(
+            session_id = %self.bind.session_id,
+            kind = kind.as_str(),
+            "Remote ICE candidate received: {candidate}",
+        );
+
         webrtcbin.emit_by_name::<()>("add-ice-candidate", &[&sdp_m_line_index, &candidate]);
         Ok(())
     }
 }
 
 /// Because GStreamer's WebRTCBin often crashes when receiving an invalid SDP,
-/// we use Mozzila's SDP parser to manipulate the SDP Message before giving it to GStreamer
+/// we use Mozzila's SDP parser to manipulate the SDP Message before giving it to GStreamer.
+///
+/// After the text round-trip we also run an allowlist/blocklist pass on
+/// attributes that have historically confused webrtcbin / libnice /
+/// the DTLS negotiator on *incoming* descriptions. Browsers have shipped
+/// SDPs that aborted the whole GStreamer process from inside
+/// `set-remote-description` with no Rust-level backtrace, so the defense
+/// has to be as conservative as possible here.
 #[instrument(level = "debug", skip_all)]
-fn sanitize_sdp(sdp: &gst_sdp::SDPMessageRef) -> Result<gst_sdp::SDPMessage> {
-    gst_sdp::SDPMessage::parse_buffer(
-        webrtc_sdp::parse_sdp(sdp.as_text()?.as_str(), false)?
+fn sanitize_sdp(sdp: &gst_webrtc::WebRTCSessionDescription) -> Result<gst_sdp::SDPMessage> {
+    let mut new_sdp = gst_sdp::SDPMessage::parse_buffer(
+        webrtc_sdp::parse_sdp(sdp.sdp().as_text()?.as_str(), false)?
             .to_string()
             .as_bytes(),
     )
-    .map_err(anyhow::Error::msg)
+    .map_err(anyhow::Error::msg)?;
+
+    let is_answer = matches!(sdp.type_(), gst_webrtc::WebRTCSDPType::Answer);
+
+    new_sdp.medias_mut().for_each(|media| {
+        scrub_remote_media_attributes(media, is_answer);
+    });
+
+    Ok(new_sdp)
+}
+
+/// Drop attributes on an incoming remote SDP media section that are either
+/// ambiguous given our own offer (direction conflicts) or outside the set
+/// we negotiate. This is intentionally conservative: we only remove items
+/// we can prove are safe to drop, and we never add anything.
+fn scrub_remote_media_attributes(media: &mut gst_sdp::SDPMediaRef, is_answer: bool) {
+    let mut to_remove: Vec<usize> = Vec::new();
+    let mut seen_rtcp_fb: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut seen_extmap_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for (idx, attr) in media.attributes().enumerate() {
+        let key = attr.key();
+        let value = attr.value().unwrap_or_default();
+
+        match key {
+            // Our offer is `sendonly`; a peer answering with `recvonly`
+            // is semantically fine but past Chromium builds have emitted
+            // it in ways that confuse webrtcbin's direction handling.
+            // Strip it on incoming answers -- the transceiver direction
+            // we set up on the sink pad is authoritative.
+            "recvonly" if is_answer => {
+                to_remove.push(idx);
+            }
+            // `sendonly` / `sendrecv` / `inactive` on an answer to our
+            // sendonly offer would be a protocol violation; drop them so
+            // webrtcbin doesn't try to reconcile conflicting directions.
+            "sendonly" | "sendrecv" | "inactive" if is_answer => {
+                to_remove.push(idx);
+            }
+            // Deduplicate rtcp-fb attributes -- some peers emit the same
+            // feedback line twice which webrtcbin parses into duplicate
+            // transceiver state.
+            "rtcp-fb" if !seen_rtcp_fb.insert(value.to_string()) => {
+                to_remove.push(idx);
+            }
+            // Deduplicate extmap by ID. We inject our own playout-delay
+            // extension at a fixed ID on the *offer* side; a remote
+            // re-declaration with the same ID but a different URI will
+            // desynchronize the extension map.
+            "extmap" => {
+                let id = value.split_whitespace().next().unwrap_or("").to_string();
+                if id.is_empty() || !seen_extmap_ids.insert(id) {
+                    to_remove.push(idx);
+                }
+            }
+            // `setup` must be one of "active", "passive", "actpass",
+            // "holdconn" per RFC 4145. Anything else is a stray value
+            // and must not be handed to the DTLS state machine.
+            "setup" if !matches!(value, "active" | "passive" | "actpass" | "holdconn") => {
+                warn!("Stripping non-standard a=setup:{value} from remote SDP");
+                to_remove.push(idx);
+            }
+            _ => {}
+        }
+    }
+
+    for idx in to_remove.into_iter().rev() {
+        let _ = media.remove_attribute(idx as u32);
+    }
+}
+
+/// Events the `connection-state` notify callback can forward to the
+/// `FailSafeKiller` thread. `Connected` makes the killer stand down;
+/// `Failed` asks it to terminate the session early instead of waiting
+/// the full negotiation grace period.
+enum PeerEvent {
+    Connected,
+    Failed,
+}
+
+/// Extract a best-effort string from a panic payload returned by
+/// `std::panic::catch_unwind`. Falls back to a generic message if the
+/// payload is not a string type.
+fn panic_message(panic: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = panic.downcast_ref::<&'static str>() {
+        (*s).to_string()
+    } else if let Some(s) = panic.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "<non-string panic payload>".to_string()
+    }
+}
+
+fn is_well_formed_profile_level_id(plid: &str) -> bool {
+    plid.len() == 6 && plid.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 #[instrument(level = "debug", skip_all)]
-fn customize_sent_sdp(sdp: &gst_sdp::SDPMessageRef) -> Result<gst_sdp::SDPMessage> {
+fn customize_sent_sdp(
+    sdp: &gst_sdp::SDPMessageRef,
+    session: Option<(&BindAnswer, &Arc<Mutex<SessionStats>>)>,
+) -> Result<gst_sdp::SDPMessage> {
     let mut new_sdp = sdp.to_owned();
 
     trace!("SDP: {:?}", new_sdp.as_text());
@@ -906,38 +1288,68 @@ fn customize_sent_sdp(sdp: &gst_sdp::SDPMessageRef) -> Result<gst_sdp::SDPMessag
                         .split(';')
                         .map(|v| v.to_string())
                         .collect::<Vec<String>>();
-                    new_configs.retain(|v| {
-                        v.starts_with("sprop-parameter-sets")
-                            || v.starts_with("sprop-vps")
-                            || v.starts_with("sprop-sps")
-                            || v.starts_with("sprop-pps")
+                    let retained_fmtp_fields = [
+                        "profile-level-id",
+                        "sprop-parameter-sets",
+                        "sprop-vps",
+                        "sprop-sps",
+                        "sprop-pps",
+                        "packetization-mode",
+                        "level-asymmetry-allowed",
+                        "profile-id",
+                        "profile-space",
+                        "tier-flag",
+                        "level-id",
+                        "profile-compatibility-indicator",
+                        "interop-constraints",
+                    ];
+                    new_configs.retain(|config| {
+                        let Some((key, value)) = config.split_once('=') else {
+                            return false;
+                        };
+                        if key == "profile-level-id" {
+                            return is_well_formed_profile_level_id(value);
+                        }
+                        retained_fmtp_fields.contains(&key)
                     });
 
                     trace!("fmtp attribute parsed: payload: {payload:?}, values: {new_configs:?}");
 
-                    match encoding {
-                        "H264" => {
-                            // Reference: https://www.iana.org/assignments/media-types/video/H264
-                            let original_plid = configs_str
-                                .split(';')
-                                .find_map(|kv| kv.strip_prefix("profile-level-id="))
-                                .unwrap_or("unknown");
-                            let level = original_plid.get(4..6).unwrap_or("1f");
-                            let new_plid = format!("42e0{level}");
-                            new_configs.push("packetization-mode=1".to_string());
-                            new_configs.push(format!("profile-level-id={new_plid}"));
-                            new_configs.push("level-asymmetry-allowed=1".to_string());
+                    if encoding == "H264" {
+                        let h264_fmtp_defaults = [
+                            ("packetization-mode", "1"),
+                            ("level-asymmetry-allowed", "1"),
+                        ];
+                        // IANA video/H264 defines these offer/answer fmtp
+                        // parameters; video/H265 uses profile/tier/level
+                        // fields instead.
+                        // Reference: https://www.iana.org/assignments/media-types/video/H264
+                        for (key, value) in h264_fmtp_defaults {
+                            if !new_configs
+                                .iter()
+                                .any(|v| v.starts_with(&format!("{key}=")))
+                            {
+                                new_configs.push(format!("{key}={value}"));
+                            }
                         }
-                        "H265" => {
-                            // Rererence: https://www.iana.org/assignments/media-types/video/H265
-                            const LEVEL_ID: u8 = 93;
-                            new_configs.push(format!("level-id={LEVEL_ID}"));
-                        }
-                        _ => (),
                     }
 
                     let new_configs_str = new_configs.join(";");
                     let new_value = [payload, &new_configs_str].join(" ");
+
+                    if value != new_value {
+                        debug!(
+                            session_id = ?session.map(|(bind, _)| bind.session_id),
+                            encoding,
+                            "Rewrote fmtp line in outgoing SDP\nfrom: {value}\nto:   {new_value}",
+                        );
+                    } else {
+                        trace!(
+                            session_id = ?session.map(|(bind, _)| bind.session_id),
+                            encoding,
+                            "Preserved fmtp line in outgoing SDP: {value}",
+                        );
+                    }
 
                     let new_fmtp_attribute = gst_sdp::SDPAttribute::new("fmtp", Some(&new_value));
 
@@ -946,7 +1358,7 @@ fn customize_sent_sdp(sdp: &gst_sdp::SDPMessageRef) -> Result<gst_sdp::SDPMessag
                         warn!("fmtp customization failed: {error:?}");
                     }
 
-                    trace!("fmtp attribute changed \nfrom: {value:?}\nto: {new_value:?}");
+                    trace!("fmtp attribute customized \nfrom: {value:?}\nto: {new_value:?}");
                 }
             });
         });
@@ -1165,4 +1577,340 @@ fn send_force_key_unit_upstream(webrtcbin: &gst::Element) {
         .find_map(|pad| pad.peer());
     let _ = fku_pad.as_ref().map(|p| p.send_event(fku_event));
     debug!("Sent ForceKeyUnit upstream on WebRTC session connect");
+}
+/// Classification of an ICE candidate, mirroring the RFC 5245/8445 `typ`
+/// values so the log pipeline can keep a small histogram per session.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum IceCandidateKind {
+    Host,
+    ServerReflexive,
+    PeerReflexive,
+    Relay,
+    #[default]
+    Unknown,
+}
+
+impl IceCandidateKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Host => "host",
+            Self::ServerReflexive => "srflx",
+            Self::PeerReflexive => "prflx",
+            Self::Relay => "relay",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Per-session histogram of ICE candidates we have seen, split by kind.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IceCandidateCounts {
+    pub host: u32,
+    pub srflx: u32,
+    pub prflx: u32,
+    pub relay: u32,
+    pub unknown: u32,
+}
+
+impl IceCandidateCounts {
+    pub fn total(&self) -> u32 {
+        self.host + self.srflx + self.prflx + self.relay + self.unknown
+    }
+
+    fn increment(&mut self, kind: IceCandidateKind) {
+        match kind {
+            IceCandidateKind::Host => self.host += 1,
+            IceCandidateKind::ServerReflexive => self.srflx += 1,
+            IceCandidateKind::PeerReflexive => self.prflx += 1,
+            IceCandidateKind::Relay => self.relay += 1,
+            IceCandidateKind::Unknown => self.unknown += 1,
+        }
+    }
+}
+
+/// Classify an ICE candidate SDP string by its `typ` token.
+///
+/// Accepts either the full `a=candidate:...` attribute line or the
+/// bare candidate value (what webrtcbin emits on `on-ice-candidate`).
+fn classify_ice_candidate(candidate: &str) -> IceCandidateKind {
+    let mut tokens = candidate.split_ascii_whitespace();
+    while let Some(tok) = tokens.next() {
+        if tok == "typ" {
+            return match tokens.next() {
+                Some("host") => IceCandidateKind::Host,
+                Some("srflx") => IceCandidateKind::ServerReflexive,
+                Some("prflx") => IceCandidateKind::PeerReflexive,
+                Some("relay") => IceCandidateKind::Relay,
+                _ => IceCandidateKind::Unknown,
+            };
+        }
+    }
+    IceCandidateKind::Unknown
+}
+
+/// Per-session observability counters updated from the many GStreamer /
+/// libnice callbacks that run during a WebRTC session. Fields default to
+/// `None` / zero; they are filled in as the session progresses. All
+/// timestamps are wall-clock-ish `Instant`s measured from session start.
+#[derive(Debug)]
+pub struct SessionStats {
+    pub started_at: std::time::Instant,
+    pub offer_sent_at: Option<std::time::Instant>,
+    pub answer_received_at: Option<std::time::Instant>,
+    pub first_client_ice_at: Option<std::time::Instant>,
+    pub connected_at: Option<std::time::Instant>,
+    pub first_frame_at: Option<std::time::Instant>,
+    pub local_ice: IceCandidateCounts,
+    pub remote_ice: IceCandidateCounts,
+    pub peer_connection_state: Option<gst_webrtc::WebRTCPeerConnectionState>,
+    pub ice_connection_state: Option<gst_webrtc::WebRTCICEConnectionState>,
+    pub ice_gathering_state: Option<gst_webrtc::WebRTCICEGatheringState>,
+    pub upstream_encoding: Option<String>,
+    pub end_reason: Option<String>,
+}
+
+impl Default for SessionStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SessionStats {
+    pub fn new() -> Self {
+        Self {
+            started_at: std::time::Instant::now(),
+            offer_sent_at: None,
+            answer_received_at: None,
+            first_client_ice_at: None,
+            connected_at: None,
+            first_frame_at: None,
+            local_ice: IceCandidateCounts::default(),
+            remote_ice: IceCandidateCounts::default(),
+            peer_connection_state: None,
+            ice_connection_state: None,
+            ice_gathering_state: None,
+            upstream_encoding: None,
+            end_reason: None,
+        }
+    }
+
+    /// Heuristic label for the most likely reason a session never
+    /// reached `Connected`. Used by the FailSafeKiller to turn a bare
+    /// "timeout after 30 s" warning into actionable context.
+    pub fn likely_cause_at_negotiation_timeout(&self) -> &'static str {
+        if self.offer_sent_at.is_none() {
+            return "offer never sent (webrtcbin did not emit on-negotiation-needed)";
+        }
+        if self.answer_received_at.is_none() {
+            return "client did not reply with SDP answer";
+        }
+        if self.remote_ice.total() == 0 {
+            return "client sent SDP answer but no ICE candidates (peer-to-peer reachability failure on client side)";
+        }
+        if self.local_ice.total() == 0 {
+            return "no local ICE candidates gathered (libnice / network interface issue)";
+        }
+        if self.local_ice.srflx == 0 && self.local_ice.relay == 0 {
+            return "only host candidates gathered (STUN/TURN unreachable or no public reflexive addr)";
+        }
+        if self.connected_at.is_none() {
+            return "ICE checks did not succeed (mismatched candidates / DTLS failure)";
+        }
+        "unknown"
+    }
+}
+
+/// Resolve the host portion of a STUN / TURN URL to a socket address so
+/// we can detect configuration typos or broken DNS before the session
+/// fails silently inside libnice.
+fn resolve_webrtc_endpoint(url: &str) -> Result<std::net::SocketAddr> {
+    use std::net::ToSocketAddrs;
+
+    let parsed = url::Url::parse(url).context("failed to parse STUN/TURN url")?;
+    let host = parsed
+        .host_str()
+        .context("STUN/TURN url has no host component")?;
+    let port = parsed.port().unwrap_or(3478);
+
+    (host, port)
+        .to_socket_addrs()
+        .context("failed to resolve STUN/TURN host")?
+        .next()
+        .context("STUN/TURN resolution returned no addresses")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a minimal offer SDP shaped like what `webrtcbin` emits for
+    /// a single codec media line. `encoding` is the codec name as it
+    /// appears in `a=rtpmap:96 <encoding>/90000` (e.g. `"H264"` or
+    /// `"H265"`). `fmtp_body` controls the fmtp line for pt 96:
+    /// `Some("...")` produces `a=fmtp:96 ...`, `None` omits the line.
+    fn sdp_with_encoded_fmtp(encoding: &str, fmtp_body: Option<&str>) -> gst_sdp::SDPMessage {
+        gst::init().unwrap();
+
+        let fmtp_line = match fmtp_body {
+            Some(body) => format!("a=fmtp:96 {body}\r\n"),
+            None => String::new(),
+        };
+        let text = format!(
+            "v=0\r\n\
+             o=- 0 0 IN IP4 127.0.0.1\r\n\
+             s=-\r\n\
+             t=0 0\r\n\
+             m=video 9 UDP/TLS/RTP/SAVPF 96\r\n\
+             c=IN IP4 0.0.0.0\r\n\
+             a=rtpmap:96 {encoding}/90000\r\n\
+             {fmtp_line}"
+        );
+        gst_sdp::SDPMessage::parse_buffer(text.as_bytes()).unwrap()
+    }
+
+    /// Return the raw value of the first `a=fmtp:...` attribute (the part
+    /// after the `:`, starting with the payload type), or `None` if absent.
+    fn fmtp_value_of(sdp: &gst_sdp::SDPMessage) -> Option<String> {
+        sdp.media(0)?
+            .attributes()
+            .find(|a| a.key() == "fmtp")
+            .and_then(|a| a.value().map(|s| s.to_string()))
+    }
+
+    /// Parse a specific `<key>=...` entry out of an fmtp value of the form
+    /// `"<pt> key=val;key=val;..."`. Used for both `profile-level-id`
+    /// (H.264) and `profile-id`, `profile-space`, `tier-flag` (H.265).
+    fn fmtp_field(fmtp_value: &str, key: &str) -> Option<String> {
+        let (_pt, configs) = fmtp_value.split_once(' ')?;
+        let prefix = format!("{key}=");
+        configs
+            .split(';')
+            .find_map(|kv| kv.trim().strip_prefix(prefix.as_str()))
+            .map(|s| s.to_string())
+    }
+
+    /// The RTP caps observed on the tee sink pad carry the camera's true
+    /// H.264 profile (e.g. Main 4.1, `4d4029` in the JM log). If those
+    /// caps are fed through unchanged, `customize_sent_sdp` must preserve
+    /// the profile-level-id so the browser's decoder matches the wire.
+    #[test]
+    fn customize_sent_sdp_preserves_h264_main_profile() {
+        let input = sdp_with_encoded_fmtp(
+            "H264",
+            Some(
+                "profile-level-id=4d4029;packetization-mode=1;\
+                 sprop-parameter-sets=Z01AKZZUA8ARPyo=,aO44gA==;level-asymmetry-allowed=1",
+            ),
+        );
+
+        let output = customize_sent_sdp(&input, None).expect("customize_sent_sdp should succeed");
+
+        let fmtp = fmtp_value_of(&output).expect("fmtp should be present in output");
+        let plid = fmtp_field(&fmtp, "profile-level-id")
+            .expect("profile-level-id should be present in output fmtp");
+
+        assert_eq!(
+            plid, "4d4029",
+            "expected Main 4.1 profile-level-id to be preserved, got {plid:?} in fmtp {fmtp:?}",
+        );
+    }
+
+    /// High profile cameras (`64xxxx`) must not be squashed to Constrained
+    /// Baseline (`42e0..`); the browser then cannot decode the wire stream.
+    #[test]
+    fn customize_sent_sdp_preserves_h264_high_profile() {
+        let input =
+            sdp_with_encoded_fmtp("H264", Some("profile-level-id=640028;packetization-mode=1"));
+
+        let output = customize_sent_sdp(&input, None).expect("customize_sent_sdp should succeed");
+
+        let fmtp = fmtp_value_of(&output).expect("fmtp should be present in output");
+        let plid = fmtp_field(&fmtp, "profile-level-id")
+            .expect("profile-level-id should be present in output fmtp");
+
+        assert_eq!(
+            plid, "640028",
+            "expected High profile-level-id to be preserved, got {plid:?} in fmtp {fmtp:?}",
+        );
+    }
+
+    /// H.265 fmtp carries `profile-id`, `profile-space`, and `tier-flag`
+    /// that together identify the decoder profile (Main, Main-10, etc.).
+    #[test]
+    fn customize_sent_sdp_preserves_h265_profile_fields() {
+        let input = sdp_with_encoded_fmtp(
+            "H265",
+            Some(
+                "level-id=120;profile-space=0;profile-id=1;tier-flag=0;\
+                 profile-compatibility-indicator=6;interop-constraints=B00000000000;\
+                 sprop-vps=QAEMAf//AWAAAAMAgAAAAwAAAwB4LA==;\
+                 sprop-sps=QgEBAWAAAAMAgAAAAwAAAwB4oAKAgC0WXmbkkmbAgAAH0AAAHUwQ;\
+                 sprop-pps=RAHA8vA8kA==",
+            ),
+        );
+
+        let output = customize_sent_sdp(&input, None).expect("customize_sent_sdp should succeed");
+
+        let fmtp = fmtp_value_of(&output).expect("fmtp should be present in output");
+
+        assert_eq!(
+            fmtp_field(&fmtp, "profile-id").as_deref(),
+            Some("1"),
+            "expected H.265 Main profile-id=1 to be preserved, got fmtp {fmtp:?}",
+        );
+        assert_eq!(
+            fmtp_field(&fmtp, "profile-space").as_deref(),
+            Some("0"),
+            "expected H.265 profile-space=0 to be preserved, got fmtp {fmtp:?}",
+        );
+        assert_eq!(
+            fmtp_field(&fmtp, "tier-flag").as_deref(),
+            Some("0"),
+            "expected H.265 tier-flag=0 to be preserved, got fmtp {fmtp:?}",
+        );
+    }
+
+    /// When `webrtcbin` emits no fmtp for the payload (e.g. because
+    /// `codec-preferences` carried no codec-specific fields), the rewrite
+    /// must not fabricate one. Otherwise we advertise a profile the
+    /// upstream stream never produced. Covers both H.264 and H.265 since
+    /// the fabrication path is codec-independent.
+    #[test]
+    fn customize_sent_sdp_does_not_fabricate_fmtp_when_absent() {
+        for encoding in ["H264", "H265"] {
+            let input = sdp_with_encoded_fmtp(encoding, None);
+
+            let output =
+                customize_sent_sdp(&input, None).expect("customize_sent_sdp should succeed");
+
+            assert!(
+                fmtp_value_of(&output).is_none(),
+                "encoding {encoding}: expected no fmtp in output when input had none, got {:?}",
+                fmtp_value_of(&output),
+            );
+        }
+    }
+
+    /// Safety net for the `original_plid.get(4..6)` slice: even on
+    /// malformed input (here a deliberately short profile-level-id), the
+    /// rewrite must never emit a non-hex or wrong-length profile-level-id
+    /// that would crash or confuse the browser.
+    #[test]
+    fn customize_sent_sdp_emits_well_formed_profile_level_id() {
+        let input = sdp_with_encoded_fmtp("H264", Some("profile-level-id=42;packetization-mode=1"));
+
+        let output = customize_sent_sdp(&input, None).expect("customize_sent_sdp should succeed");
+
+        let Some(fmtp) = fmtp_value_of(&output) else {
+            return;
+        };
+        let Some(plid) = fmtp_field(&fmtp, "profile-level-id") else {
+            return;
+        };
+
+        assert!(
+            plid.len() == 6 && plid.chars().all(|c| c.is_ascii_hexdigit()),
+            "profile-level-id must be 6 hex chars, got {plid:?} in fmtp {fmtp:?}",
+        );
+    }
 }
