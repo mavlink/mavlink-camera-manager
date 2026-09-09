@@ -343,6 +343,11 @@ pub async fn get_jpeg_thumbnail_from_source(
                                 && snapshot.consumers == 1
                         }
                         Err(error) => {
+                            // Reset the cooldown flag so subsequent requests are not permanently wedged
+                            let mut guard = cooldown
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            *guard = None;
                             let _ = tx.send(Some(Err(Arc::new(error))));
                             return;
                         }
