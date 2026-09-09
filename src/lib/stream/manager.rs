@@ -356,6 +356,20 @@ pub async fn get_jpeg_thumbnail_from_source(
                     false
                 };
 
+                // Panic-safe guard: if anything panics before the cooldown thread
+                // takes ownership, ensure the consumer is removed and cooldown is reset.
+                let mut consumer_guard = first_request.then(|| {
+                    let lifecycle_bg = lifecycle.clone();
+                    let cooldown_bg = cooldown.clone();
+                    scopeguard::guard((), move |()| {
+                        let mut g = cooldown_bg
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        *g = None;
+                        lifecycle_bg.remove_consumer_in_background();
+                    })
+                });
+
                 // Wait for the pipeline to be alive and Playing.
                 // Truly-idle streams need full Waking (pipeline recreation +
                 // position advance). Draining/Waking/Running streams may
@@ -377,6 +391,9 @@ pub async fn get_jpeg_thumbnail_from_source(
                                         "Failed to remove thumbnail consumer after timeout: {error}"
                                     );
                                 }
+                            }
+                            if let Some(guard) = consumer_guard.take() {
+                                scopeguard::ScopeGuard::into_inner(guard);
                             }
                             let _ = tx.send(Some(Err(Arc::new(anyhow!(
                                 "Pipeline did not resume in time for thumbnail"
@@ -474,6 +491,12 @@ pub async fn get_jpeg_thumbnail_from_source(
                             .unwrap_or_else(std::sync::PoisonError::into_inner);
                         *guard = None;
                         lifecycle.remove_consumer_in_background();
+                    }
+
+                    // Defuse the panic guard — either the cooldown thread has taken
+                    // ownership or we cleaned up on spawn error.
+                    if let Some(guard) = consumer_guard.take() {
+                        scopeguard::ScopeGuard::into_inner(guard);
                     }
                 }
 
