@@ -448,7 +448,7 @@ pub async fn get_jpeg_thumbnail_from_source(
                 if first_request {
                     let cooldown_arc = cooldown.clone();
                     let lifecycle_arc = lifecycle.clone();
-                    std::thread::Builder::new()
+                    let spawn_result = std::thread::Builder::new()
                         .name("ThumbnailCooldown".into())
                         .spawn(move || {
                             loop {
@@ -465,8 +465,16 @@ pub async fn get_jpeg_thumbnail_from_source(
                                     _ => {}
                                 }
                             }
-                        })
-                        .ok();
+                        });
+
+                    if let Err(error) = spawn_result {
+                        warn!("Failed to spawn thumbnail cooldown thread: {error}");
+                        let mut guard = cooldown
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        *guard = None;
+                        lifecycle.remove_consumer_in_background();
+                    }
                 }
 
                 let _ = tx.send(res);
