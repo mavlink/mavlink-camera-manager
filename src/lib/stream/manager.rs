@@ -331,7 +331,9 @@ pub async fn get_jpeg_thumbnail_from_source(
                 // spawn the cooldown cleanup thread later.
                 let first_request;
                 {
-                    let mut guard = cooldown.lock().unwrap();
+                    let mut guard = cooldown
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     first_request = guard.is_none();
                     *guard = Some(std::time::Instant::now());
                 }
@@ -343,6 +345,11 @@ pub async fn get_jpeg_thumbnail_from_source(
                                 && snapshot.consumers == 1
                         }
                         Err(error) => {
+                            // Reset the cooldown flag so subsequent requests are not permanently wedged
+                            let mut guard = cooldown
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            *guard = None;
                             let _ = tx.send(Some(Err(Arc::new(error))));
                             return;
                         }
@@ -350,6 +357,20 @@ pub async fn get_jpeg_thumbnail_from_source(
                 } else {
                     false
                 };
+
+                // Panic-safe guard: if anything panics before the cooldown thread
+                // takes ownership, ensure the consumer is removed and cooldown is reset.
+                let mut consumer_guard = first_request.then(|| {
+                    let lifecycle_bg = lifecycle.clone();
+                    let cooldown_bg = cooldown.clone();
+                    scopeguard::guard((), move |()| {
+                        let mut g = cooldown_bg
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        *g = None;
+                        lifecycle_bg.remove_consumer_in_background();
+                    })
+                });
 
                 // Wait for the pipeline to be alive and Playing.
                 // Truly-idle streams need full Waking (pipeline recreation +
@@ -364,7 +385,9 @@ pub async fn get_jpeg_thumbnail_from_source(
                             debug!("Pipeline did not resume in time for thumbnail");
                             if first_request {
                                 {
-                                    let mut guard = cooldown.lock().unwrap();
+                                    let mut guard = cooldown
+                                        .lock()
+                                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                                     *guard = None;
                                 }
                                 if let Err(error) = lifecycle.remove_consumer().await {
@@ -372,6 +395,9 @@ pub async fn get_jpeg_thumbnail_from_source(
                                         "Failed to remove thumbnail consumer after timeout: {error}"
                                     );
                                 }
+                            }
+                            if let Some(guard) = consumer_guard.take() {
+                                scopeguard::ScopeGuard::into_inner(guard);
                             }
                             let _ = tx.send(Some(Err(Arc::new(anyhow!(
                                 "Pipeline did not resume in time for thumbnail"
@@ -443,12 +469,14 @@ pub async fn get_jpeg_thumbnail_from_source(
                 if first_request {
                     let cooldown_arc = cooldown.clone();
                     let lifecycle_arc = lifecycle.clone();
-                    std::thread::Builder::new()
+                    let spawn_result = std::thread::Builder::new()
                         .name("ThumbnailCooldown".into())
                         .spawn(move || {
                             loop {
                                 std::thread::sleep(THUMBNAIL_COOLDOWN);
-                                let mut guard = cooldown_arc.lock().unwrap();
+                                let mut guard = cooldown_arc
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                                 match *guard {
                                     Some(last) if last.elapsed() >= THUMBNAIL_COOLDOWN => {
                                         *guard = None;
@@ -460,8 +488,22 @@ pub async fn get_jpeg_thumbnail_from_source(
                                     _ => {}
                                 }
                             }
-                        })
-                        .ok();
+                        });
+
+                    if let Err(error) = spawn_result {
+                        warn!("Failed to spawn thumbnail cooldown thread: {error}");
+                        let mut guard = cooldown
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        *guard = None;
+                        lifecycle.remove_consumer_in_background();
+                    }
+
+                    // Defuse the panic guard — either the cooldown thread has taken
+                    // ownership or we cleaned up on spawn error.
+                    if let Some(guard) = consumer_guard.take() {
+                        scopeguard::ScopeGuard::into_inner(guard);
+                    }
                 }
 
                 let _ = tx.send(res);
