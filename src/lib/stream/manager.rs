@@ -11,6 +11,7 @@ use tokio::sync::RwLock;
 use tracing::*;
 
 use crate::{
+    controls::types::Control,
     settings,
     stream::{
         sink::{Sink, SinkInterface, webrtc_sink::WebRTCSink},
@@ -19,13 +20,13 @@ use crate::{
     },
     video::{
         types::{Format, VideoSourceType},
-        video_source::{self, VideoSourceFormats},
+        video_source::{self, VideoSource, VideoSourceFormats},
     },
     video_stream::types::VideoAndStreamInformation,
 };
 
 use super::{
-    Stream,
+    Stream, pipeline_controls,
     types::StreamStatus,
     webrtc::{self, signalling_protocol::RTCSessionDescription},
 };
@@ -582,6 +583,8 @@ pub async fn add_stream_and_start(
         }
     }
 
+    crate::stream::validate_video_capture_configuration_for_stream(&video_and_stream_information)?;
+
     let stream = Stream::try_new(&video_and_stream_information).await?;
     Manager::add_stream(stream).await?;
 
@@ -618,6 +621,117 @@ pub async fn remove_stream_by_name(stream_name: &str) -> Result<()> {
     let stream_id = get_stream_id_from_name(stream_name).await?;
 
     Manager::remove_stream(&stream_id, true).await?;
+
+    Ok(())
+}
+
+#[instrument(level = "debug")]
+pub async fn persist_stream_settings() {
+    MANAGER.read().await.update_settings().await;
+}
+
+#[instrument(level = "debug")]
+pub async fn stream_controls(stream_name: &str) -> Result<Vec<Control>> {
+    let stream_id = get_stream_id_from_name(stream_name).await?;
+    let manager = MANAGER.read().await;
+    let stream = manager
+        .streams
+        .get(&stream_id)
+        .context(format!("Stream named {stream_name:?} not found"))?;
+    let video_and_stream_information = stream.video_and_stream_information.read().await.clone();
+    let source_controls = video_and_stream_information.video_source.inner().controls();
+    let pipeline_controls =
+        pipeline_controls::list_pipeline_controls(stream, &video_and_stream_information);
+    Ok(source_controls
+        .into_iter()
+        .chain(pipeline_controls)
+        .collect())
+}
+
+#[instrument(level = "debug")]
+pub async fn set_stream_control(stream_name: &str, control_id: u64, value: i64) -> Result<()> {
+    if pipeline_controls::is_pipeline_control_id(control_id) {
+        let stream_id = get_stream_id_from_name(stream_name).await?;
+        let manager = MANAGER.read().await;
+        let stream = manager
+            .streams
+            .get(&stream_id)
+            .context(format!("Stream named {stream_name:?} not found"))?;
+        let mut video_and_stream_information =
+            stream.video_and_stream_information.read().await.clone();
+        let restart_now = pipeline_controls::set_pipeline_control(
+            stream,
+            &mut video_and_stream_information,
+            control_id,
+            value,
+        )?;
+        *stream.video_and_stream_information.write().await = video_and_stream_information;
+        persist_stream_settings().await;
+        if restart_now {
+            restart_stream_by_name(stream_name).await?;
+        }
+        return Ok(());
+    }
+
+    let source_string = {
+        let stream_id = get_stream_id_from_name(stream_name).await?;
+        let manager = MANAGER.read().await;
+        let stream = manager
+            .streams
+            .get(&stream_id)
+            .context(format!("Stream named {stream_name:?} not found"))?;
+        stream
+            .video_and_stream_information
+            .read()
+            .await
+            .video_source
+            .inner()
+            .source_string()
+            .to_string()
+    };
+
+    video_source::set_control(&source_string, control_id, value)
+        .await
+        .map_err(|error| anyhow!("{error:?}"))
+}
+
+#[instrument(level = "debug")]
+pub async fn reset_stream_pipeline_controls(stream_name: &str) -> Result<()> {
+    let stream_id = get_stream_id_from_name(stream_name).await?;
+    let manager = MANAGER.read().await;
+    let stream = manager
+        .streams
+        .get(&stream_id)
+        .context(format!("Stream named {stream_name:?} not found"))?;
+    let mut video_and_stream_information = stream.video_and_stream_information.read().await.clone();
+    pipeline_controls::reset_pipeline_controls(stream, &mut video_and_stream_information);
+    *stream.video_and_stream_information.write().await = video_and_stream_information;
+    persist_stream_settings().await;
+    Ok(())
+}
+
+#[instrument(level = "debug")]
+pub async fn restart_stream_by_name(stream_name: &str) -> Result<()> {
+    let stream_id = get_stream_id_from_name(stream_name).await?;
+
+    let manager = MANAGER.read().await;
+    let stream = manager
+        .streams
+        .get(&stream_id)
+        .context(format!("Stream named {stream_name:?} not found"))?;
+
+    if let Some(old_state) = stream.state.read().await.as_ref()
+        && let Some(pipeline) = old_state.pipeline.as_ref()
+    {
+        for sink in pipeline.inner_state_as_ref().sinks.values() {
+            if let Sink::Rtsp(rtsp_sink) = sink {
+                rtsp_sink.set_preserve_factory(true);
+            }
+        }
+    }
+
+    stream.lifecycle.force_restart().await?;
+    stream.set_restart_needed(false);
 
     Ok(())
 }
@@ -1046,6 +1160,7 @@ impl Manager {
                     id,
                     running,
                     state,
+                    restart_needed: stream.restart_needed(),
                     error,
                     video_and_stream,
                     mavlink,
