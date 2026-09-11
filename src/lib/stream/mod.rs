@@ -1261,6 +1261,7 @@ mod tests {
             thumbnail_cooldown: Arc::new(Mutex::new(None)),
             mavlink_camera: Arc::new(RwLock::new(None)),
             active_webrtc_sessions: Arc::new(Mutex::new(std::collections::HashSet::new())),
+            restart_needed: Arc::new(AtomicBool::new(false)),
         }
     }
 
