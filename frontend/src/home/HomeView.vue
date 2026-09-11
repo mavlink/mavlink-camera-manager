@@ -25,56 +25,34 @@
             Reset controls
           </button>
         </div>
-        <div v-for="control in item.controls" :key="control.id">
-          <h5>Name: {{ control.name }}</h5>
-          <div v-if="control.configuration.Slider">
-            <V4lSlider
-              :slider="control.configuration.Slider"
-              :name="control.id.toString()"
+        <p
+          v-if="hasRestartRequiredControl(item.controls)"
+          class="restart-required-legend"
+        >
+          <abbr class="restart-required-marker" :title="restartRequiredLegend"
+            >[R]</abbr
+          >
+          {{ restartRequiredLegend }}
+        </p>
+        <details
+          v-for="group in controlPluginGroups(item.controls)"
+          :key="group.plugin"
+          class="plugin-control-group"
+        >
+          <summary>{{ group.label }}</summary>
+          <div
+            v-for="control in group.controls"
+            :key="control.id"
+            class="plugin-control-item"
+          >
+            <ControlInputs
+              :control="control"
               @onchange="
                 (value: any) => setControl(item.source, control.id, value)
               "
             />
           </div>
-
-          <div v-if="control.configuration.Bool">
-            <input
-              type="checkbox"
-              :checked="control.configuration.Bool.value == 1"
-              @change="
-                (event: Event) =>
-                  setControl(
-                    item.source,
-                    control.id,
-                    (event.target as HTMLInputElement).checked ? 1 : 0
-                  )
-              "
-            />
-            <label>On</label>
-          </div>
-
-          <div v-if="control.configuration.Menu">
-            <select
-              @change="
-                (event: Event) =>
-                  setControl(
-                    item.source,
-                    control.id,
-                    Number((event.target as HTMLSelectElement).value)
-                  )
-              "
-            >
-              <option
-                v-for="option in control.configuration.Menu.options"
-                :key="option.value"
-                :value="option.value"
-                :selected="option.value == control.configuration.Menu.value"
-              >
-                {{ option.name }}
-              </option>
-            </select>
-          </div>
-        </div>
+        </details>
       </div>
       <div>
         <h3>Streams</h3>
@@ -90,7 +68,26 @@
               Video: {{ getVideoDescription(stream.video_and_stream) }}
             </p>
           </div>
+          <div
+            v-if="stream.restart_needed"
+            style="
+              border: 1px solid #a60;
+              background: #fff4e5;
+              padding: 0.5em;
+              margin: 0.5em 0;
+            "
+          >
+            <p>
+              Stream restart required for pending encoder/pipeline changes.
+            </p>
+          </div>
           <div>
+            <button
+              type="button"
+              @click="restartStream(stream.video_and_stream.name)"
+            >
+              Restart stream
+            </button>
             <button
               type="button"
               @click="deleteStream(stream.video_and_stream.name)"
@@ -112,12 +109,56 @@
               <a :href="sdpHref(stream)" target="_blank">SDP</a>
             </p>
           </div>
-          <div>
-            <p>Configuration:</p>
+          <details v-if="pipelineControls(stream).length" class="collapsible">
+            <summary>Pipeline controls</summary>
+            <button
+              type="button"
+              @click="resetPipelineControls(stream.video_and_stream.name)"
+            >
+              Reset pipeline controls
+            </button>
+            <p
+              v-if="hasRestartRequiredControl(pipelineControls(stream))"
+              class="restart-required-legend"
+            >
+              <abbr
+                class="restart-required-marker"
+                :title="restartRequiredLegend"
+                >[R]</abbr
+              >
+              {{ restartRequiredLegend }}
+            </p>
+            <details
+              v-for="group in pipelineControlPluginGroups(stream)"
+              :key="group.plugin"
+              class="pipeline-plugin-group"
+            >
+              <summary>{{ group.label }}</summary>
+              <div
+                v-for="control in group.controls"
+                :key="control.id"
+                class="pipeline-control-item"
+              >
+                <ControlInputs
+                  :control="control"
+                  @onchange="
+                    (value: any) =>
+                      setStreamControl(
+                        stream.video_and_stream.name,
+                        control.id,
+                        value
+                      )
+                  "
+                />
+              </div>
+            </details>
+          </details>
+          <details class="collapsible">
+            <summary>Configuration</summary>
             <pre style="margin-left: 0.5em">{{
               JSON.stringify(stream, undefined, 2)
             }}</pre>
-          </div>
+          </details>
           <div class="dot-container">
             <h4>Pipeline Visualization:</h4>
             <div
@@ -135,7 +176,7 @@
 
 <script lang="ts">
 import { defineComponent } from "vue";
-import V4lSlider from "./components/V4lSlider.vue";
+import ControlInputs from "./components/ControlInputs.vue";
 import StreamForm from "./components/StreamForm.vue";
 
 declare class Viz {
@@ -159,7 +200,7 @@ function loadScript(src: string): Promise<void> {
 export default defineComponent({
   name: "HomeApp",
   components: {
-    V4lSlider,
+    ControlInputs,
     StreamForm,
   },
   async mounted() {
@@ -388,18 +429,20 @@ export default defineComponent({
         case "redirect":
           break;
         default: {
+          const configuration = video_and_stream.stream_information.configuration;
+          const source_encode = configuration.source_encode ?? configuration.encode;
           response +=
-            video_and_stream.stream_information.configuration.encode +
+            (source_encode && source_encode !== configuration.encode
+              ? source_encode + " -> " + configuration.encode
+              : configuration.encode) +
             " " +
-            video_and_stream.stream_information.configuration.width +
+            configuration.width +
             "x" +
-            video_and_stream.stream_information.configuration.height +
+            configuration.height +
             " @ " +
-            video_and_stream.stream_information.configuration.frame_interval
-              .denominator +
+            configuration.frame_interval.denominator +
             " / " +
-            video_and_stream.stream_information.configuration.frame_interval
-              .numerator +
+            configuration.frame_interval.numerator +
             " FPS";
         }
       }
@@ -434,7 +477,124 @@ export default defineComponent({
       this.content = await response_content.json();
 
       const response_streams = await fetch("/streams");
-      this.streams = await response_streams.json();
+      const streams = await response_streams.json();
+      this.streams = await Promise.all(
+        streams.map(async (stream: any) => {
+          stream.pipeline_controls = await this.fetchPipelineControls(
+            stream.video_and_stream.name
+          );
+          return stream;
+        })
+      );
+    },
+    pipelineControls(stream: any): any[] {
+      return (stream.pipeline_controls ?? []).filter(
+        (control: any) =>
+          control.id >= 50000000 && control.name !== "restart-stream"
+      );
+    },
+    pipelineControlPluginGroups(
+      stream: any
+    ): Array<{ plugin: string; label: string; controls: any[] }> {
+      return this.controlPluginGroups(this.pipelineControls(stream), true);
+    },
+    controlPluginGroups(
+      controls: any[],
+      pipeline_order: boolean = false
+    ): Array<{ plugin: string; label: string; controls: any[] }> {
+      const groups = new Map<string, any[]>();
+      for (const control of controls) {
+        const plugin = control.plugin_name || "unknown";
+        const bucket = groups.get(plugin) ?? [];
+        bucket.push(control);
+        groups.set(plugin, bucket);
+      }
+      return [...groups.entries()]
+        .sort(([left_plugin, left_controls], [right_plugin, right_controls]) => {
+          if (pipeline_order) {
+            const left_order = Math.min(
+              ...left_controls.map((control: any) =>
+                this.pipelineControlElementOrder(control.element)
+              )
+            );
+            const right_order = Math.min(
+              ...right_controls.map((control: any) =>
+                this.pipelineControlElementOrder(control.element)
+              )
+            );
+            if (left_order !== right_order) {
+              return left_order - right_order;
+            }
+          }
+          return left_plugin.localeCompare(right_plugin);
+        })
+        .map(([plugin, grouped_controls]) => ({
+          plugin,
+          label: this.pluginLabel(plugin),
+          controls: grouped_controls,
+        }));
+    },
+    pluginLabel(plugin: string): string {
+      if (plugin === "stream") {
+        return "Stream";
+      }
+      return plugin;
+    },
+    pipelineControlElementOrder(element: string): number {
+      if (element === "decoder" || element.includes("dec")) {
+        return 0;
+      }
+      if (element === "encoder" || element.includes("enc")) {
+        return 1;
+      }
+      if (element === "stream") {
+        return 3;
+      }
+      return 2;
+    },
+    hasRestartRequiredControl(controls: any[]): boolean {
+      return (controls ?? []).some((control: any) => control.requires_restart);
+    },
+    streamControlsUrl(stream_name: string): string {
+      return "/streams/" + encodeURIComponent(stream_name) + "/controls";
+    },
+    async fetchPipelineControls(stream_name: string): Promise<any[]> {
+      const response = await fetch(this.streamControlsUrl(stream_name));
+      if (!response.ok) {
+        return [];
+      }
+      return await response.json();
+    },
+    async setStreamControl(stream_name: string, id: number, value: number) {
+      const settings = {
+        method: "POST",
+        body: JSON.stringify({
+          id: Number(id),
+          value: Number(value),
+        }),
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+      };
+      const response = await fetch(this.streamControlsUrl(stream_name), settings);
+      await this.checkResponse(response);
+      this.requestData();
+    },
+    async resetPipelineControls(stream_name: string) {
+      const response = await fetch(
+        this.streamControlsUrl(stream_name) + "/reset",
+        { method: "POST" }
+      );
+      await this.checkResponse(response);
+      this.requestData();
+    },
+    async restartStream(stream_name: string) {
+      const url = new URL("/streams/restart", window.location.href);
+      url.searchParams.set("name", stream_name);
+      const response = await fetch(url, { method: "POST" });
+      await this.checkResponse(response);
+      this.requestData();
     },
     async setControl(source: string, id: number, value: number) {
       console.log(
@@ -510,14 +670,76 @@ export default defineComponent({
             return {
               type: "redirect",
             };
-          default:
+          default: {
+            const source_encode = stream.configuration.source_encode;
+            const sink_encode = stream.configuration.encode;
+            const is_raw_source = ["NV12", "YUYV", "RGB"].includes(
+              source_encode
+            );
+            const is_compressed_source = ["MJPG", "H264", "H265"].includes(
+              source_encode
+            );
+            const is_raw_sink = ["NV12", "YUYV", "RGB"].includes(sink_encode);
+            const use_manual_transcoding =
+              source_encode &&
+              sink_encode &&
+              source_encode !== sink_encode &&
+              (is_raw_source
+                ? Boolean(stream.configuration.encoder)
+                : is_compressed_source &&
+                  stream.configuration.transcoding_mode === "manual" &&
+                  (is_raw_sink || Boolean(stream.configuration.encoder)));
+            const use_auto_transcoding =
+              source_encode &&
+              sink_encode &&
+              source_encode !== sink_encode &&
+              !use_manual_transcoding;
+            const encoder_properties =
+              stream.configuration.encoder_properties;
+            const decoder_properties =
+              stream.configuration.decoder_properties;
+            const codec_property_fields = {
+              ...(encoder_properties &&
+              Object.keys(encoder_properties).length > 0
+                ? { encoder_properties }
+                : {}),
+              ...(decoder_properties &&
+              Object.keys(decoder_properties).length > 0
+                ? { decoder_properties }
+                : {}),
+            };
             return {
               type: "video",
-              encode: stream.configuration.encode,
+              source_encode: source_encode,
+              encode: sink_encode,
               height: Number(stream.configuration.size.height),
               width: Number(stream.configuration.size.width),
               frame_interval: stream.configuration.interval,
+              ...(Number(stream.configuration.bit_depth) > 0
+                ? { bit_depth: Number(stream.configuration.bit_depth) }
+                : {}),
+              ...(use_manual_transcoding
+                ? {
+                    source_configuration: {
+                      type: "manual",
+                      encoder: stream.configuration.encoder ?? "",
+                      ...(stream.configuration.decoder
+                        ? { decoder: stream.configuration.decoder }
+                        : {}),
+                      ...codec_property_fields,
+                    },
+                  }
+                : use_auto_transcoding &&
+                    Object.keys(codec_property_fields).length > 0
+                  ? {
+                      source_configuration: {
+                        type: "auto",
+                        ...codec_property_fields,
+                      },
+                    }
+                  : {}),
             };
+          }
         }
       })();
 
@@ -793,12 +1015,44 @@ export default defineComponent({
     return {
       content: [] as any[],
       streams: [] as any[],
+      restartRequiredLegend: "Changing this requires a stream restart",
     };
   },
 });
 </script>
 
 <style>
+.restart-required-legend {
+  color: #a60;
+  margin: 0.5em 0;
+}
+.restart-required-marker {
+  color: #a60;
+  margin-right: 0.25em;
+  cursor: help;
+  text-decoration: none;
+}
+.collapsible {
+  margin: 0.5em 0;
+}
+.collapsible > summary {
+  cursor: pointer;
+  font-weight: bold;
+  margin: 0.5em 0;
+}
+.plugin-control-group,
+.pipeline-plugin-group {
+  margin: 0.5em 0 0.5em 1em;
+}
+.plugin-control-group > summary,
+.pipeline-plugin-group > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.plugin-control-item,
+.pipeline-control-item {
+  margin: 0.4em 0 0.4em 0.5em;
+}
 .dot-container {
   margin: 1em 0;
   padding: 1em;
