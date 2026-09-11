@@ -381,7 +381,7 @@ impl Stream {
                         video_and_stream_information_cloned.video_source,
                         VideoSourceType::Local(_)
                     ) {
-                        let mut streams = vec![video_and_stream_information_cloned.clone()];
+                        let mut updated_stream = video_and_stream_information_cloned.clone();
                         let mut candidates = cameras_available().await;
 
                         // Discards any source from other running streams, otherwise we'd be trying to create a stream from a device in use (which is not possible)
@@ -405,8 +405,8 @@ impl Stream {
                             std::time::Instant::now() - last_report_time >= report_interval;
 
                         // Find the best candidate
-                        manager::update_devices(&mut streams, &mut candidates, should_report).await;
-                        let updated_stream = streams.first().unwrap();
+                        manager::update_device(&mut updated_stream, &mut candidates, should_report)
+                            .await;
                         *video_and_stream_information.write().await = updated_stream.clone();
 
                         // Check if the chosen video source is available
@@ -1524,8 +1524,8 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[tokio::test]
-    async fn update_devices_invalidates_device_when_no_candidates_match() {
-        let mut streams = vec![VideoAndStreamInformation {
+    async fn update_device_invalidates_device_when_no_candidates_match() {
+        let mut stream = VideoAndStreamInformation {
             name: "test-local".into(),
             stream_information: test_stream_information(),
             video_source: VideoSourceType::Local(VideoSourceLocal {
@@ -1533,13 +1533,13 @@ mod tests {
                 device_path: "/dev/video99".into(),
                 typ: VideoSourceLocalType::Unknown("test".into()),
             }),
-        }];
+        };
 
         let mut candidates = vec![];
 
-        manager::update_devices(&mut streams, &mut candidates, false).await;
+        manager::update_device(&mut stream, &mut candidates, false).await;
 
-        let VideoSourceType::Local(source) = &streams[0].video_source else {
+        let VideoSourceType::Local(source) = &stream.video_source else {
             panic!("expected Local source");
         };
         assert_eq!(
@@ -1550,8 +1550,8 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[tokio::test]
-    async fn update_devices_picks_candidate_with_same_name_and_encode() {
-        let mut streams = vec![VideoAndStreamInformation {
+    async fn update_device_picks_candidate_with_same_name_and_encode() {
+        let mut stream = VideoAndStreamInformation {
             name: "test-local".into(),
             stream_information: StreamInformation {
                 endpoints: vec![Url::parse("rtsp://127.0.0.1:8554/test").unwrap()],
@@ -1571,7 +1571,7 @@ mod tests {
                 device_path: "/dev/video0".into(),
                 typ: VideoSourceLocalType::Usb("0000:00:14.0-2".into()),
             }),
-        }];
+        };
 
         let mut candidates = vec![VideoSourceType::Local(VideoSourceLocal {
             name: "Different Camera".into(),
@@ -1579,9 +1579,9 @@ mod tests {
             typ: VideoSourceLocalType::Usb("0000:00:14.0-3".into()),
         })];
 
-        manager::update_devices(&mut streams, &mut candidates, false).await;
+        manager::update_device(&mut stream, &mut candidates, false).await;
 
-        let VideoSourceType::Local(source) = &streams[0].video_source else {
+        let VideoSourceType::Local(source) = &stream.video_source else {
             panic!("expected Local source");
         };
         assert_eq!(

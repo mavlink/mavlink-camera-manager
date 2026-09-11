@@ -145,67 +145,76 @@ pub async fn update_devices(
     verbose: bool,
 ) {
     for stream in streams {
-        let VideoSourceType::Local(source) = &mut stream.video_source else {
-            continue;
-        };
-        let CaptureConfiguration::Video(capture_configuration) =
-            &stream.stream_information.configuration
-        else {
-            continue;
-        };
+        update_device(stream, candidates, verbose).await;
+    }
+}
 
-        // Only resolve formats for candidates sharing the source name so that mismatched
-        // candidates (which are filtered out by name first) don't trigger device probing.
-        let mut formats: HashMap<String, Vec<Format>> = HashMap::new();
-        for candidate in candidates.iter() {
-            let VideoSourceType::Local(camera) = candidate else {
-                continue;
+#[instrument(level = "debug")]
+pub(super) async fn update_device(
+    stream: &mut VideoAndStreamInformation,
+    candidates: &mut Vec<VideoSourceType>,
+    verbose: bool,
+) {
+    let VideoSourceType::Local(source) = &mut stream.video_source else {
+        return;
+    };
+    let CaptureConfiguration::Video(capture_configuration) =
+        &stream.stream_information.configuration
+    else {
+        return;
+    };
+
+    // Only resolve formats for candidates sharing the source name so that mismatched
+    // candidates (which are filtered out by name first) don't trigger device probing.
+    let mut formats: HashMap<String, Vec<Format>> = HashMap::new();
+    for candidate in candidates.iter() {
+        let VideoSourceType::Local(camera) = candidate else {
+            continue;
+        };
+        if camera.name != source.name {
+            continue;
+        }
+        formats.insert(
+            candidate.inner().source_string().to_string(),
+            candidate.formats().await,
+        );
+    }
+
+    match source
+        .try_identify_device(capture_configuration, candidates, &formats)
+        .await
+    {
+        Ok(Some(candidate_source_string)) => {
+            let Some((idx, candidate)) =
+                candidates.iter().enumerate().find_map(|(idx, candidate)| {
+                    (candidate.inner().source_string() == candidate_source_string)
+                        .then_some((idx, candidate))
+                })
+            else {
+                error!(
+                    "CRITICAL: The device was identified as {candidate_source_string:?}, but it is not the candidates list"
+                ); // This shouldn't ever be reachable, otherwise the above logic is flawed
+                return;
             };
-            if camera.name != source.name {
-                continue;
-            }
-            formats.insert(
-                candidate.inner().source_string().to_string(),
-                candidate.formats().await,
-            );
-        }
 
-        match source
-            .try_identify_device(capture_configuration, candidates, &formats)
-            .await
-        {
-            Ok(Some(candidate_source_string)) => {
-                let Some((idx, candidate)) =
-                    candidates.iter().enumerate().find_map(|(idx, candidate)| {
-                        (candidate.inner().source_string() == candidate_source_string)
-                            .then_some((idx, candidate))
-                    })
-                else {
-                    error!(
-                        "CRITICAL: The device was identified as {candidate_source_string:?}, but it is not the candidates list"
-                    ); // This shouldn't ever be reachable, otherwise the above logic is flawed
-                    continue;
-                };
-
-                let VideoSourceType::Local(camera) = candidate else {
-                    error!(
-                        "CRITICAL: The device was identified as {candidate_source_string:?}, but it is not a Local device"
-                    ); // This shouldn't ever be reachable, otherwise the above logic is flawed
-                    continue;
-                };
-                *source = camera.clone();
-                // Only remove the candidate from the list after using it, avoiding the wrong but possible logic from the CRITICAL erros branches above, the additional cost is this clone
-                candidates.remove(idx);
-            }
-            Err(reason) => {
-                // Invalidate the device
-                source.device_path = "".into();
-                if verbose {
-                    warn!("Device {source:?} was invalidated. Reason: {reason:?}");
-                };
-            }
-            _ => (),
+            let VideoSourceType::Local(camera) = candidate else {
+                error!(
+                    "CRITICAL: The device was identified as {candidate_source_string:?}, but it is not a Local device"
+                ); // This shouldn't ever be reachable, otherwise the above logic is flawed
+                return;
+            };
+            *source = camera.clone();
+            // Only remove the candidate from the list after using it, avoiding the wrong but possible logic from the CRITICAL erros branches above, the additional cost is this clone
+            candidates.remove(idx);
         }
+        Err(reason) => {
+            // Invalidate the device
+            source.device_path = "".into();
+            if verbose {
+                warn!("Device {source:?} was invalidated. Reason: {reason:?}");
+            };
+        }
+        _ => (),
     }
 }
 
