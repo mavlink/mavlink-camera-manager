@@ -587,6 +587,18 @@ fn validate_control(control: &Control, value: i64) -> Result<(), String> {
                 ));
             }
         }
+        ControlType::Flags(control) => {
+            let allowed = control
+                .flags
+                .iter()
+                .fold(0i64, |mask, flag| mask | flag.value);
+            if value & !allowed != 0 {
+                return Err(format!(
+                    "Value {value:?} uses undefined flag bits for control {:?}",
+                    control.flags
+                ));
+            }
+        }
     }
 
     Ok(())
