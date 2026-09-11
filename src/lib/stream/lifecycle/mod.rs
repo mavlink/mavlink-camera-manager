@@ -120,6 +120,11 @@ impl LifecycleHandle {
             .await
     }
 
+    pub async fn force_restart(&self) -> Result<bool> {
+        self.request(|reply| LifecycleCommand::ForceRestart { reply })
+            .await
+    }
+
     pub async fn shutdown(&self) -> Result<()> {
         self.command_tx
             .send(LifecycleCommand::Shutdown)
@@ -635,6 +640,24 @@ mod tests {
         let backoff = lifecycle.pipeline_error().await.unwrap();
         assert!(backoff > Duration::ZERO);
         assert_snapshot(lifecycle.snapshot(), Phase::Waking, 2, 1);
+    }
+
+    #[tokio::test]
+    async fn force_restart_from_running_enters_waking_without_error_count_bump() {
+        let lifecycle = LifecycleHandle::eager();
+        lifecycle.pipeline_ready().await.unwrap();
+        lifecycle.pipeline_error().await.unwrap();
+        assert_eq!(lifecycle.error_count(), 1);
+
+        assert!(lifecycle.force_restart().await.unwrap());
+        assert_snapshot(lifecycle.snapshot(), Phase::Waking, 1, 1);
+    }
+
+    #[tokio::test]
+    async fn force_restart_from_idle_is_noop() {
+        let lifecycle = LifecycleHandle::lazy();
+        assert!(!lifecycle.force_restart().await.unwrap());
+        assert_snapshot(lifecycle.snapshot(), Phase::Idle, 0, 0);
     }
 
     #[tokio::test]
