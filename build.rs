@@ -22,7 +22,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     generate_build_details()?;
 
-    // set SKIP_WEB=1 to skip
+    // Always re-embed dist when it changes. SKIP_WEB only skips bun/yarn.
+    println!("cargo:rerun-if-changed=./frontend/dist");
     if std::env::var("SKIP_WEB").is_err() {
         build_web();
     }
