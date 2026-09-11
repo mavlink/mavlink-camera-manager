@@ -1,7 +1,6 @@
 use std::{
     cmp::max,
     collections::{HashMap, HashSet},
-    str::FromStr,
 };
 
 use anyhow::{Result, anyhow};
@@ -301,7 +300,7 @@ fn get_device_formats_using_gstreamer(
                 Ok(sendvalue) => match sendvalue.type_().name() {
                     "gchararray" => match sendvalue.get::<String>() {
                         Ok(fourcc) => {
-                            vec![VideoEncodeType::from_str(&fourcc).expect("irrefutable")]
+                            vec![VideoEncodeType::from_fourcc(&fourcc)]
                         }
                         Err(error) => {
                             warn!(
@@ -314,7 +313,7 @@ fn get_device_formats_using_gstreamer(
                         Ok(list) => list
                             .iter()
                             .filter_map(|v| v.get::<String>().ok())
-                            .map(|fourcc| VideoEncodeType::from_str(&fourcc).expect("irrefutable"))
+                            .map(|fourcc| VideoEncodeType::from_fourcc(&fourcc))
                             .collect(),
                         Err(error) => {
                             warn!(
@@ -644,11 +643,28 @@ impl VideoSource for VideoSourceLocal {
     #[instrument(level = "debug")]
     fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()> {
         if matches!(self.typ, VideoSourceLocalType::Libcamera(_)) {
-            debug!("Controls not supported for libcamera devices, skipping");
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Controls not supported for libcamera devices",
-            ));
+            let Some(control) =
+                super::libcamera_controls::find_control(&self.device_path, control_id)
+            else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!(
+                        "Control ID {control_id:?} was not found for libcamera device {:?}",
+                        self.device_path
+                    ),
+                ));
+            };
+            if let Err(error) = validate_control(&control, value) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Unsupported,
+                    format!("Failed setting {control_id:?} to {value:?}: {error}"),
+                ));
+            }
+            return super::libcamera_controls::set_control_by_name(
+                &self.device_path,
+                &control.name,
+                value,
+            );
         }
 
         let Some(control) = self
@@ -712,11 +728,7 @@ impl VideoSource for VideoSourceLocal {
     #[instrument(level = "debug")]
     fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64> {
         if matches!(self.typ, VideoSourceLocalType::Libcamera(_)) {
-            debug!("Controls not supported for libcamera devices, skipping");
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Controls not supported for libcamera devices",
-            ));
+            return super::libcamera_controls::control_value_by_id(&self.device_path, control_id);
         }
 
         let device_path = self.device_path.clone();
@@ -739,8 +751,7 @@ impl VideoSource for VideoSourceLocal {
         let mut controls: Vec<Control> = vec![];
 
         if matches!(self.typ, VideoSourceLocalType::Libcamera(_)) {
-            debug!("Controls not supported for libcamera devices, returning empty list");
-            return controls;
+            return super::libcamera_controls::list_controls(&self.device_path);
         }
 
         //TODO: create function to encapsulate device
@@ -860,14 +871,9 @@ impl VideoSourceAvailable for VideoSourceLocal {
                 let display_name = device.display_name().to_string();
                 let properties = device.properties();
 
-                let factory_name = device
-                    .create_element(None)
-                    .ok()?
-                    .factory()?
-                    .name()
-                    .to_string();
+                let factory_name = gst_device_monitor::source_factory_name(&device)?;
 
-                let (name, device_path, typ) = match factory_name.as_str() {
+                let (name, device_path, typ) = match factory_name {
                     "v4l2src" => {
                         let properties = properties?;
                         let device_path = properties.get::<String>("device.path").ok()?;

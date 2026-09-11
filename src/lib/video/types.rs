@@ -96,6 +96,16 @@ impl std::str::FromStr for VideoEncodeType {
     }
 }
 
+impl VideoEncodeType {
+    /// Parse a fourcc / pixel-format name. Unknown names become [`Self::Unknown`].
+    pub fn from_fourcc(fourcc: &str) -> Self {
+        match <Self as std::str::FromStr>::from_str(fourcc) {
+            Ok(encode) => encode,
+            Err(infallible) => match infallible {},
+        }
+    }
+}
+
 pub static DEFAULT_FRAME_INTERVALS: &[u32; 6] = &[60, 30, 24, 16, 10, 5];
 
 pub static STANDARD_SIZES: &[(u32, u32); 16] = &[
