@@ -368,14 +368,14 @@ impl SignallingServer {
                     match &stream.video_and_stream.stream_information.configuration {
                         crate::stream::types::CaptureConfiguration::Video(configuration) => {
                             // Filter out non-H264/h265 local streams
-                            if !matches!(configuration.encode, crate::video::types::VideoEncodeType::H264 | crate::video::types::VideoEncodeType::H265) {
-                                trace!("Stream {:?} will not be listed in available streams because it's encoding isn't H264 or H265 (it's {:?} instead)", stream.video_and_stream.name, configuration.encode);
+                            if !matches!(configuration.sink_encode, crate::video::types::VideoEncodeType::H264 | crate::video::types::VideoEncodeType::H265) {
+                                trace!("Stream {:?} will not be listed in available streams because it's encoding isn't H264 or H265 (it's {:?} instead)", stream.video_and_stream.name, configuration.sink_encode);
                                 return None;
                             }
                             (
                                 Some(configuration.height),
                                 Some(configuration.width),
-                                Some(format!("{:#?}", configuration.encode)),
+                                Some(format!("{:#?}", configuration.sink_encode)),
                                 Some(
                                     (configuration.frame_interval.numerator as f32
                                         / configuration.frame_interval.denominator as f32)

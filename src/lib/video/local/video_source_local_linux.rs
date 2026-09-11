@@ -155,8 +155,11 @@ impl VideoSourceLocal {
         }
 
         // Rule n.2 - All candidates must share the same encode
-        let candidates =
-            Self::get_cameras_with_same_encode(&candidates, &capture_configuration.encode, formats);
+        let candidates = Self::get_cameras_with_same_encode(
+            &candidates,
+            &capture_configuration.source_encode,
+            formats,
+        );
 
         let len = candidates.len();
         if len == 0 {
@@ -1856,13 +1859,17 @@ mod device_identification_tests {
             name: "dummy stream".into(),
             stream_information: StreamInformation {
                 configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
-                    encode,
+                    source_encode: encode.clone(),
+                    sink_encode: encode,
                     height: 1080,
                     width: 1920,
                     frame_interval: FrameInterval {
                         numerator: 30,
                         denominator: 1,
                     },
+                    bit_depth: None,
+                    source_configuration: crate::stream::types::SourceConfiguration::Classic,
+                    auto_restart_on_config_change: false,
                 }),
                 endpoints: vec![url::Url::parse("udp://0.0.0.0:5600").unwrap()],
                 extended_configuration: None,
