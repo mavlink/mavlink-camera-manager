@@ -9,6 +9,7 @@ use crate::{
     video::{
         gst_device_monitor,
         types::{VideoEncodeType, VideoSourceType},
+        video_source_local::VideoSourceLocalType,
     },
     video_stream::types::VideoAndStreamInformation,
 };
@@ -65,12 +66,14 @@ impl V4lPipeline {
             .upgrade()
             .context("Device disappeared between selection and pipeline build")?;
 
-        let factory_name = device
-            .create_element(None)
-            .context("Failed to probe device factory")?
-            .factory()
-            .map(|f| f.name().to_string())
-            .context("Source element has no factory")?;
+        let factory_name = match &video_source.typ {
+            VideoSourceLocalType::Libcamera(_) => "libcamerasrc".to_string(),
+            VideoSourceLocalType::Usb(_)
+            | VideoSourceLocalType::LegacyRpiCam(_)
+            | VideoSourceLocalType::Unknown(_) => gst_device_monitor::source_factory_name(&device)
+                .unwrap_or("v4l2src")
+                .to_string(),
+        };
 
         debug!("Local pipeline source factory: {factory_name}");
 
@@ -168,7 +171,7 @@ impl V4lPipeline {
 
         let pipeline = pipeline
             .downcast::<gst::Pipeline>()
-            .expect("Couldn't downcast pipeline");
+            .map_err(|_| anyhow!("parse::launch did not produce a gst::Pipeline"))?;
 
         let source = pipeline
             .by_name("source")
@@ -193,9 +196,17 @@ impl V4lPipeline {
                 debug!("Applied v4l2src device={device_path:?}");
             }
             "libcamerasrc" => {
-                let camera_name = device.display_name();
-                source.set_property("camera-name", camera_name.as_str());
-                debug!("Applied libcamerasrc camera-name={camera_name:?}");
+                // device_path is the libcamera camera id (same string pending uses).
+                source.set_property("camera-name", device_path);
+                debug!("Applied libcamerasrc camera-name={device_path:?}");
+                crate::video::local::libcamera_controls::apply_pending_to_element(
+                    device_path,
+                    &source,
+                );
+                crate::video::local::libcamera_controls::install_live_apply_probe(
+                    &source,
+                    device_path,
+                );
             }
             other => {
                 device.reconfigure_element(&source).with_context(|| {
