@@ -290,8 +290,12 @@ impl PipelineState {
                     "RTSP factory for {:?} already mounted, reusing for recreated pipeline",
                     sink.path()
                 );
-            } else if let Some(compressed_tee) = self.tee_registry.compressed_tee() {
-                let caps = compressed_tee
+            } else if let Some(video_tee) = self
+                .tee_registry
+                .compressed_tee()
+                .or_else(|| self.tee_registry.raw_tee())
+            {
+                let caps = video_tee
                     .static_pad("sink")
                     .and_then(|pad| pad.current_caps())
                     .or_else(|| {
