@@ -41,6 +41,17 @@ pub struct ExtendedConfiguration {
     pub disable_lazy: bool,
 }
 
+/// Fake H265 RTSP senders cannot use the 5s lazy idle grace: `x265enc` often
+/// takes longer than that to produce RTP caps, so the RTSP factory is never
+/// mounted and OPTIONS stays 404.
+pub const FAKE_H265_RTSP_SENDER: ExtendedConfiguration = ExtendedConfiguration {
+    thermal: false,
+    disable_mavlink: true,
+    disable_zenoh: true,
+    disable_thumbnails: false,
+    disable_lazy: true,
+};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamInformation {
     pub endpoints: Vec<Url>,

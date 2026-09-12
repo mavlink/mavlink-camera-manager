@@ -227,18 +227,10 @@ async fn test_h265_rtsp_redirect_zenoh_data_flow() {
         120,
         30,
         path,
-        Some(ExtendedConfiguration {
-            disable_mavlink: true,
-            disable_zenoh: true,
-            ..Default::default()
-        }),
+        Some(FAKE_H265_RTSP_SENDER),
         mcm.rtsp_port,
     );
     client.create_stream(&fake).await.unwrap();
-    client
-        .wait_for_stream_idle("fake_h265_rtsp_sender", TIMEOUT)
-        .await
-        .expect("fake H265 RTSP sender should complete initial lifecycle");
     mcm.wait_for_rtsp_ready(path, TIMEOUT).await;
 
     let redirect = PostStream {

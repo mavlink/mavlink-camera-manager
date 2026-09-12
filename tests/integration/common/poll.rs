@@ -67,6 +67,7 @@ pub async fn wait_for_rtsp_tcp(url: &str, timeout: Duration) {
         parsed.path()
     };
     let deadline = tokio::time::Instant::now() + timeout;
+    let mut last_options = String::from("no response");
     loop {
         let factory_ready = async {
             let mut stream = tokio::time::timeout(
@@ -84,15 +85,17 @@ pub async fn wait_for_rtsp_tcp(url: &str, timeout: Duration) {
                 .ok()?
                 .ok()?;
             let response = std::str::from_utf8(&buffer[..bytes_read]).unwrap_or("");
-            Some(response.starts_with("RTSP/1.0 200"))
+            Some(response.lines().next().unwrap_or(response).to_string())
         }
         .await;
-        if factory_ready == Some(true) {
-            return;
+        match factory_ready {
+            Some(status) if status.starts_with("RTSP/1.0 200") => return,
+            Some(status) => last_options = status,
+            None => {}
         }
         assert!(
             tokio::time::Instant::now() < deadline,
-            "RTSP factory at {addr}{path} not serving within {timeout:?}"
+            "RTSP factory at {addr}{path} not serving within {timeout:?} (last OPTIONS: {last_options})"
         );
         tokio::time::sleep(Duration::from_millis(250)).await;
     }

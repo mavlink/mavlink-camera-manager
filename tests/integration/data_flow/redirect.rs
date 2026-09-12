@@ -1,5 +1,28 @@
 use super::*;
 
+async fn create_fake_rtsp_redirect_sender(
+    client: &McmClient,
+    mcm: &McmProcess,
+    codec: Codec,
+    sender_name: &str,
+    path: &str,
+) {
+    let ext = match codec {
+        Codec::H265 => Some(FAKE_H265_RTSP_SENDER),
+        _ => None,
+    };
+    let fake =
+        McmClient::build_fake_rtsp(codec, sender_name, 160, 120, 30, path, ext, mcm.rtsp_port);
+    client.create_stream(&fake).await.unwrap();
+    if !matches!(codec, Codec::H265) {
+        client
+            .wait_for_stream_idle(sender_name, TIMEOUT)
+            .await
+            .expect("fake RTSP sender should complete initial lifecycle");
+    }
+    mcm.wait_for_rtsp_ready(path, TIMEOUT).await;
+}
+
 /// External gst-launch UDP sender -> redirect stream -> WebRTC client
 /// receives actual decoded frames.
 async fn run_redirect_webrtc_data_flow(codec: Codec) {
@@ -159,14 +182,7 @@ async fn run_redirect_rtsp_data_flow(codec: Codec, profile: Option<&str>) {
             ),
             other => unreachable!("Redirect pipeline does not support {other:?}"),
         };
-        let fake =
-            McmClient::build_fake_rtsp(codec, sender_name, 160, 120, 30, path, None, mcm.rtsp_port);
-        client.create_stream(&fake).await.unwrap();
-        client
-            .wait_for_stream_idle(sender_name, TIMEOUT)
-            .await
-            .expect("fake RTSP sender should complete initial lifecycle");
-        mcm.wait_for_rtsp_ready(path, TIMEOUT).await;
+        create_fake_rtsp_redirect_sender(&client, &mcm, codec, sender_name, path).await;
 
         let redirect =
             McmClient::build_redirect_rtsp(redirect_name, "127.0.0.1", mcm.rtsp_port, path);
@@ -302,14 +318,7 @@ async fn run_redirect_rtsp_thumbnail_data_flow(codec: Codec, profile: Option<&st
             ),
             other => unreachable!("Redirect pipeline does not support {other:?}"),
         };
-        let fake =
-            McmClient::build_fake_rtsp(codec, sender_name, 160, 120, 30, path, None, mcm.rtsp_port);
-        client.create_stream(&fake).await.unwrap();
-        client
-            .wait_for_stream_idle(sender_name, TIMEOUT)
-            .await
-            .expect("fake RTSP sender should complete initial lifecycle");
-        mcm.wait_for_rtsp_ready(path, TIMEOUT).await;
+        create_fake_rtsp_redirect_sender(&client, &mcm, codec, sender_name, path).await;
 
         let redirect =
             McmClient::build_redirect_rtsp(redirect_name, "127.0.0.1", mcm.rtsp_port, path);
@@ -360,14 +369,7 @@ async fn run_redirect_rtsp_webrtc_data_flow(codec: Codec) {
         ),
         other => unreachable!("Redirect pipeline does not support {other:?}"),
     };
-    let fake =
-        McmClient::build_fake_rtsp(codec, sender_name, 160, 120, 30, path, None, mcm.rtsp_port);
-    client.create_stream(&fake).await.unwrap();
-    client
-        .wait_for_stream_idle(sender_name, TIMEOUT)
-        .await
-        .expect("fake RTSP sender should complete initial lifecycle");
-    mcm.wait_for_rtsp_ready(path, TIMEOUT).await;
+    create_fake_rtsp_redirect_sender(&client, &mcm, codec, sender_name, path).await;
 
     let redirect = PostStream {
         name: redirect_name.to_string(),

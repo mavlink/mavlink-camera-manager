@@ -403,10 +403,9 @@ impl McmClient {
         }
     }
 
-    /// Wait for a named stream to leave the Running/Waking phase and
-    /// reach Draining or Idle. This confirms the stream completed its
-    /// initial Waking lifecycle (pipeline created, RTSP factory mounted
-    /// and preserved).
+    /// Wait for a named stream to reach Idle. Stopped/Starting are not Idle:
+    /// treating `!running` as success hid encoder failures (H265 factory never
+    /// mounted) behind a later 60s OPTIONS timeout.
     pub async fn wait_for_stream_idle(
         &self,
         name: &str,
@@ -419,13 +418,20 @@ impl McmClient {
                 .into_iter()
                 .find(|s| s.video_and_stream.name == name)
             {
-                if !s.running {
+                if s.state == StreamStatusState::Idle {
                     return Ok(s);
                 }
-            }
-            if tokio::time::Instant::now() > deadline {
+                if tokio::time::Instant::now() > deadline {
+                    anyhow::bail!(
+                        "stream {name:?} did not reach Idle within {}s (state={:?}, running={})",
+                        timeout.as_secs(),
+                        s.state,
+                        s.running
+                    );
+                }
+            } else if tokio::time::Instant::now() > deadline {
                 anyhow::bail!(
-                    "stream {name:?} did not reach idle within {}s",
+                    "stream {name:?} was not listed within {}s",
                     timeout.as_secs()
                 );
             }

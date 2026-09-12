@@ -105,15 +105,10 @@ pub(super) async fn setup_fake_h265_rtsp_and_redirect(path: &str) -> (McmProcess
         120,
         30,
         path,
-        None,
+        Some(FAKE_H265_RTSP_SENDER),
         mcm.rtsp_port,
     );
     client.create_stream(&fake).await.unwrap();
-
-    client
-        .wait_for_stream_idle("fake_rtsp_sender", TIMEOUT)
-        .await
-        .expect("fake H265 RTSP sender should complete initial lifecycle");
     mcm.wait_for_rtsp_ready(path, TIMEOUT).await;
 
     let redirect =
