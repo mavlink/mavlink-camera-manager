@@ -63,9 +63,26 @@ impl AutoTranscodingPipeline {
         source_factory_name: Option<&str>,
     ) -> Result<gst::Pipeline> {
         let mode = auto_transcode_mode(&self.source_encode, &self.sink_encode)?;
-        let bin_factory = mode.factory_name();
-        if gst::ElementFactory::find(bin_factory).is_none() {
-            return Err(anyhow!("GStreamer {bin_factory} is not available"));
+        let jpeg_encode = self.sink_encode == VideoEncodeType::Mjpg
+            && matches!(
+                mode,
+                AutoTranscodeMode::EncodeOnly | AutoTranscodeMode::Transcode
+            );
+        let encoder_factory = match mode {
+            AutoTranscodeMode::Transcode if jpeg_encode => "jpegenc",
+            AutoTranscodeMode::Transcode => AUTO_ENCODEBIN_NAME,
+            _ => mode.factory_name(),
+        };
+        if jpeg_encode && gst::ElementFactory::find("jpegenc").is_none() {
+            return Err(anyhow!("GStreamer jpegenc is not available"));
+        }
+        if matches!(mode, AutoTranscodeMode::Transcode)
+            && gst::ElementFactory::find(AUTO_DECODEBIN_NAME).is_none()
+        {
+            return Err(anyhow!("GStreamer decodebin is not available"));
+        }
+        if gst::ElementFactory::find(encoder_factory).is_none() {
+            return Err(anyhow!("GStreamer {encoder_factory} is not available"));
         }
 
         let source_caps = source_caps(
@@ -94,13 +111,11 @@ impl AutoTranscodingPipeline {
         queue.set_property("max-size-time", gst::ClockTime::ZERO);
         queue.set_property("max-size-bytes", 0u32);
 
-        let jpeg_encode = self.sink_encode == VideoEncodeType::Mjpg
-            && matches!(mode, AutoTranscodeMode::EncodeOnly);
-        let jpeg_videoconvert = jpeg_encode
+        let encode_videoconvert = (jpeg_encode || matches!(mode, AutoTranscodeMode::Transcode))
             .then(|| {
                 gst::ElementFactory::make("videoconvert")
                     .build()
-                    .context("Failed to create JPEG encode videoconvert")
+                    .context("Failed to create encode videoconvert")
             })
             .transpose()?;
         let jpeg_input_capsfilter = jpeg_encode
@@ -131,20 +146,28 @@ impl AutoTranscodingPipeline {
             let encoding = crate::stream::gst::encoding::encoding(&self.sink_encode)
                 .with_context(|| format!("No compressed encoding for {:?}", self.sink_encode))?;
             let profile = sink_encoding_profile(encoding)?;
-            gst::ElementFactory::make(bin_factory)
-                .name(bin_factory)
+            gst::ElementFactory::make(encoder_factory)
+                .name(encoder_factory)
                 .property("profile", profile)
                 .build()
-                .with_context(|| format!("Failed to create {bin_factory}"))?
+                .with_context(|| format!("Failed to create {encoder_factory}"))?
         } else {
-            gst::ElementFactory::make(bin_factory)
-                .name(bin_factory)
+            gst::ElementFactory::make(encoder_factory)
+                .name(encoder_factory)
                 .build()
-                .with_context(|| format!("Failed to create {bin_factory}"))?
+                .with_context(|| format!("Failed to create {encoder_factory}"))?
         };
         if !jpeg_encode {
             install_autobin_codec_property_hooks(&autobin, &self.auto_config, &self.sink_encode);
         }
+        let decodebin = matches!(mode, AutoTranscodeMode::Transcode)
+            .then(|| {
+                gst::ElementFactory::make(AUTO_DECODEBIN_NAME)
+                    .name(AUTO_DECODEBIN_NAME)
+                    .build()
+                    .context("Failed to create decodebin")
+            })
+            .transpose()?;
 
         let video_tee = gst::ElementFactory::make("tee")
             .name(video_tee_name.as_str())
@@ -191,7 +214,7 @@ impl AutoTranscodingPipeline {
                     .with_context(|| {
                         format!("No compressed encoding for {:?}", self.sink_encode)
                     })?;
-                // encodebin/transcodebin already include a parser; an external one
+                // encodebin already includes a parser; an external one
                 // breaks H264 negotiation (encodebin outputs AVC, h264parse wants byte-stream).
                 let compressed_capsfilter = gst::ElementFactory::make("capsfilter")
                     .name(filter_name.as_str())
@@ -217,7 +240,7 @@ impl AutoTranscodingPipeline {
         {
             let tail_head = tail_head.clone();
             autobin.connect_pad_added(move |_element, src_pad| {
-                link_autobin_src_to_tail(src_pad, &tail_head, bin_factory);
+                link_autobin_src_to_tail(src_pad, &tail_head, encoder_factory);
             });
         }
 
@@ -230,19 +253,36 @@ impl AutoTranscodingPipeline {
         pipeline
             .add_many([&source_capsfilter, &queue, &autobin])
             .context("Failed to add auto transcoding source chain elements")?;
-        if let (Some(videoconvert), Some(capsfilter)) = (&jpeg_videoconvert, &jpeg_input_capsfilter)
-        {
+        if let Some(videoconvert) = &encode_videoconvert {
             pipeline
-                .add_many([videoconvert, capsfilter])
-                .context("Failed to add JPEG encode conversion elements")?;
-            gst::Element::link_many([
-                &source_capsfilter,
-                &queue,
-                videoconvert,
-                capsfilter,
-                &autobin,
-            ])
-            .context("Failed to link JPEG encode source chain")?;
+                .add(videoconvert)
+                .context("Failed to add encode videoconvert")?;
+            if let Some(capsfilter) = &jpeg_input_capsfilter {
+                pipeline
+                    .add(capsfilter)
+                    .context("Failed to add JPEG encode capsfilter")?;
+                gst::Element::link_many([videoconvert, capsfilter, &autobin])
+                    .context("Failed to link encode conversion to encoder")?;
+            } else {
+                videoconvert
+                    .link(&autobin)
+                    .context("Failed to link videoconvert to encoder")?;
+            }
+        }
+
+        if let Some(decodebin) = &decodebin {
+            pipeline.add(decodebin).context("Failed to add decodebin")?;
+            gst::Element::link_many([&source_capsfilter, &queue, decodebin])
+                .context("Failed to link source chain to decodebin")?;
+            let encoder_head = encode_videoconvert
+                .clone()
+                .unwrap_or_else(|| autobin.clone());
+            decodebin.connect_pad_added(move |_element, src_pad| {
+                link_autobin_src_to_tail(src_pad, &encoder_head, AUTO_DECODEBIN_NAME);
+            });
+        } else if let Some(videoconvert) = &encode_videoconvert {
+            gst::Element::link_many([&source_capsfilter, &queue, videoconvert])
+                .context("Failed to link JPEG encode source chain")?;
         } else {
             gst::Element::link_many([&source_capsfilter, &queue, &autobin])
                 .context("Failed to link auto transcoding source chain")?;
@@ -250,9 +290,9 @@ impl AutoTranscodingPipeline {
 
         // encodebin's src pad is always present, so pad-added never fires for it.
         for src_pad in autobin.src_pads() {
-            link_autobin_src_to_tail(&src_pad, &tail_head, bin_factory);
+            link_autobin_src_to_tail(&src_pad, &tail_head, encoder_factory);
         }
-        if matches!(mode, AutoTranscodeMode::EncodeOnly) && autobin.static_pad("src").is_some() {
+        if !matches!(mode, AutoTranscodeMode::DecodeOnly) && autobin.static_pad("src").is_some() {
             let sink_linked = tail_head
                 .static_pad("sink")
                 .is_some_and(|pad| pad.is_linked());
@@ -546,15 +586,11 @@ fn delivery_raw_caps(width: u32, height: u32, frame_interval: &FrameInterval) ->
 
 fn sink_encoding_profile(encoding: &dyn CompressedEncoding) -> Result<glib::Object> {
     let format_caps = gst::Caps::builder(encoding.caps_mime()).build();
-    let restriction_caps = rtpjpeg_raw_restriction(encoding);
     unsafe {
         let profile = pbutils::gst_encoding_video_profile_new(
             format_caps.as_ptr() as *mut gst::ffi::GstCaps,
             std::ptr::null(),
-            restriction_caps
-                .as_ref()
-                .map(|caps| caps.as_ptr() as *mut gst::ffi::GstCaps)
-                .unwrap_or(std::ptr::null_mut()),
+            std::ptr::null_mut(),
             0,
         );
         if profile.is_null() {
@@ -562,17 +598,6 @@ fn sink_encoding_profile(encoding: &dyn CompressedEncoding) -> Result<glib::Obje
         }
         Ok(glib::Object::from_glib_full(profile))
     }
-}
-
-fn rtpjpeg_raw_restriction(encoding: &dyn CompressedEncoding) -> Option<gst::Caps> {
-    if encoding.encode_key() != "MJPG" {
-        return None;
-    }
-    Some(
-        gst::Caps::builder("video/x-raw")
-            .field("format", "I420")
-            .build(),
-    )
 }
 
 mod pbutils {
@@ -670,9 +695,11 @@ mod tests {
     }
 
     #[test]
-    fn mjpg_to_h264_pipeline_uses_transcodebin() {
+    fn mjpg_to_h264_pipeline_uses_decodebin_and_encodebin() {
         let _ = gst::init();
-        if gst::ElementFactory::find(AUTO_TRANSCODEBIN_NAME).is_none() {
+        if gst::ElementFactory::find(AUTO_DECODEBIN_NAME).is_none()
+            || gst::ElementFactory::find(AUTO_ENCODEBIN_NAME).is_none()
+        {
             return;
         }
         if gst::ElementFactory::find("v4l2src").is_none() {
@@ -696,8 +723,9 @@ mod tests {
             .build_pipeline("/dev/video0", &pipeline_id, Some("v4l2src"))
             .expect("build MJPG to H264 auto pipeline");
 
-        assert!(pipeline.by_name(AUTO_TRANSCODEBIN_NAME).is_some());
-        assert!(pipeline.by_name(AUTO_ENCODEBIN_NAME).is_none());
+        assert!(pipeline.by_name(AUTO_DECODEBIN_NAME).is_some());
+        assert!(pipeline.by_name(AUTO_ENCODEBIN_NAME).is_some());
+        assert!(pipeline.by_name(AUTO_TRANSCODEBIN_NAME).is_none());
         assert!(pipeline_has_factory(&pipeline, "rtph264pay"));
     }
 
@@ -766,9 +794,11 @@ mod tests {
     }
 
     #[test]
-    fn mjpg_to_h265_pipeline_uses_transcodebin() {
+    fn mjpg_to_h265_pipeline_uses_decodebin_and_encodebin() {
         let _ = gst::init();
-        if gst::ElementFactory::find(AUTO_TRANSCODEBIN_NAME).is_none() {
+        if gst::ElementFactory::find(AUTO_DECODEBIN_NAME).is_none()
+            || gst::ElementFactory::find(AUTO_ENCODEBIN_NAME).is_none()
+        {
             return;
         }
 
@@ -789,7 +819,9 @@ mod tests {
             .build_pipeline("unused", &pipeline_id, None)
             .expect("build MJPG to H265 auto pipeline");
 
-        assert!(pipeline.by_name(AUTO_TRANSCODEBIN_NAME).is_some());
+        assert!(pipeline.by_name(AUTO_DECODEBIN_NAME).is_some());
+        assert!(pipeline.by_name(AUTO_ENCODEBIN_NAME).is_some());
+        assert!(pipeline.by_name(AUTO_TRANSCODEBIN_NAME).is_none());
         assert!(pipeline_has_factory(&pipeline, "rtph265pay"));
     }
 
