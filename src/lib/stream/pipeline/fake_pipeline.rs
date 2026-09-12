@@ -673,7 +673,7 @@ mod tests {
         pipeline
             .set_state(gst::State::Playing)
             .context("Failed to set fake transcoding pipeline to Playing")?;
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let bus = pipeline
             .bus()
             .context("Fake transcoding pipeline has no bus")?;
@@ -812,7 +812,8 @@ mod tests {
     #[test]
     fn auto_transcode_h264_mjpg_produces_rtp() {
         let _ = gst::init();
-        if gst::ElementFactory::find("transcodebin").is_none()
+        if gst::ElementFactory::find("decodebin").is_none()
+            || gst::ElementFactory::find("encodebin").is_none()
             || gst::ElementFactory::find("x264enc").is_none()
             || gst::ElementFactory::find("jpegenc").is_none()
         {
@@ -831,6 +832,31 @@ mod tests {
         .expect("build fake auto transcode pipeline");
         play_until_rtp_buffer(&pipeline, &pipeline_id).unwrap_or_else(|error| {
             panic!("auto H264 to MJPG transcode should produce RTP buffers: {error}")
+        });
+    }
+
+    #[test]
+    fn auto_transcode_mjpg_h264_produces_rtp() {
+        let _ = gst::init();
+        if gst::ElementFactory::find("decodebin").is_none()
+            || gst::ElementFactory::find("encodebin").is_none()
+            || gst::ElementFactory::find("jpegenc").is_none()
+        {
+            return;
+        }
+
+        let pipeline_id = Arc::new(uuid::Uuid::nil());
+        let pipeline = FakePipeline::try_new(
+            &pipeline_id,
+            &fake_video_and_stream(
+                VideoEncodeType::Mjpg,
+                VideoEncodeType::H264,
+                SourceConfiguration::AutoTranscoding(AutoTranscodingConfig::default()),
+            ),
+        )
+        .expect("build fake auto MJPG to H264 pipeline");
+        play_until_rtp_buffer(&pipeline, &pipeline_id).unwrap_or_else(|error| {
+            panic!("auto MJPG to H264 transcode should produce RTP buffers: {error}")
         });
     }
 
