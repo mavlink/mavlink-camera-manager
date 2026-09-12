@@ -436,6 +436,20 @@ async fn bus_watcher_task(
                     continue;
                 }
 
+                // avdec_h264/h265 can post this once on GStreamer 1.20 before
+                // caps/headers arrive. Killing the thumbnail runner turns it
+                // into a sticky 503 for the rest of the test.
+                if pipeline_name.as_str().contains("pipeline-image-sink")
+                    && debug_info.contains("decoder not initialized")
+                {
+                    warn!(
+                        "Ignoring non-fatal decoder initialization error from {src_path:?} \
+                         in Pipeline {pipeline_name:?}: {} ({debug_info})",
+                        error.error()
+                    );
+                    continue;
+                }
+
                 pipeline.debug_to_dot_file_with_ts(
                     gst::DebugGraphDetails::all(),
                     format!("pipeline-{pipeline_id}-error"),
