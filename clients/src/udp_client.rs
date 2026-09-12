@@ -8,6 +8,14 @@ use gst::prelude::*;
 
 use crate::{attach_frame_probe, Codec, SampleSender, StreamClient};
 
+pub struct UdpClientConfig<'a> {
+    pub address: &'a str,
+    pub port: u16,
+    pub codec: Codec,
+    pub sender: Option<SampleSender>,
+    pub dimensions: Option<(u32, u32)>,
+}
+
 pub struct UdpClient {
     pipeline: gst::Pipeline,
     frame_count: Arc<AtomicU64>,
@@ -25,82 +33,16 @@ impl StreamClient for UdpClient {
 }
 
 impl UdpClient {
-    pub fn new(
-        address: &str,
-        port: i32,
-        codec: Codec,
-        sender: Option<SampleSender>,
-    ) -> Result<Self> {
-        Self::build(address, port, codec, sender, None)
-    }
-
-    pub fn new_raw(
-        address: &str,
-        port: i32,
-        codec: Codec,
-        width: u32,
-        height: u32,
-        sender: Option<SampleSender>,
-    ) -> Result<Self> {
-        Self::build(address, port, codec, sender, Some((width, height)))
-    }
-
-    fn build(
-        address: &str,
-        port: i32,
-        codec: Codec,
-        sender: Option<SampleSender>,
-        dimensions: Option<(u32, u32)>,
-    ) -> Result<Self> {
+    pub fn new(config: UdpClientConfig<'_>) -> Result<Self> {
+        anyhow::ensure!(!config.address.is_empty(), "UDP address must be non-empty");
         gst::init()?;
 
         let pipeline = gst::Pipeline::with_name("udp-client");
-
-        let rtp_caps = match codec {
-            Codec::H264 => gst::Caps::builder("application/x-rtp")
-                .field("media", "video")
-                .field("clock-rate", 90000i32)
-                .field("encoding-name", "H264")
-                .build(),
-            Codec::H265 => gst::Caps::builder("application/x-rtp")
-                .field("media", "video")
-                .field("clock-rate", 90000i32)
-                .field("encoding-name", "H265")
-                .build(),
-            Codec::Mjpg => gst::Caps::builder("application/x-rtp")
-                .field("media", "video")
-                .field("clock-rate", 90000i32)
-                .field("encoding-name", "JPEG")
-                .build(),
-            Codec::Yuyv => {
-                let (w, h) = dimensions.context("YUYV UDP requires dimensions via new_raw()")?;
-                gst::Caps::builder("application/x-rtp")
-                    .field("media", "video")
-                    .field("clock-rate", 90000i32)
-                    .field("encoding-name", "RAW")
-                    .field("sampling", "YCbCr-4:2:0")
-                    .field("depth", "8")
-                    .field("width", w.to_string())
-                    .field("height", h.to_string())
-                    .build()
-            }
-            Codec::Rgb => {
-                let (w, h) = dimensions.context("RGB UDP requires dimensions via new_raw()")?;
-                gst::Caps::builder("application/x-rtp")
-                    .field("media", "video")
-                    .field("clock-rate", 90000i32)
-                    .field("encoding-name", "RAW")
-                    .field("sampling", "RGB")
-                    .field("depth", "8")
-                    .field("width", w.to_string())
-                    .field("height", h.to_string())
-                    .build()
-            }
-        };
+        let rtp_caps = rtp_caps(config.codec, config.dimensions)?;
 
         let src = gst::ElementFactory::make("udpsrc")
-            .property("address", address)
-            .property("port", port)
+            .property("address", config.address)
+            .property("port", i32::from(config.port))
             .property("caps", &rtp_caps)
             .build()
             .context("Failed to create udpsrc")?;
@@ -111,17 +53,17 @@ impl UdpClient {
             .build()
             .context("Failed to create fakesink")?;
 
-        let probe_element = match codec {
+        let probe_element = match config.codec {
             Codec::H264 | Codec::H265 => {
-                let depay_factory = match codec {
+                let depay_factory = match config.codec {
                     Codec::H264 => "rtph264depay",
                     _ => "rtph265depay",
                 };
-                let parse_factory = match codec {
+                let parse_factory = match config.codec {
                     Codec::H264 => "h264parse",
                     _ => "h265parse",
                 };
-                let norm_caps = match codec {
+                let norm_caps = match config.codec {
                     Codec::H264 => gst::Caps::builder("video/x-h264")
                         .field("stream-format", "byte-stream")
                         .field("alignment", "au")
@@ -176,9 +118,9 @@ impl UdpClient {
             gst::PadProbeReturn::Ok
         });
 
-        if let Some(sender) = sender {
+        if let Some(sender) = config.sender {
             let probe_pad = probe_element.static_pad("src").unwrap();
-            attach_frame_probe(&probe_pad, "udp-client".to_string(), sender, codec);
+            attach_frame_probe(&probe_pad, "udp-client".to_string(), sender, config.codec);
         }
 
         pipeline.set_state(gst::State::Playing)?;
@@ -194,4 +136,34 @@ impl Drop for UdpClient {
     fn drop(&mut self) {
         let _ = self.pipeline.set_state(gst::State::Null);
     }
+}
+
+fn rtp_caps(codec: Codec, dimensions: Option<(u32, u32)>) -> Result<gst::Caps> {
+    let mut builder = gst::Caps::builder("application/x-rtp")
+        .field("media", "video")
+        .field("clock-rate", 90000i32);
+    builder = match codec {
+        Codec::H264 => builder.field("encoding-name", "H264"),
+        Codec::H265 => builder.field("encoding-name", "H265"),
+        Codec::Mjpg => builder.field("encoding-name", "JPEG"),
+        Codec::Yuyv => {
+            let (width, height) = dimensions.context("YUYV UDP requires dimensions")?;
+            builder
+                .field("encoding-name", "RAW")
+                .field("sampling", "YCbCr-4:2:0")
+                .field("depth", "8")
+                .field("width", width.to_string())
+                .field("height", height.to_string())
+        }
+        Codec::Rgb => {
+            let (width, height) = dimensions.context("RGB UDP requires dimensions")?;
+            builder
+                .field("encoding-name", "RAW")
+                .field("sampling", "RGB")
+                .field("depth", "8")
+                .field("width", width.to_string())
+                .field("height", height.to_string())
+        }
+    };
+    Ok(builder.build())
 }
