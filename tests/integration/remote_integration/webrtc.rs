@@ -22,7 +22,10 @@ async fn test_webrtc_warm_receives_frames() {
     skip_unless!(SourceTag::Both);
     let env = TestEnv::setup().await;
     let tc = env.thumbnail_client();
-    ensure_data_flowing(&tc, &env.stream_source).await;
+    let _ = tc
+        .wait(&env.stream_source, cold_timeout())
+        .await
+        .expect("thumbnail must return 200");
 
     let client = webrtc_connect_with_retry(&env.signalling_url, env.ice_filter.as_deref()).await;
     scenario_warm_receives_frames(&client, Duration::from_secs(20), "WebRTC").await;
@@ -160,7 +163,7 @@ async fn test_webrtc_multi_warm_sequential() {
     let c = env.client();
     ensure_idle(&c).await;
 
-    let anchor = RtspClient::new(&env.mcm_rtsp_url, Codec::H264, None)
+    let anchor = RtspClient::new(&env.mcm_rtsp_url, Codec::H264, None, TCP_CONNECT)
         .await
         .expect("RTSP anchor");
     anchor

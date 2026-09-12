@@ -26,12 +26,13 @@ async fn run_qr_rtsp_data_flow(codec: Codec) {
     client.wait_for_streams_running(1, TIMEOUT).await.unwrap();
 
     let rtsp_url = mcm.rtsp_url(path);
-    wait_for_rtsp_tcp(&rtsp_url, TIMEOUT).await;
+    wait_for_rtsp_tcp(&rtsp_url, TIMEOUT).await.unwrap();
 
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let _rtsp = stream_clients::rtsp_client::RtspClient::new(&rtsp_url, codec, Some(tx))
-        .await
-        .unwrap();
+    let _rtsp =
+        stream_clients::rtsp_client::RtspClient::new(&rtsp_url, codec, Some(tx), TCP_CONNECT)
+            .await
+            .unwrap();
 
     verify_data_flow(&mut rx, &format!("QR {codec:?} RTSP")).await;
 }
@@ -57,24 +58,19 @@ async fn run_qr_udp_data_flow(codec: Codec) {
     let monitor = StateMonitor::start(&mcm.rest_url(), Duration::from_millis(250));
 
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let _udp = match codec {
-        Codec::Rgb => stream_clients::udp_client::UdpClient::new_raw(
-            "127.0.0.1",
-            udp_port as i32,
-            codec,
-            320,
-            320,
-            Some(tx),
-        )
-        .unwrap(),
-        _ => stream_clients::udp_client::UdpClient::new(
-            "127.0.0.1",
-            udp_port as i32,
-            codec,
-            Some(tx),
-        )
-        .unwrap(),
+    let dimensions = match codec {
+        Codec::Rgb => Some((320, 320)),
+        _ => None,
     };
+    let _udp =
+        stream_clients::udp_client::UdpClient::new(stream_clients::udp_client::UdpClientConfig {
+            address: "127.0.0.1",
+            port: udp_port,
+            codec,
+            sender: Some(tx),
+            dimensions,
+        })
+        .unwrap();
 
     let label = format!("QR {codec:?} UDP");
     verify_data_flow(&mut rx, &label).await;
@@ -104,7 +100,9 @@ async fn run_qr_thumbnail_data_flow(codec: Codec) {
     client.create_stream(&post).await.unwrap();
     client.wait_for_streams_running(1, TIMEOUT).await.unwrap();
 
-    let body = wait_for_thumbnail(&client, "QRTimeStamp", TIMEOUT).await;
+    let body = wait_for_thumbnail(&client, "QRTimeStamp", TIMEOUT)
+        .await
+        .unwrap();
     assert!(
         body.len() > 100,
         "Thumbnail too small ({} bytes), expected a JPEG image",

@@ -38,6 +38,7 @@ impl McmProcess {
     }
 
     async fn start_with_retry(mavlink_endpoint: Option<&str>, zenoh: bool) -> Result<Self> {
+        crate::common::init_tracing();
         let mut last_err = None;
         for attempt in 0..START_RETRIES {
             match Self::try_start_inner(mavlink_endpoint, zenoh).await {
@@ -174,7 +175,7 @@ impl McmProcess {
         format!("rtsp://127.0.0.1:{}/{path}", self.rtsp_port)
     }
 
-    pub async fn wait_for_rtsp_ready(&self, path: &str, timeout: Duration) {
+    pub async fn wait_for_rtsp_ready(&self, path: &str, timeout: Duration) -> Result<()> {
         super::poll::wait_for_rtsp_tcp(&self.rtsp_url(path), timeout).await
     }
 

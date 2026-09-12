@@ -49,7 +49,9 @@ async fn test_udp_redirect_zenoh_data_flow() {
     .await
     .unwrap();
 
-    wait_first_frame(&mut rx, TIMEOUT, "UDP redirect Zenoh").await;
+    wait_first_frame(&mut rx, TIMEOUT, "UDP redirect Zenoh")
+        .await
+        .unwrap();
 
     let mut count = 1usize;
     let window_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
@@ -95,7 +97,7 @@ async fn test_rtsp_redirect_zenoh_data_flow() {
         .wait_for_stream_idle("fake_rtsp_sender", TIMEOUT)
         .await
         .expect("fake RTSP sender should complete initial lifecycle");
-    mcm.wait_for_rtsp_ready(path, TIMEOUT).await;
+    mcm.wait_for_rtsp_ready(path, TIMEOUT).await.unwrap();
 
     let redirect = PostStream {
         name: "redirect_zenoh_rtsp".to_string(),
@@ -129,7 +131,9 @@ async fn test_rtsp_redirect_zenoh_data_flow() {
     .await
     .unwrap();
 
-    wait_first_frame(&mut rx, TIMEOUT, "RTSP redirect Zenoh").await;
+    wait_first_frame(&mut rx, TIMEOUT, "RTSP redirect Zenoh")
+        .await
+        .unwrap();
 
     let mut count = 1usize;
     let window_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
@@ -193,7 +197,9 @@ async fn test_h265_udp_redirect_zenoh_data_flow() {
     .await
     .unwrap();
 
-    wait_first_frame(&mut rx, TIMEOUT, "H265 UDP redirect Zenoh").await;
+    wait_first_frame(&mut rx, TIMEOUT, "H265 UDP redirect Zenoh")
+        .await
+        .unwrap();
 
     let mut count = 1usize;
     let window_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
@@ -231,7 +237,7 @@ async fn test_h265_rtsp_redirect_zenoh_data_flow() {
         mcm.rtsp_port,
     );
     client.create_stream(&fake).await.unwrap();
-    mcm.wait_for_rtsp_ready(path, TIMEOUT).await;
+    mcm.wait_for_rtsp_ready(path, TIMEOUT).await.unwrap();
 
     let redirect = PostStream {
         name: "redirect_h265_zenoh_rtsp".to_string(),
@@ -265,7 +271,9 @@ async fn test_h265_rtsp_redirect_zenoh_data_flow() {
     .await
     .unwrap();
 
-    wait_first_frame(&mut rx, TIMEOUT, "H265 RTSP redirect Zenoh").await;
+    wait_first_frame(&mut rx, TIMEOUT, "H265 RTSP redirect Zenoh")
+        .await
+        .unwrap();
 
     let mut count = 1usize;
     let window_deadline = tokio::time::Instant::now() + Duration::from_secs(5);

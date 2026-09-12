@@ -27,24 +27,19 @@ async fn run_fake_udp_data_flow(codec: Codec) {
     let monitor = StateMonitor::start(&mcm.rest_url(), Duration::from_millis(250));
 
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let _udp = match codec {
-        Codec::Yuyv | Codec::Rgb => stream_clients::udp_client::UdpClient::new_raw(
-            "127.0.0.1",
-            udp_port as i32,
-            codec,
-            320,
-            240,
-            Some(tx),
-        )
-        .unwrap(),
-        _ => stream_clients::udp_client::UdpClient::new(
-            "127.0.0.1",
-            udp_port as i32,
-            codec,
-            Some(tx),
-        )
-        .unwrap(),
+    let dimensions = match codec {
+        Codec::Yuyv | Codec::Rgb => Some((320, 240)),
+        _ => None,
     };
+    let _udp =
+        stream_clients::udp_client::UdpClient::new(stream_clients::udp_client::UdpClientConfig {
+            address: "127.0.0.1",
+            port: udp_port,
+            codec,
+            sender: Some(tx),
+            dimensions,
+        })
+        .unwrap();
 
     let label = format!("{codec:?} UDP");
     verify_data_flow(&mut rx, &label).await;

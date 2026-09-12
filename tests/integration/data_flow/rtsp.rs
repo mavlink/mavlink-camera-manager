@@ -29,12 +29,13 @@ async fn run_fake_rtsp_data_flow(codec: Codec) {
     client.wait_for_streams_running(1, TIMEOUT).await.unwrap();
 
     let rtsp_url = mcm.rtsp_url(path);
-    wait_for_rtsp_tcp(&rtsp_url, TIMEOUT).await;
+    wait_for_rtsp_tcp(&rtsp_url, TIMEOUT).await.unwrap();
 
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let _rtsp = stream_clients::rtsp_client::RtspClient::new(&rtsp_url, codec, Some(tx))
-        .await
-        .unwrap();
+    let _rtsp =
+        stream_clients::rtsp_client::RtspClient::new(&rtsp_url, codec, Some(tx), TCP_CONNECT)
+            .await
+            .unwrap();
 
     verify_data_flow(&mut rx, &format!("{codec:?} RTSP")).await;
 }

@@ -26,7 +26,7 @@ async fn run_fake_thumbnail_data_flow(codec: Codec) {
     client.create_stream(&post).await.unwrap();
     client.wait_for_streams_running(1, TIMEOUT).await.unwrap();
 
-    let body = wait_for_thumbnail(&client, "ball", TIMEOUT).await;
+    let body = wait_for_thumbnail(&client, "ball", TIMEOUT).await.unwrap();
     assert!(
         body.len() > 100,
         "Thumbnail too small ({} bytes), expected a JPEG image",

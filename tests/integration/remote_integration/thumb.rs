@@ -13,7 +13,10 @@ async fn test_thumb_cold_no_stopped_state() {
     ensure_idle(&c).await;
 
     let mon = env.monitor();
-    let body = cold_thumbnail(&tc, cold_timeout(), &env.stream_source).await;
+    let body = tc
+        .wait(&env.stream_source, cold_timeout())
+        .await
+        .expect("cold thumbnail must return 200");
 
     tokio::time::sleep(Duration::from_millis(500)).await;
     let transitions = mon.stop();
@@ -38,10 +41,15 @@ async fn test_thumb_warm() {
     skip_unless!(SourceTag::Both);
     let env = TestEnv::setup().await;
     let tc = env.thumbnail_client();
-    ensure_data_flowing(&tc, &env.stream_source).await;
+    tc.wait(&env.stream_source, cold_timeout())
+        .await
+        .expect("thumbnail must return 200");
 
     let t0 = std::time::Instant::now();
-    let resp = thumbnail_with_retry(&tc, &env.stream_source).await;
+    let resp = tc
+        .get_with_retry(&env.stream_source, 3)
+        .await
+        .expect("thumbnail retry failed");
     let elapsed = t0.elapsed();
     assert_eq!(resp.status(), 200);
     let body = resp.bytes().await.unwrap();
@@ -58,7 +66,10 @@ async fn test_thumb_returns_to_idle() {
     let tc = env.thumbnail_client();
     ensure_idle(&c).await;
 
-    let body = cold_thumbnail(&tc, cold_timeout(), &env.stream_source).await;
+    let body = tc
+        .wait(&env.stream_source, cold_timeout())
+        .await
+        .expect("cold thumbnail must return 200");
     assert!(body.len() > 1000);
 
     c.wait_for_stream_state(StreamStatusState::Idle, idle_timeout())
@@ -81,13 +92,19 @@ async fn test_thumb_cold_warm_cycles() {
         tokio::time::sleep(Duration::from_secs(5)).await;
 
         let mon = env.monitor();
-        let body = cold_thumbnail(&tc, cold_timeout(), &env.stream_source).await;
+        let body = tc
+            .wait(&env.stream_source, cold_timeout())
+            .await
+            .expect("cold thumbnail must return 200");
         assert!(
             body.len() > 1000,
             "cycle {cycle}: cold thumbnail body too small"
         );
 
-        let resp = thumbnail_with_retry(&tc, &env.stream_source).await;
+        let resp = tc
+            .get_with_retry(&env.stream_source, 3)
+            .await
+            .expect("thumbnail retry failed");
         assert_eq!(resp.status(), 200, "warm thumbnail cycle {cycle}");
 
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -107,11 +124,17 @@ async fn test_thumb_rapid_sequential() {
     let tc = env.thumbnail_client();
     ensure_idle(&c).await;
 
-    let _ = cold_thumbnail(&tc, cold_timeout(), &env.stream_source).await;
+    let _ = tc
+        .wait(&env.stream_source, cold_timeout())
+        .await
+        .expect("cold thumbnail must return 200");
 
     let mon = env.monitor();
     for i in 0..10 {
-        let resp = thumbnail_with_retry(&tc, &env.stream_source).await;
+        let resp = tc
+            .get_with_retry(&env.stream_source, 3)
+            .await
+            .expect("thumbnail retry failed");
         let status = resp.status();
         let body = resp.bytes().await.unwrap();
         eprintln!("thumb #{i}: status={status}, {} bytes", body.len());

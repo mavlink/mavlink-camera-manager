@@ -3,6 +3,7 @@ use std::{future::Future, time::Duration};
 pub(super) use crate::common::{
     api::{McmClient, StateMonitor, zenoh_topic},
     mcm::McmProcess,
+    timeouts::{SETUP, TCP_CONNECT},
     types::*,
 };
 
@@ -12,7 +13,7 @@ pub(super) use stream_clients::webrtc_client::WebrtcClient;
 pub(super) use stream_clients::{Codec, StreamClient};
 
 pub(super) const STATE_POLL: Duration = Duration::from_millis(200);
-pub(super) const SETUP_TIMEOUT: Duration = Duration::from_secs(15);
+pub(super) const SETUP_TIMEOUT: Duration = SETUP;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SourceMode {
@@ -47,6 +48,7 @@ pub(super) struct TestEnv {
 
 impl TestEnv {
     pub async fn setup() -> Self {
+        crate::common::init_tracing();
         match source_mode() {
             SourceMode::Fake => {
                 let mcm = McmProcess::start().await.unwrap();
@@ -234,22 +236,6 @@ pub(super) async fn ensure_running(c: &McmClient) {
         .expect("stream did not reach Running");
 }
 
-pub(super) async fn ensure_data_flowing(tc: &ThumbnailClient, source: &str) {
-    tc.ensure_data_flowing(source, cold_timeout()).await;
-}
-
-pub(super) async fn cold_thumbnail(
-    tc: &ThumbnailClient,
-    timeout: Duration,
-    source: &str,
-) -> Vec<u8> {
-    tc.cold_thumbnail(source, timeout).await
-}
-
-pub(super) async fn thumbnail_with_retry(tc: &ThumbnailClient, source: &str) -> reqwest::Response {
-    tc.thumbnail_with_retry(source, 3).await
-}
-
 pub(super) async fn webrtc_connect_with_retry(url: &str, ice_filter: Option<&str>) -> WebrtcClient {
     let mut last_err = None;
     for attempt in 0..3u32 {
@@ -375,7 +361,7 @@ pub(super) async fn scenario_stays_alive(
         .unwrap_or_else(|e| panic!("{label} must start receiving frames: {e}"));
 
     let n = client
-        .wait_for_continuous_frames(Duration::from_secs(30), Duration::from_millis(500))
+        .wait_for_continuous_frames(30.0, Duration::from_secs(30))
         .await
         .unwrap_or_else(|e| panic!("{label} must keep receiving frames for 30s: {e}"));
 

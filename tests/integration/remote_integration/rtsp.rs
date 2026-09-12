@@ -11,7 +11,7 @@ async fn test_rtsp_cold_no_stopped() {
     ensure_idle(&c).await;
 
     let mon = env.monitor();
-    let client = RtspClient::new(&env.mcm_rtsp_url, Codec::H264, None)
+    let client = RtspClient::new(&env.mcm_rtsp_url, Codec::H264, None, TCP_CONNECT)
         .await
         .expect("rtsp client");
     scenario_cold_no_stopped(&c, mon, &client, "RTSP").await;
@@ -23,9 +23,12 @@ async fn test_rtsp_warm_receives_frames() {
     skip_unless!(SourceTag::Both);
     let env = TestEnv::setup().await;
     let tc = env.thumbnail_client();
-    ensure_data_flowing(&tc, &env.stream_source).await;
+    let _ = tc
+        .wait(&env.stream_source, cold_timeout())
+        .await
+        .expect("thumbnail must return 200");
 
-    let client = RtspClient::new(&env.mcm_rtsp_url, Codec::H264, None)
+    let client = RtspClient::new(&env.mcm_rtsp_url, Codec::H264, None, TCP_CONNECT)
         .await
         .expect("rtsp client");
     scenario_warm_receives_frames(&client, Duration::from_secs(30), "RTSP").await;
@@ -45,7 +48,11 @@ async fn test_rtsp_immediate_reconnect_no_503() {
     scenario_immediate_reconnect(
         &c,
         mon,
-        || async { RtspClient::new(&url, Codec::H264, None).await.unwrap() },
+        || async {
+            RtspClient::new(&url, Codec::H264, None, TCP_CONNECT)
+                .await
+                .unwrap()
+        },
         Duration::ZERO,
         "RTSP",
     )
@@ -62,7 +69,7 @@ async fn test_rtsp_stays_alive_while_connected() {
     ensure_idle(&c).await;
 
     let mon = env.monitor();
-    let client = RtspClient::new(&env.mcm_rtsp_url, Codec::H264, None)
+    let client = RtspClient::new(&env.mcm_rtsp_url, Codec::H264, None, TCP_CONNECT)
         .await
         .expect("rtsp client");
     scenario_stays_alive(&c, mon, &client, "RTSP").await;
@@ -79,7 +86,11 @@ async fn test_rtsp_returns_to_idle() {
     let url = env.mcm_rtsp_url.clone();
     scenario_returns_to_idle(
         &c,
-        || async { RtspClient::new(&url, Codec::H264, None).await.unwrap() },
+        || async {
+            RtspClient::new(&url, Codec::H264, None, TCP_CONNECT)
+                .await
+                .unwrap()
+        },
         "RTSP",
     )
     .await;
@@ -97,7 +108,11 @@ async fn test_rtsp_reconnect_after_idle() {
     scenario_reconnect_after_idle(
         &c,
         &env.rest_url,
-        || async { RtspClient::new(&url, Codec::H264, None).await.unwrap() },
+        || async {
+            RtspClient::new(&url, Codec::H264, None, TCP_CONNECT)
+                .await
+                .unwrap()
+        },
         "RTSP",
     )
     .await;
@@ -116,7 +131,11 @@ async fn test_rtsp_extended_cycles() {
     scenario_extended_cycles(
         &c,
         mon,
-        || async { RtspClient::new(&url, Codec::H264, None).await.unwrap() },
+        || async {
+            RtspClient::new(&url, Codec::H264, None, TCP_CONNECT)
+                .await
+                .unwrap()
+        },
         5,
         "RTSP",
     )
@@ -142,7 +161,11 @@ async fn test_rtsp_multi_warm_sequential() {
     let url = env.mcm_rtsp_url.clone();
     scenario_multi_warm_sequential(
         &anchor,
-        || async { RtspClient::new(&url, Codec::H264, None).await.unwrap() },
+        || async {
+            RtspClient::new(&url, Codec::H264, None, TCP_CONNECT)
+                .await
+                .unwrap()
+        },
         5,
         "WebRTC anchor",
         "RTSP",

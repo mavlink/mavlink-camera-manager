@@ -98,9 +98,14 @@ async fn test_rtsp_not_frozen_after_removing_webrtc_consumers() {
     let mon = StateMonitor::start(&mcm.rest_url(), Duration::from_millis(200));
 
     // 1. Connect an RTSP client and wait for frames to flow.
-    let rtsp = RtspClient::new(&mcm.rtsp_url("rtsp_wrtc_freeze"), Codec::H264, None)
-        .await
-        .expect("RTSP client");
+    let rtsp = RtspClient::new(
+        &mcm.rtsp_url("rtsp_wrtc_freeze"),
+        Codec::H264,
+        None,
+        TCP_CONNECT,
+    )
+    .await
+    .expect("RTSP client");
     rtsp.wait_for_frames(5, Duration::from_secs(30))
         .await
         .expect("RTSP must start receiving frames");
@@ -128,7 +133,7 @@ async fn test_rtsp_not_frozen_after_removing_webrtc_consumers() {
     //    A 2-second max stall catches the bug (the original freeze was
     //    ~30 s) while allowing for normal scheduling jitter.
     let final_frames = rtsp
-        .wait_for_continuous_frames(Duration::from_secs(5), Duration::from_millis(500))
+        .wait_for_continuous_frames(30.0, Duration::from_secs(5))
         .await
         .expect("RTSP frame flow must not stall after removing WebRTC consumers");
 

@@ -98,7 +98,9 @@ async fn run_zenoh_and_webrtc_coexistence(codec: Codec) {
     .await
     .unwrap();
 
-    wait_first_frame(&mut zrx, TIMEOUT, "Zenoh (coex)").await;
+    wait_first_frame(&mut zrx, TIMEOUT, "Zenoh (coex)")
+        .await
+        .unwrap();
 
     let signalling_url = mcm.signalling_url();
     let (wtx, mut wrx) = mpsc::unbounded_channel();
@@ -111,7 +113,9 @@ async fn run_zenoh_and_webrtc_coexistence(codec: Codec) {
     .await
     .unwrap();
 
-    wait_first_frame(&mut wrx, TIMEOUT, "WebRTC (coex)").await;
+    wait_first_frame(&mut wrx, TIMEOUT, "WebRTC (coex)")
+        .await
+        .unwrap();
 
     // Both should receive frames concurrently
     let zenoh_concurrent = collect_frames(&mut zrx, Duration::from_secs(4), MAX_FRAME_GAP).await;
@@ -184,17 +188,22 @@ async fn run_zenoh_and_rtsp_coexistence(codec: Codec) {
     .await
     .unwrap();
 
-    wait_first_frame(&mut zrx, TIMEOUT, "Zenoh (rtsp-coex)").await;
-
-    let rtsp_url = mcm.rtsp_url(path);
-    wait_for_rtsp_tcp(&rtsp_url, TIMEOUT).await;
-
-    let (rtx, mut rrx) = mpsc::unbounded_channel();
-    let rtsp = stream_clients::rtsp_client::RtspClient::new(&rtsp_url, codec, Some(rtx))
+    wait_first_frame(&mut zrx, TIMEOUT, "Zenoh (rtsp-coex)")
         .await
         .unwrap();
 
-    wait_first_frame(&mut rrx, TIMEOUT, "RTSP (coex)").await;
+    let rtsp_url = mcm.rtsp_url(path);
+    wait_for_rtsp_tcp(&rtsp_url, TIMEOUT).await.unwrap();
+
+    let (rtx, mut rrx) = mpsc::unbounded_channel();
+    let rtsp =
+        stream_clients::rtsp_client::RtspClient::new(&rtsp_url, codec, Some(rtx), TCP_CONNECT)
+            .await
+            .unwrap();
+
+    wait_first_frame(&mut rrx, TIMEOUT, "RTSP (coex)")
+        .await
+        .unwrap();
 
     let zenoh_concurrent = collect_frames(&mut zrx, Duration::from_secs(4), MAX_FRAME_GAP).await;
     assert!(
@@ -357,8 +366,12 @@ async fn run_multiple_zenoh_streams(codec: Codec) {
     .await
     .unwrap();
 
-    wait_first_frame(&mut rx_a, TIMEOUT, "Zenoh stream A").await;
-    wait_first_frame(&mut rx_b, TIMEOUT, "Zenoh stream B").await;
+    wait_first_frame(&mut rx_a, TIMEOUT, "Zenoh stream A")
+        .await
+        .unwrap();
+    wait_first_frame(&mut rx_b, TIMEOUT, "Zenoh stream B")
+        .await
+        .unwrap();
 
     let samples_a = collect_frames(&mut rx_a, MEASUREMENT_WINDOW, MAX_FRAME_GAP).await;
     let samples_b = collect_frames(&mut rx_b, MEASUREMENT_WINDOW, MAX_FRAME_GAP).await;

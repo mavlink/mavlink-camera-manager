@@ -464,7 +464,7 @@ pub async fn start_webrtc_session(
     >,
 )> {
     let (bind, _available, sink, stream) =
-        webrtc_signalling_handshake(signalling_url, None, Duration::from_secs(15)).await?;
+        webrtc_signalling_handshake(signalling_url, None, crate::common::timeouts::SETUP).await?;
     Ok((bind, sink, stream))
 }
 

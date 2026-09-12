@@ -20,7 +20,7 @@ async fn create_fake_rtsp_redirect_sender(
             .await
             .expect("fake RTSP sender should complete initial lifecycle");
     }
-    mcm.wait_for_rtsp_ready(path, TIMEOUT).await;
+    mcm.wait_for_rtsp_ready(path, TIMEOUT).await.unwrap();
 }
 
 /// External gst-launch UDP sender -> redirect stream -> WebRTC client
@@ -71,7 +71,7 @@ async fn run_redirect_webrtc_data_flow(codec: Codec) {
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     let signalling_url = mcm.signalling_url();
-    let overall_deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    let overall_deadline = tokio::time::Instant::now() + FACTORY_READY;
 
     // Retry loop: the redirect's DTLS may close on the first attempt if the
     // media pipeline isn't ready yet. Recreate everything on each retry.
@@ -156,17 +156,22 @@ async fn run_redirect_rtsp_data_flow(codec: Codec, profile: Option<&str>) {
         client.create_stream(&redirect).await.unwrap();
 
         client
-            .wait_for_streams_running(1, Duration::from_secs(60))
+            .wait_for_streams_running(1, FACTORY_READY)
             .await
             .expect("redirect stream should be running");
 
         let rtsp_url = _rtsp_server.rtsp_url(&path);
-        wait_for_rtsp_tcp(&rtsp_url, TIMEOUT).await;
+        wait_for_rtsp_tcp(&rtsp_url, TIMEOUT).await.unwrap();
 
         let (rtsp_tx, mut rtsp_rx) = mpsc::unbounded_channel();
-        let _rtsp = stream_clients::rtsp_client::RtspClient::new(&rtsp_url, codec, Some(rtsp_tx))
-            .await
-            .unwrap();
+        let _rtsp = stream_clients::rtsp_client::RtspClient::new(
+            &rtsp_url,
+            codec,
+            Some(rtsp_tx),
+            TCP_CONNECT,
+        )
+        .await
+        .unwrap();
 
         verify_data_flow(&mut rtsp_rx, &format!("RTSP redirect {codec:?} {profile}")).await;
     } else {
@@ -193,12 +198,17 @@ async fn run_redirect_rtsp_data_flow(codec: Codec, profile: Option<&str>) {
             .expect("redirect RTSP should complete initial lifecycle");
 
         let rtsp_url = mcm.rtsp_url(path);
-        wait_for_rtsp_tcp(&rtsp_url, TIMEOUT).await;
+        wait_for_rtsp_tcp(&rtsp_url, TIMEOUT).await.unwrap();
 
         let (rtsp_tx, mut rtsp_rx) = mpsc::unbounded_channel();
-        let _rtsp = stream_clients::rtsp_client::RtspClient::new(&rtsp_url, codec, Some(rtsp_tx))
-            .await
-            .unwrap();
+        let _rtsp = stream_clients::rtsp_client::RtspClient::new(
+            &rtsp_url,
+            codec,
+            Some(rtsp_tx),
+            TCP_CONNECT,
+        )
+        .await
+        .unwrap();
 
         verify_data_flow(&mut rtsp_rx, "RTSP (redirect)").await;
     }
@@ -239,14 +249,16 @@ async fn run_redirect_thumbnail_data_flow(codec: Codec, profile: Option<&str>) {
     });
 
     client
-        .wait_for_streams_running(1, Duration::from_secs(60))
+        .wait_for_streams_running(1, FACTORY_READY)
         .await
         .unwrap_or_else(|e| {
             sender.kill().ok();
             panic!("redirect stream not running: {e}");
         });
 
-    let body = wait_for_thumbnail(&client, "Redirect", Duration::from_secs(60)).await;
+    let body = wait_for_thumbnail(&client, "Redirect", FACTORY_READY)
+        .await
+        .unwrap();
     assert!(
         body.len() > 100,
         "Thumbnail too small ({} bytes), expected a JPEG image",
@@ -290,11 +302,13 @@ async fn run_redirect_rtsp_thumbnail_data_flow(codec: Codec, profile: Option<&st
         client.create_stream(&redirect).await.unwrap();
 
         client
-            .wait_for_streams_running(1, Duration::from_secs(60))
+            .wait_for_streams_running(1, FACTORY_READY)
             .await
             .expect("redirect stream should be running");
 
-        let body = wait_for_thumbnail(&client, "Redirect", Duration::from_secs(60)).await;
+        let body = wait_for_thumbnail(&client, "Redirect", FACTORY_READY)
+            .await
+            .unwrap();
         assert!(
             body.len() > 100,
             "Thumbnail too small ({} bytes), expected a JPEG image",
@@ -328,7 +342,9 @@ async fn run_redirect_rtsp_thumbnail_data_flow(codec: Codec, profile: Option<&st
             .await
             .expect("redirect should complete initial lifecycle");
 
-        let body = wait_for_thumbnail(&client, "Redirect", Duration::from_secs(60)).await;
+        let body = wait_for_thumbnail(&client, "Redirect", FACTORY_READY)
+            .await
+            .unwrap();
         assert!(
             body.len() > 100,
             "Thumbnail too small ({} bytes), expected a JPEG image",
@@ -405,7 +421,7 @@ async fn run_redirect_rtsp_webrtc_data_flow(codec: Codec) {
         .id;
 
     let signalling_url = mcm.signalling_url();
-    let overall_deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    let overall_deadline = tokio::time::Instant::now() + FACTORY_READY;
 
     let (mut rx, _webrtc) = loop {
         if tokio::time::Instant::now() >= overall_deadline {

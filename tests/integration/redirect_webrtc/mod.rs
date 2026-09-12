@@ -12,10 +12,11 @@ pub(super) use crate::common::{
     gst_sender::spawn_udp_sender,
     mcm::{McmProcess, allocate_udp_ports},
     poll::{drain, wait_first_frame, wait_for_thumbnail},
+    timeouts::FACTORY_READY,
     types::*,
 };
 
-pub(super) const TIMEOUT: Duration = Duration::from_secs(60);
+pub(super) const TIMEOUT: Duration = FACTORY_READY;
 
 /// Start MCM with a lazy redirect receiver on the given port, and an
 /// external GStreamer sender providing H264 RTP to that port. The redirect
@@ -63,7 +64,7 @@ pub(super) async fn setup_fake_rtsp_and_redirect(path: &str) -> (McmProcess, Mcm
         .wait_for_stream_idle("fake_rtsp_sender", TIMEOUT)
         .await
         .expect("fake RTSP sender should complete initial lifecycle");
-    mcm.wait_for_rtsp_ready(path, TIMEOUT).await;
+    mcm.wait_for_rtsp_ready(path, TIMEOUT).await.unwrap();
 
     let redirect =
         McmClient::build_redirect_rtsp("redirect_receiver", "127.0.0.1", mcm.rtsp_port, path);
@@ -109,7 +110,7 @@ pub(super) async fn setup_fake_h265_rtsp_and_redirect(path: &str) -> (McmProcess
         mcm.rtsp_port,
     );
     client.create_stream(&fake).await.unwrap();
-    mcm.wait_for_rtsp_ready(path, TIMEOUT).await;
+    mcm.wait_for_rtsp_ready(path, TIMEOUT).await.unwrap();
 
     let redirect =
         McmClient::build_redirect_rtsp("redirect_receiver", "127.0.0.1", mcm.rtsp_port, path);

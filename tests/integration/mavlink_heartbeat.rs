@@ -6,10 +6,11 @@ use std::{
 use crate::common::{
     api::McmClient,
     mcm::{McmProcess, allocate_udp_ports},
+    timeouts::SETUP,
     types::*,
 };
 
-const TIMEOUT: Duration = Duration::from_secs(15);
+const TIMEOUT: Duration = SETUP;
 
 /// When a lazy stream goes idle, its MAVLink heartbeat task must keep running.
 /// This test creates a fake RTSP stream with MAVLink enabled, waits for the

@@ -15,10 +15,11 @@ pub(super) use crate::common::{
     gst_sender::spawn_udp_sender,
     mcm::{McmProcess, allocate_udp_ports},
     poll::drain,
+    timeouts::{FACTORY_READY, SETUP, TCP_CONNECT},
     types::*,
 };
 
-pub(super) const TIMEOUT: Duration = Duration::from_secs(15);
+pub(super) const TIMEOUT: Duration = SETUP;
 
 /// The watcher's idle grace period before suspending.
 pub(super) const IDLE_GRACE: Duration = Duration::from_secs(5);

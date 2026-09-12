@@ -17,7 +17,10 @@ async fn test_mixed_webrtc_and_thumbnail() {
         .await
         .expect("webrtc frames");
 
-    let resp = thumbnail_with_retry(&tc, &env.stream_source).await;
+    let resp = tc
+        .get_with_retry(&env.stream_source, 3)
+        .await
+        .expect("thumbnail retry failed");
     assert_eq!(resp.status(), 200, "thumbnail while webrtc active");
     let body = resp.bytes().await.unwrap();
     assert!(body.len() > 1000);
@@ -53,7 +56,10 @@ async fn test_mixed_full_lifecycle() {
     eprintln!("[STEP 1] cold WebRTC ✓ ({} frames)", wrtc.frames());
 
     for i in 0..5 {
-        let resp = thumbnail_with_retry(&tc, &env.stream_source).await;
+        let resp = tc
+            .get_with_retry(&env.stream_source, 3)
+            .await
+            .expect("thumbnail retry failed");
         assert_eq!(resp.status(), 200, "step2: thumbnail #{i}");
         let body = resp.bytes().await.unwrap();
         assert!(body.len() > 1000, "step2: thumbnail #{i} too small");
@@ -69,7 +75,10 @@ async fn test_mixed_full_lifecycle() {
     ensure_idle(&c).await;
     eprintln!("[STEP 5] confirmed idle");
 
-    let body = cold_thumbnail(&tc, cold_timeout(), &env.stream_source).await;
+    let body = tc
+        .wait(&env.stream_source, cold_timeout())
+        .await
+        .expect("cold thumbnail must return 200");
     assert!(body.len() > 1000, "step6: thumbnail body too small");
     eprintln!("[STEP 6] thumbnail after idle ✓ ({} bytes)", body.len());
 
@@ -97,7 +106,7 @@ async fn test_mixed_rtsp_plus_thumbnail_keeps_alive() {
     ensure_idle(&c).await;
 
     let mon = env.monitor();
-    let rtsp = RtspClient::new(&env.mcm_rtsp_url, Codec::H264, None)
+    let rtsp = RtspClient::new(&env.mcm_rtsp_url, Codec::H264, None, TCP_CONNECT)
         .await
         .expect("rtsp client");
     ensure_running(&c).await;
@@ -108,7 +117,10 @@ async fn test_mixed_rtsp_plus_thumbnail_keeps_alive() {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
     let mut consecutive_503 = 0u32;
     while tokio::time::Instant::now() < deadline {
-        let resp = thumbnail_with_retry(&tc, &env.stream_source).await;
+        let resp = tc
+            .get_with_retry(&env.stream_source, 3)
+            .await
+            .expect("thumbnail retry failed");
         if resp.status() == 200 {
             consecutive_503 = 0;
         } else {

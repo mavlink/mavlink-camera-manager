@@ -51,7 +51,7 @@ async fn test_zenoh_recovery_after_pipeline_error() {
     });
 
     client
-        .wait_for_streams_running(1, Duration::from_secs(60))
+        .wait_for_streams_running(1, FACTORY_READY)
         .await
         .unwrap_or_else(|e| {
             sender.kill().ok();

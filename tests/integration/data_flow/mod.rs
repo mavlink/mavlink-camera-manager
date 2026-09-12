@@ -17,10 +17,11 @@ pub(super) use crate::common::{
     gst_sender::spawn_udp_sender,
     mcm::{McmProcess, allocate_ports, allocate_udp_ports},
     poll::{drain, wait_first_frame, wait_for_rtsp_tcp, wait_for_thumbnail},
+    timeouts::{FACTORY_READY, FIRST_FRAME, TCP_CONNECT},
     types::*,
 };
 
-pub(super) const TIMEOUT: Duration = Duration::from_secs(30);
+pub(super) const TIMEOUT: Duration = FIRST_FRAME;
 
 /// Measurement window must exceed the idle grace period (5 s) so we prove
 /// the stream kept running continuously under real data flow.
@@ -73,7 +74,7 @@ pub(super) async fn collect_frames(
 /// Wait for the first frame, collect over the measurement window, and assert
 /// frame count meets the minimum.
 pub(super) async fn verify_data_flow(rx: &mut mpsc::UnboundedReceiver<FrameSample>, label: &str) {
-    wait_first_frame(rx, TIMEOUT, label).await;
+    wait_first_frame(rx, TIMEOUT, label).await.unwrap();
     let samples = collect_frames(rx, MEASUREMENT_WINDOW, MAX_FRAME_GAP).await;
     assert!(
         samples.len() >= MIN_FRAME_COUNT,
