@@ -179,20 +179,12 @@ impl AutoTranscodingPipeline {
         }
 
         let tail_head = tail_chain[0].clone();
-        autobin.connect_pad_added(move |_element, src_pad| {
-            if src_pad.direction() != gst::PadDirection::Src {
-                return;
-            }
-            let Some(sink_pad) = tail_head.static_pad("sink") else {
-                return;
-            };
-            if sink_pad.is_linked() {
-                return;
-            }
-            if let Err(error) = src_pad.link(&sink_pad) {
-                warn!("Failed to link {bin_factory} to downstream: {error}");
-            }
-        });
+        {
+            let tail_head = tail_head.clone();
+            autobin.connect_pad_added(move |_element, src_pad| {
+                link_autobin_src_to_tail(src_pad, &tail_head, bin_factory);
+            });
+        }
 
         let tail_refs: Vec<&gst::Element> = tail_chain.iter().collect();
         pipeline
@@ -205,6 +197,21 @@ impl AutoTranscodingPipeline {
             .context("Failed to add auto transcoding source chain elements")?;
         gst::Element::link_many([&source_capsfilter, &queue, &autobin])
             .context("Failed to link auto transcoding source chain")?;
+
+        // encodebin's src pad is always present, so pad-added never fires for it.
+        for src_pad in autobin.src_pads() {
+            link_autobin_src_to_tail(&src_pad, &tail_head, bin_factory);
+        }
+        if matches!(mode, AutoTranscodeMode::EncodeOnly) && autobin.static_pad("src").is_some() {
+            let sink_linked = tail_head
+                .static_pad("sink")
+                .is_some_and(|pad| pad.is_linked());
+            if !sink_linked {
+                return Err(anyhow!(
+                    "encodebin src pad was not linked to the transcoding tail"
+                ));
+            }
+        }
 
         if let Some(source_factory_name) = source_factory_name {
             let source = gst::ElementFactory::make(source_factory_name)
@@ -314,6 +321,21 @@ pub fn is_compressed_encode(encode: &VideoEncodeType) -> bool {
         encode,
         VideoEncodeType::Mjpg | VideoEncodeType::H264 | VideoEncodeType::H265
     )
+}
+
+fn link_autobin_src_to_tail(src_pad: &gst::Pad, tail_head: &gst::Element, bin_factory: &str) {
+    if src_pad.direction() != gst::PadDirection::Src {
+        return;
+    }
+    let Some(sink_pad) = tail_head.static_pad("sink") else {
+        return;
+    };
+    if sink_pad.is_linked() || src_pad.is_linked() {
+        return;
+    }
+    if let Err(error) = src_pad.link(&sink_pad) {
+        warn!("Failed to link {bin_factory} to downstream: {error}");
+    }
 }
 
 fn compressed_source_parser_factory(source_encode: &VideoEncodeType) -> Option<&'static str> {
@@ -566,7 +588,15 @@ mod tests {
             .expect("build NV12 to H264 auto pipeline");
 
         assert!(pipeline.by_name("source").is_some());
-        assert!(pipeline.by_name(AUTO_ENCODEBIN_NAME).is_some());
+        let encodebin = pipeline
+            .by_name(AUTO_ENCODEBIN_NAME)
+            .expect("encodebin element");
+        if let Some(encodebin_src) = encodebin.static_pad("src") {
+            assert!(
+                encodebin_src.is_linked(),
+                "encodebin src pad must be linked at build time"
+            );
+        }
         assert!(pipeline.by_name(AUTO_TRANSCODEBIN_NAME).is_none());
         assert!(
             pipeline

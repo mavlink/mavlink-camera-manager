@@ -599,6 +599,73 @@ mod tests {
         }
     }
 
+    fn play_until_rtp_buffer(
+        pipeline: &gst::Pipeline,
+        pipeline_id: &Arc<uuid::Uuid>,
+    ) -> Result<()> {
+        let rtp_tee_name = format!("{PIPELINE_RTP_TEE_NAME}-{pipeline_id}");
+        let rtp_tee = pipeline
+            .by_name(&rtp_tee_name)
+            .context("Fake transcoding pipeline is missing the RTP tee")?;
+        let queue = gst::ElementFactory::make("queue")
+            .build()
+            .context("Failed to create probe queue")?;
+        let fakesink = gst::ElementFactory::make("fakesink")
+            .build()
+            .context("Failed to create fakesink")?;
+        fakesink.set_property("sync", false);
+        fakesink.set_property("async", false);
+        pipeline
+            .add_many([&queue, &fakesink])
+            .context("Failed to add RTP probe elements")?;
+        queue
+            .link(&fakesink)
+            .context("Failed to link probe queue to fakesink")?;
+        let tee_src = rtp_tee
+            .request_pad_simple("src_%u")
+            .context("Failed to request RTP tee src pad")?;
+        let queue_sink = queue
+            .static_pad("sink")
+            .context("Probe queue has no sink pad")?;
+        tee_src
+            .link(&queue_sink)
+            .context("Failed to link RTP tee to probe queue")?;
+
+        let buffer_count = std::sync::atomic::AtomicU32::new(0);
+        let buffer_count = std::sync::Arc::new(buffer_count);
+        let probe_count = buffer_count.clone();
+        queue_sink.add_probe(gst::PadProbeType::BUFFER, move |_pad, _info| {
+            probe_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            gst::PadProbeReturn::Ok
+        });
+
+        pipeline
+            .set_state(gst::State::Playing)
+            .context("Failed to set fake transcoding pipeline to Playing")?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let bus = pipeline
+            .bus()
+            .context("Fake transcoding pipeline has no bus")?;
+        while std::time::Instant::now() < deadline {
+            if buffer_count.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+                let _ = pipeline.set_state(gst::State::Null);
+                return Ok(());
+            }
+            if let Some(message) = bus.timed_pop(gst::ClockTime::from_mseconds(50)) {
+                if let gst::MessageView::Error(error) = message.view() {
+                    let _ = pipeline.set_state(gst::State::Null);
+                    return Err(anyhow!(
+                        "Fake transcoding pipeline bus error: {} ({})",
+                        error.error(),
+                        error.debug().unwrap_or_default()
+                    ));
+                }
+            }
+        }
+        let _ = pipeline.set_state(gst::State::Null);
+        Err(anyhow!("Fake transcoding pipeline produced no RTP buffers"))
+    }
+
     #[test]
     fn auto_encode_uses_videotestsrc_and_encodebin() {
         let _ = gst::init();
@@ -622,6 +689,46 @@ mod tests {
         assert!(pipeline.by_name(AUTO_ENCODEBIN_NAME).is_some());
         assert!(pipeline.by_name("fake-source-encoder").is_none());
         assert!(pipeline.by_name("fake-source-videoconvert").is_some());
+        play_until_rtp_buffer(&pipeline, &pipeline_id)
+            .unwrap_or_else(|error| panic!("auto encode should produce RTP buffers: {error}"));
+    }
+
+    #[test]
+    fn manual_encode_uses_videotestsrc_and_named_encoder() {
+        let _ = gst::init();
+        if gst::ElementFactory::find("x264enc").is_none() {
+            return;
+        }
+
+        let pipeline_id = Arc::new(uuid::Uuid::nil());
+        let pipeline = FakePipeline::try_new(
+            &pipeline_id,
+            &fake_video_and_stream(
+                VideoEncodeType::Nv12,
+                VideoEncodeType::H264,
+                SourceConfiguration::ManualTranscoding(ManualTranscodingConfig {
+                    encoder: "x264enc".to_string(),
+                    encoder_properties: Default::default(),
+                    decoder: String::new(),
+                    decoder_properties: Default::default(),
+                }),
+            ),
+        )
+        .expect("build fake manual encode pipeline");
+
+        assert_eq!(
+            pipeline
+                .by_name("source")
+                .expect("source element")
+                .factory()
+                .unwrap()
+                .name(),
+            "videotestsrc"
+        );
+        assert!(pipeline.by_name("encoder").is_some());
+        assert!(pipeline.by_name("fake-source-encoder").is_none());
+        play_until_rtp_buffer(&pipeline, &pipeline_id)
+            .unwrap_or_else(|error| panic!("manual encode should produce RTP buffers: {error}"));
     }
 
     #[test]
