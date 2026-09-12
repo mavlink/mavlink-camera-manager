@@ -103,7 +103,13 @@ async fn test_auto_encode_rtsp_data_flow() {
         for sink_encode in COMPRESSED_ENCODES {
             let slug = cell_slug(source_encode, sink_encode);
             let name = format!("auto_encode_{slug}");
-            if skip_missing_factories(&name, &["videotestsrc", "videoconvert", "encodebin"]) {
+            let mut required = vec!["videotestsrc", "videoconvert"];
+            if *sink_encode == "MJPG" {
+                required.push("jpegenc");
+            } else {
+                required.push("encodebin");
+            }
+            if skip_missing_factories(&name, &required) {
                 continue;
             }
             let mcm = McmProcess::start().await.unwrap();
@@ -179,7 +185,12 @@ async fn test_auto_transcode_rtsp_data_flow() {
             }
             let slug = cell_slug(source_encode, sink_encode);
             let name = format!("auto_transcode_{slug}");
-            let mut required = vec!["videotestsrc", "videoconvert", "encodebin", "decodebin"];
+            let mut required = vec!["videotestsrc", "videoconvert", "decodebin"];
+            if *sink_encode == "MJPG" {
+                required.push("jpegenc");
+            } else {
+                required.push("encodebin");
+            }
             if let Some(encoder) = fake_compressed_source_encoder(source_encode) {
                 required.push(encoder);
             }
