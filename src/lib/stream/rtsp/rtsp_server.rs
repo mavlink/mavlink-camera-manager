@@ -78,41 +78,42 @@ impl RTSPServer {
             return;
         }
 
+        // This thread is spawned from `default()` before the lazy_static mutex
+        // is published. Accessing `RTSP_SERVER` during that window deadlocks.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Own context so attach does not fight DeviceMonitor's default-context
+        // pump. A failed attach to the default context can leave the listen
+        // socket bound; every retry then hits EADDRINUSE and clients see
+        // connection refused.
+        let main_context = gst::glib::MainContext::new();
         loop {
-            std::thread::sleep(std::time::Duration::from_secs(1));
-            if !RTSPServer::is_running() {
-                continue;
+            if let Err(error) = main_context.with_thread_default(|| {
+                let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
+                let id = match rtsp_server.server.attach(Some(&main_context)) {
+                    Ok(id) => id,
+                    Err(error) => {
+                        error!(
+                            "Failed attaching RTSP server to main context: {error:?}, retrying..."
+                        );
+                        return;
+                    }
+                };
+
+                let main_loop = gst::glib::MainLoop::new(Some(&main_context), false);
+                rtsp_server.run = true;
+                drop(rtsp_server);
+
+                main_loop.run();
+
+                let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
+                rtsp_server.run = false;
+
+                id.remove();
+            }) {
+                error!("Failed to set RTSP thread-default main context: {error:?}");
             }
-
-            let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
-
-            // Attach the server to our main context.
-            // A main context is the thing where other stuff is registering itself for its
-            // events (e.g. sockets, GStreamer bus, ...) and the main loop is something that
-            // polls the main context for its events and dispatches them to whoever is
-            // interested in them. In this example, we only do have one, so we can
-            // leave the context parameter empty, it will automatically select
-            // the default one.
-            let id = match rtsp_server.server.attach(None) {
-                Ok(id) => id,
-                Err(err) => {
-                    error!("Failed attaching RTSP server to main context: {err:?}, retrying...");
-                    continue;
-                }
-            };
-
-            // Start the mainloop. From this point on, the server will start to serve
-            // our quality content to connecting clients.
-            let main_loop = gst::glib::MainLoop::new(None, false);
-            rtsp_server.run = true;
-            drop(rtsp_server);
-
-            main_loop.run();
-
-            let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
-            rtsp_server.run = false;
-
-            id.remove();
+            std::thread::sleep(std::time::Duration::from_secs(1));
         }
     }
 

@@ -27,6 +27,7 @@ use crate::{
 
 use super::{
     Stream, pipeline_controls,
+    rtsp::rtsp_server::RTSPServer,
     types::StreamStatus,
     webrtc::{self, signalling_protocol::RTCSessionDescription},
 };
@@ -64,6 +65,9 @@ pub fn init() {
     };
 
     config_gst_plugins();
+
+    let rtsp_port = RTSPServer::port();
+    debug!("Starting RTSP server on port {rtsp_port}");
 }
 
 #[instrument(level = "debug")]
