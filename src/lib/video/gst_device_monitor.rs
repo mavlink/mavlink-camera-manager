@@ -4,25 +4,27 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use gst_app::prelude::*;
+use gst::prelude::*;
 use tracing::*;
 
 lazy_static! {
     static ref MANAGER: Arc<Mutex<Manager>> = {
         // Constructing `gst::DeviceMonitor` requires GStreamer to be initialized; ensure it is so
         // that callers like cameras_available() work even when the binary entry point hasn't run.
-        gst::init().expect("Failed to initialize GStreamer");
+        gst::init().unwrap_or_else(|error| {
+            eprintln!("Failed to initialize GStreamer: {error}");
+        });
 
         let manager = Manager::default();
         // An unstarted monitor has no providers, and its `devices()` silently returns nothing —
         // including during settings init, which builds default streams before `init()` runs.
         manager.monitor.set_show_all_devices(true);
         manager.monitor.set_show_all(true);
-        manager
-            .monitor
-            .start()
-            .expect("Failed to start the GStreamer device monitor");
-        wait_for_video_devices(&manager.monitor);
+        if let Err(error) = manager.monitor.start() {
+            eprintln!("Failed to start the GStreamer device monitor: {error}");
+        } else {
+            wait_for_video_devices(&manager.monitor);
+        }
 
         Arc::new(Mutex::new(manager))
     };
@@ -39,9 +41,32 @@ impl Drop for Manager {
     }
 }
 
+fn lock_manager() -> std::sync::MutexGuard<'static, Manager> {
+    MANAGER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Identify v4l2 / libcamera from GstDevice properties without `create_element`.
+/// Instantiating `libcamerasrc` constructs a process-wide CameraManager; libcamera
+/// aborts if a second one already exists (live stream, device provider, or probe).
+pub(crate) fn source_factory_name(device: &gst::Device) -> Option<&'static str> {
+    let properties = device.properties()?;
+    if properties.has_field("device.path") {
+        return Some("v4l2src");
+    }
+    if properties
+        .iter()
+        .any(|(name, _value)| name.as_str().starts_with("api.libcamera."))
+    {
+        return Some("libcamerasrc");
+    }
+    None
+}
+
 #[instrument(level = "debug")]
 pub fn init() {
-    let manager_guard = MANAGER.lock().unwrap();
+    let manager_guard = lock_manager();
 
     let providers = manager_guard.monitor.providers();
     info!("GST Device Providers: {providers:#?}");
@@ -49,13 +74,15 @@ pub fn init() {
 
 #[instrument(level = "debug")]
 pub(crate) fn video_devices() -> Result<Vec<glib::WeakRef<gst::Device>>> {
-    let monitor = &MANAGER.lock().unwrap().monitor;
+    let monitor = &lock_manager().monitor;
 
     let devices = monitor
         .devices()
         .iter()
         .filter_map(|device| {
-            if device.device_class().ne("Video/Source") {
+            // The canonical class is "Video/Source" but libcamera-gst reports
+            let class = device.device_class();
+            if class.ne("Video/Source") && class.ne("Source/Video") {
                 return None;
             }
 
@@ -67,7 +94,7 @@ pub(crate) fn video_devices() -> Result<Vec<glib::WeakRef<gst::Device>>> {
 }
 
 #[instrument(level = "debug")]
-pub fn v4l_devices() -> Result<Vec<glib::WeakRef<gst::Device>>> {
+pub fn local_devices() -> Result<Vec<glib::WeakRef<gst::Device>>> {
     let devices = video_devices()?
         .iter()
         .filter(|device_weak| {
@@ -75,13 +102,11 @@ pub fn v4l_devices() -> Result<Vec<glib::WeakRef<gst::Device>>> {
                 return false;
             };
 
-            device.properties().iter().any(|s| {
-                let Ok(api) = s.get::<String>("device.api") else {
-                    return false;
-                };
+            let Some(factory_name) = source_factory_name(&device) else {
+                return false;
+            };
 
-                api.eq("v4l2")
-            })
+            matches!(factory_name, "v4l2src" | "libcamerasrc")
         })
         .cloned()
         .collect();
@@ -90,21 +115,23 @@ pub fn v4l_devices() -> Result<Vec<glib::WeakRef<gst::Device>>> {
 }
 
 #[instrument(level = "debug")]
-pub fn v4l_device_with_path(device_path: &str) -> Result<glib::WeakRef<gst::Device>> {
-    v4l_devices()?
+pub fn local_device_with_path(device_path: &str) -> Result<glib::WeakRef<gst::Device>> {
+    local_devices()?
         .iter()
         .find(|device_weak| {
             let Some(device) = device_weak.upgrade() else {
                 return false;
             };
 
-            device.properties().iter().any(|s| {
-                let Ok(path) = s.get::<String>("device.path") else {
-                    return false;
-                };
+            // Match against `device.path` (v4l2-style) or the device's
+            // display name (libcamera-style, e.g. "/base/soc/...").
+            let by_property = device.properties().iter().any(|s| {
+                s.get::<String>("device.path")
+                    .map(|p| p.eq(device_path))
+                    .unwrap_or(false)
+            });
 
-                path.eq(device_path)
-            })
+            by_property || device.display_name().eq(device_path)
         })
         .cloned()
         .context("Device not found")
@@ -146,7 +173,7 @@ mod tests {
         // An unstarted monitor has no providers and `devices()` returns nothing. Starting in
         // the lazy_static means enumeration works before an explicit `init()` call.
         let providers = {
-            let manager_guard = MANAGER.lock().unwrap();
+            let manager_guard = lock_manager();
             manager_guard.monitor.providers()
         };
         assert!(!providers.is_empty());

@@ -1,8 +1,8 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A timestamp, represented as an offset from a user-defined epoch.
 /// <https://docs.foxglove.dev/docs/visualization/message-schemas/built-in-types#time>
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Timestamp {
     /// Seconds since epoch.
     sec: u32,
@@ -10,6 +10,7 @@ pub struct Timestamp {
     nsec: u32,
 }
 
+#[allow(dead_code)]
 impl Timestamp {
     pub fn new(sec: u32, nsec: u32) -> Self {
         Self { sec, nsec }
@@ -22,11 +23,15 @@ impl Timestamp {
             nsec: now.timestamp_subsec_nanos(),
         }
     }
+
+    pub fn to_nanos(&self) -> u64 {
+        self.sec as u64 * 1_000_000_000 + self.nsec as u64
+    }
 }
 
 /// A single frame of a compressed video bitstream
 /// <https://docs.foxglove.dev/docs/visualization/message-schemas/compressed-video>
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CompressedVideo {
     /// Timestamp of video frame
     pub timestamp: Timestamp,
