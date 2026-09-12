@@ -25,66 +25,25 @@ fn cell_slug(source_encode: &str, sink_encode: &str) -> String {
     )
 }
 
-async fn try_verify_data_flow(rx: &mut mpsc::UnboundedReceiver<FrameSample>, label: &str) -> bool {
-    let deadline = tokio::time::Instant::now() + MEASUREMENT_WINDOW;
-    loop {
-        if !drain(rx).is_empty() {
-            break;
-        }
-        if tokio::time::Instant::now() >= deadline {
-            eprintln!("skip {label}: no frames within {MEASUREMENT_WINDOW:?}");
-            return false;
-        }
-        tokio::time::sleep(Duration::from_millis(200)).await;
-    }
-    let samples = collect_frames(rx, MEASUREMENT_WINDOW, MAX_FRAME_GAP).await;
-    if samples.len() < MIN_FRAME_COUNT {
-        eprintln!(
-            "skip {label}: expected at least {MIN_FRAME_COUNT} frames over {MEASUREMENT_WINDOW:?}, got {}",
-            samples.len()
-        );
-        return false;
-    }
-    true
+fn gst_factory_missing(factory_name: &str) -> bool {
+    gst::ElementFactory::find(factory_name).is_none()
 }
 
-async fn rtsp_factory_ready(url: &str, timeout: Duration) -> bool {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+fn fake_compressed_source_encoder(source_encode: &str) -> Option<&'static str> {
+    match source_encode {
+        "H264" => Some("x264enc"),
+        "H265" => Some("x265enc"),
+        "MJPG" => Some("jpegenc"),
+        _ => None,
+    }
+}
 
-    let parsed: url::Url = url.parse().expect("rtsp url");
-    let host = parsed.host_str().unwrap_or("127.0.0.1");
-    let port = parsed.port().unwrap_or(8554);
-    let addr = format!("{host}:{port}");
-    let path = if parsed.path().is_empty() {
-        "/"
-    } else {
-        parsed.path()
-    };
-    let deadline = tokio::time::Instant::now() + timeout;
-    while tokio::time::Instant::now() < deadline {
-        let factory_ready = async {
-            let mut stream = tokio::time::timeout(
-                Duration::from_secs(2),
-                tokio::net::TcpStream::connect(&addr),
-            )
-            .await
-            .ok()?
-            .ok()?;
-            let request = format!("OPTIONS rtsp://{addr}{path} RTSP/1.0\r\nCSeq: 1\r\n\r\n");
-            stream.write_all(request.as_bytes()).await.ok()?;
-            let mut buffer = [0u8; 256];
-            let bytes_read = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buffer))
-                .await
-                .ok()?
-                .ok()?;
-            let response = std::str::from_utf8(&buffer[..bytes_read]).unwrap_or("");
-            Some(response.starts_with("RTSP/1.0 200"))
-        }
-        .await;
-        if factory_ready == Some(true) {
+fn skip_missing_factories(name: &str, factory_names: &[&str]) -> bool {
+    for factory_name in factory_names {
+        if gst_factory_missing(factory_name) {
+            eprintln!("skip {name}: missing GStreamer factory {factory_name}");
             return true;
         }
-        tokio::time::sleep(Duration::from_millis(250)).await;
     }
     false
 }
@@ -98,54 +57,30 @@ async fn run_auto_or_manual_rtsp(
     sink_encode: &str,
     measure_rtsp: bool,
 ) {
-    if let Err(error) = client.create_stream(post).await {
-        eprintln!("skip {name}: create_stream failed: {error:#}");
-        return;
-    }
-    if let Err(error) = client.wait_for_streams_running(1, TIMEOUT).await {
-        eprintln!("skip {name}: stream did not run: {error:#}");
-        let _ = client.delete_stream(name).await;
-        return;
-    }
+    client
+        .create_stream(post)
+        .await
+        .unwrap_or_else(|error| panic!("{name}: create_stream failed: {error:#}"));
+    client
+        .wait_for_streams_running(1, TIMEOUT)
+        .await
+        .unwrap_or_else(|error| panic!("{name}: stream did not run: {error:#}"));
 
     if measure_rtsp {
         let rtsp_url = mcm.rtsp_url(path);
-        if !rtsp_factory_ready(&rtsp_url, TIMEOUT).await {
-            eprintln!("skip {name}: RTSP factory not serving within {TIMEOUT:?}");
-        } else {
-            let (tx, mut rx) = mpsc::unbounded_channel();
-            match stream_clients::rtsp_client::RtspClient::new(
-                &rtsp_url,
-                rtsp_codec(sink_encode),
-                Some(tx),
-            )
+        wait_for_rtsp_tcp(&rtsp_url, TIMEOUT)
             .await
-            {
-                Ok(_rtsp) => {
-                    let _ = try_verify_data_flow(&mut rx, name).await;
-                }
-                Err(error) => {
-                    eprintln!("skip {name}: RTSP client failed: {error:#}");
-                }
-            }
-        }
-    }
-
-    if let Err(error) = client.delete_stream(name).await {
-        eprintln!("skip {name}: delete_stream failed: {error:#}");
-    }
-    let deadline = tokio::time::Instant::now() + TIMEOUT;
-    while tokio::time::Instant::now() < deadline {
-        match client.list_streams().await {
-            Ok(streams)
-                if streams
-                    .iter()
-                    .all(|stream| stream.video_and_stream.name != name) =>
-            {
-                break;
-            }
-            _ => tokio::time::sleep(Duration::from_millis(200)).await,
-        }
+            .unwrap_or_else(|error| panic!("{name}: RTSP factory not ready: {error:#}"));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let _rtsp = stream_clients::rtsp_client::RtspClient::new(
+            &rtsp_url,
+            rtsp_codec(sink_encode),
+            Some(tx),
+            TCP_CONNECT,
+        )
+        .await
+        .unwrap_or_else(|error| panic!("{name}: RTSP client failed: {error:#}"));
+        verify_data_flow(&mut rx, name).await;
     }
 }
 
@@ -163,13 +98,15 @@ async fn assert_post_rejected(client: &McmClient, post: &PostStream, label: &str
 #[tokio::test]
 async fn test_auto_encode_rtsp_data_flow() {
     gst::init().unwrap();
-    let mcm = McmProcess::start().await.unwrap();
-    let client = McmClient::new(&mcm.rest_url());
 
     for source_encode in RAW_ENCODES {
         for sink_encode in COMPRESSED_ENCODES {
             let slug = cell_slug(source_encode, sink_encode);
             let name = format!("auto_encode_{slug}");
+            if skip_missing_factories(&name, &["videotestsrc", "videoconvert", "encodebin"]) {
+                continue;
+            }
+            let mcm = McmProcess::start().await.unwrap();
             let path = format!("auto_encode_{slug}");
             let post = McmClient::build_fake_auto_rtsp(
                 source_encode,
@@ -182,6 +119,7 @@ async fn test_auto_encode_rtsp_data_flow() {
                 Some(NON_LAZY),
                 mcm.rtsp_port,
             );
+            let client = McmClient::new(&mcm.rest_url());
             run_auto_or_manual_rtsp(&client, &mcm, &name, &path, &post, sink_encode, true).await;
         }
     }
@@ -190,13 +128,19 @@ async fn test_auto_encode_rtsp_data_flow() {
 #[tokio::test]
 async fn test_auto_decode_rtsp_data_flow() {
     gst::init().unwrap();
-    let mcm = McmProcess::start().await.unwrap();
-    let client = McmClient::new(&mcm.rest_url());
 
     for source_encode in COMPRESSED_ENCODES {
         for sink_encode in RAW_ENCODES {
             let slug = cell_slug(source_encode, sink_encode);
             let name = format!("auto_decode_{slug}");
+            let mut required = vec!["videotestsrc", "videoconvert", "decodebin"];
+            if let Some(encoder) = fake_compressed_source_encoder(source_encode) {
+                required.push(encoder);
+            }
+            if skip_missing_factories(&name, &required) {
+                continue;
+            }
+            let mcm = McmProcess::start().await.unwrap();
             let path = format!("auto_decode_{slug}");
             let post = McmClient::build_fake_auto_rtsp(
                 source_encode,
@@ -209,6 +153,7 @@ async fn test_auto_decode_rtsp_data_flow() {
                 Some(NON_LAZY),
                 mcm.rtsp_port,
             );
+            let client = McmClient::new(&mcm.rest_url());
             run_auto_or_manual_rtsp(
                 &client,
                 &mcm,
@@ -226,8 +171,6 @@ async fn test_auto_decode_rtsp_data_flow() {
 #[tokio::test]
 async fn test_auto_transcode_rtsp_data_flow() {
     gst::init().unwrap();
-    let mcm = McmProcess::start().await.unwrap();
-    let client = McmClient::new(&mcm.rest_url());
 
     for source_encode in COMPRESSED_ENCODES {
         for sink_encode in COMPRESSED_ENCODES {
@@ -236,6 +179,14 @@ async fn test_auto_transcode_rtsp_data_flow() {
             }
             let slug = cell_slug(source_encode, sink_encode);
             let name = format!("auto_transcode_{slug}");
+            let mut required = vec!["videotestsrc", "videoconvert", "encodebin", "decodebin"];
+            if let Some(encoder) = fake_compressed_source_encoder(source_encode) {
+                required.push(encoder);
+            }
+            if skip_missing_factories(&name, &required) {
+                continue;
+            }
+            let mcm = McmProcess::start().await.unwrap();
             let path = format!("auto_transcode_{slug}");
             let post = McmClient::build_fake_auto_rtsp(
                 source_encode,
@@ -248,6 +199,7 @@ async fn test_auto_transcode_rtsp_data_flow() {
                 Some(NON_LAZY),
                 mcm.rtsp_port,
             );
+            let client = McmClient::new(&mcm.rest_url());
             run_auto_or_manual_rtsp(&client, &mcm, &name, &path, &post, sink_encode, true).await;
         }
     }
@@ -256,9 +208,10 @@ async fn test_auto_transcode_rtsp_data_flow() {
 #[tokio::test]
 async fn test_manual_encode_rtsp_data_flow() {
     gst::init().unwrap();
-    let mcm = McmProcess::start().await.unwrap();
-    let client = McmClient::new(&mcm.rest_url());
-    let encoders = client.list_gst_encoders().await.unwrap();
+    let encoder_probe = McmProcess::start().await.unwrap();
+    let encoder_client = McmClient::new(&encoder_probe.rest_url());
+    let encoders = encoder_client.list_gst_encoders().await.unwrap();
+    drop(encoder_probe);
 
     for source_encode in RAW_ENCODES {
         for sink_encode in COMPRESSED_ENCODES {
@@ -268,6 +221,10 @@ async fn test_manual_encode_rtsp_data_flow() {
             };
             let slug = cell_slug(source_encode, sink_encode);
             let name = format!("manual_encode_{slug}");
+            if skip_missing_factories(&name, &["videotestsrc", "videoconvert", &encoder]) {
+                continue;
+            }
+            let mcm = McmProcess::start().await.unwrap();
             let path = format!("manual_encode_{slug}");
             let post = McmClient::build_fake_manual_rtsp(
                 source_encode,
@@ -282,6 +239,7 @@ async fn test_manual_encode_rtsp_data_flow() {
                 Some(NON_LAZY),
                 mcm.rtsp_port,
             );
+            let client = McmClient::new(&mcm.rest_url());
             run_auto_or_manual_rtsp(&client, &mcm, &name, &path, &post, sink_encode, true).await;
         }
     }
@@ -290,10 +248,11 @@ async fn test_manual_encode_rtsp_data_flow() {
 #[tokio::test]
 async fn test_manual_transcode_rtsp_data_flow() {
     gst::init().unwrap();
-    let mcm = McmProcess::start().await.unwrap();
-    let client = McmClient::new(&mcm.rest_url());
-    let encoders = client.list_gst_encoders().await.unwrap();
-    let decoders = client.list_gst_decoders().await.unwrap();
+    let probe = McmProcess::start().await.unwrap();
+    let probe_client = McmClient::new(&probe.rest_url());
+    let encoders = probe_client.list_gst_encoders().await.unwrap();
+    let decoders = probe_client.list_gst_decoders().await.unwrap();
+    drop(probe);
 
     for source_encode in COMPRESSED_ENCODES {
         for sink_encode in COMPRESSED_ENCODES {
@@ -310,6 +269,19 @@ async fn test_manual_transcode_rtsp_data_flow() {
             };
             let slug = cell_slug(source_encode, sink_encode);
             let name = format!("manual_transcode_{slug}");
+            let mut required = vec![
+                "videotestsrc",
+                "videoconvert",
+                encoder.as_str(),
+                decoder.as_str(),
+            ];
+            if let Some(source_encoder) = fake_compressed_source_encoder(source_encode) {
+                required.push(source_encoder);
+            }
+            if skip_missing_factories(&name, &required) {
+                continue;
+            }
+            let mcm = McmProcess::start().await.unwrap();
             let path = format!("manual_transcode_{slug}");
             let post = McmClient::build_fake_manual_rtsp(
                 source_encode,
@@ -324,6 +296,7 @@ async fn test_manual_transcode_rtsp_data_flow() {
                 Some(NON_LAZY),
                 mcm.rtsp_port,
             );
+            let client = McmClient::new(&mcm.rest_url());
             run_auto_or_manual_rtsp(&client, &mcm, &name, &path, &post, sink_encode, true).await;
         }
     }
@@ -332,9 +305,10 @@ async fn test_manual_transcode_rtsp_data_flow() {
 #[tokio::test]
 async fn test_manual_decode_rtsp_data_flow() {
     gst::init().unwrap();
-    let mcm = McmProcess::start().await.unwrap();
-    let client = McmClient::new(&mcm.rest_url());
-    let decoders = client.list_gst_decoders().await.unwrap();
+    let probe = McmProcess::start().await.unwrap();
+    let probe_client = McmClient::new(&probe.rest_url());
+    let decoders = probe_client.list_gst_decoders().await.unwrap();
+    drop(probe);
 
     for source_encode in COMPRESSED_ENCODES {
         let Some(decoder) = decoders.first_factory(source_encode) else {
@@ -344,6 +318,14 @@ async fn test_manual_decode_rtsp_data_flow() {
         for sink_encode in RAW_ENCODES {
             let slug = cell_slug(source_encode, sink_encode);
             let name = format!("manual_decode_{slug}");
+            let mut required = vec!["videotestsrc", "videoconvert", decoder.as_str()];
+            if let Some(source_encoder) = fake_compressed_source_encoder(source_encode) {
+                required.push(source_encoder);
+            }
+            if skip_missing_factories(&name, &required) {
+                continue;
+            }
+            let mcm = McmProcess::start().await.unwrap();
             let path = format!("manual_decode_{slug}");
             let post = McmClient::build_fake_manual_rtsp(
                 source_encode,
@@ -358,6 +340,7 @@ async fn test_manual_decode_rtsp_data_flow() {
                 Some(NON_LAZY),
                 mcm.rtsp_port,
             );
+            let client = McmClient::new(&mcm.rest_url());
             run_auto_or_manual_rtsp(
                 &client,
                 &mcm,
