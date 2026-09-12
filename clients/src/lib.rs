@@ -17,34 +17,42 @@ use tokio::sync::mpsc;
 
 #[async_trait::async_trait]
 pub trait StreamClient {
+    /// Cumulative buffers seen on the probe pad since connect, not a frame rate.
     fn frames(&self) -> u64;
     fn pipeline(&self) -> &gst::Pipeline;
 
     async fn wait_for_frames(&self, min: u64, timeout: Duration) -> Result<u64> {
+        anyhow::ensure!(min > 0, "min must be positive");
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
-            let n = self.frames();
-            if n >= min {
-                return Ok(n);
+            let count = self.frames();
+            if count >= min {
+                return Ok(count);
             }
             if tokio::time::Instant::now() > deadline {
-                anyhow::bail!("only got {n} frames, wanted {min}");
+                anyhow::bail!("only got {count} frames, wanted {min}");
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
 
-    async fn wait_for_continuous_frames(
-        &self,
-        duration: Duration,
-        check_interval: Duration,
-    ) -> Result<u64> {
+    /// Wait until `duration` elapses while frames keep arriving at about `fps`.
+    ///
+    /// `check_interval` is one frame period (`1/fps`). Stall is three seconds of
+    /// content at `fps` (90 missed frames at 30 fps), matching the previous
+    /// hardcoded 3s budget.
+    async fn wait_for_continuous_frames(&self, fps: f64, duration: Duration) -> Result<u64> {
+        anyhow::ensure!(fps > 0.0, "fps must be positive");
+        let frame_period = Duration::from_secs_f64(1.0 / fps);
+        anyhow::ensure!(
+            duration > frame_period,
+            "duration must exceed one frame period"
+        );
         let deadline = tokio::time::Instant::now() + duration;
         let mut last_count = self.frames();
         let mut stall_start: Option<tokio::time::Instant> = None;
-        let max_stall = Duration::from_secs(3);
+        let max_stall = Duration::from_secs_f64(90.0 / fps);
         while tokio::time::Instant::now() < deadline {
-            tokio::time::sleep(check_interval).await;
             let now_count = self.frames();
             if now_count > last_count {
                 stall_start = None;
@@ -58,6 +66,11 @@ pub trait StreamClient {
                     );
                 }
             }
+            let now = tokio::time::Instant::now();
+            if now >= deadline {
+                break;
+            }
+            tokio::time::sleep((deadline - now).min(frame_period)).await;
         }
         Ok(self.frames())
     }
