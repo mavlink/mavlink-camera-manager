@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use tracing::warn;
 
 pub struct ThumbnailClient {
     client: reqwest::Client,
@@ -9,13 +10,18 @@ pub struct ThumbnailClient {
 
 impl ThumbnailClient {
     pub fn new(base_url: &str) -> Self {
+        assert!(!base_url.is_empty(), "base_url must be non-empty");
         Self {
-            client: reqwest::Client::new(),
-            base_url: base_url.to_string(),
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(30))
+                .build()
+                .expect("building reqwest client"),
+            base_url: base_url.trim_end_matches('/').to_string(),
         }
     }
 
-    pub async fn thumbnail(&self, source: &str) -> Result<reqwest::Response> {
+    pub async fn get(&self, source: &str) -> Result<reqwest::Response> {
+        anyhow::ensure!(!source.is_empty(), "source must be non-empty");
         Ok(self
             .client
             .get(format!("{}/thumbnail", self.base_url))
@@ -24,79 +30,52 @@ impl ThumbnailClient {
             .await?)
     }
 
-    pub async fn thumbnail_with_retry(&self, source: &str, retries: u32) -> reqwest::Response {
-        let mut last_err = None;
+    pub async fn get_with_retry(&self, source: &str, retries: u32) -> Result<reqwest::Response> {
+        anyhow::ensure!(retries > 0, "retries must be positive");
+        let mut last_error = None;
         for attempt in 0..retries {
-            match self.thumbnail(source).await {
-                Ok(resp) => return resp,
-                Err(e) => {
-                    eprintln!(
-                        "thumbnail request attempt {}/{retries} failed: {e}",
-                        attempt + 1
+            match self.get(source).await {
+                Ok(response) => return Ok(response),
+                Err(error) => {
+                    warn!(
+                        attempt = attempt + 1,
+                        retries, %error, "thumbnail request failed"
                     );
-                    last_err = Some(e);
+                    last_error = Some(error);
                     if attempt + 1 < retries {
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                 }
             }
         }
-        panic!(
-            "thumbnail request failed after {retries} attempts: {}",
-            last_err.unwrap()
-        );
+        Err(last_error.unwrap())
+            .context(format!("thumbnail request failed after {retries} attempts"))
     }
 
-    pub async fn cold_thumbnail(&self, source: &str, timeout: Duration) -> Vec<u8> {
+    pub async fn wait(&self, source: &str, timeout: Duration) -> Result<Vec<u8>> {
+        anyhow::ensure!(!source.is_empty(), "source must be non-empty");
         let deadline = tokio::time::Instant::now() + timeout;
+        let mut last_status = String::from("no response");
         loop {
-            let resp = match self.thumbnail(source).await {
-                Ok(r) => r,
-                Err(e) => {
-                    eprintln!("cold_thumbnail request failed (transient): {e}");
-                    assert!(
-                        tokio::time::Instant::now() < deadline,
-                        "cold thumbnail request never succeeded: {e}"
-                    );
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                    continue;
+            match self.get(source).await {
+                Ok(response) => {
+                    let status = response.status();
+                    if status == 200 {
+                        return Ok(response.bytes().await?.to_vec());
+                    }
+                    last_status = format!("HTTP {status}");
+                    warn!(%status, "thumbnail not ready");
                 }
-            };
-            if resp.status() == 200 {
-                return resp.bytes().await.unwrap().to_vec();
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "cold thumbnail never returned 200 (got {})",
-                resp.status()
-            );
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-    }
-
-    pub async fn ensure_data_flowing(&self, source: &str, timeout: Duration) {
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            let resp = match self.thumbnail(source).await {
-                Ok(r) => r,
-                Err(e) => {
-                    eprintln!("thumbnail request failed (transient): {e}");
-                    assert!(
-                        tokio::time::Instant::now() < deadline,
-                        "thumbnail request never succeeded: {e}"
-                    );
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                    continue;
+                Err(error) => {
+                    last_status = error.to_string();
+                    warn!(%error, "thumbnail request failed (transient)");
                 }
-            };
-            if resp.status() == 200 {
-                return;
             }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "thumbnail never returned 200 (data not flowing, last status: {})",
-                resp.status()
-            );
+            if tokio::time::Instant::now() >= deadline {
+                anyhow::bail!(
+                    "thumbnail never returned 200 within {timeout:?} (last: {last_status})"
+                );
+            }
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
