@@ -40,8 +40,6 @@ impl ManualTranscodingPipeline {
             return self.build_raw_pipeline(device_path, pipeline_id, source_factory_name);
         }
 
-        let source_factory_name = source_factory_name
-            .context("Compressed manual transcoding requires a source factory name")?;
         let frame_interval = frame_interval
             .context("Compressed manual transcoding requires frame interval for source caps")?;
         if self.encoding.is_none() {
@@ -196,7 +194,7 @@ impl ManualTranscodingPipeline {
     fn build_decode_pipeline(
         &self,
         pipeline_id: &Arc<uuid::Uuid>,
-        source_factory_name: &str,
+        source_factory_name: Option<&str>,
         frame_interval: &FrameInterval,
     ) -> Result<gst::Pipeline> {
         let decoder_factory_name = decoder_factory_name(&self.source_encode, &self.manual_config)?;
@@ -301,19 +299,9 @@ impl ManualTranscodingPipeline {
         ])
         .context("Failed to link manual decode chain")?;
 
-        let source = gst::ElementFactory::make(source_factory_name)
-            .name("source")
-            .build()
-            .with_context(|| format!("Failed to create source {source_factory_name}"))?;
-        if source.has_property("caps") {
-            source.set_property("caps", source_capsfilter.property::<gst::Caps>("caps"));
+        if let Some(source_factory_name) = source_factory_name {
+            add_compressed_source(&pipeline, source_factory_name, &source_capsfilter)?;
         }
-        pipeline
-            .add(&source)
-            .context("Failed to add source element")?;
-        source
-            .link(&source_capsfilter)
-            .context("Failed to link source to source capsfilter")?;
 
         Ok(pipeline)
     }
@@ -322,7 +310,7 @@ impl ManualTranscodingPipeline {
         &self,
         _device_path: &str,
         pipeline_id: &Arc<uuid::Uuid>,
-        source_factory_name: &str,
+        source_factory_name: Option<&str>,
         frame_interval: &FrameInterval,
     ) -> Result<gst::Pipeline> {
         let decoder_factory_name = decoder_factory_name(&self.source_encode, &self.manual_config)?;
@@ -439,19 +427,9 @@ impl ManualTranscodingPipeline {
         gst::Element::link_many(&chain)
             .context("Failed to link compressed manual transcoding chain")?;
 
-        let source = gst::ElementFactory::make(source_factory_name)
-            .name("source")
-            .build()
-            .with_context(|| format!("Failed to create source {source_factory_name}"))?;
-        if source.has_property("caps") {
-            source.set_property("caps", source_capsfilter.property::<gst::Caps>("caps"));
+        if let Some(source_factory_name) = source_factory_name {
+            add_compressed_source(&pipeline, source_factory_name, &source_capsfilter)?;
         }
-        pipeline
-            .add(&source)
-            .context("Failed to add source element")?;
-        source
-            .link(&source_capsfilter)
-            .context("Failed to link source to source capsfilter")?;
 
         Ok(pipeline)
     }
@@ -484,6 +462,27 @@ impl ManualTranscodingPipeline {
         self.encoding
             .context("Manual transcoding pipeline is missing a compressed sink encoding")
     }
+}
+
+fn add_compressed_source(
+    pipeline: &gst::Pipeline,
+    source_factory_name: &str,
+    source_capsfilter: &gst::Element,
+) -> Result<()> {
+    let source = gst::ElementFactory::make(source_factory_name)
+        .name("source")
+        .build()
+        .with_context(|| format!("Failed to create source {source_factory_name}"))?;
+    if source.has_property("caps") {
+        source.set_property("caps", source_capsfilter.property::<gst::Caps>("caps"));
+    }
+    pipeline
+        .add(&source)
+        .context("Failed to add source element")?;
+    source
+        .link(source_capsfilter)
+        .context("Failed to link source to source capsfilter")?;
+    Ok(())
 }
 
 fn encoder_factory_name(

@@ -1050,15 +1050,7 @@ fn normalize_video_capture_configuration(
 fn validate_video_capture_configuration(
     configuration: &crate::stream::types::VideoCaptureConfiguration,
 ) -> Result<()> {
-    #[cfg(target_os = "linux")]
-    {
-        pipeline::auto_transcoding::validate_video_capture_configuration(configuration)?;
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = configuration;
-    }
-    Ok(())
+    pipeline::auto_transcoding::validate_video_capture_configuration(configuration)
 }
 
 #[instrument(level = "debug", skip_all)]

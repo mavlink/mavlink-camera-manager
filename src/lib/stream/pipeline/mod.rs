@@ -1,4 +1,3 @@
-#[cfg(target_os = "linux")]
 pub mod auto_transcoding;
 pub mod fake_pipeline;
 pub mod onvif_pipeline;
@@ -6,7 +5,6 @@ pub mod qr_pipeline;
 pub mod redirect_pipeline;
 pub mod runner;
 pub mod tee_registry;
-#[cfg(target_os = "linux")]
 pub mod transcoding;
 #[cfg(target_os = "linux")]
 pub mod v4l_pipeline;
