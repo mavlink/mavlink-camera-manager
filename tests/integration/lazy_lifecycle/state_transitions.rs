@@ -2,9 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn test_stream_becomes_idle_after_grace_period() {
-    // setup_fake_rtsp already waited until Running. Do not list again here:
-    // the idle grace period is 5s, and a delayed follow-up GET on a loaded
-    // runner can observe Idle.
+    // setup_fake_rtsp waits until Idle (steady state after the 5s grace).
     let (_mcm, client) = setup_fake_rtsp("idle_test", "idle_test").await;
     wait_for_idle(&client).await;
 }

@@ -33,7 +33,12 @@ pub(super) async fn setup_fake_rtsp(name: &str, path: &str) -> (McmProcess, McmC
 
     let post = McmClient::build_fake_h264_rtsp(name, 640, 480, 30, path, None, mcm.rtsp_port);
     client.create_stream(&post).await.unwrap();
-    client.wait_for_streams_running(1, TIMEOUT).await.unwrap();
+    // Creation pokes the pipeline awake, then the 5s idle grace returns it to
+    // Idle. Waiting for Running races that window; Idle is the steady state.
+    client
+        .wait_for_stream_state(StreamStatusState::Idle, TIMEOUT)
+        .await
+        .unwrap();
 
     (mcm, client)
 }

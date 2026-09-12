@@ -61,8 +61,10 @@ impl TestEnv {
                     mcm.rtsp_port,
                 );
                 client.create_stream(&post).await.unwrap();
+                // Lazy Fake RTSP is Idle once the creation grace period ends.
+                // Waiting for Running races that 5s window and flakes on CI.
                 client
-                    .wait_for_streams_running(1, SETUP_TIMEOUT)
+                    .wait_for_stream_state(StreamStatusState::Idle, SETUP_TIMEOUT)
                     .await
                     .unwrap();
 
@@ -134,6 +136,7 @@ impl TestEnv {
             mcm.rtsp_port,
         );
         client.create_stream(&post).await.unwrap();
+        // Zenoh is a persistent consumer, so this stream stays Running.
         client
             .wait_for_streams_running(1, SETUP_TIMEOUT)
             .await

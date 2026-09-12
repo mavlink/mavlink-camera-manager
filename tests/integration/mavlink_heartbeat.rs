@@ -11,10 +11,6 @@ use crate::common::{
 
 const TIMEOUT: Duration = Duration::from_secs(15);
 
-/// Extra time beyond the 5s idle grace period so the watcher loop (100ms tick)
-/// has time to observe the idle condition and flip the state.
-const IDLE_WAIT: Duration = Duration::from_secs(8);
-
 /// When a lazy stream goes idle, its MAVLink heartbeat task must keep running.
 /// This test creates a fake RTSP stream with MAVLink enabled, waits for the
 /// stream to transition through Running -> Draining -> Idle, then verifies
@@ -67,9 +63,6 @@ async fn heartbeat_persists_through_idle() {
     );
     client.create_stream(&post).await.unwrap();
 
-    client.wait_for_streams_running(1, TIMEOUT).await.unwrap();
-
-    tokio::time::sleep(IDLE_WAIT).await;
     client
         .wait_for_stream_state(StreamStatusState::Idle, TIMEOUT)
         .await

@@ -351,6 +351,12 @@ impl McmClient {
         }
     }
 
+    /// Wait until at least `count` streams report Running.
+    ///
+    /// Use this after POST only when the stream is expected to stay Running
+    /// (`disable_lazy`, UDP, zenoh). Lazy Fake RTSP is poked awake at creation
+    /// and then dropped, so it returns to Idle after the 5s grace period; a
+    /// loaded CI runner often lists it already Idle. Wait for Idle instead.
     pub async fn wait_for_streams_running(
         &self,
         count: usize,
