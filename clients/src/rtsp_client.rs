@@ -40,11 +40,9 @@ impl RtspClient {
         let port = parsed.port().unwrap_or(8554);
         let addr = format!("{host}:{port}");
         let deadline = tokio::time::Instant::now() + connect_timeout;
-        let mut last_error = None;
         while let Err(error) = tokio::net::TcpStream::connect(&addr).await {
-            last_error = Some(error);
             if tokio::time::Instant::now() >= deadline {
-                anyhow::bail!("RTSP port {addr} not reachable: {}", last_error.unwrap());
+                anyhow::bail!("RTSP port {addr} not reachable: {error}");
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
         }

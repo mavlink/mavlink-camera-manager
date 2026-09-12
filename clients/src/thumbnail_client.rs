@@ -55,26 +55,24 @@ impl ThumbnailClient {
     pub async fn wait(&self, source: &str, timeout: Duration) -> Result<Vec<u8>> {
         anyhow::ensure!(!source.is_empty(), "source must be non-empty");
         let deadline = tokio::time::Instant::now() + timeout;
-        let mut last_status: Option<String> = None;
         loop {
-            match self.get(source).await {
+            let last_status = match self.get(source).await {
                 Ok(response) => {
                     let status = response.status();
                     if status == 200 {
                         return Ok(response.bytes().await?.to_vec());
                     }
-                    last_status = Some(format!("HTTP {status}"));
                     warn!(%status, "thumbnail not ready");
+                    format!("HTTP {status}")
                 }
                 Err(error) => {
-                    last_status = Some(error.to_string());
                     warn!(%error, "thumbnail request failed (transient)");
+                    error.to_string()
                 }
-            }
+            };
             if tokio::time::Instant::now() >= deadline {
                 anyhow::bail!(
-                    "thumbnail never returned 200 within {timeout:?} (last: {})",
-                    last_status.as_deref().unwrap_or("no response")
+                    "thumbnail never returned 200 within {timeout:?} (last: {last_status})"
                 );
             }
             tokio::time::sleep(Duration::from_secs(1)).await;
