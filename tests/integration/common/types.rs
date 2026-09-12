@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
@@ -17,11 +19,27 @@ pub struct FrameInterval {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum SourceConfiguration {
+    Classic,
+    Auto {},
+    Manual {
+        encoder: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        decoder: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VideoCaptureConfiguration {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_encode: Option<String>,
     pub encode: serde_json::Value,
     pub height: u32,
     pub width: u32,
     pub frame_interval: FrameInterval,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_configuration: Option<SourceConfiguration>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,4 +106,37 @@ pub struct PostStream {
     pub name: String,
     pub source: String,
     pub stream_information: StreamInformation,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GstEncoders {
+    pub encodings: BTreeMap<String, Vec<GstCodecInfo>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GstDecoders {
+    pub decodings: BTreeMap<String, Vec<GstCodecInfo>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GstCodecInfo {
+    pub name: String,
+}
+
+impl GstEncoders {
+    pub fn first_factory(&self, encode: &str) -> Option<String> {
+        self.encodings
+            .get(encode)?
+            .first()
+            .map(|info| info.name.clone())
+    }
+}
+
+impl GstDecoders {
+    pub fn first_factory(&self, encode: &str) -> Option<String> {
+        self.decodings
+            .get(encode)?
+            .first()
+            .map(|info| info.name.clone())
+    }
 }
