@@ -478,6 +478,12 @@ impl ImageSink {
                 ));
             }
             TeeMedia::Compressed(VideoEncodeType::H264) => {
+                // Parse first so avdec_h264 sees codec_data / access units.
+                // GStreamer 1.20 errors with "decoder not initialized" on raw
+                // byte-stream without h264parse.
+                let parser = gst::ElementFactory::make("h264parse")
+                    .property("config-interval", -1i32)
+                    .build()?;
                 // For h264, we need to filter-out unwanted non-key frames here, before decoding it.
                 let filter = gst::ElementFactory::make("identity")
                     .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
@@ -492,9 +498,12 @@ impl ImageSink {
                 try_set_property(&decoder, "discard-corrupted-frames", true);
                 try_set_property(&decoder, "output-corrupt", false);
                 try_set_property(&decoder, "std-compliance", 0); // (2147483647) is 'auto'; (2) is 'very-strict'; (1) is 'strict'; (0) is 'normal'; (-1) is 'unofficial'; (-2) is 'experimental'
-                vec![filter, decoder]
+                vec![parser, filter, decoder]
             }
             TeeMedia::Compressed(VideoEncodeType::H265) => {
+                let parser = gst::ElementFactory::make("h265parse")
+                    .property("config-interval", -1i32)
+                    .build()?;
                 // For h265, we need to filter-out unwanted non-key frames here, before decoding it.
                 let filter = gst::ElementFactory::make("identity")
                     .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
@@ -509,7 +518,7 @@ impl ImageSink {
                 try_set_property(&decoder, "discard-corrupted-frames", true);
                 try_set_property(&decoder, "output-corrupt", false);
                 try_set_property(&decoder, "std-compliance", 0); // (2147483647) is 'auto'; (2) is 'very-strict'; (1) is 'strict'; (0) is 'normal'; (-1) is 'unofficial'; (-2) is 'experimental'
-                vec![filter, decoder]
+                vec![parser, filter, decoder]
             }
             TeeMedia::Compressed(VideoEncodeType::Mjpg) => {
                 let decoder = gst::ElementFactory::make("jpegdec").build()?;
