@@ -13,13 +13,17 @@ pub fn take_webrtc_stream() -> Vec<VideoAndStreamInformation> {
         stream_information: StreamInformation {
             endpoints: vec![Url::parse("udp://0.0.0.0:8554/test").unwrap()],
             configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
-                encode: VideoEncodeType::H264,
+                source_encode: VideoEncodeType::H264,
+                sink_encode: VideoEncodeType::H264,
                 height: size.1,
                 width: size.0,
                 frame_interval: FrameInterval {
                     denominator: 10,
                     numerator: 1,
                 },
+                bit_depth: None,
+                source_configuration: SourceConfiguration::Classic,
+                auto_restart_on_config_change: false,
             }),
             extended_configuration: Some(ExtendedConfiguration {
                 disable_lazy: true,

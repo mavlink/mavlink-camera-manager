@@ -2,6 +2,7 @@ pub mod gst;
 pub mod lifecycle;
 pub mod manager;
 pub mod pipeline;
+pub mod pipeline_controls;
 pub mod rtsp;
 pub mod sink;
 pub mod types;
@@ -9,7 +10,10 @@ pub mod webrtc;
 
 use std::{
     collections::HashSet,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -56,6 +60,7 @@ pub struct Stream {
     /// Tracks WebRTC sessions that have been consumer-added, making
     /// `remove_session` idempotent with respect to the lifecycle count.
     pub active_webrtc_sessions: Arc<Mutex<HashSet<SessionId>>>,
+    restart_needed: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -100,13 +105,17 @@ fn generate_pipeline_id(video_and_stream_information: &VideoAndStreamInformation
 
 fn default_video_capture_configuration(encode: VideoEncodeType) -> VideoCaptureConfiguration {
     VideoCaptureConfiguration {
-        encode,
+        source_encode: encode.clone(),
+        sink_encode: encode,
         height: 0,
         width: 0,
         frame_interval: FrameInterval {
             numerator: 0,
             denominator: 0,
         },
+        bit_depth: None,
+        source_configuration: SourceConfiguration::Classic,
+        auto_restart_on_config_change: false,
     }
 }
 
@@ -191,6 +200,7 @@ impl Stream {
         let terminated = Arc::new(RwLock::new(false));
         let error = Arc::new(RwLock::new(Ok(())));
         let mavlink_camera = Arc::new(RwLock::new(None));
+        let restart_needed = Arc::new(AtomicBool::new(false));
 
         debug!("Starting StreamWatcher task...");
 
@@ -202,6 +212,7 @@ impl Stream {
             let pipeline_id = pipeline_id.clone();
             let lifecycle = lifecycle.clone();
             let mavlink_camera = mavlink_camera.clone();
+            let restart_needed = restart_needed.clone();
 
             async move {
                 debug!("StreamWatcher task started!");
@@ -213,6 +224,7 @@ impl Stream {
                     terminated,
                     lifecycle,
                     mavlink_camera,
+                    restart_needed,
                 )
                 .await
                 {
@@ -243,7 +255,16 @@ impl Stream {
             thumbnail_cooldown: Arc::new(Mutex::new(None)),
             mavlink_camera,
             active_webrtc_sessions: Arc::new(Mutex::new(HashSet::new())),
+            restart_needed,
         })
+    }
+
+    pub fn set_restart_needed(&self, value: bool) {
+        self.restart_needed.store(value, Ordering::Relaxed);
+    }
+
+    pub fn restart_needed(&self) -> bool {
+        self.restart_needed.load(Ordering::Relaxed)
     }
 
     #[instrument(level = "trace", skip(self))]
@@ -257,7 +278,10 @@ impl Stream {
         }
     }
 
-    #[instrument(level = "debug", skip(state, terminated, lifecycle, mavlink_camera))]
+    #[instrument(
+        level = "debug",
+        skip(state, terminated, lifecycle, mavlink_camera, restart_needed)
+    )]
     #[allow(clippy::too_many_arguments)]
     async fn watcher(
         video_and_stream_information: Arc<RwLock<VideoAndStreamInformation>>,
@@ -267,6 +291,7 @@ impl Stream {
         terminated: Arc<RwLock<bool>>,
         lifecycle: LifecycleHandle,
         mavlink_camera: Arc<RwLock<Option<MavlinkCamera>>>,
+        restart_needed: Arc<AtomicBool>,
     ) -> Result<()> {
         let report_interval_mult = 2;
         let report_interval_max = 60;
@@ -341,11 +366,22 @@ impl Stream {
                         Ok(Some(capture_configuration)) => {
                             *error_status.write().await = Ok(());
 
-                            video_and_stream_information
-                                .write()
-                                .await
-                                .stream_information
-                                .configuration = capture_configuration;
+                            let mut video_and_stream_information =
+                                video_and_stream_information.write().await;
+                            match (
+                                &mut video_and_stream_information
+                                    .stream_information
+                                    .configuration,
+                                capture_configuration,
+                            ) {
+                                (
+                                    CaptureConfiguration::Video(existing),
+                                    CaptureConfiguration::Video(probed),
+                                ) => existing.apply_probe_result(&probed),
+                                (configuration, new_configuration) => {
+                                    *configuration = new_configuration;
+                                }
+                            }
                         }
                         Ok(None) => {
                             // No probing needed (Gst) or handled separately (Local)
@@ -384,7 +420,11 @@ impl Stream {
                         let mut streams = vec![video_and_stream_information_cloned.clone()];
                         let mut candidates = cameras_available().await;
 
-                        // Discards any source from other running streams, otherwise we'd be trying to create a stream from a device in use (which is not possible)
+                        // Drop sources used by other Running/Stopped streams. Skip this
+                        // stream: Waking with error_count==0 is reported as Running, so
+                        // including it would remove our own camera from candidates and
+                        // invalidate the device (libcamera format probes are slow enough
+                        // that the stream is already in the manager before this runs).
                         let current_running_streams = manager::streams()
                             .await
                             .unwrap()
@@ -392,6 +432,9 @@ impl Stream {
                             .filter_map(|status| {
                                 use crate::stream::types::StreamStatusState;
 
+                                if status.id == *pipeline_id {
+                                    return None;
+                                }
                                 matches!(
                                     status.state,
                                     StreamStatusState::Running | StreamStatusState::Stopped
@@ -420,12 +463,12 @@ impl Stream {
                                     best_candidate;
                             }
                             Err(error) => {
+                                let error_message = format!(
+                                    "Failed to recreate the stream {pipeline_id:?}: {error:?}. Is the device connected? Trying again each second until the success or stream is removed. Next report in {report_interval:?} to reduce log size."
+                                );
+                                *error_status.write().await = Err(anyhow!("{error_message}"));
                                 if should_report {
-                                    let error_message = format!(
-                                        "Failed to recreate the stream {pipeline_id:?}: {error:?}. Is the device connected? Trying again each second until the success or stream is removed. Next report in {report_interval:?} to reduce log size."
-                                    );
-                                    warn!(error_message);
-                                    *error_status.write().await = Err(anyhow!(error_message));
+                                    warn!("{error_message}");
 
                                     last_report_time = std::time::Instant::now();
                                     report_interval *= report_interval_mult;
@@ -533,6 +576,7 @@ impl Stream {
                         lifecycle.reset_error_backoff().await?;
                         recreate_failures.reset();
                         *error_status.write().await = Ok(());
+                        restart_needed.store(false, Ordering::Relaxed);
                         report_interval = std::time::Duration::from_secs(1);
                         debug!("Pipeline {pipeline_id:?} started successfully");
                     }
@@ -695,6 +739,11 @@ impl StreamState {
         video_and_stream_information: Arc<RwLock<VideoAndStreamInformation>>,
         pipeline_id: Arc<uuid::Uuid>,
     ) -> Result<Self> {
+        {
+            let mut video_and_stream_information_guard = video_and_stream_information.write().await;
+            normalize_video_capture_configuration(&mut video_and_stream_information_guard)?;
+        }
+
         if let Err(error) = validate_endpoints(&video_and_stream_information.read().await.clone()) {
             return Err(anyhow!("Failed validating endpoints. Reason: {error:?}"));
         }
@@ -841,7 +890,7 @@ impl StreamState {
                 .configuration
             {
                 CaptureConfiguration::Video(video_configuraiton) => {
-                    video_configuraiton.encode.clone()
+                    video_configuraiton.sink_encode.clone()
                 }
                 CaptureConfiguration::Redirect(_) => {
                     return Err(anyhow!(
@@ -1005,6 +1054,45 @@ impl RecreateFailureTracker {
     }
 }
 
+pub fn validate_video_capture_configuration_for_stream(
+    video_and_stream_information: &VideoAndStreamInformation,
+) -> Result<()> {
+    if let CaptureConfiguration::Video(configuration) = &video_and_stream_information
+        .stream_information
+        .configuration
+    {
+        validate_video_capture_configuration(configuration)?;
+    }
+    Ok(())
+}
+
+fn normalize_video_capture_configuration(
+    video_and_stream_information: &mut VideoAndStreamInformation,
+) -> Result<()> {
+    if let CaptureConfiguration::Video(configuration) = &mut video_and_stream_information
+        .stream_information
+        .configuration
+    {
+        configuration.normalize_source_configuration();
+        validate_video_capture_configuration(configuration)?;
+    }
+    Ok(())
+}
+
+fn validate_video_capture_configuration(
+    configuration: &crate::stream::types::VideoCaptureConfiguration,
+) -> Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        pipeline::auto_transcoding::validate_video_capture_configuration(configuration)?;
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = configuration;
+    }
+    Ok(())
+}
+
 #[instrument(level = "debug", skip_all)]
 fn validate_endpoints(video_and_stream_information: &VideoAndStreamInformation) -> Result<()> {
     let endpoints = &video_and_stream_information.stream_information.endpoints;
@@ -1021,7 +1109,7 @@ fn validate_endpoints(video_and_stream_information: &VideoAndStreamInformation) 
         .stream_information
         .configuration
     {
-        CaptureConfiguration::Video(configuration) => configuration.encode.clone(),
+        CaptureConfiguration::Video(configuration) => configuration.sink_encode.clone(),
         CaptureConfiguration::Redirect(_) => VideoEncodeType::Unknown("Redirect stream".into()),
     };
 
@@ -1121,13 +1209,17 @@ mod tests {
 
     fn default_video_capture_configuration(encode: VideoEncodeType) -> VideoCaptureConfiguration {
         VideoCaptureConfiguration {
-            encode,
+            source_encode: encode.clone(),
+            sink_encode: encode,
             height: 480,
             width: 640,
             frame_interval: FrameInterval {
                 numerator: 1,
                 denominator: 30,
             },
+            bit_depth: None,
+            source_configuration: SourceConfiguration::Classic,
+            auto_restart_on_config_change: false,
         }
     }
 
@@ -1152,6 +1244,24 @@ mod tests {
                 name: "Redirect source".into(),
                 source: VideoSourceRedirectType::Redirect("Redirect".into()),
             }),
+        }
+    }
+
+    fn idle_redirect_stream(name: &str, endpoint: &str) -> Stream {
+        let video_and_stream_information = redirect_stream(name, endpoint);
+        let stream_id = generate_pipeline_id(&video_and_stream_information);
+        Stream {
+            state: Arc::new(RwLock::new(None)),
+            pipeline_id: Arc::new(stream_id),
+            video_and_stream_information: Arc::new(RwLock::new(video_and_stream_information)),
+            error: Arc::new(RwLock::new(Ok(()))),
+            terminated: Arc::new(RwLock::new(false)),
+            watcher_handle: None,
+            lifecycle: LifecycleHandle::lazy(),
+            thumbnail_cooldown: Arc::new(Mutex::new(None)),
+            mavlink_camera: Arc::new(RwLock::new(None)),
+            active_webrtc_sessions: Arc::new(Mutex::new(std::collections::HashSet::new())),
+            restart_needed: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -1224,15 +1334,14 @@ mod tests {
         crate::settings::manager::clear_blocked_sources();
         crate::stream::manager::remove_all_streams().await.unwrap();
 
-        let first = redirect_stream("yard-east", "rtsp://127.0.0.1:8554/yard-east");
-        let second = redirect_stream("yard-west", "rtsp://127.0.0.1:8554/yard-west");
+        let first = idle_redirect_stream("yard-east", "rtsp://127.0.0.1:8554/yard-east");
+        let second = idle_redirect_stream("yard-west", "rtsp://127.0.0.1:8554/yard-west");
+        let first_id = *first.pipeline_id;
+        let second_id = *second.pipeline_id;
+        assert_ne!(first_id, second_id);
 
-        crate::stream::manager::add_stream_and_start(first)
-            .await
-            .unwrap();
-        crate::stream::manager::add_stream_and_start(second)
-            .await
-            .unwrap();
+        manager::Manager::add_stream(first).await.unwrap();
+        manager::Manager::add_stream(second).await.unwrap();
 
         let streams = crate::stream::manager::streams().await.unwrap();
         let stream_ids: std::collections::HashSet<_> =
@@ -1240,13 +1349,10 @@ mod tests {
 
         assert_eq!(streams.len(), 2);
         assert_eq!(stream_ids.len(), 2);
+        assert!(stream_ids.contains(&first_id));
+        assert!(stream_ids.contains(&second_id));
 
-        crate::stream::manager::remove_stream_by_name("yard-east")
-            .await
-            .unwrap();
-        crate::stream::manager::remove_stream_by_name("yard-west")
-            .await
-            .unwrap();
+        crate::stream::manager::remove_all_streams().await.unwrap();
     }
 
     #[tokio::test]
@@ -1271,6 +1377,7 @@ mod tests {
             thumbnail_cooldown: Arc::new(Mutex::new(None)),
             mavlink_camera: Arc::new(RwLock::new(None)),
             active_webrtc_sessions: Arc::new(Mutex::new(std::collections::HashSet::new())),
+            restart_needed: Arc::new(AtomicBool::new(false)),
         };
 
         manager::Manager::add_stream(managed_stream).await.unwrap();
@@ -1423,7 +1530,8 @@ mod tests {
         let CaptureConfiguration::Video(video_config) = config else {
             panic!("expected Video configuration");
         };
-        assert_eq!(video_config.encode, VideoEncodeType::H264);
+        assert_eq!(video_config.source_encode, VideoEncodeType::H264);
+        assert_eq!(video_config.sink_encode, VideoEncodeType::H264);
     }
 
     #[tokio::test]
@@ -1441,7 +1549,8 @@ mod tests {
         let CaptureConfiguration::Video(video_config) = config else {
             panic!("expected Video configuration");
         };
-        assert_eq!(video_config.encode, VideoEncodeType::H264);
+        assert_eq!(video_config.source_encode, VideoEncodeType::H264);
+        assert_eq!(video_config.sink_encode, VideoEncodeType::H264);
 
         let sender = spawn_h265_udp_sender(port);
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
@@ -1453,7 +1562,8 @@ mod tests {
         let CaptureConfiguration::Video(video_config) = config else {
             panic!("expected Video configuration");
         };
-        assert_eq!(video_config.encode, VideoEncodeType::H265);
+        assert_eq!(video_config.source_encode, VideoEncodeType::H265);
+        assert_eq!(video_config.sink_encode, VideoEncodeType::H265);
     }
 
     #[tokio::test]
@@ -1472,7 +1582,8 @@ mod tests {
         let CaptureConfiguration::Video(video_config) = config else {
             panic!("expected Video configuration");
         };
-        assert_eq!(video_config.encode, VideoEncodeType::H264);
+        assert_eq!(video_config.source_encode, VideoEncodeType::H264);
+        assert_eq!(video_config.sink_encode, VideoEncodeType::H264);
     }
 
     #[tokio::test]
@@ -1490,7 +1601,8 @@ mod tests {
         let CaptureConfiguration::Video(video_config) = config else {
             panic!("expected Video configuration");
         };
-        assert_eq!(video_config.encode, VideoEncodeType::H264);
+        assert_eq!(video_config.source_encode, VideoEncodeType::H264);
+        assert_eq!(video_config.sink_encode, VideoEncodeType::H264);
 
         let sender = spawn_h265_udp_sender(port);
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
@@ -1502,7 +1614,8 @@ mod tests {
         let CaptureConfiguration::Video(video_config) = config else {
             panic!("expected Video configuration");
         };
-        assert_eq!(video_config.encode, VideoEncodeType::H265);
+        assert_eq!(video_config.source_encode, VideoEncodeType::H265);
+        assert_eq!(video_config.sink_encode, VideoEncodeType::H265);
     }
 
     #[cfg(target_os = "linux")]
@@ -1556,13 +1669,17 @@ mod tests {
             stream_information: StreamInformation {
                 endpoints: vec![Url::parse("rtsp://127.0.0.1:8554/test").unwrap()],
                 configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
-                    encode: VideoEncodeType::H264,
+                    source_encode: VideoEncodeType::H264,
+                    sink_encode: VideoEncodeType::H264,
                     height: 1080,
                     width: 1920,
                     frame_interval: FrameInterval {
                         numerator: 1,
                         denominator: 30,
                     },
+                    bit_depth: None,
+                    source_configuration: SourceConfiguration::Classic,
+                    auto_restart_on_config_change: false,
                 }),
                 extended_configuration: None,
             },

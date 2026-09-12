@@ -177,6 +177,23 @@ pub fn from_video_source(video_source: &dyn VideoSource) -> Result<String> {
                         .collect(),
                 },
             }),
+            ControlType::Flags(flags_control) => ParameterType::Menu(ParameterMenu {
+                name: control.id.to_string(),
+                cpp_type: control.cpp_type.clone(),
+                default: flags_control.default,
+                v4l_id: control.id,
+                description: Description::new(&control.name),
+                options: Options {
+                    option: flags_control
+                        .flags
+                        .iter()
+                        .map(|option| Option {
+                            name: option.name.clone(),
+                            value: option.value,
+                        })
+                        .collect(),
+                },
+            }),
         })
         .collect();
 

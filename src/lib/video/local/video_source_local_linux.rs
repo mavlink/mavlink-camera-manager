@@ -1,7 +1,8 @@
 use std::{
     cmp::max,
-    collections::{HashMap, HashSet},
-    str::FromStr,
+    collections::{BTreeMap, HashMap, HashSet},
+    sync::{Arc, Mutex, OnceLock},
+    time::{Duration, Instant},
 };
 
 use anyhow::{Result, anyhow};
@@ -13,6 +14,7 @@ use tracing::*;
 
 use crate::{
     controls::types::*,
+    stream::manager::{LiveSourceLookup, try_any_live_libcamerasrc},
     stream::types::VideoCaptureConfiguration,
     video::{
         gst_device_monitor,
@@ -20,6 +22,16 @@ use crate::{
         video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats},
     },
 };
+
+/// When `1`/`true`/`yes`/`on`, libcamera `/v4l` listings keep only native
+/// sensor-mode fps. Common rates (60, 30, 24, 16, 10, 5) at or below that max
+/// are omitted.
+const LIBCAMERA_NATIVE_FPS_ONLY_ENV: &str = "MCM_LIBCAMERA_NATIVE_FPS_ONLY";
+const LIBCAMERA_FORMAT_PROBE_TIMEOUT: Duration = Duration::from_millis(1500);
+
+static LIBCAMERA_NATIVE_SIZES: OnceLock<Mutex<HashMap<String, Vec<Size>>>> = OnceLock::new();
+static DEVICE_FORMATS: OnceLock<Mutex<HashMap<String, Vec<Format>>>> = OnceLock::new();
+static DEVICE_CONTROLS: OnceLock<Mutex<HashMap<String, Vec<Control>>>> = OnceLock::new();
 
 /// Helper function to wrap calls from v4l that can cause panic, returning an error instead
 fn unpanic<T, F>(body: F) -> T
@@ -42,6 +54,7 @@ pub enum VideoSourceLocalType {
     Unknown(String),
     Usb(String),
     LegacyRpiCam(String),
+    Libcamera(String),
 }
 
 #[derive(Apiv2Schema, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -142,8 +155,11 @@ impl VideoSourceLocal {
         }
 
         // Rule n.2 - All candidates must share the same encode
-        let candidates =
-            Self::get_cameras_with_same_encode(&candidates, &capture_configuration.encode, formats);
+        let candidates = Self::get_cameras_with_same_encode(
+            &candidates,
+            &capture_configuration.source_encode,
+            formats,
+        );
 
         let len = candidates.len();
         if len == 0 {
@@ -284,13 +300,747 @@ impl From<gst::Fraction> for FrameInterval {
     }
 }
 
+#[cfg(test)]
+fn libcamera_pixel_array_size(properties: &gst::StructureRef) -> Option<(i32, i32)> {
+    let array = properties
+        .get::<gst::Array>("api.libcamera.PixelArraySize")
+        .ok()?;
+    let values = array.as_slice();
+    if values.len() != 2 {
+        return None;
+    }
+    Some((values[0].get::<i32>().ok()?, values[1].get::<i32>().ok()?))
+}
+
+/// Highest advertised fps for a discrete `width`×`height` in `caps`.
+/// Ignores `GstIntRange` ISP scaler entries and does not invent default rates.
+fn libcamera_max_frame_interval_for_size(
+    caps: &gst::Caps,
+    width: i32,
+    height: i32,
+) -> Option<FrameInterval> {
+    let mut maximum: Option<FrameInterval> = None;
+    for structure in caps.iter() {
+        let Ok(structure_width) = structure.get::<i32>("width") else {
+            continue;
+        };
+        let Ok(structure_height) = structure.get::<i32>("height") else {
+            continue;
+        };
+        if structure_width != width || structure_height != height {
+            continue;
+        }
+        let Some(interval) = max_frame_interval_from_structure_framerate(structure) else {
+            continue;
+        };
+        if maximum
+            .as_ref()
+            .is_none_or(|current| interval.frames_per_second_exceeds(current))
+        {
+            maximum = Some(interval);
+        }
+    }
+    maximum
+}
+
+fn max_frame_interval_from_structure_framerate(
+    structure: &gst::StructureRef,
+) -> Option<FrameInterval> {
+    let sendvalue = structure.value("framerate").ok()?;
+    match sendvalue.type_().name() {
+        "GstFraction" => sendvalue.get::<gst::Fraction>().ok().map(Into::into),
+        "GstFractionRange" => sendvalue
+            .get::<gst::FractionRange>()
+            .ok()
+            .map(|range| range.max().into()),
+        "GstValueList" => {
+            let list = sendvalue.get::<gst::List>().ok()?;
+            list.iter()
+                .filter_map(|value| value.get::<gst::Fraction>().ok().map(Into::into))
+                .reduce(|left: FrameInterval, right: FrameInterval| {
+                    if left.frames_per_second_exceeds(&right) {
+                        left
+                    } else {
+                        right
+                    }
+                })
+        }
+        _ => None,
+    }
+}
+
+fn libcamera_native_fps_only_enabled() -> bool {
+    env_flag_enabled(std::env::var(LIBCAMERA_NATIVE_FPS_ONLY_ENV).ok().as_deref())
+}
+
+fn env_flag_enabled(value: Option<&str>) -> bool {
+    let Some(value) = value.map(str::trim) else {
+        return false;
+    };
+    value == "1"
+        || value.eq_ignore_ascii_case("true")
+        || value.eq_ignore_ascii_case("yes")
+        || value.eq_ignore_ascii_case("on")
+}
+
+fn fastest_frame_interval(intervals: &[FrameInterval]) -> Option<FrameInterval> {
+    intervals.iter().cloned().reduce(|left, right| {
+        if left.frames_per_second_exceeds(&right) {
+            left
+        } else {
+            right
+        }
+    })
+}
+
+/// Keep only each size's native mode fps (fastest rate gst advertised for that
+/// discrete size). Falls back to the fastest listed interval when caps don't
+/// expose a matching gint size.
+fn keep_native_mode_frame_intervals(formats: &mut [Format], caps: &gst::Caps) {
+    for format in formats.iter_mut() {
+        for size in &mut format.sizes {
+            let native =
+                libcamera_max_frame_interval_for_size(caps, size.width as i32, size.height as i32)
+                    .or_else(|| fastest_frame_interval(&size.intervals));
+            let Some(native) = native else {
+                continue;
+            };
+            size.intervals = vec![native];
+        }
+        format.sizes.retain(|size| !size.intervals.is_empty());
+    }
+}
+
+/// Packed Bayer/mono fourccs carry the CSI bit depth (`SRGGB10`, `grbg10le`, `R10`).
+/// Processed grey (`GRAY8`) is not a CSI packed depth.
+fn bit_depth_from_fourcc(fourcc: &str) -> Option<u32> {
+    let uppercase = fourcc.to_ascii_uppercase();
+    let without_packed = uppercase.strip_suffix("_CSI2P").unwrap_or(&uppercase);
+    let without_endian = without_packed
+        .strip_suffix("LE")
+        .or_else(|| without_packed.strip_suffix("BE"))
+        .unwrap_or(without_packed);
+    const PREFIXES: [&str; 10] = [
+        "SRGGB", "SBGGR", "SGRBG", "SGBRG", "RGGB", "BGGR", "GRBG", "GBRG", "MONO", "R",
+    ];
+    for prefix in PREFIXES {
+        if let Some(rest) = without_endian.strip_prefix(prefix)
+            && let Ok(depth) = rest.parse::<u32>()
+            && matches!(depth, 8 | 10 | 12 | 16)
+        {
+            return Some(depth);
+        }
+    }
+    None
+}
+
+fn is_libcamera_bayer_structure(structure: &gst::StructureRef) -> bool {
+    match structure.name().as_str() {
+        "video/x-bayer" => true,
+        "video/x-raw" => structure_fourccs(structure)
+            .iter()
+            .any(|fourcc| bit_depth_from_fourcc(fourcc).is_some()),
+        _ => false,
+    }
+}
+
+fn size_depth_mut(size: &mut Size, bit_depth: u32) -> &mut SizeDepth {
+    if let Some(index) = size
+        .depths
+        .iter()
+        .position(|depth| depth.bit_depth == bit_depth)
+    {
+        return &mut size.depths[index];
+    }
+    size.depths.push(SizeDepth {
+        bit_depth,
+        intervals: Vec::new(),
+    });
+    let index = size.depths.len() - 1;
+    &mut size.depths[index]
+}
+
+fn sort_frame_intervals_fastest_first(intervals: &mut [FrameInterval]) {
+    intervals.sort_by(|left, right| {
+        match (
+            left.frames_per_second_exceeds(right),
+            right.frames_per_second_exceeds(left),
+        ) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => std::cmp::Ordering::Equal,
+        }
+    });
+}
+
+/// Discrete Bayer sensor modes. GstDevice VideoRecording caps invent the same
+/// discrete sizes *without* a framerate; require one when parsing those.
+/// `stream-role=raw` StreamFormats have the real sensor sizes and no fps.
+fn libcamera_native_mode_sizes(caps: &gst::Caps) -> Vec<Size> {
+    libcamera_bayer_mode_sizes(caps, true)
+}
+
+fn libcamera_bayer_mode_sizes(caps: &gst::Caps, require_framerate: bool) -> Vec<Size> {
+    let mut sizes_by_resolution: BTreeMap<(u32, u32), Size> = BTreeMap::new();
+    for structure in caps.iter() {
+        if !is_libcamera_bayer_structure(structure) {
+            continue;
+        }
+        let widths = structure_discrete_dimension(structure, "width");
+        let heights = structure_discrete_dimension(structure, "height");
+        if widths.len() != 1 || heights.len() != 1 {
+            continue;
+        }
+        let width = widths[0];
+        let height = heights[0];
+        let interval = max_frame_interval_from_structure_framerate(structure);
+        if require_framerate && interval.is_none() {
+            continue;
+        }
+
+        let size = sizes_by_resolution
+            .entry((width, height))
+            .or_insert_with(|| Size {
+                width,
+                height,
+                intervals: Vec::new(),
+                depths: Vec::new(),
+            });
+        for fourcc in structure_fourccs(structure) {
+            let Some(bit_depth) = bit_depth_from_fourcc(&fourcc) else {
+                continue;
+            };
+            let depth = size_depth_mut(size, bit_depth);
+            if let Some(interval) = interval
+                && depth
+                    .intervals
+                    .iter()
+                    .all(|current| interval.frames_per_second_exceeds(current))
+            {
+                depth.intervals = vec![interval];
+            }
+        }
+    }
+    for size in sizes_by_resolution.values_mut() {
+        size.depths.sort_by_key(|depth| depth.bit_depth);
+    }
+    let mut sizes: Vec<Size> = sizes_by_resolution.into_values().collect();
+    sizes.sort();
+    sizes.reverse();
+    sizes
+}
+
+fn structure_fourccs(structure: &gst::StructureRef) -> Vec<String> {
+    let Ok(sendvalue) = structure.value("format") else {
+        return Vec::new();
+    };
+    match sendvalue.type_().name() {
+        "gchararray" => sendvalue
+            .get::<String>()
+            .ok()
+            .map(|fourcc| vec![fourcc])
+            .unwrap_or_default(),
+        "GstValueList" => sendvalue
+            .get::<gst::List>()
+            .ok()
+            .map(|list| {
+                list.iter()
+                    .filter_map(|value| value.get::<String>().ok())
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+fn structure_discrete_dimension(structure: &gst::StructureRef, field: &str) -> Vec<u32> {
+    let Ok(sendvalue) = structure.value(field) else {
+        return Vec::new();
+    };
+    match sendvalue.type_().name() {
+        "gint" => sendvalue
+            .get::<i32>()
+            .ok()
+            .map(|value| vec![value as u32])
+            .unwrap_or_default(),
+        "GstValueList" => sendvalue
+            .get::<gst::List>()
+            .ok()
+            .map(|list| {
+                list.iter()
+                    .filter_map(|value| value.get::<i32>().ok().map(|value| value as u32))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+fn cached_libcamera_native_sizes(camera_name: &str) -> Option<Vec<Size>> {
+    let Ok(cache) = LIBCAMERA_NATIVE_SIZES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+    else {
+        warn!("libcamera native-size cache poisoned");
+        return None;
+    };
+    cache.get(camera_name).cloned()
+}
+
+fn store_libcamera_native_sizes(camera_name: &str, sizes: Vec<Size>) {
+    let Ok(mut cache) = LIBCAMERA_NATIVE_SIZES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+    else {
+        warn!("libcamera native-size cache poisoned; not storing {camera_name:?}");
+        return;
+    };
+    cache.insert(camera_name.to_string(), sizes);
+}
+
+fn cached_device_formats(device_path: &str) -> Option<Vec<Format>> {
+    DEVICE_FORMATS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .ok()?
+        .get(device_path)
+        .cloned()
+}
+
+fn store_device_formats(device_path: &str, formats: Vec<Format>) {
+    let Ok(mut cache) = DEVICE_FORMATS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+    else {
+        warn!("device format cache poisoned; not storing {device_path:?}");
+        return;
+    };
+    cache.insert(device_path.to_string(), formats);
+}
+
+fn cached_device_controls(device_path: &str) -> Option<Vec<Control>> {
+    DEVICE_CONTROLS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .ok()?
+        .get(device_path)
+        .cloned()
+}
+
+fn store_device_controls(device_path: &str, controls: Vec<Control>) {
+    let Ok(mut cache) = DEVICE_CONTROLS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+    else {
+        warn!("device control cache poisoned; not storing {device_path:?}");
+        return;
+    };
+    cache.insert(device_path.to_string(), controls);
+}
+
+/// Sensor sizes from `libcamerasrc` `stream-role=raw` StreamFormats, plus max fps
+/// from a `sensor-config` pin at each size. GstDevice VideoRecording caps are the
+/// ISP menu and cannot supply this.
+#[instrument(level = "debug")]
+fn probe_libcamera_native_sizes(camera_name: &str) -> Vec<Size> {
+    if let Some(sizes) = cached_libcamera_native_sizes(camera_name) {
+        return sizes;
+    }
+
+    let Some(raw_caps) = probe_libcamera_raw_stream_formats(camera_name) else {
+        return Vec::new();
+    };
+    let mut sizes = libcamera_bayer_mode_sizes(&raw_caps, false);
+    fill_libcamera_mode_frame_intervals(camera_name, &mut sizes);
+    sizes.retain(|size| size.width > 0 && size.height > 0);
+    finalize_libcamera_size_intervals(&mut sizes);
+
+    if !sizes.is_empty() {
+        store_libcamera_native_sizes(camera_name, sizes.clone());
+    }
+    sizes
+}
+
+fn fill_libcamera_mode_frame_intervals(camera_name: &str, sizes: &mut [Size]) {
+    for size in sizes.iter_mut() {
+        for bit_depth in [10, 12, 8] {
+            if size
+                .depths
+                .iter()
+                .any(|depth| depth.bit_depth == bit_depth && !depth.intervals.is_empty())
+            {
+                continue;
+            }
+            let Some(interval) = probe_libcamera_mode_frame_interval(
+                camera_name,
+                size.width,
+                size.height,
+                bit_depth,
+            ) else {
+                continue;
+            };
+            size_depth_mut(size, bit_depth).intervals = vec![interval];
+        }
+        size.depths.retain(|depth| !depth.intervals.is_empty());
+        size.depths.sort_by_key(|depth| depth.bit_depth);
+        size.intervals.clear();
+    }
+}
+
+fn finalize_libcamera_size_intervals(sizes: &mut [Size]) {
+    for size in sizes {
+        for depth in &mut size.depths {
+            add_supported_common_frame_intervals(&mut depth.intervals);
+        }
+    }
+}
+
+/// Common rates at or below the fastest native mode, unless
+/// `MCM_LIBCAMERA_NATIVE_FPS_ONLY` is set.
+fn add_supported_common_frame_intervals(intervals: &mut Vec<FrameInterval>) {
+    let Some(native_max) = fastest_frame_interval(intervals) else {
+        return;
+    };
+    if libcamera_native_fps_only_enabled() {
+        return;
+    }
+    for &denominator in DEFAULT_FRAME_INTERVALS {
+        let common = FrameInterval {
+            numerator: 1,
+            denominator,
+        };
+        if common.frames_per_second_exceeds(&native_max) {
+            continue;
+        }
+        if intervals
+            .iter()
+            .all(|current| !common.frames_per_second_equals(current))
+        {
+            intervals.push(common);
+        }
+    }
+    sort_frame_intervals_fastest_first(intervals);
+}
+
+/// A live `libcamerasrc` already owns the process CameraManager. Starting
+/// another PLAYING probe (same or other camera) races `requestCompleted` and
+/// SIGSEGVs gst-libcamera (`wrap->request_.get() == request`).
+fn live_libcamerasrc_blocks_format_probe() -> bool {
+    !matches!(try_any_live_libcamerasrc(), LiveSourceLookup::NotStreaming)
+}
+
+/// Capture the StreamFormats filter `libcamerasrc` sends during negotiate when
+/// the pad role is `raw` (actual sensor sizes, not the ISP scaler menu).
+#[instrument(level = "debug")]
+fn probe_libcamera_raw_stream_formats(camera_name: &str) -> Option<gst::Caps> {
+    if live_libcamerasrc_blocks_format_probe() {
+        debug!(
+            "Skipping libcamera raw-formats probe for {camera_name:?}; a live libcamerasrc is running"
+        );
+        return None;
+    }
+    let pipeline = match gst::parse::launch(
+        "libcamerasrc name=probe-source ! fakesink name=probe-sink sync=false",
+    ) {
+        Ok(element) => element,
+        Err(error) => {
+            warn!("libcamera raw-formats probe pipeline failed to parse: {error}");
+            return None;
+        }
+    };
+    let pipeline = pipeline.downcast::<gst::Pipeline>().ok()?;
+    let source = pipeline.by_name("probe-source")?;
+    let sink = pipeline.by_name("probe-sink")?;
+    let src_pad = source.static_pad("src")?;
+    if !src_pad.has_property("stream-role") {
+        stop_libcamera_probe_pipeline(&pipeline);
+        return None;
+    }
+    src_pad.set_property_from_str("stream-role", "raw");
+    source.set_property("camera-name", camera_name);
+
+    let captured = Arc::new(Mutex::new(None::<gst::Caps>));
+    let sink_pad = sink.static_pad("sink")?;
+    let captured_for_probe = captured.clone();
+    sink_pad.add_probe(gst::PadProbeType::QUERY_BOTH, move |_pad, info| {
+        if let Some(query) = info.query()
+            && let gst::QueryView::Caps(caps_query) = query.view()
+            && let Some(filter) = caps_query.filter_owned()
+            && !filter.is_any()
+            && filter.iter().any(|structure| {
+                is_libcamera_bayer_structure(structure)
+                    && !structure_discrete_dimension(structure, "width").is_empty()
+            })
+        {
+            let mut guard = captured_for_probe
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let replace = match guard.as_ref() {
+                None => true,
+                Some(current) => filter.size() > current.size(),
+            };
+            if replace {
+                *guard = Some(filter);
+            }
+        }
+        gst::PadProbeReturn::Ok
+    });
+
+    let bus = pipeline.bus()?;
+    if let Err(error) = pipeline.set_state(gst::State::Playing) {
+        debug!("libcamera raw-formats probe set_state(Playing) failed: {error}");
+        stop_libcamera_probe_pipeline(&pipeline);
+        return None;
+    }
+
+    let deadline = Instant::now() + LIBCAMERA_FORMAT_PROBE_TIMEOUT;
+    loop {
+        if captured
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_some()
+        {
+            break;
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            break;
+        }
+        let wait = deadline
+            .saturating_duration_since(now)
+            .min(Duration::from_millis(50));
+        let timeout = gst::ClockTime::from_nseconds(wait.as_nanos() as u64);
+        if let Some(message) = bus.timed_pop(timeout)
+            && let gst::MessageView::Error(error) = message.view()
+        {
+            debug!("libcamera raw-formats probe bus error: {}", error.error());
+            break;
+        }
+    }
+
+    let caps = captured
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    stop_libcamera_probe_pipeline(&pipeline);
+    if let Some(ref caps) = caps {
+        debug!(
+            "libcamera raw StreamFormats for {camera_name:?}: {} structure(s)",
+            caps.size()
+        );
+    } else {
+        debug!("libcamera raw StreamFormats probe got no Bayer filter for {camera_name:?}");
+    }
+    caps
+}
+
+/// Max fps for a pinned sensor mode.
+///
+/// `libcamerasrc` reads a *fraction* framerate from peer caps, then clamps it
+/// via `FrameDurationLimits`. A capsfilter of `1000/1` advertises that rate and
+/// then rejects the clamped caps (NOT_NEGOTIATED). Answer the CAPS query with
+/// `1000/1` and let fakesink accept whatever is pushed.
+#[instrument(level = "debug")]
+fn probe_libcamera_mode_frame_interval(
+    camera_name: &str,
+    width: u32,
+    height: u32,
+    bit_depth: u32,
+) -> Option<FrameInterval> {
+    if live_libcamerasrc_blocks_format_probe() {
+        debug!(
+            "Skipping libcamera fps probe for {camera_name:?} {width}x{height}@{bit_depth}; a live libcamerasrc is running"
+        );
+        return None;
+    }
+    let pipeline = match gst::parse::launch(
+        "libcamerasrc name=probe-source ! fakesink name=probe-sink sync=false",
+    ) {
+        Ok(element) => element,
+        Err(error) => {
+            debug!("libcamera fps probe pipeline failed to parse: {error}");
+            return None;
+        }
+    };
+    let pipeline = pipeline.downcast::<gst::Pipeline>().ok()?;
+    let source = pipeline.by_name("probe-source")?;
+    let sink = pipeline.by_name("probe-sink")?;
+    source.set_property("camera-name", camera_name);
+    if let Some(src_pad) = source.static_pad("src")
+        && src_pad.has_property("stream-role")
+    {
+        src_pad.set_property_from_str("stream-role", "video-recording");
+    }
+    if source.has_property("sensor-config") {
+        source.set_property(
+            "sensor-config",
+            gst::Structure::builder("sensor/config")
+                .field("width", width as i32)
+                .field("height", height as i32)
+                .field("depth", bit_depth as i32)
+                .build(),
+        );
+    }
+
+    let advertised = gst::Caps::builder("video/x-raw")
+        .field("width", width as i32)
+        .field("height", height as i32)
+        .field("framerate", gst::Fraction::new(1000, 1))
+        .build();
+    let sink_pad = sink.static_pad("sink")?;
+    sink_pad.add_probe(gst::PadProbeType::QUERY_BOTH, move |_pad, info| {
+        if let Some(query) = info.query_mut()
+            && let gst::QueryViewMut::Caps(caps_query) = query.view_mut()
+        {
+            caps_query.set_result(Some(&advertised));
+            return gst::PadProbeReturn::Handled;
+        }
+        gst::PadProbeReturn::Ok
+    });
+
+    let captured = Arc::new(Mutex::new(None::<FrameInterval>));
+    let src_pad = source.static_pad("src")?;
+    let captured_for_caps = captured.clone();
+    src_pad.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_pad, info| {
+        if let Some(event) = info.event()
+            && let gst::EventView::Caps(caps_event) = event.view()
+        {
+            for structure in caps_event.caps().iter() {
+                if let Some(interval) = max_frame_interval_from_structure_framerate(structure)
+                    && !is_unclamped_fps_probe_interval(&interval)
+                {
+                    let mut guard = captured_for_caps
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    if guard.is_none() {
+                        *guard = Some(interval);
+                    }
+                    break;
+                }
+            }
+        }
+        gst::PadProbeReturn::Ok
+    });
+    let captured_for_buffer = captured.clone();
+    let previous_pts_ns = Arc::new(Mutex::new(None::<u64>));
+    src_pad.add_probe(gst::PadProbeType::BUFFER, move |_pad, info| {
+        let Some(buffer) = info.buffer() else {
+            return gst::PadProbeReturn::Ok;
+        };
+        if let Some(duration) = buffer.duration()
+            && let Some(interval) = frame_interval_from_nanoseconds(duration.nseconds())
+            && !is_unclamped_fps_probe_interval(&interval)
+        {
+            *captured_for_buffer
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(interval);
+            return gst::PadProbeReturn::Ok;
+        }
+        if let Some(presentation_timestamp) = buffer.pts() {
+            let nanoseconds = presentation_timestamp.nseconds();
+            let mut previous = previous_pts_ns
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if let Some(previous_nanoseconds) = *previous
+                && nanoseconds > previous_nanoseconds
+                && let Some(interval) =
+                    frame_interval_from_nanoseconds(nanoseconds - previous_nanoseconds)
+                && !is_unclamped_fps_probe_interval(&interval)
+            {
+                *captured_for_buffer
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(interval);
+            }
+            *previous = Some(nanoseconds);
+        }
+        gst::PadProbeReturn::Ok
+    });
+
+    let bus = pipeline.bus()?;
+    if let Err(error) = pipeline.set_state(gst::State::Playing) {
+        debug!(
+            "libcamera fps probe {width}x{height} depth={bit_depth} set_state(Playing) failed: {error}"
+        );
+        stop_libcamera_probe_pipeline(&pipeline);
+        return None;
+    }
+
+    let deadline = Instant::now() + LIBCAMERA_FORMAT_PROBE_TIMEOUT;
+    loop {
+        if captured
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_ref()
+            .is_some_and(interval_is_from_buffer_duration)
+        {
+            break;
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            break;
+        }
+        let wait = deadline
+            .saturating_duration_since(now)
+            .min(Duration::from_millis(50));
+        let timeout = gst::ClockTime::from_nseconds(wait.as_nanos() as u64);
+        if let Some(message) = bus.timed_pop(timeout)
+            && let gst::MessageView::Error(error) = message.view()
+        {
+            debug!(
+                "libcamera fps probe {width}x{height} depth={bit_depth} bus error: {}",
+                error.error()
+            );
+            break;
+        }
+    }
+
+    let interval = captured
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    stop_libcamera_probe_pipeline(&pipeline);
+    interval
+}
+
+fn is_unclamped_fps_probe_interval(interval: &FrameInterval) -> bool {
+    if interval.numerator == 0 {
+        return false;
+    }
+    f64::from(interval.denominator) / f64::from(interval.numerator) >= 999.0
+}
+
+fn interval_is_from_buffer_duration(interval: &FrameInterval) -> bool {
+    interval.denominator == 1_000_000_000
+}
+
+fn frame_interval_from_nanoseconds(nanoseconds: u64) -> Option<FrameInterval> {
+    if nanoseconds == 0 || nanoseconds > u64::from(u32::MAX) {
+        return None;
+    }
+    Some(FrameInterval {
+        numerator: nanoseconds as u32,
+        denominator: 1_000_000_000,
+    })
+}
+
+fn stop_libcamera_probe_pipeline(pipeline: &gst::Pipeline) {
+    if let Err(error) = pipeline.set_state(gst::State::Null) {
+        warn!("libcamera format probe set_state(Null) failed: {error}");
+    }
+    let deadline = Instant::now() + Duration::from_millis(500);
+    while pipeline.current_state() != gst::State::Null && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 fn get_device_formats_using_gstreamer(
     device_path: &str,
-    _typ: &VideoSourceLocalType,
+    typ: &VideoSourceLocalType,
 ) -> Result<Vec<Format>> {
-    let device = gst_device_monitor::v4l_device_with_path(device_path)?;
+    let device = gst_device_monitor::local_device_with_path(device_path)?;
 
     let caps = gst_device_monitor::device_caps(&device)?;
+    let is_libcamera = matches!(typ, VideoSourceLocalType::Libcamera(_));
 
     let mut sizes_by_encode: HashMap<VideoEncodeType, HashSet<Size>> = HashMap::new();
 
@@ -300,7 +1050,7 @@ fn get_device_formats_using_gstreamer(
                 Ok(sendvalue) => match sendvalue.type_().name() {
                     "gchararray" => match sendvalue.get::<String>() {
                         Ok(fourcc) => {
-                            vec![VideoEncodeType::from_str(&fourcc).expect("irrefutable")]
+                            vec![VideoEncodeType::from_fourcc(&fourcc)]
                         }
                         Err(error) => {
                             warn!(
@@ -313,7 +1063,7 @@ fn get_device_formats_using_gstreamer(
                         Ok(list) => list
                             .iter()
                             .filter_map(|v| v.get::<String>().ok())
-                            .map(|fourcc| VideoEncodeType::from_str(&fourcc).expect("irrefutable"))
+                            .map(|fourcc| VideoEncodeType::from_fourcc(&fourcc))
                             .collect(),
                         Err(error) => {
                             warn!(
@@ -337,12 +1087,28 @@ fn get_device_formats_using_gstreamer(
             "image/jpeg" => vec![VideoEncodeType::Mjpg],
             "video/x-h264" => vec![VideoEncodeType::H264],
             "video/x-h265" => vec![VideoEncodeType::H265],
+            "video/x-bayer" if is_libcamera => return,
             other => {
                 info!("unknown format: {other:?}");
 
                 return;
             }
         };
+
+        // gst-libcamera also emits StreamFormats::range as GstIntRange (ISP scaler).
+        // Discrete sizes are already gint structures; do not sample STANDARD_SIZES.
+        if is_libcamera
+            && (structure
+                .value("width")
+                .ok()
+                .is_some_and(|value| value.type_().name() == "GstIntRange")
+                || structure
+                    .value("height")
+                    .ok()
+                    .is_some_and(|value| value.type_().name() == "GstIntRange"))
+        {
+            return;
+        }
 
         let mut heights = match structure.value("height") {
             Ok(sendvalue) => match sendvalue.type_().name() {
@@ -496,8 +1262,23 @@ fn get_device_formats_using_gstreamer(
                 }
             },
             Err(error) => {
-                info!("No framerate: {structure:#?}: {error:?}");
-                return;
+                if is_libcamera {
+                    trace!(
+                        "Caps without framerate, not inventing defaults for libcamera: {structure:#?}: {error:?}"
+                    );
+                    Vec::new()
+                } else {
+                    trace!(
+                        "Caps without framerate, using defaults: {structure:#?}: {error:?}"
+                    );
+                    DEFAULT_FRAME_INTERVALS
+                        .iter()
+                        .map(|&denominator| FrameInterval {
+                            numerator: 1,
+                            denominator,
+                        })
+                        .collect()
+                }
             }
         };
 
@@ -516,6 +1297,7 @@ fn get_device_formats_using_gstreamer(
                 width,
                 height,
                 intervals: intervals.clone(),
+                depths: Vec::new(),
             };
 
             for encode in &encodes {
@@ -538,8 +1320,48 @@ fn get_device_formats_using_gstreamer(
         formats.push(Format { encode, sizes })
     });
 
+    if is_libcamera {
+        formats.retain(|format| {
+            matches!(
+                format.encode,
+                VideoEncodeType::Nv12 | VideoEncodeType::Rgb | VideoEncodeType::Yuyv
+            )
+        });
+        let native_sizes = {
+            let probed = probe_libcamera_native_sizes(device_path);
+            if probed.is_empty() {
+                libcamera_native_mode_sizes(&caps)
+            } else {
+                probed
+            }
+        };
+        if !native_sizes.is_empty() {
+            if formats.is_empty() {
+                for encode in [
+                    VideoEncodeType::Nv12,
+                    VideoEncodeType::Rgb,
+                    VideoEncodeType::Yuyv,
+                ] {
+                    formats.push(Format {
+                        encode,
+                        sizes: native_sizes.clone(),
+                    });
+                }
+            } else {
+                for format in &mut formats {
+                    format.sizes = native_sizes.clone();
+                }
+            }
+        } else if libcamera_native_fps_only_enabled() {
+            keep_native_mode_frame_intervals(&mut formats, &caps);
+            info!("Keeping only native libcamera mode fps via {LIBCAMERA_NATIVE_FPS_ONLY_ENV}");
+        }
+        formats.retain(|format| !format.sizes.is_empty());
+    }
+
     Ok(formats)
 }
+
 #[instrument(level = "debug")]
 fn validate_control(control: &Control, value: i64) -> Result<(), String> {
     if control.state.is_inactive {
@@ -578,6 +1400,18 @@ fn validate_control(control: &Control, value: i64) -> Result<(), String> {
                 ));
             }
         }
+        ControlType::Flags(control) => {
+            let allowed = control
+                .flags
+                .iter()
+                .fold(0i64, |mask, flag| mask | flag.value);
+            if value & !allowed != 0 {
+                return Err(format!(
+                    "Value {value:?} uses undefined flag bits for control {:?}",
+                    control.flags
+                ));
+            }
+        }
     }
 
     Ok(())
@@ -587,15 +1421,23 @@ impl VideoSourceFormats for VideoSourceLocal {
     #[instrument(level = "debug")]
     async fn formats(&self) -> Vec<Format> {
         let device_path = &self.device_path;
+        if let Some(formats) = cached_device_formats(device_path) {
+            return formats;
+        }
         let typ = &self.typ;
 
-        return match get_device_formats_using_gstreamer(device_path, typ) {
-            Ok(devices) => devices,
+        match get_device_formats_using_gstreamer(device_path, typ) {
+            Ok(formats) => {
+                if !formats.is_empty() {
+                    store_device_formats(device_path, formats.clone());
+                }
+                formats
+            }
             Err(error) => {
                 warn!("Failed getting formats for device {device_path:?}: {error:?}");
                 vec![]
             }
-        };
+        }
     }
 }
 
@@ -633,6 +1475,31 @@ impl VideoSource for VideoSourceLocal {
 
     #[instrument(level = "debug")]
     fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()> {
+        if matches!(self.typ, VideoSourceLocalType::Libcamera(_)) {
+            let Some(control) =
+                super::libcamera_controls::find_control(&self.device_path, control_id)
+            else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!(
+                        "Control ID {control_id:?} was not found for libcamera device {:?}",
+                        self.device_path
+                    ),
+                ));
+            };
+            if let Err(error) = validate_control(&control, value) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Unsupported,
+                    format!("Failed setting {control_id:?} to {value:?}: {error}"),
+                ));
+            }
+            return super::libcamera_controls::set_control_by_name(
+                &self.device_path,
+                &control.name,
+                value,
+            );
+        }
+
         let Some(control) = self
             .controls()
             .into_iter()
@@ -693,6 +1560,10 @@ impl VideoSource for VideoSourceLocal {
 
     #[instrument(level = "debug")]
     fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64> {
+        if matches!(self.typ, VideoSourceLocalType::Libcamera(_)) {
+            return super::libcamera_controls::control_value_by_id(&self.device_path, control_id);
+        }
+
         let device_path = self.device_path.clone();
 
         let v4l_device = unpanic(move || v4l::Device::with_path(device_path))?;
@@ -710,6 +1581,24 @@ impl VideoSource for VideoSourceLocal {
 
     #[instrument(level = "debug")]
     fn controls(&self) -> Vec<Control> {
+        if matches!(self.typ, VideoSourceLocalType::Libcamera(_)) {
+            return super::libcamera_controls::list_controls(&self.device_path);
+        }
+
+        if let Some(mut controls) = cached_device_controls(&self.device_path) {
+            for control in &mut controls {
+                if let Ok(value) = self.control_value_by_id(control.id) {
+                    match &mut control.configuration {
+                        ControlType::Bool(bool_control) => bool_control.value = value,
+                        ControlType::Slider(slider) => slider.value = value,
+                        ControlType::Menu(menu) => menu.value = value,
+                        ControlType::Flags(flags) => flags.value = value,
+                    }
+                }
+            }
+            return controls;
+        }
+
         let mut controls: Vec<Control> = vec![];
 
         //TODO: create function to encapsulate device
@@ -804,6 +1693,9 @@ impl VideoSource for VideoSourceLocal {
                 _ => continue,
             };
         }
+        if !controls.is_empty() {
+            store_device_controls(&self.device_path, controls.clone());
+        }
         controls
     }
 
@@ -821,17 +1713,47 @@ impl VideoSource for VideoSourceLocal {
 impl VideoSourceAvailable for VideoSourceLocal {
     #[instrument(level = "debug")]
     async fn cameras_available() -> Vec<VideoSourceType> {
-        gst_device_monitor::v4l_devices()
+        gst_device_monitor::local_devices()
             .unwrap_or_default()
             .iter()
             .filter_map(|device_weak| {
                 let device = device_weak.upgrade()?;
-                let name = device.display_name().to_string();
-                let properties = device.properties()?;
-                let device_path = properties.get::<String>("device.path").ok()?;
-                let bus = properties.get::<String>("v4l2.device.bus_info").ok()?;
+                let display_name = device.display_name().to_string();
+                let properties = device.properties();
 
-                let typ = VideoSourceLocalType::from_str(&bus);
+                let factory_name = gst_device_monitor::source_factory_name(&device)?;
+
+                let (name, device_path, typ) = match factory_name {
+                    "v4l2src" => {
+                        let properties = properties?;
+                        let device_path = properties.get::<String>("device.path").ok()?;
+                        let bus = properties.get::<String>("v4l2.device.bus_info").ok()?;
+                        (
+                            display_name,
+                            device_path,
+                            VideoSourceLocalType::from_str(&bus),
+                        )
+                    }
+                    "libcamerasrc" => {
+                        // libcamera-gst exposes the camera id as the device's display name
+                        // (e.g. "/base/soc/i2c0mux/i2c@1/imx708@1a"); that same string is
+                        // what `libcamerasrc camera-name=...` expects. Prefer the friendlier
+                        // libcamera Model property for the user-visible name when present.
+                        let friendly_name = properties
+                            .and_then(|p| p.get::<String>("api.libcamera.Model").ok())
+                            .unwrap_or_else(|| display_name.clone());
+                        (
+                            friendly_name,
+                            display_name.clone(),
+                            VideoSourceLocalType::Libcamera(display_name),
+                        )
+                    }
+                    other => {
+                        debug!("Ignoring device with unsupported source factory: {other:?}");
+                        return None;
+                    }
+                };
+
                 Some(VideoSourceType::Local(VideoSourceLocal {
                     name,
                     device_path,
@@ -920,6 +1842,7 @@ mod device_identification_tests {
                         numerator: 30,
                         denominator: 1,
                     }],
+                    depths: Vec::new(),
                 }],
             })
             .collect()
@@ -936,13 +1859,17 @@ mod device_identification_tests {
             name: "dummy stream".into(),
             stream_information: StreamInformation {
                 configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
-                    encode,
+                    source_encode: encode.clone(),
+                    sink_encode: encode,
                     height: 1080,
                     width: 1920,
                     frame_interval: FrameInterval {
                         numerator: 30,
                         denominator: 1,
                     },
+                    bit_depth: None,
+                    source_configuration: crate::stream::types::SourceConfiguration::Classic,
+                    auto_restart_on_config_change: false,
                 }),
                 endpoints: vec![url::Url::parse("udp://0.0.0.0:5600").unwrap()],
                 extended_configuration: None,
@@ -1204,5 +2131,314 @@ mod device_identification_tests {
                     .is_none()
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod libcamera_mode_fps_tests {
+    use super::*;
+    use std::str::FromStr;
+
+    fn frame_interval(numerator: u32, denominator: u32) -> FrameInterval {
+        FrameInterval {
+            numerator,
+            denominator,
+        }
+    }
+
+    fn listed_bit_depths(size: &Size) -> Vec<u32> {
+        size.depths.iter().map(|depth| depth.bit_depth).collect()
+    }
+
+    #[test]
+    fn env_flag_enabled_accepts_common_truthy_values() {
+        assert!(env_flag_enabled(Some("1")));
+        assert!(env_flag_enabled(Some("true")));
+        assert!(env_flag_enabled(Some(" YES ")));
+        assert!(env_flag_enabled(Some("on")));
+        assert!(env_flag_enabled(Some("On")));
+        assert!(!env_flag_enabled(Some("0")));
+        assert!(!env_flag_enabled(Some("false")));
+        assert!(!env_flag_enabled(None));
+        assert!(!env_flag_enabled(Some("")));
+    }
+
+    #[test]
+    fn keep_native_mode_frame_intervals_drops_padded_rates_per_size() {
+        gst::init().unwrap();
+        let caps = gst::Caps::builder("video/x-raw")
+            .field("width", 640i32)
+            .field("height", 480i32)
+            .field(
+                "framerate",
+                gst::List::new([
+                    gst::Fraction::new(60, 1),
+                    gst::Fraction::new(90, 1),
+                    gst::Fraction::new(120, 1),
+                    gst::Fraction::new(20665, 100),
+                ]),
+            )
+            .build();
+        let mut formats = vec![Format {
+            encode: VideoEncodeType::Yuyv,
+            sizes: vec![Size {
+                width: 640,
+                height: 480,
+                intervals: vec![
+                    frame_interval(100, 20665),
+                    frame_interval(1, 120),
+                    frame_interval(1, 90),
+                    frame_interval(1, 60),
+                    frame_interval(1, 30),
+                ],
+                depths: Vec::new(),
+            }],
+        }];
+
+        keep_native_mode_frame_intervals(&mut formats, &caps);
+
+        assert_eq!(formats[0].sizes.len(), 1);
+        assert_eq!(formats[0].sizes[0].intervals.len(), 1);
+        let native = &formats[0].sizes[0].intervals[0];
+        assert!(native.frames_per_second_equals(&frame_interval(100, 20665)));
+    }
+
+    #[test]
+    fn keep_native_mode_frame_intervals_falls_back_to_fastest_listed() {
+        gst::init().unwrap();
+        let caps = gst::Caps::new_empty();
+        let mut formats = vec![Format {
+            encode: VideoEncodeType::Yuyv,
+            sizes: vec![
+                Size {
+                    width: 1920,
+                    height: 1080,
+                    intervals: vec![
+                        frame_interval(100, 4757),
+                        frame_interval(1, 30),
+                        frame_interval(1, 24),
+                    ],
+                    depths: Vec::new(),
+                },
+                Size {
+                    width: 3280,
+                    height: 2464,
+                    intervals: vec![
+                        frame_interval(100, 2119),
+                        frame_interval(1, 20),
+                        frame_interval(1, 15),
+                    ],
+                    depths: Vec::new(),
+                },
+            ],
+        }];
+
+        keep_native_mode_frame_intervals(&mut formats, &caps);
+
+        assert!(
+            formats[0].sizes[0].intervals[0].frames_per_second_equals(&frame_interval(100, 4757))
+        );
+        assert!(
+            formats[0].sizes[1].intervals[0].frames_per_second_equals(&frame_interval(100, 2119))
+        );
+    }
+
+    #[test]
+    fn pixel_array_size_reads_gst_value_array() {
+        gst::init().unwrap();
+        let properties = gst::Structure::builder("camera-properties")
+            .field(
+                "api.libcamera.PixelArraySize",
+                gst::Array::new([3280i32, 2464i32]),
+            )
+            .build();
+        assert_eq!(libcamera_pixel_array_size(&properties), Some((3280, 2464)));
+    }
+
+    #[test]
+    fn max_frame_interval_for_size_uses_fraction_range_max() {
+        gst::init().unwrap();
+        let caps = gst::Caps::builder("video/x-raw")
+            .field("width", 3280i32)
+            .field("height", 2464i32)
+            .field(
+                "framerate",
+                gst::FractionRange::new(gst::Fraction::new(1, 1), gst::Fraction::new(2119, 100)),
+            )
+            .build();
+        let maximum = libcamera_max_frame_interval_for_size(&caps, 3280, 2464).unwrap();
+        assert_eq!(maximum, frame_interval(100, 2119));
+    }
+
+    #[test]
+    fn max_frame_interval_for_size_uses_fastest_list_entry() {
+        gst::init().unwrap();
+        let caps = gst::Caps::builder("video/x-raw")
+            .field("width", 640i32)
+            .field("height", 480i32)
+            .field(
+                "framerate",
+                gst::List::new([
+                    gst::Fraction::new(60, 1),
+                    gst::Fraction::new(90, 1),
+                    gst::Fraction::new(20665, 100),
+                ]),
+            )
+            .build();
+        let maximum = libcamera_max_frame_interval_for_size(&caps, 640, 480).unwrap();
+        let expected = frame_interval(100, 20665);
+        assert!(!maximum.frames_per_second_exceeds(&expected));
+        assert!(!expected.frames_per_second_exceeds(&maximum));
+        assert!(frame_interval(1, 120).frames_per_second_exceeds(&frame_interval(100, 2119)));
+        assert!(libcamera_max_frame_interval_for_size(&caps, 3280, 2464).is_none());
+    }
+
+    #[test]
+    fn bit_depth_from_fourcc_reads_packed_bayer_and_ignores_yuv() {
+        assert_eq!(bit_depth_from_fourcc("SRGGB10"), Some(10));
+        assert_eq!(bit_depth_from_fourcc("SRGGB8_CSI2P"), Some(8));
+        assert_eq!(bit_depth_from_fourcc("SBGGR12"), Some(12));
+        assert_eq!(bit_depth_from_fourcc("R10"), Some(10));
+        assert_eq!(bit_depth_from_fourcc("rggb10le"), Some(10));
+        assert_eq!(bit_depth_from_fourcc("grbg10le"), Some(10));
+        assert_eq!(bit_depth_from_fourcc("NV12"), None);
+        assert_eq!(bit_depth_from_fourcc("YUY2"), None);
+        assert_eq!(bit_depth_from_fourcc("BGR888"), None);
+        assert_eq!(bit_depth_from_fourcc("GRAY8"), None);
+        assert_eq!(bit_depth_from_fourcc("GRAY16_LE"), None);
+    }
+
+    #[test]
+    fn add_supported_common_frame_intervals_keeps_native_and_adds_slower_defaults() {
+        let mut intervals = vec![frame_interval(100, 2119)];
+        add_supported_common_frame_intervals(&mut intervals);
+        let listed: Vec<(u32, u32)> = intervals
+            .iter()
+            .map(|interval| (interval.numerator, interval.denominator))
+            .collect();
+        assert_eq!(listed, vec![(100, 2119), (1, 16), (1, 10), (1, 5)]);
+    }
+
+    #[test]
+    fn add_supported_common_frame_intervals_is_per_depth_native_max() {
+        let mut eight_bit = vec![frame_interval(100, 8370)];
+        add_supported_common_frame_intervals(&mut eight_bit);
+        let eight_listed: Vec<(u32, u32)> = eight_bit
+            .iter()
+            .map(|interval| (interval.numerator, interval.denominator))
+            .collect();
+        assert_eq!(
+            eight_listed,
+            vec![
+                (100, 8370),
+                (1, 60),
+                (1, 30),
+                (1, 24),
+                (1, 16),
+                (1, 10),
+                (1, 5)
+            ]
+        );
+
+        let mut ten_bit = vec![frame_interval(100, 4185)];
+        add_supported_common_frame_intervals(&mut ten_bit);
+        let ten_listed: Vec<(u32, u32)> = ten_bit
+            .iter()
+            .map(|interval| (interval.numerator, interval.denominator))
+            .collect();
+        assert_eq!(
+            ten_listed,
+            vec![(100, 4185), (1, 30), (1, 24), (1, 16), (1, 10), (1, 5)]
+        );
+    }
+
+    #[test]
+    fn frame_interval_from_nanoseconds_preserves_fractional_fps() {
+        let interval = frame_interval_from_nanoseconds(47_192_000).unwrap();
+        let fps = f64::from(interval.denominator) / f64::from(interval.numerator);
+        assert!((fps - 21.19).abs() < 0.01);
+        assert!(interval_is_from_buffer_duration(&interval));
+    }
+
+    #[test]
+    fn libcamera_native_mode_sizes_uses_bayer_modes_not_isp_yuv() {
+        gst::init().unwrap();
+        let caps = gst::Caps::from_str(concat!(
+            "video/x-raw, format=(string)NV12, width=(int)3200, height=(int)2400; ",
+            "video/x-raw, format=(string)GRAY8, width=(int)3200, height=(int)2400; ",
+            "video/x-raw, format=(string)YUY2, width=(int)1920, height=(int)1080; ",
+            "video/x-bayer, format=(string)rggb10le, width=(int)3280, height=(int)2464, ",
+            "framerate=(fraction)2119/100; ",
+            "video/x-bayer, format=(string)rggb10le, width=(int)1920, height=(int)1080, ",
+            "framerate=(fraction)4757/100; ",
+            "video/x-bayer, format=(string)rggb10le, width=(int)1640, height=(int)1232, ",
+            "framerate=(fraction)4185/100; ",
+            "video/x-bayer, format=(string)rggb8le, width=(int)1640, height=(int)1232, ",
+            "framerate=(fraction)4185/100; ",
+            "video/x-bayer, format=(string)rggb10le, width=(int)640, height=(int)480, ",
+            "framerate=(fraction)20665/100"
+        ))
+        .unwrap();
+
+        let sizes = libcamera_native_mode_sizes(&caps);
+        let listed: Vec<(u32, u32)> = sizes.iter().map(|size| (size.width, size.height)).collect();
+        assert_eq!(
+            listed,
+            vec![(3280, 2464), (1920, 1080), (1640, 1232), (640, 480)]
+        );
+        assert!(!listed.contains(&(3200, 2400)));
+        assert!(sizes.iter().all(|size| size.intervals.is_empty()));
+        assert_eq!(listed_bit_depths(&sizes[0]), vec![10]);
+        assert!(
+            sizes[0].depths[0].intervals[0].frames_per_second_equals(&frame_interval(100, 2119))
+        );
+        assert_eq!(listed_bit_depths(&sizes[2]), vec![8, 10]);
+        assert!(
+            sizes[3].depths[0].intervals[0].frames_per_second_equals(&frame_interval(100, 20665))
+        );
+    }
+
+    #[test]
+    fn libcamera_bayer_mode_sizes_accepts_raw_stream_formats_without_fps() {
+        gst::init().unwrap();
+        let caps = gst::Caps::from_str(concat!(
+            "video/x-bayer, format=(string)rggb10le, width=(int)3280, height=(int)2464; ",
+            "video/x-bayer, format=(string)rggb8le, width=(int)3280, height=(int)2464; ",
+            "video/x-bayer, format=(string)rggb10le, width=(int)1920, height=(int)1080; ",
+            "video/x-bayer, format=(string)rggb10le, width=(int)1640, height=(int)1232; ",
+            "video/x-bayer, format=(string)rggb8le, width=(int)1640, height=(int)1232; ",
+            "video/x-bayer, format=(string)rggb10le, width=(int)640, height=(int)480; ",
+            "video/x-raw, format=(string)NV12, width=(int)3200, height=(int)2400"
+        ))
+        .unwrap();
+
+        assert!(libcamera_native_mode_sizes(&caps).is_empty());
+        let sizes = libcamera_bayer_mode_sizes(&caps, false);
+        let listed: Vec<(u32, u32)> = sizes.iter().map(|size| (size.width, size.height)).collect();
+        assert_eq!(
+            listed,
+            vec![(3280, 2464), (1920, 1080), (1640, 1232), (640, 480)]
+        );
+        assert!(sizes.iter().all(|size| size.intervals.is_empty()));
+        assert!(
+            sizes
+                .iter()
+                .all(|size| size.depths.iter().all(|depth| depth.intervals.is_empty()))
+        );
+        assert_eq!(listed_bit_depths(&sizes[0]), vec![8, 10]);
+        assert_eq!(listed_bit_depths(&sizes[1]), vec![10]);
+        assert_eq!(listed_bit_depths(&sizes[2]), vec![8, 10]);
+        assert_eq!(listed_bit_depths(&sizes[3]), vec![10]);
+    }
+
+    #[test]
+    fn unclamped_fps_probe_interval_is_exactly_1000fps() {
+        assert!(is_unclamped_fps_probe_interval(&frame_interval(1, 1000)));
+        assert!(!is_unclamped_fps_probe_interval(&frame_interval(1, 21)));
+        assert!(!is_unclamped_fps_probe_interval(&frame_interval(100, 2119)));
+        let from_gst: FrameInterval = gst::Fraction::new(1000, 1).into();
+        assert!(is_unclamped_fps_probe_interval(&from_gst));
+        let from_buffer = frame_interval_from_nanoseconds(1_000_000).unwrap();
+        assert!(is_unclamped_fps_probe_interval(&from_buffer));
     }
 }

@@ -135,7 +135,9 @@ impl ZenohSink {
             .stream_information
             .configuration
         {
-            CaptureConfiguration::Video(video_configuraiton) => video_configuraiton.encode.clone(),
+            CaptureConfiguration::Video(video_configuraiton) => {
+                video_configuraiton.sink_encode.clone()
+            }
             CaptureConfiguration::Redirect(_) => {
                 return Err(anyhow!(
                     "Redirect CaptureConfiguration means the stream was not initialized yet"

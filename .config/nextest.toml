@@ -1,0 +1,14 @@
+[store]
+dir = "target/nextest"
+
+[profile.default]
+retries = 0
+slow-timeout = { period = "120s", terminate-after = 2 }
+
+# Camera-mode remote tests share a single MCM instance on the remote host
+# with fixed ports and limited resources. They must run sequentially.
+# Usage: cargo nextest run --profile camera
+[profile.camera]
+[[profile.camera.overrides]]
+filter = "test(/^remote_integration::/) & binary(integration)"
+threads-required = 1

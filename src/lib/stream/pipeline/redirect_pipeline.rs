@@ -65,7 +65,7 @@ impl RedirectPipeline {
             .stream_information
             .configuration
         {
-            CaptureConfiguration::Video(configuration) => Some(configuration.encode.clone()),
+            CaptureConfiguration::Video(configuration) => Some(configuration.source_encode.clone()),
             _unknown => None,
         };
 

@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use tracing::*;
 
 use crate::{
-    stream::types::{CaptureConfiguration, VideoCaptureConfiguration},
+    stream::types::{CaptureConfiguration, SourceConfiguration, VideoCaptureConfiguration},
     video::types::{FrameInterval, VideoEncodeType},
 };
 
@@ -126,6 +126,95 @@ pub fn check_all_plugins() -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn encoder_factory_can_encode(
+    encoding: &dyn super::encoding::CompressedEncoding,
+    factory_name: &str,
+) -> Result<()> {
+    let pipeline = gst::Pipeline::new();
+
+    let source = gst::ElementFactory::make("videotestsrc")
+        .property("num-buffers", 1i32)
+        .build()
+        .with_context(|| format!("Failed to create videotestsrc for {factory_name}"))?;
+
+    let raw_capsfilter = gst::ElementFactory::make("capsfilter")
+        .property(
+            "caps",
+            gst::Caps::builder("video/x-raw")
+                .field("format", "NV12")
+                .field("width", 160i32)
+                .field("height", 120i32)
+                .field("framerate", gst::Fraction::new(30, 1))
+                .build(),
+        )
+        .build()
+        .with_context(|| format!("Failed to create raw capsfilter for {factory_name}"))?;
+
+    let videoconvert = gst::ElementFactory::make("videoconvert")
+        .build()
+        .with_context(|| format!("Failed to create videoconvert for {factory_name}"))?;
+
+    let encoder = gst::ElementFactory::make(factory_name)
+        .name("encoder")
+        .build()
+        .with_context(|| format!("Failed to create encoder {factory_name}"))?;
+
+    let parser = match encoding.optional_parser_factory() {
+        Some(parser_factory) => {
+            let parser = gst::ElementFactory::make(parser_factory)
+                .build()
+                .with_context(|| {
+                    format!("Failed to create parser {parser_factory} for {factory_name}")
+                })?;
+            encoding.configure_parser_element(&parser);
+            Some(parser)
+        }
+        None => None,
+    };
+
+    let fakesink = gst::ElementFactory::make("fakesink")
+        .build()
+        .with_context(|| format!("Failed to create fakesink for {factory_name}"))?;
+
+    let mut chain: Vec<&gst::Element> = vec![&source, &raw_capsfilter, &videoconvert, &encoder];
+    if let Some(parser) = &parser {
+        chain.push(parser);
+    }
+    chain.push(&fakesink);
+
+    pipeline
+        .add_many(&chain)
+        .with_context(|| format!("Failed to add dummy encode elements for {factory_name}"))?;
+    gst::Element::link_many(&chain)
+        .with_context(|| format!("Failed to link dummy encode chain for {factory_name}"))?;
+
+    let bus = pipeline.bus().context("Dummy encode pipeline has no bus")?;
+
+    if let Err(error) = pipeline.set_state(gst::State::Playing) {
+        let _ = pipeline.set_state(gst::State::Null);
+        return Err(anyhow!("{error}"));
+    }
+
+    let message = bus.timed_pop_filtered(
+        gst::ClockTime::from_seconds(3),
+        &[
+            gst::MessageType::Error,
+            gst::MessageType::Eos,
+            gst::MessageType::AsyncDone,
+        ],
+    );
+    let _ = pipeline.set_state(gst::State::Null);
+
+    let Some(message) = message else {
+        return Err(anyhow!("Dummy encode timed out"));
+    };
+    match message.view() {
+        gst::MessageView::Error(error) => Err(anyhow!("{} ({:?})", error.error(), error.debug())),
+        gst::MessageView::Eos(_) | gst::MessageView::AsyncDone(_) => Ok(()),
+        _ => Err(anyhow!("Dummy encode produced an unexpected bus message")),
+    }
 }
 
 pub fn is_gst_plugin_available(
@@ -309,7 +398,7 @@ pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Result<VideoEn
     }
 
     let encode =
-        tokio::time::timeout(tokio::time::Duration::from_secs(3), wait_for_encode(rx)).await;
+        tokio::time::timeout(tokio::time::Duration::from_secs(15), wait_for_encode(rx)).await;
 
     sink_pad.remove_probe(probe_id);
 
@@ -529,13 +618,17 @@ async fn wait_for_video_capture_configuration(
             .context("No framerate")?;
 
         let video_capture_configuration = CaptureConfiguration::Video(VideoCaptureConfiguration {
-            encode: encode.clone(),
+            source_encode: encode.clone(),
+            sink_encode: encode.clone(),
             height,
             width,
             frame_interval: FrameInterval {
                 numerator: framerate.denom() as u32,
                 denominator: framerate.numer() as u32,
             },
+            bit_depth: None,
+            source_configuration: SourceConfiguration::Classic,
+            auto_restart_on_config_change: false,
         });
 
         return Ok(video_capture_configuration);
@@ -599,6 +692,56 @@ pub fn try_set_property(element: &gst::Element, name: &str, value: impl Into<gst
             }
             return;
         }
+    }
+
+    if let Some(flags_class) = gst::glib::FlagsClass::with_type(pspec.value_type()) {
+        let flags_bits = if let Ok(nick) = value.get::<&str>() {
+            match flags_class.from_nick_string(nick) {
+                Ok(bits) => bits,
+                Err(error) => {
+                    warn!(
+                        "Flags nick '{nick}' is not valid for property '{name}' on element '{}': {error}",
+                        element.type_()
+                    );
+                    return;
+                }
+            }
+        } else if let Ok(bits) = value.get::<u32>() {
+            bits
+        } else if let Ok(bits) = value.get::<i32>() {
+            bits as u32
+        } else if let Ok(bits) = value.get::<i64>() {
+            match u32::try_from(bits) {
+                Ok(bits) => bits,
+                Err(_) => {
+                    warn!(
+                        "Flags value {bits} does not fit in u32 for property '{name}' on element '{}'",
+                        element.type_()
+                    );
+                    return;
+                }
+            }
+        } else {
+            warn!(
+                "Unsupported flags value for property '{name}' on element '{}'",
+                element.type_()
+            );
+            return;
+        };
+        let mut builder = flags_class.builder();
+        for flag in flags_class.values() {
+            if flags_bits & flag.value() != 0 {
+                builder = builder.set(flag.value());
+            }
+        }
+        match builder.build() {
+            Some(flags_value) => element.set_property_from_value(name, &flags_value),
+            None => warn!(
+                "Flags value {flags_bits} is not valid for property '{name}' on element '{}'",
+                element.type_()
+            ),
+        }
+        return;
     }
 
     element.set_property_from_value(name, &value);

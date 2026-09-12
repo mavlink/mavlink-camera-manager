@@ -1,8 +1,13 @@
+#[cfg(target_os = "linux")]
+pub mod auto_transcoding;
 pub mod fake_pipeline;
 pub mod onvif_pipeline;
 pub mod qr_pipeline;
 pub mod redirect_pipeline;
 pub mod runner;
+pub mod tee_registry;
+#[cfg(target_os = "linux")]
+pub mod transcoding;
 #[cfg(target_os = "linux")]
 pub mod v4l_pipeline;
 
@@ -18,10 +23,13 @@ use crate::{
         gst::utils::wait_for_element_state_async,
         rtsp::rtsp_server::RTSPServer,
         sink::{Sink, SinkInterface},
+        types::CaptureConfiguration,
     },
-    video::types::VideoSourceType,
+    video::types::{VideoEncodeType, VideoSourceType},
     video_stream::types::VideoAndStreamInformation,
 };
+
+use tee_registry::{TeeMedia, TeeRegistry};
 
 use fake_pipeline::FakePipeline;
 use onvif_pipeline::OnvifPipeline;
@@ -122,13 +130,13 @@ impl Pipeline {
 pub struct PipelineState {
     pub pipeline_id: Arc<uuid::Uuid>,
     pub pipeline: gst::Pipeline,
-    pub video_tee: Option<gst::Element>,
-    pub rtp_tee: Option<gst::Element>,
+    pub tee_registry: TeeRegistry,
     pub sinks: HashMap<uuid::Uuid, Sink>,
     pub pipeline_runner: PipelineRunner,
 }
 
 pub const PIPELINE_RTP_TEE_NAME: &str = "RTPTee";
+pub const PIPELINE_RAW_TEE_NAME: &str = "RawTee";
 pub const PIPELINE_VIDEO_TEE_NAME: &str = "VideoTee";
 pub const PIPELINE_FILTER_NAME: &str = "Filter";
 
@@ -164,9 +172,45 @@ impl PipelineState {
             }
         }?;
 
-        let video_tee = pipeline.by_name(&format!("{PIPELINE_VIDEO_TEE_NAME}-{pipeline_id}"));
+        let sink_encode = match &video_and_stream_information
+            .stream_information
+            .configuration
+        {
+            CaptureConfiguration::Video(configuration) => configuration.sink_encode.clone(),
+            CaptureConfiguration::Redirect(_) => VideoEncodeType::Unknown("Redirect stream".into()),
+        };
 
-        let rtp_tee = pipeline.by_name(&format!("{PIPELINE_RTP_TEE_NAME}-{pipeline_id}"));
+        let video_tee_media = match sink_encode {
+            VideoEncodeType::H264 | VideoEncodeType::H265 | VideoEncodeType::Mjpg => {
+                TeeMedia::Compressed(sink_encode)
+            }
+            VideoEncodeType::Nv12 | VideoEncodeType::Yuyv | VideoEncodeType::Rgb => {
+                TeeMedia::Raw(sink_encode)
+            }
+            VideoEncodeType::Unknown(_) => TeeMedia::Compressed(sink_encode),
+        };
+
+        let mut tee_registry = TeeRegistry::new();
+        let video_tee_name = format!("{PIPELINE_VIDEO_TEE_NAME}-{pipeline_id}");
+        if let Some(element) = pipeline.by_name(&video_tee_name) {
+            tee_registry.register(video_tee_name, element, video_tee_media);
+        }
+        let rtp_tee_name = format!("{PIPELINE_RTP_TEE_NAME}-{pipeline_id}");
+        if let Some(element) = pipeline.by_name(&rtp_tee_name) {
+            tee_registry.register(rtp_tee_name, element, TeeMedia::Rtp);
+        }
+
+        let source_encode = match &video_and_stream_information
+            .stream_information
+            .configuration
+        {
+            CaptureConfiguration::Video(configuration) => configuration.source_encode.clone(),
+            CaptureConfiguration::Redirect(_) => VideoEncodeType::Unknown("Redirect stream".into()),
+        };
+        let raw_tee_name = format!("{PIPELINE_RAW_TEE_NAME}-{pipeline_id}");
+        if let Some(element) = pipeline.by_name(&raw_tee_name) {
+            tee_registry.register(raw_tee_name, element, TeeMedia::Raw(source_encode));
+        }
 
         let pipeline_runner =
             PipelineRunner::try_new(&pipeline, pipeline_id, false, video_and_stream_information)?;
@@ -179,8 +223,7 @@ impl PipelineState {
         Ok(Self {
             pipeline_id: pipeline_id.clone(),
             pipeline,
-            video_tee,
-            rtp_tee,
+            tee_registry,
             sinks: Default::default(),
             pipeline_runner,
         })
@@ -191,20 +234,21 @@ impl PipelineState {
     pub async fn add_sink(&mut self, mut sink: Sink) -> Result<()> {
         let pipeline_id = &self.pipeline_id;
 
-        // Request a new src pad for the used Tee
-        // Note: Here we choose if the sink will receive a Video or RTP packages
-        let tee = match sink {
-            Sink::Image(_) | Sink::Zenoh(_) | Sink::Rtsp(_) => &self.video_tee,
-            Sink::Udp(_) | Sink::WebRTC(_) => &self.rtp_tee,
-        };
+        let pipeline_tee = self
+            .tee_registry
+            .tee_for_sink(&sink)
+            .context("No Tee for this kind of Pipeline")?;
 
-        let Some(tee) = tee else {
-            return Err(anyhow!("No Tee for this kind of Pipeline"));
-        };
+        if let Sink::Image(image_sink) = &mut sink {
+            image_sink.configure_capture_decoder(&pipeline_tee.media)?;
+        }
 
-        let tee_src_pad = tee.request_pad_simple("src_%u").context(format!(
-            "Failed requesting src pad for Tee of the pipeline {pipeline_id}"
-        ))?;
+        let tee_src_pad = pipeline_tee
+            .element
+            .request_pad_simple("src_%u")
+            .context(format!(
+                "Failed requesting src pad for Tee of the pipeline {pipeline_id}"
+            ))?;
         debug!("Got tee's src pad {:#?}", tee_src_pad.name());
 
         // Link the Sink
@@ -246,15 +290,19 @@ impl PipelineState {
                     "RTSP factory for {:?} already mounted, reusing for recreated pipeline",
                     sink.path()
                 );
-            } else if let Some(video_tee) = &self.video_tee {
+            } else if let Some(video_tee) = self
+                .tee_registry
+                .compressed_tee()
+                .or_else(|| self.tee_registry.raw_tee())
+            {
                 let caps = video_tee
                     .static_pad("sink")
-                    .and_then(|p| p.current_caps())
+                    .and_then(|pad| pad.current_caps())
                     .or_else(|| {
                         let filter_name = format!("{PIPELINE_FILTER_NAME}-{}", self.pipeline_id);
                         pipeline
                             .by_name(&filter_name)
-                            .and_then(|f| f.property::<Option<gst::Caps>>("caps"))
+                            .and_then(|filter| filter.property::<Option<gst::Caps>>("caps"))
                     })
                     .context("Failed to get caps for RTSP sink")?;
 
