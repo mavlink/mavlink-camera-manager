@@ -119,6 +119,8 @@ impl ManualTranscodingPipeline {
             .build()
             .context("Failed to create videoconvert")?;
 
+        let encoder_input_capsfilter = mjpg_encoder_input_capsfilter(encoding)?;
+
         let encoder = gst::ElementFactory::make(factory_name.as_str())
             .name("encoder")
             .build()
@@ -160,8 +162,11 @@ impl ManualTranscodingPipeline {
             .build()
             .context("Failed to create RTP tee")?;
 
-        let mut chain: Vec<&gst::Element> =
-            vec![&raw_capsfilter, &raw_tee, &queue, &videoconvert, &encoder];
+        let mut chain: Vec<&gst::Element> = vec![&raw_capsfilter, &raw_tee, &queue, &videoconvert];
+        if let Some(encoder_input_capsfilter) = &encoder_input_capsfilter {
+            chain.push(encoder_input_capsfilter);
+        }
+        chain.push(&encoder);
         if let Some(parser) = &parser {
             chain.push(parser);
         }
@@ -374,6 +379,11 @@ impl ManualTranscodingPipeline {
         queue.set_property("max-size-time", gst::ClockTime::ZERO);
         queue.set_property("max-size-bytes", 0u32);
 
+        let videoconvert = gst::ElementFactory::make("videoconvert")
+            .build()
+            .context("Failed to create videoconvert")?;
+        let encoder_input_capsfilter = mjpg_encoder_input_capsfilter(encoding)?;
+
         let encoder = gst::ElementFactory::make(encoder_factory_name.as_str())
             .name("encoder")
             .build()
@@ -415,7 +425,12 @@ impl ManualTranscodingPipeline {
             .build()
             .context("Failed to create RTP tee")?;
 
-        let mut chain: Vec<&gst::Element> = vec![&source_capsfilter, &decoder, &queue, &encoder];
+        let mut chain: Vec<&gst::Element> =
+            vec![&source_capsfilter, &decoder, &queue, &videoconvert];
+        if let Some(encoder_input_capsfilter) = &encoder_input_capsfilter {
+            chain.push(encoder_input_capsfilter);
+        }
+        chain.push(&encoder);
         if let Some(parser) = &parser {
             chain.push(parser);
         }
@@ -462,6 +477,24 @@ impl ManualTranscodingPipeline {
         self.encoding
             .context("Manual transcoding pipeline is missing a compressed sink encoding")
     }
+}
+
+fn mjpg_encoder_input_capsfilter(
+    encoding: &dyn CompressedEncoding,
+) -> Result<Option<gst::Element>> {
+    if encoding.encode_key() != "MJPG" {
+        return Ok(None);
+    }
+    gst::ElementFactory::make("capsfilter")
+        .property(
+            "caps",
+            gst::Caps::builder("video/x-raw")
+                .field("format", "I420")
+                .build(),
+        )
+        .build()
+        .map(Some)
+        .context("Failed to create JPEG encoder input capsfilter")
 }
 
 fn add_compressed_source(
