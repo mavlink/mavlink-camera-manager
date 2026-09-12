@@ -86,10 +86,17 @@ impl RTSPServer {
         // pump. A failed attach to the default context can leave the listen
         // socket bound; every retry then hits EADDRINUSE and clients see
         // connection refused.
+        //
+        // Do not attach until `start_pipeline` sets `run`: GStreamer 1.20
+        // does not fully serve factories added after the server is attached.
         let main_context = gst::glib::MainContext::new();
         loop {
+            if !RTSPServer::is_running() {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                continue;
+            }
             if let Err(error) = main_context.with_thread_default(|| {
-                let mut rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
+                let rtsp_server = RTSP_SERVER.as_ref().lock().unwrap();
                 let id = match rtsp_server.server.attach(Some(&main_context)) {
                     Ok(id) => id,
                     Err(error) => {
@@ -101,7 +108,6 @@ impl RTSPServer {
                 };
 
                 let main_loop = gst::glib::MainLoop::new(Some(&main_context), false);
-                rtsp_server.run = true;
                 drop(rtsp_server);
 
                 main_loop.run();
