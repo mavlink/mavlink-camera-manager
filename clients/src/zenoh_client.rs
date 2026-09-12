@@ -6,6 +6,7 @@ use std::sync::{
 use anyhow::{Context, Result};
 use gst::prelude::*;
 use tokio::task::JoinHandle;
+use tracing::warn;
 
 use crate::{attach_frame_probe, Codec, SampleSender, StreamClient};
 
@@ -118,7 +119,7 @@ impl ZenohClient {
                 let message: CompressedVideo = match cdr::deserialize::<CompressedVideo>(&payload) {
                     Ok(msg) => msg,
                     Err(error) => {
-                        eprintln!("[zenoh-client] Failed to deserialize CDR message: {error}");
+                        warn!(%error, "Failed to deserialize CDR message");
                         continue;
                     }
                 };
@@ -128,7 +129,7 @@ impl ZenohClient {
                 buffer.get_mut().unwrap().set_pts(pts);
 
                 if appsrc.push_buffer(buffer).is_err() {
-                    eprintln!("[zenoh-client] Failed to push buffer into appsrc");
+                    warn!("Failed to push buffer into appsrc");
                     break;
                 }
             }

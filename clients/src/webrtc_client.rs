@@ -9,6 +9,7 @@ use async_tungstenite::tungstenite;
 use futures::{SinkExt, StreamExt};
 use gst::prelude::*;
 use tokio::sync::mpsc as tokio_mpsc;
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::{attach_frame_probe, protocol::*, Codec, SampleSender, StreamClient};
@@ -38,6 +39,10 @@ impl WebrtcClient {
         sender: Option<SampleSender>,
         ice_filter: Option<&str>,
     ) -> Result<Self> {
+        anyhow::ensure!(
+            !signalling_url.is_empty(),
+            "signalling_url must be non-empty"
+        );
         gst::init()?;
 
         let pipeline = gst::Pipeline::with_name("webrtc-client");
@@ -101,11 +106,11 @@ impl WebrtcClient {
             };
 
             let Ok(depay) = gst::ElementFactory::make(depay_factory).build() else {
-                eprintln!("[webrtc-client] Failed to create {depay_factory}");
+                warn!("Failed to create {depay_factory}");
                 return;
             };
             let Ok(parse) = gst::ElementFactory::make(parse_factory).build() else {
-                eprintln!("[webrtc-client] Failed to create {parse_factory}");
+                warn!("Failed to create {parse_factory}");
                 return;
             };
             let Ok(capsfilter) = gst::ElementFactory::make("capsfilter")
@@ -115,7 +120,7 @@ impl WebrtcClient {
                 return;
             };
             let Ok(decoder) = gst::ElementFactory::make(decoder_factory).build() else {
-                eprintln!("[webrtc-client] Failed to create {decoder_factory}");
+                warn!("Failed to create {decoder_factory}");
                 return;
             };
             let Ok(sink) = gst::ElementFactory::make("fakesink")
@@ -167,13 +172,13 @@ impl WebrtcClient {
 
             let sink_pad = depay.static_pad("sink").unwrap();
             if pad.link(&sink_pad).is_err() {
-                eprintln!("[webrtc-client] Failed to link webrtcbin pad to depayloader");
+                warn!("Failed to link webrtcbin pad to depayloader");
             }
         });
 
         let ws = {
             let max_attempts = 5;
-            let mut last_err: Option<tungstenite::Error> = None;
+            let mut last_error: Option<tungstenite::Error> = None;
             let mut conn = None;
             for attempt in 0..max_attempts {
                 match async_tungstenite::tokio::connect_async(signalling_url).await {
@@ -181,19 +186,21 @@ impl WebrtcClient {
                         conn = Some(ws);
                         break;
                     }
-                    Err(e) => {
-                        eprintln!(
-                            "[webrtc-client] ws connect attempt {}/{max_attempts} failed: {e}, retrying...",
-                            attempt + 1
+                    Err(error) => {
+                        warn!(
+                            attempt = attempt + 1,
+                            max_attempts,
+                            %error,
+                            "ws connect failed, retrying"
                         );
-                        last_err = Some(e);
+                        last_error = Some(error);
                         if attempt + 1 < max_attempts {
                             tokio::time::sleep(Duration::from_secs(1)).await;
                         }
                     }
                 }
             }
-            conn.ok_or_else(|| last_err.unwrap())
+            conn.ok_or_else(|| last_error.unwrap())
                 .context("ws connect failed after retries")?
         };
         let (mut ws_sink, mut ws_source) = ws.split();
@@ -382,7 +389,7 @@ fn handle_incoming(
             }
         }
         Message::Question(Question::EndSession(end)) => {
-            eprintln!("[webrtc-client] Session ended by server: {}", end.reason);
+            warn!(reason = %end.reason, "Session ended by server");
             return true;
         }
         _ => {}
@@ -397,8 +404,8 @@ fn handle_sdp_offer(
 ) {
     let sdp_msg = match gst_sdp::SDPMessage::parse_buffer(sdp_text.as_bytes()) {
         Ok(msg) => msg,
-        Err(e) => {
-            eprintln!("[webrtc-client] Failed to parse SDP: {e:?}");
+        Err(error) => {
+            warn!(?error, "Failed to parse SDP");
             return;
         }
     };
@@ -415,11 +422,11 @@ fn handle_sdp_offer(
         let reply = match reply {
             Ok(Some(reply)) => reply,
             Ok(None) => {
-                eprintln!("[webrtc-client] Answer creation got no response");
+                warn!("Answer creation got no response");
                 return;
             }
-            Err(e) => {
-                eprintln!("[webrtc-client] Answer creation failed: {e:?}");
+            Err(error) => {
+                warn!(?error, "Answer creation failed");
                 return;
             }
         };
@@ -427,11 +434,11 @@ fn handle_sdp_offer(
         let answer = match reply.get_optional::<gst_webrtc::WebRTCSessionDescription>("answer") {
             Ok(Some(answer)) => answer,
             Ok(None) => {
-                eprintln!("[webrtc-client] No \"answer\" in create-answer reply");
+                warn!("No \"answer\" in create-answer reply");
                 return;
             }
-            Err(e) => {
-                eprintln!("[webrtc-client] Failed to get answer: {e:?}");
+            Err(error) => {
+                warn!(?error, "Failed to get answer");
                 return;
             }
         };
@@ -445,8 +452,8 @@ fn handle_sdp_offer(
             Ok(sdp_text) => {
                 let _ = tx.send(SignalOutgoing::SdpAnswer(sdp_text));
             }
-            Err(e) => {
-                eprintln!("[webrtc-client] Failed to serialize answer SDP: {e:?}");
+            Err(error) => {
+                warn!(?error, "Failed to serialize answer SDP");
             }
         }
     });

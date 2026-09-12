@@ -14,6 +14,7 @@ use std::{
 use anyhow::Result;
 use gst::prelude::*;
 use tokio::sync::mpsc;
+use tracing::warn;
 
 #[async_trait::async_trait]
 pub trait StreamClient {
@@ -144,7 +145,7 @@ pub fn attach_frame_probe(pad: &gst::Pad, client_name: String, sender: SampleSen
             })
             .is_err()
         {
-            eprintln!("[{client_name}] Sample channel closed");
+            warn!("{client_name} sample channel closed");
         }
 
         gst::PadProbeReturn::Ok
