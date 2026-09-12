@@ -5,6 +5,10 @@ dir = "target/nextest"
 retries = 0
 slow-timeout = { period = "120s", terminate-after = 2 }
 
+[[profile.default.overrides]]
+filter = "test(/^data_flow::transcoding::/) & binary(integration)"
+slow-timeout = { period = "180s", terminate-after = 3 }
+
 # Camera-mode remote tests share a single MCM instance on the remote host
 # with fixed ports and limited resources. They must run sequentially.
 # Usage: cargo nextest run --profile camera
