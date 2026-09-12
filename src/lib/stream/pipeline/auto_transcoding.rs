@@ -94,7 +94,40 @@ impl AutoTranscodingPipeline {
         queue.set_property("max-size-time", gst::ClockTime::ZERO);
         queue.set_property("max-size-bytes", 0u32);
 
-        let autobin = if mode.needs_encoding_profile() {
+        let jpeg_encode = self.sink_encode == VideoEncodeType::Mjpg
+            && matches!(mode, AutoTranscodeMode::EncodeOnly);
+        let jpeg_videoconvert = jpeg_encode
+            .then(|| {
+                gst::ElementFactory::make("videoconvert")
+                    .build()
+                    .context("Failed to create JPEG encode videoconvert")
+            })
+            .transpose()?;
+        let jpeg_input_capsfilter = jpeg_encode
+            .then(|| {
+                gst::ElementFactory::make("capsfilter")
+                    .property(
+                        "caps",
+                        gst::Caps::builder("video/x-raw")
+                            .field("format", "I420")
+                            .field("width", self.width as i32)
+                            .field("height", self.height as i32)
+                            .build(),
+                    )
+                    .build()
+                    .context("Failed to create JPEG encode capsfilter")
+            })
+            .transpose()?;
+        let autobin = if jpeg_encode {
+            let jpegenc = gst::ElementFactory::make("jpegenc")
+                .name(AUTO_ENCODEBIN_NAME)
+                .build()
+                .context("Failed to create jpegenc")?;
+            for (property_name, property_value) in startup_encoder_properties("jpegenc") {
+                apply_property_value(&jpegenc, &property_name, &property_value);
+            }
+            jpegenc
+        } else if mode.needs_encoding_profile() {
             let encoding = crate::stream::gst::encoding::encoding(&self.sink_encode)
                 .with_context(|| format!("No compressed encoding for {:?}", self.sink_encode))?;
             let profile = sink_encoding_profile(encoding)?;
@@ -109,7 +142,9 @@ impl AutoTranscodingPipeline {
                 .build()
                 .with_context(|| format!("Failed to create {bin_factory}"))?
         };
-        install_autobin_codec_property_hooks(&autobin, &self.auto_config, &self.sink_encode);
+        if !jpeg_encode {
+            install_autobin_codec_property_hooks(&autobin, &self.auto_config, &self.sink_encode);
+        }
 
         let video_tee = gst::ElementFactory::make("tee")
             .name(video_tee_name.as_str())
@@ -195,8 +230,23 @@ impl AutoTranscodingPipeline {
         pipeline
             .add_many([&source_capsfilter, &queue, &autobin])
             .context("Failed to add auto transcoding source chain elements")?;
-        gst::Element::link_many([&source_capsfilter, &queue, &autobin])
-            .context("Failed to link auto transcoding source chain")?;
+        if let (Some(videoconvert), Some(capsfilter)) = (&jpeg_videoconvert, &jpeg_input_capsfilter)
+        {
+            pipeline
+                .add_many([videoconvert, capsfilter])
+                .context("Failed to add JPEG encode conversion elements")?;
+            gst::Element::link_many([
+                &source_capsfilter,
+                &queue,
+                videoconvert,
+                capsfilter,
+                &autobin,
+            ])
+            .context("Failed to link JPEG encode source chain")?;
+        } else {
+            gst::Element::link_many([&source_capsfilter, &queue, &autobin])
+                .context("Failed to link auto transcoding source chain")?;
+        }
 
         // encodebin's src pad is always present, so pad-added never fires for it.
         for src_pad in autobin.src_pads() {
@@ -496,20 +546,33 @@ fn delivery_raw_caps(width: u32, height: u32, frame_interval: &FrameInterval) ->
 
 fn sink_encoding_profile(encoding: &dyn CompressedEncoding) -> Result<glib::Object> {
     let format_caps = gst::Caps::builder(encoding.caps_mime()).build();
+    let restriction_caps = rtpjpeg_raw_restriction(encoding);
     unsafe {
         let profile = pbutils::gst_encoding_video_profile_new(
             format_caps.as_ptr() as *mut gst::ffi::GstCaps,
             std::ptr::null(),
-            std::ptr::null(),
+            restriction_caps
+                .as_ref()
+                .map(|caps| caps.as_ptr() as *mut gst::ffi::GstCaps)
+                .unwrap_or(std::ptr::null_mut()),
             0,
         );
         if profile.is_null() {
             return Err(anyhow!("Failed to create sink encoding profile"));
         }
-        Ok(glib::Object::from_glib_full(
-            profile as *mut glib::gobject_ffi::GObject,
-        ))
+        Ok(glib::Object::from_glib_full(profile))
     }
+}
+
+fn rtpjpeg_raw_restriction(encoding: &dyn CompressedEncoding) -> Option<gst::Caps> {
+    if encoding.encode_key() != "MJPG" {
+        return None;
+    }
+    Some(
+        gst::Caps::builder("video/x-raw")
+            .field("format", "I420")
+            .build(),
+    )
 }
 
 mod pbutils {
@@ -520,7 +583,7 @@ mod pbutils {
         pub fn gst_encoding_video_profile_new(
             format: *mut gst::ffi::GstCaps,
             preset: *const c_char,
-            presence_str: *const c_char,
+            restriction: *mut gst::ffi::GstCaps,
             presence: c_uint,
         ) -> *mut glib::gobject_ffi::GObject;
     }
