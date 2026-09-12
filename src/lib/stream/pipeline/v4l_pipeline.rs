@@ -1,12 +1,16 @@
 use std::sync::Arc;
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use gst::prelude::*;
 use tracing::*;
 
 use crate::{
     stream::types::CaptureConfiguration,
-    video::types::{VideoEncodeType, VideoSourceType},
+    video::{
+        gst_device_monitor,
+        types::{VideoEncodeType, VideoSourceType},
+        video_source_local::VideoSourceLocalType,
+    },
     video_stream::types::VideoAndStreamInformation,
 };
 
@@ -31,19 +35,23 @@ impl V4lPipeline {
             .configuration
         {
             CaptureConfiguration::Video(configuration) => configuration,
-            unsupported => return Err(anyhow!("{unsupported:?} is not supported as V4l Pipeline")),
+            unsupported => {
+                return Err(anyhow!(
+                    "{unsupported:?} is not supported as Local Pipeline"
+                ));
+            }
         };
 
         let video_source = match &video_and_stream_information.video_source {
             VideoSourceType::Local(source) => source,
             unsupported => {
                 return Err(anyhow!(
-                    "SourceType {unsupported:?} is not supported as V4l Pipeline"
+                    "SourceType {unsupported:?} is not supported as Local Pipeline"
                 ));
             }
         };
 
-        let device = video_source.device_path.as_str();
+        let device_path = video_source.device_path.as_str();
         let width = configuration.width;
         let height = configuration.height;
         let interval_numerator = configuration.frame_interval.numerator;
@@ -52,18 +60,35 @@ impl V4lPipeline {
         let video_tee_name = format!("{PIPELINE_VIDEO_TEE_NAME}-{pipeline_id}");
         let rtp_tee_name = format!("{PIPELINE_RTP_TEE_NAME}-{pipeline_id}");
 
+        debug!("Building Local pipeline for device path: {device_path}");
+
+        let device = gst_device_monitor::local_device_with_path(device_path)?
+            .upgrade()
+            .context("Device disappeared between selection and pipeline build")?;
+
+        let factory_name = match &video_source.typ {
+            VideoSourceLocalType::Libcamera(_) => "libcamerasrc".to_string(),
+            VideoSourceLocalType::Usb(_)
+            | VideoSourceLocalType::LegacyRpiCam(_)
+            | VideoSourceLocalType::Unknown(_) => gst_device_monitor::source_factory_name(&device)
+                .unwrap_or("v4l2src")
+                .to_string(),
+        };
+
+        debug!("Local pipeline source factory: {factory_name}");
+
         let description = match &configuration.encode {
             VideoEncodeType::H264 => {
                 format!(
                     concat!(
-                        "v4l2src device={device} do-timestamp=true",
+                        "{factory_name} name=source",
                         " ! h264parse config-interval=-1", // Here we need the parse to help the stream-format and alignment part, which is being fixated here because avc/au seems to reduce the CPU usage in the RTP payloading part.
                         " ! capsfilter name={filter_name} caps=video/x-h264,stream-format=avc,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtph264pay aggregate-mode=zero-latency config-interval=-1 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
-                    device = device,
+                    factory_name = factory_name,
                     width = width,
                     height = height,
                     interval_denominator = interval_denominator,
@@ -76,14 +101,14 @@ impl V4lPipeline {
             VideoEncodeType::H265 => {
                 format!(
                     concat!(
-                        "v4l2src device={device} do-timestamp=true",
+                        "{factory_name} name=source",
                         " ! h265parse",
                         " ! capsfilter name={filter_name} caps=video/x-h265,stream-format=byte-stream,alignment=au,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtph265pay aggregate-mode=zero-latency config-interval=-1 pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
-                    device = device,
+                    factory_name = factory_name,
                     width = width,
                     height = height,
                     interval_denominator = interval_denominator,
@@ -93,17 +118,17 @@ impl V4lPipeline {
                     rtp_tee_name = rtp_tee_name,
                 )
             }
-            VideoEncodeType::Yuyv => {
+            VideoEncodeType::Yuyv | VideoEncodeType::Nv12 => {
                 format!(
                     concat!(
-                        "v4l2src device={device} do-timestamp=true",
+                        "{factory_name} name=source",
                         " ! videoconvert",
                         " ! capsfilter name={filter_name} caps=video/x-raw,format=I420,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtpvrawpay pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
-                    device = device,
+                    factory_name = factory_name,
                     width = width,
                     height = height,
                     interval_denominator = interval_denominator,
@@ -116,14 +141,14 @@ impl V4lPipeline {
             VideoEncodeType::Mjpg => {
                 format!(
                     concat!(
-                        "v4l2src device={device} do-timestamp=true",
+                        "{factory_name} name=source",
                         // We don't need a jpegparse, as it leads to incompatible caps, spoiling the negotiation.
                         " ! capsfilter name={filter_name} caps=image/jpeg,width={width},height={height},framerate={interval_denominator}/{interval_numerator}",
                         " ! tee name={video_tee_name} allow-not-linked=true",
                         " ! rtpjpegpay pt=96",
                         " ! tee name={rtp_tee_name} allow-not-linked=true"
                     ),
-                    device = device,
+                    factory_name = factory_name,
                     width = width,
                     height = height,
                     interval_denominator = interval_denominator,
@@ -135,7 +160,7 @@ impl V4lPipeline {
             }
             unsupported => {
                 return Err(anyhow!(
-                    "Encode {unsupported:?} is not supported for V4L2 Pipeline"
+                    "Encode {unsupported:?} is not supported for Local Pipeline"
                 ));
             }
         };
@@ -146,9 +171,52 @@ impl V4lPipeline {
 
         let pipeline = pipeline
             .downcast::<gst::Pipeline>()
-            .expect("Couldn't downcast pipeline");
+            .map_err(|_| anyhow!("parse::launch did not produce a gst::Pipeline"))?;
 
-        pipeline.set_property("name", format!("pipeline-v4l2-{pipeline_id}"));
+        let source = pipeline
+            .by_name("source")
+            .context("Failed to find source element after parse::launch")?;
+
+        // `do-timestamp` only exists on GstBaseSrc subclasses (v4l2src does, libcamerasrc doesn't).
+        if source.has_property("do-timestamp") {
+            source.set_property("do-timestamp", true);
+        }
+
+        // The v4l2 device provider's `reconfigure_element` vfunc is broken
+        // upstream (it compares the factory name against the GType name), so
+        // set the device-identifying property directly from the known path.
+        // Other factories fall back to `reconfigure_element`, which is our
+        // best-effort for now.
+        // In the next iteration, we should refactor the pipeline construction
+        // so we create the pipeline's element programatically, and then we
+        // can use the given Device factory directly.
+        match factory_name.as_str() {
+            "v4l2src" => {
+                source.set_property("device", device_path);
+                debug!("Applied v4l2src device={device_path:?}");
+            }
+            "libcamerasrc" => {
+                // device_path is the libcamera camera id (same string pending uses).
+                source.set_property("camera-name", device_path);
+                debug!("Applied libcamerasrc camera-name={device_path:?}");
+                crate::video::local::libcamera_controls::apply_pending_to_element(
+                    device_path,
+                    &source,
+                );
+                crate::video::local::libcamera_controls::install_live_apply_probe(
+                    &source,
+                    device_path,
+                );
+            }
+            other => {
+                device.reconfigure_element(&source).with_context(|| {
+                    format!("Failed to apply device configuration to {other} source")
+                })?;
+                debug!("Applied device configuration via reconfigure_element for {other}");
+            }
+        }
+
+        pipeline.set_property("name", format!("pipeline-local-{pipeline_id}"));
 
         Ok(pipeline)
     }
