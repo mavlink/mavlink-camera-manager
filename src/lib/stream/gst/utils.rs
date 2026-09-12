@@ -398,7 +398,7 @@ pub async fn get_encode_from_stream_uri(stream_uri: &url::Url) -> Result<VideoEn
     }
 
     let encode =
-        tokio::time::timeout(tokio::time::Duration::from_secs(3), wait_for_encode(rx)).await;
+        tokio::time::timeout(tokio::time::Duration::from_secs(15), wait_for_encode(rx)).await;
 
     sink_pad.remove_probe(probe_id);
 
