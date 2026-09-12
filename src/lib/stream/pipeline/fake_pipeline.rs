@@ -384,6 +384,20 @@ fn attach_fake_compressed_source(
     let videoconvert = gst::ElementFactory::make("videoconvert")
         .build()
         .context("Failed to create videoconvert for fake compressed source")?;
+    let encoder_input_capsfilter = match source_encode {
+        VideoEncodeType::Mjpg => Some(
+            gst::ElementFactory::make("capsfilter")
+                .property(
+                    "caps",
+                    gst::Caps::builder("video/x-raw")
+                        .field("format", "I420")
+                        .build(),
+                )
+                .build()
+                .context("Failed to create fake JPEG source capsfilter")?,
+        ),
+        _ => None,
+    };
     let encoder_factory_name = fake_compressed_encoder_factory(source_encode)?;
     let encoder = gst::ElementFactory::make(encoder_factory_name)
         .name("fake-source-encoder")
@@ -402,6 +416,11 @@ fn attach_fake_compressed_source(
     pipeline
         .add_many([&videoconvert, &encoder])
         .context("Failed to add fake compressed source encoder elements")?;
+    if let Some(encoder_input_capsfilter) = &encoder_input_capsfilter {
+        pipeline
+            .add(encoder_input_capsfilter)
+            .context("Failed to add fake JPEG source capsfilter")?;
+    }
     if let Some(parser) = &parser {
         pipeline
             .add(parser)
@@ -411,9 +430,18 @@ fn attach_fake_compressed_source(
     source
         .link(&videoconvert)
         .context("Failed to link fake source to videoconvert")?;
-    videoconvert
-        .link(&encoder)
-        .context("Failed to link videoconvert to fake source encoder")?;
+    if let Some(encoder_input_capsfilter) = &encoder_input_capsfilter {
+        videoconvert
+            .link(encoder_input_capsfilter)
+            .context("Failed to link videoconvert to fake JPEG source capsfilter")?;
+        encoder_input_capsfilter
+            .link(&encoder)
+            .context("Failed to link fake JPEG source capsfilter to encoder")?;
+    } else {
+        videoconvert
+            .link(&encoder)
+            .context("Failed to link videoconvert to fake source encoder")?;
+    }
     let encoder_src = encoder
         .static_pad("src")
         .context("Fake source encoder has no src pad")?;
@@ -634,10 +662,13 @@ mod tests {
         let buffer_count = std::sync::atomic::AtomicU32::new(0);
         let buffer_count = std::sync::Arc::new(buffer_count);
         let probe_count = buffer_count.clone();
-        queue_sink.add_probe(gst::PadProbeType::BUFFER, move |_pad, _info| {
-            probe_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            gst::PadProbeReturn::Ok
-        });
+        queue_sink.add_probe(
+            gst::PadProbeType::BUFFER | gst::PadProbeType::BUFFER_LIST,
+            move |_pad, _info| {
+                probe_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                gst::PadProbeReturn::Ok
+            },
+        );
 
         pipeline
             .set_state(gst::State::Playing)
@@ -691,6 +722,28 @@ mod tests {
         assert!(pipeline.by_name("fake-source-videoconvert").is_some());
         play_until_rtp_buffer(&pipeline, &pipeline_id)
             .unwrap_or_else(|error| panic!("auto encode should produce RTP buffers: {error}"));
+    }
+
+    #[test]
+    fn auto_encode_rgb_mjpg_produces_rtp() {
+        let _ = gst::init();
+        if gst::ElementFactory::find("jpegenc").is_none() {
+            return;
+        }
+
+        let pipeline_id = Arc::new(uuid::Uuid::nil());
+        let pipeline = FakePipeline::try_new(
+            &pipeline_id,
+            &fake_video_and_stream(
+                VideoEncodeType::Rgb,
+                VideoEncodeType::Mjpg,
+                SourceConfiguration::AutoTranscoding(AutoTranscodingConfig::default()),
+            ),
+        )
+        .expect("build fake auto RGB MJPG pipeline");
+        play_until_rtp_buffer(&pipeline, &pipeline_id).unwrap_or_else(|error| {
+            panic!("auto RGB MJPG encode should produce RTP buffers: {error}")
+        });
     }
 
     #[test]
@@ -752,6 +805,33 @@ mod tests {
         assert!(pipeline.by_name("source").is_some());
         assert!(pipeline.by_name(AUTO_DECODEBIN_NAME).is_some());
         assert!(pipeline.by_name("fake-source-encoder").is_some());
+        play_until_rtp_buffer(&pipeline, &pipeline_id)
+            .unwrap_or_else(|error| panic!("auto decode should produce RTP buffers: {error}"));
+    }
+
+    #[test]
+    fn auto_transcode_h264_mjpg_produces_rtp() {
+        let _ = gst::init();
+        if gst::ElementFactory::find("transcodebin").is_none()
+            || gst::ElementFactory::find("x264enc").is_none()
+            || gst::ElementFactory::find("jpegenc").is_none()
+        {
+            return;
+        }
+
+        let pipeline_id = Arc::new(uuid::Uuid::nil());
+        let pipeline = FakePipeline::try_new(
+            &pipeline_id,
+            &fake_video_and_stream(
+                VideoEncodeType::H264,
+                VideoEncodeType::Mjpg,
+                SourceConfiguration::AutoTranscoding(AutoTranscodingConfig::default()),
+            ),
+        )
+        .expect("build fake auto transcode pipeline");
+        play_until_rtp_buffer(&pipeline, &pipeline_id).unwrap_or_else(|error| {
+            panic!("auto H264 to MJPG transcode should produce RTP buffers: {error}")
+        });
     }
 
     #[test]
@@ -780,6 +860,8 @@ mod tests {
         assert!(pipeline.by_name("source").is_some());
         assert!(pipeline.by_name("decoder").is_some());
         assert!(pipeline.by_name("fake-source-encoder").is_some());
+        play_until_rtp_buffer(&pipeline, &pipeline_id)
+            .unwrap_or_else(|error| panic!("manual decode should produce RTP buffers: {error}"));
     }
 
     #[test]
@@ -811,5 +893,37 @@ mod tests {
         assert!(pipeline.by_name("decoder").is_some());
         assert!(pipeline.by_name("encoder").is_some());
         assert!(pipeline.by_name("fake-source-encoder").is_some());
+        play_until_rtp_buffer(&pipeline, &pipeline_id)
+            .unwrap_or_else(|error| panic!("manual transcode should produce RTP buffers: {error}"));
+    }
+
+    #[test]
+    fn manual_transcode_h264_mjpg_produces_rtp() {
+        let _ = gst::init();
+        if gst::ElementFactory::find("avdec_h264").is_none()
+            || gst::ElementFactory::find("jpegenc").is_none()
+            || gst::ElementFactory::find("x264enc").is_none()
+        {
+            return;
+        }
+
+        let pipeline_id = Arc::new(uuid::Uuid::nil());
+        let pipeline = FakePipeline::try_new(
+            &pipeline_id,
+            &fake_video_and_stream(
+                VideoEncodeType::H264,
+                VideoEncodeType::Mjpg,
+                SourceConfiguration::ManualTranscoding(ManualTranscodingConfig {
+                    encoder: "jpegenc".to_string(),
+                    encoder_properties: Default::default(),
+                    decoder: "avdec_h264".to_string(),
+                    decoder_properties: Default::default(),
+                }),
+            ),
+        )
+        .expect("build fake manual H264 to MJPG pipeline");
+        play_until_rtp_buffer(&pipeline, &pipeline_id).unwrap_or_else(|error| {
+            panic!("manual H264 to MJPG transcode should produce RTP buffers: {error}")
+        });
     }
 }
