@@ -26,13 +26,13 @@ fn cell_slug(source_encode: &str, sink_encode: &str) -> String {
 }
 
 async fn try_verify_data_flow(rx: &mut mpsc::UnboundedReceiver<FrameSample>, label: &str) -> bool {
-    let deadline = tokio::time::Instant::now() + TIMEOUT;
+    let deadline = tokio::time::Instant::now() + MEASUREMENT_WINDOW;
     loop {
         if !drain(rx).is_empty() {
             break;
         }
         if tokio::time::Instant::now() >= deadline {
-            eprintln!("skip {label}: no frames within {TIMEOUT:?}");
+            eprintln!("skip {label}: no frames within {MEASUREMENT_WINDOW:?}");
             return false;
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -46,6 +46,47 @@ async fn try_verify_data_flow(rx: &mut mpsc::UnboundedReceiver<FrameSample>, lab
         return false;
     }
     true
+}
+
+async fn rtsp_factory_ready(url: &str, timeout: Duration) -> bool {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let parsed: url::Url = url.parse().expect("rtsp url");
+    let host = parsed.host_str().unwrap_or("127.0.0.1");
+    let port = parsed.port().unwrap_or(8554);
+    let addr = format!("{host}:{port}");
+    let path = if parsed.path().is_empty() {
+        "/"
+    } else {
+        parsed.path()
+    };
+    let deadline = tokio::time::Instant::now() + timeout;
+    while tokio::time::Instant::now() < deadline {
+        let factory_ready = async {
+            let mut stream = tokio::time::timeout(
+                Duration::from_secs(2),
+                tokio::net::TcpStream::connect(&addr),
+            )
+            .await
+            .ok()?
+            .ok()?;
+            let request = format!("OPTIONS rtsp://{addr}{path} RTSP/1.0\r\nCSeq: 1\r\n\r\n");
+            stream.write_all(request.as_bytes()).await.ok()?;
+            let mut buffer = [0u8; 256];
+            let bytes_read = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buffer))
+                .await
+                .ok()?
+                .ok()?;
+            let response = std::str::from_utf8(&buffer[..bytes_read]).unwrap_or("");
+            Some(response.starts_with("RTSP/1.0 200"))
+        }
+        .await;
+        if factory_ready == Some(true) {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    false
 }
 
 async fn run_auto_or_manual_rtsp(
@@ -69,20 +110,23 @@ async fn run_auto_or_manual_rtsp(
 
     if measure_rtsp {
         let rtsp_url = mcm.rtsp_url(path);
-        wait_for_rtsp_tcp(&rtsp_url, TIMEOUT).await;
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        match stream_clients::rtsp_client::RtspClient::new(
-            &rtsp_url,
-            rtsp_codec(sink_encode),
-            Some(tx),
-        )
-        .await
-        {
-            Ok(_rtsp) => {
-                let _ = try_verify_data_flow(&mut rx, name).await;
-            }
-            Err(error) => {
-                eprintln!("skip {name}: RTSP client failed: {error:#}");
+        if !rtsp_factory_ready(&rtsp_url, TIMEOUT).await {
+            eprintln!("skip {name}: RTSP factory not serving within {TIMEOUT:?}");
+        } else {
+            let (tx, mut rx) = mpsc::unbounded_channel();
+            match stream_clients::rtsp_client::RtspClient::new(
+                &rtsp_url,
+                rtsp_codec(sink_encode),
+                Some(tx),
+            )
+            .await
+            {
+                Ok(_rtsp) => {
+                    let _ = try_verify_data_flow(&mut rx, name).await;
+                }
+                Err(error) => {
+                    eprintln!("skip {name}: RTSP client failed: {error:#}");
+                }
             }
         }
     }
