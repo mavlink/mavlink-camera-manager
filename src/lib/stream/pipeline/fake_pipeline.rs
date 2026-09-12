@@ -131,6 +131,7 @@ impl FakePipeline {
 
         if raw_source {
             configure_videotestsrc(&pipeline, pattern)?;
+            insert_videoconvert_after_source(&pipeline)?;
         } else {
             attach_fake_compressed_source(&pipeline, &configuration.source_encode, pattern)?;
         }
@@ -326,12 +327,45 @@ fn configure_videotestsrc(pipeline: &gst::Pipeline, pattern: &str) -> Result<()>
     Ok(())
 }
 
+fn insert_videoconvert_after_source(pipeline: &gst::Pipeline) -> Result<()> {
+    let source = pipeline
+        .by_name("source")
+        .context("Fake transcoding pipeline is missing the source element")?;
+    let source_pad = source
+        .static_pad("src")
+        .context("Fake source element has no src pad")?;
+    let peer_pad = source_pad
+        .peer()
+        .context("Fake source element is not linked")?;
+    source_pad
+        .unlink(&peer_pad)
+        .context("Failed to unlink fake source from downstream")?;
+
+    let videoconvert = gst::ElementFactory::make("videoconvert")
+        .name("fake-source-videoconvert")
+        .build()
+        .context("Failed to create videoconvert for fake raw source")?;
+    pipeline
+        .add(&videoconvert)
+        .context("Failed to add fake raw source videoconvert")?;
+    source
+        .link(&videoconvert)
+        .context("Failed to link fake source to videoconvert")?;
+    let convert_src = videoconvert
+        .static_pad("src")
+        .context("Fake source videoconvert has no src pad")?;
+    convert_src
+        .link(&peer_pad)
+        .context("Failed to link fake source videoconvert to downstream")?;
+    Ok(())
+}
+
 fn attach_fake_compressed_source(
     pipeline: &gst::Pipeline,
     source_encode: &VideoEncodeType,
     pattern: &str,
 ) -> Result<()> {
-    let peer_pad = unlinked_static_sink_pad(pipeline)?;
+    let peer_pad = unlinked_static_sink_pad(pipeline, source_encode)?;
 
     let source = gst::ElementFactory::make("videotestsrc")
         .name("source")
@@ -419,7 +453,20 @@ fn compressed_source_parser(source_encode: &VideoEncodeType) -> Result<Option<gs
     Ok(Some(parser))
 }
 
-fn unlinked_static_sink_pad(pipeline: &gst::Pipeline) -> Result<gst::Pad> {
+fn unlinked_static_sink_pad(
+    pipeline: &gst::Pipeline,
+    source_encode: &VideoEncodeType,
+) -> Result<gst::Pad> {
+    let expected_mime = match source_encode {
+        VideoEncodeType::H264 => "video/x-h264",
+        VideoEncodeType::H265 => "video/x-h265",
+        VideoEncodeType::Mjpg => "image/jpeg",
+        unsupported => {
+            return Err(anyhow!(
+                "Fake compressed source does not support {unsupported:?}"
+            ));
+        }
+    };
     for element in pipeline.iterate_elements() {
         let element = element.map_err(|error| {
             anyhow!("Failed to iterate fake transcoding pipeline elements: {error}")
@@ -434,22 +481,19 @@ fn unlinked_static_sink_pad(pipeline: &gst::Pipeline) -> Result<gst::Pad> {
         let Some(structure) = caps.structure(0) else {
             continue;
         };
-        if !matches!(
-            structure.name().as_str(),
-            "video/x-h264" | "video/x-h265" | "image/jpeg"
-        ) {
+        if structure.name().as_str() != expected_mime {
             continue;
         }
         let sink = element
             .static_pad("sink")
             .context("Compressed source capsfilter has no sink pad")?;
         if sink.is_linked() {
-            return Err(anyhow!("Compressed source capsfilter is already linked"));
+            continue;
         }
         return Ok(sink);
     }
     Err(anyhow!(
-        "Fake compressed source has no compressed source capsfilter"
+        "Fake compressed source has no unlinked {expected_mime} capsfilter"
     ))
 }
 
@@ -577,6 +621,7 @@ mod tests {
         assert_eq!(source.factory().unwrap().name(), "videotestsrc");
         assert!(pipeline.by_name(AUTO_ENCODEBIN_NAME).is_some());
         assert!(pipeline.by_name("fake-source-encoder").is_none());
+        assert!(pipeline.by_name("fake-source-videoconvert").is_some());
     }
 
     #[test]
@@ -627,6 +672,37 @@ mod tests {
 
         assert!(pipeline.by_name("source").is_some());
         assert!(pipeline.by_name("decoder").is_some());
+        assert!(pipeline.by_name("fake-source-encoder").is_some());
+    }
+
+    #[test]
+    fn manual_transcode_inserts_fake_compressed_source_encoder() {
+        let _ = gst::init();
+        if gst::ElementFactory::find("jpegdec").is_none()
+            || gst::ElementFactory::find("x264enc").is_none()
+        {
+            return;
+        }
+
+        let pipeline_id = Arc::new(uuid::Uuid::nil());
+        let pipeline = FakePipeline::try_new(
+            &pipeline_id,
+            &fake_video_and_stream(
+                VideoEncodeType::Mjpg,
+                VideoEncodeType::H264,
+                SourceConfiguration::ManualTranscoding(ManualTranscodingConfig {
+                    encoder: "x264enc".to_string(),
+                    encoder_properties: Default::default(),
+                    decoder: "jpegdec".to_string(),
+                    decoder_properties: Default::default(),
+                }),
+            ),
+        )
+        .expect("build fake manual transcode pipeline");
+
+        assert!(pipeline.by_name("source").is_some());
+        assert!(pipeline.by_name("decoder").is_some());
+        assert!(pipeline.by_name("encoder").is_some());
         assert!(pipeline.by_name("fake-source-encoder").is_some());
     }
 }
