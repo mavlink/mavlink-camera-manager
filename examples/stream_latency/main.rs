@@ -433,7 +433,13 @@ async fn main() -> Result<()> {
     for (i, url) in args.rtsp_urls.iter().enumerate() {
         let name = format!("rtsp-{i}");
         let (tx, rx) = mpsc::unbounded_channel();
-        let client = stream_clients::rtsp_client::RtspClient::new(url, codec, Some(tx)).await?;
+        let client = stream_clients::rtsp_client::RtspClient::new(
+            url,
+            codec,
+            Some(tx),
+            std::time::Duration::from_secs(15),
+        )
+        .await?;
         eprintln!("[{name}] Created for {url}");
         client_data.push(ClientData {
             name,
@@ -449,9 +455,17 @@ async fn main() -> Result<()> {
         let (addr, port_str) = endpoint
             .rsplit_once(':')
             .ok_or_else(|| anyhow!("Invalid UDP endpoint '{endpoint}', expected ADDR:PORT"))?;
-        let port: i32 = port_str.parse()?;
+        let port: u16 = port_str.parse()?;
         let (tx, rx) = mpsc::unbounded_channel();
-        let client = stream_clients::udp_client::UdpClient::new(addr, port, codec, Some(tx))?;
+        let client = stream_clients::udp_client::UdpClient::new(
+            stream_clients::udp_client::UdpClientConfig {
+                address: addr,
+                port,
+                codec,
+                sender: Some(tx),
+                dimensions: None,
+            },
+        )?;
         eprintln!("[{name}] Created for {endpoint}");
         client_data.push(ClientData {
             name,
