@@ -105,7 +105,7 @@ impl RtspClient {
 
         if let Some(sender) = sender {
             let probe_pad = parse_elem.static_pad("src").unwrap();
-            attach_frame_probe(&probe_pad, "rtsp-client".to_string(), sender);
+            attach_frame_probe(&probe_pad, "rtsp-client".to_string(), sender, codec);
         }
 
         pipeline.set_state(gst::State::Playing)?;

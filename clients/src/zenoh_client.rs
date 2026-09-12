@@ -96,7 +96,7 @@ impl ZenohClient {
 
         if let Some(sender) = sender {
             let probe_pad = parse.static_pad("src").unwrap();
-            attach_frame_probe(&probe_pad, "zenoh-client".to_string(), sender);
+            attach_frame_probe(&probe_pad, "zenoh-client".to_string(), sender, codec);
         }
 
         let session = zenoh::open(config)

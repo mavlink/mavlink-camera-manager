@@ -94,71 +94,25 @@ pub enum Codec {
     Rgb,
 }
 
-/// Hash only VCL NAL units from an H.264/H.265 byte-stream buffer.
-/// This produces a stable hash across different pipeline processing chains
-/// (SPS/PPS injection, stream-format conversion, etc.) because the actual
-/// coded slice data is never modified by parse/pay/depay elements.
-pub fn hash_vcl_nals(data: &[u8]) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    let mut vcl_bytes = 0usize;
-    let mut i = 0;
-    while i < data.len() {
-        let (sc_len, nal_start) = if i + 3 < data.len() && data[i] == 0 && data[i + 1] == 0 {
-            if data[i + 2] == 1 {
-                (3, i + 3)
-            } else if i + 4 <= data.len() && data[i + 2] == 0 && data[i + 3] == 1 {
-                (4, i + 4)
-            } else {
-                i += 1;
-                continue;
-            }
-        } else {
-            i += 1;
-            continue;
-        };
-
-        if nal_start >= data.len() {
-            break;
-        }
-
-        let mut nal_end = data.len();
-        for j in nal_start..data.len().saturating_sub(2) {
-            if data[j] == 0
-                && data[j + 1] == 0
-                && (data[j + 2] == 1
-                    || (j + 3 < data.len() && data[j + 2] == 0 && data[j + 3] == 1))
-            {
-                nal_end = j;
-                break;
-            }
-        }
-
-        let nal_type = data[nal_start] & 0x1F;
-        // VCL NAL types: 1-5 (non-IDR slice, partition A/B/C, IDR slice)
-        if (1..=5).contains(&nal_type) {
-            hasher.write(&data[nal_start..nal_end]);
-            vcl_bytes += nal_end - nal_start;
-        }
-
-        i = if nal_end > nal_start + sc_len {
-            nal_end
-        } else {
-            nal_start + 1
-        };
+/// Hash VCL NAL units so identity is stable across parse/pay/depay.
+///
+/// Hand-rolled Annex-B scan instead of `rust_h264`/`rust_h265`: this is a
+/// test identity hash, not a decoder, and those crates would add a dependency
+/// for a start-code walk. H.264 and H.265 NAL type fields differ (5-bit vs
+/// 6-bit); sharing `& 0x1F` silently dropped H.265 slices.
+pub fn hash_vcl_nals(data: &[u8], codec: Codec) -> u64 {
+    match codec {
+        Codec::H264 => hash_annex_b_vcl(data, is_h264_vcl),
+        Codec::H265 => hash_annex_b_vcl(data, is_h265_vcl),
+        Codec::Mjpg | Codec::Yuyv | Codec::Rgb => hash_bytes(data),
     }
-
-    if vcl_bytes == 0 {
-        hasher.write(data);
-    }
-
-    hasher.finish()
 }
 
 /// Attach a pad probe that hashes each buffer's VCL NAL content and records
 /// the hash together with (relative_pts_ms, wall-clock Instant). Matching by
 /// VCL content hash works across different processing chains (depay/parse/pay)
 /// because the coded slice data passes through unchanged.
-pub fn attach_frame_probe(pad: &gst::Pad, client_name: String, sender: SampleSender) {
+pub fn attach_frame_probe(pad: &gst::Pad, client_name: String, sender: SampleSender, codec: Codec) {
     let first_pts: Arc<Mutex<Option<u64>>> = Arc::new(Mutex::new(None));
 
     pad.add_probe(gst::PadProbeType::BUFFER, move |_, info| {
@@ -172,7 +126,7 @@ pub fn attach_frame_probe(pad: &gst::Pad, client_name: String, sender: SampleSen
             return gst::PadProbeReturn::Ok;
         };
         let buffer_size = map.len();
-        let content_hash = hash_vcl_nals(map.as_slice());
+        let content_hash = hash_vcl_nals(map.as_slice(), codec);
 
         let relative_pts_ms = buffer.pts().map_or(-1, |pts| {
             let pts_ns = pts.nseconds();
@@ -195,4 +149,101 @@ pub fn attach_frame_probe(pad: &gst::Pad, client_name: String, sender: SampleSen
 
         gst::PadProbeReturn::Ok
     });
+}
+
+fn is_h264_vcl(header: u8) -> bool {
+    (1..=5).contains(&(header & 0x1F))
+}
+
+fn is_h265_vcl(header: u8) -> bool {
+    let nal_type = (header >> 1) & 0x3F;
+    nal_type <= 31
+}
+
+fn hash_bytes(data: &[u8]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    hasher.write(data);
+    hasher.finish()
+}
+
+fn hash_annex_b_vcl(data: &[u8], is_vcl: fn(u8) -> bool) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    let mut vcl_bytes = 0usize;
+    let mut index = 0;
+    while index < data.len() {
+        let (start_code_len, nal_start) =
+            if index + 3 < data.len() && data[index] == 0 && data[index + 1] == 0 {
+                if data[index + 2] == 1 {
+                    (3, index + 3)
+                } else if index + 4 <= data.len() && data[index + 2] == 0 && data[index + 3] == 1 {
+                    (4, index + 4)
+                } else {
+                    index += 1;
+                    continue;
+                }
+            } else {
+                index += 1;
+                continue;
+            };
+
+        if nal_start >= data.len() {
+            break;
+        }
+
+        let mut nal_end = data.len();
+        for scan in nal_start..data.len().saturating_sub(2) {
+            if data[scan] == 0
+                && data[scan + 1] == 0
+                && (data[scan + 2] == 1
+                    || (scan + 3 < data.len() && data[scan + 2] == 0 && data[scan + 3] == 1))
+            {
+                nal_end = scan;
+                break;
+            }
+        }
+
+        if is_vcl(data[nal_start]) {
+            hasher.write(&data[nal_start..nal_end]);
+            vcl_bytes += nal_end - nal_start;
+        }
+
+        index = if nal_end > nal_start + start_code_len {
+            nal_end
+        } else {
+            nal_start + 1
+        };
+    }
+
+    if vcl_bytes == 0 {
+        hasher.write(data);
+    }
+
+    hasher.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hash_h264_idr_ignores_sps() {
+        let mut buffer = vec![0, 0, 0, 1, 0x67, b's', b'p', b's'];
+        buffer.extend_from_slice(&[0, 0, 0, 1, 0x65, b'i', b'd', b'r']);
+        let vcl_only = hash_vcl_nals(&[0x65, b'i', b'd', b'r'], Codec::H264);
+        assert_eq!(hash_vcl_nals(&buffer, Codec::H264), vcl_only);
+    }
+
+    #[test]
+    fn hash_h265_idr_uses_six_bit_nal_type() {
+        // HEVC IDR_W_RADL is nal_type 19; first byte is (19 << 1) = 0x26.
+        // The H.264 5-bit mask would read type 6 and skip this NAL.
+        let buffer = [0, 0, 0, 1, 0x26, b's', b'l', b'i', b'c', b'e'];
+        let h265 = hash_vcl_nals(&buffer, Codec::H265);
+        let h264 = hash_vcl_nals(&buffer, Codec::H264);
+        assert_ne!(h265, h264);
+        assert_eq!(
+            h265,
+            hash_vcl_nals(&[0x26, b's', b'l', b'i', b'c', b'e'], Codec::H265)
+        );
+    }
 }

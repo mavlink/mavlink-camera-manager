@@ -11,7 +11,7 @@ use gst::prelude::*;
 use tokio::sync::mpsc as tokio_mpsc;
 use uuid::Uuid;
 
-use crate::{attach_frame_probe, protocol::*, SampleSender, StreamClient};
+use crate::{attach_frame_probe, protocol::*, Codec, SampleSender, StreamClient};
 
 pub struct WebrtcClient {
     pipeline: gst::Pipeline,
@@ -145,7 +145,17 @@ impl WebrtcClient {
 
             if let Some(ref sender) = sender {
                 let probe_pad = parse.static_pad("src").unwrap();
-                attach_frame_probe(&probe_pad, "webrtc-client".to_string(), sender.clone());
+                let probe_codec = if parse_factory.contains("h265") {
+                    Codec::H265
+                } else {
+                    Codec::H264
+                };
+                attach_frame_probe(
+                    &probe_pad,
+                    "webrtc-client".to_string(),
+                    sender.clone(),
+                    probe_codec,
+                );
             }
 
             let dec_src = decoder.static_pad("src").unwrap();

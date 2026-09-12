@@ -178,7 +178,7 @@ impl UdpClient {
 
         if let Some(sender) = sender {
             let probe_pad = probe_element.static_pad("src").unwrap();
-            attach_frame_probe(&probe_pad, "udp-client".to_string(), sender);
+            attach_frame_probe(&probe_pad, "udp-client".to_string(), sender, codec);
         }
 
         pipeline.set_state(gst::State::Playing)?;
