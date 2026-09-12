@@ -26,64 +26,49 @@ impl StreamClient for RtspClient {
 }
 
 impl RtspClient {
-    pub async fn new(url: &str, codec: Codec, sender: Option<SampleSender>) -> Result<Self> {
+    pub async fn new(
+        url: &str,
+        codec: Codec,
+        sender: Option<SampleSender>,
+        connect_timeout: Duration,
+    ) -> Result<Self> {
+        anyhow::ensure!(!url.is_empty(), "RTSP url must be non-empty");
         gst::init()?;
 
         let parsed: url::Url = url.parse()?;
         let host = parsed.host_str().unwrap_or("127.0.0.1");
         let port = parsed.port().unwrap_or(8554);
         let addr = format!("{host}:{port}");
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-        loop {
-            match tokio::net::TcpStream::connect(&addr).await {
-                Ok(_) => break,
-                Err(_) if tokio::time::Instant::now() < deadline => {
-                    tokio::time::sleep(Duration::from_millis(200)).await;
-                }
-                Err(e) => anyhow::bail!("RTSP port {addr} not reachable: {e}"),
+        let deadline = tokio::time::Instant::now() + connect_timeout;
+        let mut last_error = None;
+        while let Err(error) = tokio::net::TcpStream::connect(&addr).await {
+            last_error = Some(error);
+            if tokio::time::Instant::now() >= deadline {
+                anyhow::bail!("RTSP port {addr} not reachable: {}", last_error.unwrap());
             }
+            tokio::time::sleep(Duration::from_millis(200)).await;
         }
 
-        let description = match codec {
-            Codec::H264 => format!(
-                concat!(
-                    "rtspsrc location={url} is-live=true latency=0 do-retransmission=false udp-buffer-size=2621440",
-                    " ! rtph264depay",
-                    " ! h264parse name=parse config-interval=-1",
-                    " ! video/x-h264,stream-format=byte-stream,alignment=au",
-                    " ! fakesink sync=false async=false",
-                ),
-                url = url,
-            ),
-            Codec::H265 => format!(
-                concat!(
-                    "rtspsrc location={url} is-live=true latency=0 do-retransmission=false udp-buffer-size=2621440",
-                    " ! rtph265depay",
-                    " ! h265parse name=parse config-interval=-1",
-                    " ! video/x-h265,stream-format=byte-stream,alignment=au",
-                    " ! fakesink sync=false async=false",
-                ),
-                url = url,
-            ),
-            Codec::Mjpg => format!(
-                concat!(
-                    "rtspsrc location={url} is-live=true latency=0 do-retransmission=false udp-buffer-size=2621440",
-                    " ! rtpjpegdepay",
-                    " ! identity name=parse",
-                    " ! fakesink sync=false async=false",
-                ),
-                url = url,
-            ),
-            Codec::Yuyv | Codec::Rgb => format!(
-                concat!(
-                    "rtspsrc location={url} is-live=true latency=0 do-retransmission=false udp-buffer-size=2621440",
-                    " ! rtpvrawdepay",
-                    " ! identity name=parse",
-                    " ! fakesink sync=false async=false",
-                ),
-                url = url,
-            ),
+        let rtspsrc = format!(
+            "rtspsrc location={url} is-live=true latency=0 do-retransmission=false udp-buffer-size=2621440"
+        );
+        let tail = match codec {
+            Codec::H264 => {
+                "rtph264depay ! h264parse name=parse config-interval=-1 \
+                 ! video/x-h264,stream-format=byte-stream,alignment=au \
+                 ! fakesink sync=false async=false"
+            }
+            Codec::H265 => {
+                "rtph265depay ! h265parse name=parse config-interval=-1 \
+                 ! video/x-h265,stream-format=byte-stream,alignment=au \
+                 ! fakesink sync=false async=false"
+            }
+            Codec::Mjpg => "rtpjpegdepay ! identity name=parse ! fakesink sync=false async=false",
+            Codec::Yuyv | Codec::Rgb => {
+                "rtpvrawdepay ! identity name=parse ! fakesink sync=false async=false"
+            }
         };
+        let description = format!("{rtspsrc} ! {tail}");
 
         let pipeline = gst::parse::launch(&description)
             .context("Failed to parse RTSP pipeline")?
