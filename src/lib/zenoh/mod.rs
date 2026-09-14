@@ -32,6 +32,32 @@ pub async fn init() -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
+pub async fn init_for_tests() -> Result<()> {
+    SESSION
+        .get_or_try_init(|| async {
+            let mut config = Config::default();
+            config
+                .insert_json5("mode", r#""peer""#)
+                .expect("Failed to insert peer mode");
+            config
+                .insert_json5("connect/endpoints", "[]")
+                .expect("Failed to insert empty connect endpoints");
+            config
+                .insert_json5("listen/endpoints", r#"["tcp/127.0.0.1:0"]"#)
+                .expect("Failed to insert listen endpoint");
+            config
+                .insert_json5("scouting/multicast/enabled", "false")
+                .expect("Failed to disable multicast scouting");
+            let session = zenoh::open(config)
+                .await
+                .map_err(|error| anyhow!("Failed to open Zenoh test session: {error:?}"))?;
+            anyhow::Ok(session)
+        })
+        .await?;
+    Ok(())
+}
+
 #[instrument(level = "debug")]
 pub fn get() -> Option<Session> {
     SESSION.get().cloned()
