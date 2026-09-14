@@ -13,7 +13,7 @@ use gst::prelude::*;
 use tracing::*;
 
 use crate::{
-    stream::{gst::utils::wait_for_element_state, lifecycle::LifecycleHandle},
+    stream::{gst::utils::set_element_state_null, lifecycle::LifecycleHandle},
     video_stream::types::VideoAndStreamInformation,
 };
 
@@ -48,6 +48,12 @@ pub trait SinkInterface {
 
     /// Start the Sink
     fn start(&self) -> Result<()>;
+
+    /// Stop the session runner and Null the session pipeline.
+    ///
+    /// Inverse of [`Self::start`]. Must run before [`Self::unlink`] removes
+    /// `proxysink` from the main tee, and is safe to call more than once.
+    fn shutdown_session(&self);
 
     /// Terminates the Sink
     fn eos(&self);
@@ -208,6 +214,9 @@ pub fn link_sink_to_tee(
             if let Err(error) = sink_pipeline.remove_many(sink_elements) {
                 warn!("Failed removing elements from the pipeline: {error:?}");
             }
+            for element in sink_elements {
+                set_element_state_null(element);
+            }
         },
     );
 
@@ -270,6 +279,13 @@ pub fn link_and_add_all_elements(
     Ok(())
 }
 
+/// Detach `sink_elements` from `tee_src_pad` and remove them from `sink_pipeline`.
+///
+/// Callers that use a `proxysink` / `proxysrc` pair **must Null the session
+/// pipeline (the `proxysrc` side) before calling this**. `gst_bin_remove` does
+/// not change the child's state; this function Nulls each removed element after
+/// unparenting so it is not disposed while PLAYING. Nulling `proxysink` while
+/// `proxysrc` is still Playing double-frees GST mini-objects on GStreamer >= 1.28.
 #[instrument(level = "debug", skip_all)]
 pub fn unlink_sink_from_tee(
     tee_src_pad: &gst::Pad,
@@ -278,8 +294,7 @@ pub fn unlink_sink_from_tee(
 ) -> Result<()> {
     // Block data flow while we unlink the pad from the tee.  The block
     // is scoped as tightly as possible: it is released right after the
-    // request pad is freed, *before* any slow element cleanup (e.g.
-    // webrtcbin set_state(Null) which may wait for ICE/DTLS teardown).
+    // request pad is freed, *before* any slow element cleanup.
     // Keeping the block active longer would stall the tee's streaming
     // thread and starve other branches (e.g. RTSP via video_tee).
     {
@@ -309,60 +324,11 @@ pub fn unlink_sink_from_tee(
         // _data_blocker_guard drops here, removing the probe
     }
 
-    // --- Everything below runs without blocking the tee ---
-
-    let is_webrtcbin = |e: &gst::Element| {
-        e.factory()
-            .map(|f| f.name() == "webrtcbin")
-            .unwrap_or(false)
-    };
-
-    // Transition webrtcbin to Null while still in the pipeline so the
-    // pipeline's state management propagates correctly to all internal
-    // children (transportsendbin, nicesink, dtlssrtpdec, …).
-    // We must wait for the transition to complete: on GStreamer >= 1.28
-    // the internal NiceSrc/DTLS threads do not terminate until the
-    // element actually reaches Null, and removing it early leaves
-    // orphaned threads.
-    for elem in sink_elements.iter().filter(|e| is_webrtcbin(e)) {
-        elem.send_event(gst::event::Eos::builder().build());
-
-        if let Err(error) = elem.set_state(gst::State::Null) {
-            warn!("Failed setting {} to Null: {error:?}", elem.name());
-        }
-
-        if let Err(error) = wait_for_element_state(elem.downgrade(), gst::State::Null, 100, 5) {
-            warn!("{} did not reach Null within 5 s: {error:?}", elem.name());
-        }
+    let remove_result = unlink_and_remove_all_elements(sink_pipeline, sink_elements);
+    for element in sink_elements {
+        set_element_state_null(element);
     }
-
-    unlink_and_remove_all_elements(sink_pipeline, sink_elements)?;
-
-    // Non-webrtcbin elements: flush via a temp pipeline.
-    let simple: Vec<&gst::Element> = sink_elements
-        .iter()
-        .filter(|e| !is_webrtcbin(e))
-        .copied()
-        .collect();
-
-    if !simple.is_empty() {
-        let pipeline = gst::Pipeline::new();
-        pipeline.add_many(&simple).unwrap();
-        pipeline.set_state(gst::State::Ready).unwrap();
-        pipeline.send_event(gst::event::Eos::builder().build());
-        pipeline.set_state(gst::State::Null).unwrap();
-        match pipeline.state(gst::ClockTime::from_seconds(5)) {
-            (Ok(_), _, _) => {}
-            (Err(error), cur, pending) => {
-                warn!(
-                    "Temp pipeline did not reach Null within 5 s \
-                     (err={error:?}, cur={cur:?}, pending={pending:?})"
-                );
-            }
-        }
-    }
-
-    Ok(())
+    remove_result
 }
 
 #[instrument(level = "debug", skip_all)]
