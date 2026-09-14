@@ -23,7 +23,9 @@ use crate::{
         gst::utils::{set_element_state_null, wait_for_element_state},
         lifecycle::LifecycleHandle,
         pipeline::runner::PipelineRunner,
-        types::{CaptureConfiguration, StreamInformation, VideoCaptureConfiguration},
+        types::{
+            CaptureConfiguration, SourceConfiguration, StreamInformation, VideoCaptureConfiguration,
+        },
         webrtc::signalling_protocol::BindAnswer,
     },
     video::{
@@ -90,13 +92,17 @@ fn stream_information(endpoints: &[&str], encode: VideoEncodeType) -> VideoAndSt
                 .map(|endpoint| Url::parse(endpoint).unwrap())
                 .collect(),
             configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
-                encode,
+                source_encode: encode.clone(),
+                sink_encode: encode,
                 height: 120,
                 width: 160,
                 frame_interval: FrameInterval {
                     numerator: 1,
                     denominator: 30,
                 },
+                bit_depth: None,
+                source_configuration: SourceConfiguration::Classic,
+                auto_restart_on_config_change: false,
             }),
             extended_configuration: None,
         },
