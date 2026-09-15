@@ -16,6 +16,25 @@ lazy_static! {
         let manager = Manager::default();
         // An unstarted monitor has no providers, and its `devices()` silently returns nothing —
         // including during settings init, which builds default streams before `init()` runs.
+        //
+        // Filters must be set before start(). With none, GStreamer starts every
+        // DeviceProvider (PulseAudio, OSS, …). Pulse then fails in CI (no server,
+        // HOME not accessible) and retries on the default GLib context.
+        // Video/Source is canonical; libcamera-gst reports Source/Video.
+        if manager
+            .monitor
+            .add_filter(Some("Video/Source"), None)
+            .is_none()
+        {
+            eprintln!("Failed to add Video/Source filter to the GStreamer device monitor");
+        }
+        if manager
+            .monitor
+            .add_filter(Some("Source/Video"), None)
+            .is_none()
+        {
+            eprintln!("Failed to add Source/Video filter to the GStreamer device monitor");
+        }
         manager.monitor.set_show_all_devices(true);
         manager.monitor.set_show_all(true);
         manager
@@ -150,6 +169,10 @@ mod tests {
             manager_guard.monitor.providers()
         };
         assert!(!providers.is_empty());
+        assert!(
+            providers.iter().all(|provider| !provider.contains("pulse")),
+            "video filters must not start PulseAudio: {providers:?}"
+        );
         assert!(video_devices().is_ok());
     }
 }
