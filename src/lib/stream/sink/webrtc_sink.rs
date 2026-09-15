@@ -11,7 +11,7 @@ use tracing::*;
 use crate::{
     cli,
     stream::{
-        gst::utils::{excise_single_element, set_element_state_null},
+        gst::utils::{excise_single_element, set_element_state_null, try_set_property},
         pipeline::runner::PipelineRunner,
         webrtc::{
             signalling_protocol::{
@@ -88,12 +88,18 @@ impl SinkInterface for WebRTCSink {
                 .context("webrtcbin_sink_pad already consumed")?;
             webrtcbin_sink_pad.property::<gst_webrtc::WebRTCRTPTransceiver>("transceiver")
         };
-        transceiver.set_property(
-            "direction",
-            gst_webrtc::WebRTCRTPTransceiverDirection::Sendonly,
-        );
-        transceiver.set_property("do-nack", true); // Enable retransmission (RFC4588)
-        transceiver.set_property("fec-type", gst_webrtc::WebRTCFECType::None);
+        if transceiver.find_property("direction").is_some() {
+            transceiver.set_property(
+                "direction",
+                gst_webrtc::WebRTCRTPTransceiverDirection::Sendonly,
+            );
+        }
+        if transceiver.find_property("do-nack").is_some() {
+            transceiver.set_property("do-nack", true); // Enable retransmission (RFC4588)
+        }
+        if transceiver.find_property("fec-type").is_some() {
+            transceiver.set_property("fec-type", gst_webrtc::WebRTCFECType::None);
+        }
 
         // Provide codec-preferences so webrtcbin can create an SDP offer
         // without waiting for buffer caps on the sink pad.  The queue src
@@ -134,7 +140,9 @@ impl SinkInterface for WebRTCSink {
             });
         if let Some(caps) = codec_caps {
             debug!("Setting codec-preferences: {caps}");
-            transceiver.set_property("codec-preferences", &caps);
+            if transceiver.find_property("codec-preferences").is_some() {
+                transceiver.set_property("codec-preferences", &caps);
+            }
         } else {
             warn!("No caps available upstream of tee for codec-preferences");
         }
@@ -338,15 +346,23 @@ impl WebRTCSink {
             .spawn(move || {
                 gst::ElementFactory::make("webrtcbin")
                     .property_from_str("name", format!("webrtcbin-{}", bind.session_id).as_str())
-                    .property("async-handling", true)
-                    .property("bundle-policy", gst_webrtc::WebRTCBundlePolicy::MaxBundle) // https://webrtcstandards.info/sdp-bundle/
-                    .property("latency", 0u32)
-                    .property_from_str("stun-server", cli::manager::stun_server_address().as_str())
                     .build()
             })
             .expect("Failed spawning WebRTCBin thread")
             .join()
             .map_err(|e| anyhow!("{:?}", e.downcast_ref::<String>()))??;
+        try_set_property(&webrtcbin, "async-handling", true);
+        try_set_property(
+            &webrtcbin,
+            "bundle-policy",
+            gst_webrtc::WebRTCBundlePolicy::MaxBundle, // https://webrtcstandards.info/sdp-bundle/
+        );
+        try_set_property(&webrtcbin, "latency", 0u32);
+        try_set_property(
+            &webrtcbin,
+            "stun-server",
+            cli::manager::stun_server_address().as_str(),
+        );
 
         cli::manager::turn_server_addresses()
             .iter()
@@ -367,15 +383,13 @@ impl WebRTCSink {
         //   threads spawned for SSDP discovery have long network timeouts
         //   and linger after the NiceAgent is destroyed, causing thread
         //   leaks visible in stress tests.  STUN/TURN is used instead.
-        {
+        if webrtcbin.find_property("ice-agent").is_some() {
             let ice: glib::Object = webrtcbin.property("ice-agent");
             if ice.find_property("agent").is_some() {
                 let agent: glib::Object = ice.property("agent");
                 if agent.find_property("keepalive-conncheck").is_some() {
                     agent.set_property("keepalive-conncheck", true);
                     debug!("Enabled ICE keepalive-conncheck for faster peer-loss detection");
-                } else {
-                    debug!("NiceAgent does not support keepalive-conncheck property");
                 }
                 if agent.find_property("upnp").is_some() {
                     agent.set_property("upnp", false);
@@ -394,16 +408,18 @@ impl WebRTCSink {
                 let Ok(rtp_bin) = res else { return };
 
                 // Use the pipeline clock time. This will ensure that the timestamps from the source are correct.
-                rtp_bin.set_property_from_str("ntp-time-source", "clock-time");
+                try_set_property(&rtp_bin, "ntp-time-source", "clock-time");
 
                 rtp_bin.connect("new-storage", false, move |values| {
                     let _rtp_bin = values[0].get::<gst::Element>().expect("Invalid argument");
                     let storage = values[1].get::<gst::Element>().expect("Invalid argument");
                     let _session = values[2].get::<u32>().expect("Invalid argument");
 
-                    let current_time_ns = storage.property::<u64>("size-time");
-                    debug!("Disabling RTP storage (was {current_time_ns} ns)");
-                    storage.set_property("size-time", 0u64);
+                    if storage.find_property("size-time").is_some() {
+                        let current_time_ns = storage.property::<u64>("size-time");
+                        debug!("Disabling RTP storage (was {current_time_ns} ns)");
+                        try_set_property(&storage, "size-time", 0u64);
+                    }
 
                     None
                 });
