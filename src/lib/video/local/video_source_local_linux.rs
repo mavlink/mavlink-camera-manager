@@ -29,6 +29,12 @@ use crate::{
 /// are omitted.
 const LIBCAMERA_NATIVE_FPS_ONLY_ENV: &str = "MCM_LIBCAMERA_NATIVE_FPS_ONLY";
 const LIBCAMERA_FORMAT_PROBE_TIMEOUT: Duration = Duration::from_millis(1500);
+/// `Role::Raw` lists every CSI mode. `StillCapture` is the fallback when Raw
+/// does not negotiate (PiSP imx708). VideoRecording is the ISP scaler menu.
+const LIBCAMERA_NATIVE_STREAM_ROLES: [&str; 2] = ["raw", "still-capture"];
+/// GstDevice VideoRecording Bayer copies the ISP size list (~50). Sensor modes
+/// are a handful of discrete sizes.
+const MAX_LIBCAMERA_NATIVE_MODE_SIZES: usize = 12;
 
 static LIBCAMERA_NATIVE_SIZES: OnceLock<Mutex<HashMap<String, Vec<Size>>>> = OnceLock::new();
 static DEVICE_FORMATS: OnceLock<Mutex<HashMap<String, Vec<Format>>>> = OnceLock::new();
@@ -298,7 +304,6 @@ impl From<gst::Fraction> for FrameInterval {
     }
 }
 
-#[cfg(test)]
 fn libcamera_pixel_array_size(properties: &gst::StructureRef) -> Option<(i32, i32)> {
     let array = properties
         .get::<gst::Array>("api.libcamera.PixelArraySize")
@@ -574,6 +579,61 @@ fn structure_discrete_dimension(structure: &gst::StructureRef, field: &str) -> V
     }
 }
 
+fn merge_libcamera_mode_size(sizes: &mut Vec<Size>, width: u32, height: u32) {
+    if width == 0 || height == 0 {
+        return;
+    }
+    if sizes
+        .iter()
+        .any(|size| size.width == width && size.height == height)
+    {
+        return;
+    }
+    sizes.push(Size {
+        width,
+        height,
+        intervals: Vec::new(),
+        depths: Vec::new(),
+    });
+}
+
+/// Full pixel array plus 2×2 / 3× subsample. CSI sensors that cannot use
+/// `Role::Raw` (imx708) still expose those modes via `sensor-config`.
+/// ponytail: guesses that are not real modes fail the fps probe and are dropped.
+fn push_pixel_array_mode_sizes(sizes: &mut Vec<Size>, width: u32, height: u32) {
+    merge_libcamera_mode_size(sizes, width, height);
+    if width % 2 == 0 && height % 2 == 0 {
+        merge_libcamera_mode_size(sizes, width / 2, height / 2);
+    }
+    if width % 3 == 0 && height % 3 == 0 {
+        merge_libcamera_mode_size(sizes, width / 3, height / 3);
+    }
+}
+
+fn libcamera_stream_formats_are_sensor_modes(caps: &gst::Caps) -> bool {
+    let count = libcamera_bayer_mode_sizes(caps, false).len();
+    (1..=MAX_LIBCAMERA_NATIVE_MODE_SIZES).contains(&count)
+}
+
+fn consider_native_stream_formats(captured: &Mutex<Option<gst::Caps>>, candidate: gst::Caps) {
+    if !libcamera_stream_formats_are_sensor_modes(&candidate) {
+        return;
+    }
+    let mut guard = captured
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let replace = match guard.as_ref() {
+        None => true,
+        Some(current) => {
+            libcamera_bayer_mode_sizes(&candidate, false).len()
+                > libcamera_bayer_mode_sizes(current, false).len()
+        }
+    };
+    if replace {
+        *guard = Some(candidate);
+    }
+}
+
 fn cached_libcamera_native_sizes(camera_name: &str) -> Option<Vec<Size>> {
     let Ok(cache) = LIBCAMERA_NATIVE_SIZES
         .get_or_init(|| Mutex::new(HashMap::new()))
@@ -636,21 +696,37 @@ fn store_device_controls(device_path: &str, controls: Vec<Control>) {
     cache.insert(device_path.to_string(), controls);
 }
 
-/// Sensor sizes from `libcamerasrc` `stream-role=raw` StreamFormats, plus max fps
-/// from a `sensor-config` pin at each size. GstDevice VideoRecording caps are the
-/// ISP menu and cannot supply this.
+/// Sensor sizes from `libcamerasrc` StreamFormats (`raw`, then `still-capture`),
+/// plus pixel-array divisors when Raw does not negotiate. Max fps comes from a
+/// `sensor-config` pin at each size. GstDevice VideoRecording caps are the ISP
+/// menu and cannot supply this.
 #[instrument(level = "debug")]
 fn probe_libcamera_native_sizes(camera_name: &str) -> Vec<Size> {
     if let Some(sizes) = cached_libcamera_native_sizes(camera_name) {
         return sizes;
     }
 
-    let Some(raw_caps) = probe_libcamera_raw_stream_formats(camera_name) else {
+    let mut sizes = probe_libcamera_native_stream_formats(camera_name)
+        .map(|caps| libcamera_bayer_mode_sizes(&caps, false))
+        .unwrap_or_default();
+    if let Ok(device) = gst_device_monitor::local_device_with_path(camera_name)
+        && let Some(device) = device.upgrade()
+        && let Some(properties) = device.properties()
+        && let Some((width, height)) = libcamera_pixel_array_size(&properties)
+    {
+        push_pixel_array_mode_sizes(&mut sizes, width as u32, height as u32);
+    }
+    if sizes.is_empty() {
         return Vec::new();
-    };
-    let mut sizes = libcamera_bayer_mode_sizes(&raw_caps, false);
+    }
     fill_libcamera_mode_frame_intervals(camera_name, &mut sizes);
-    sizes.retain(|size| size.width > 0 && size.height > 0);
+    sizes.retain(|size| {
+        size.width > 0
+            && size.height > 0
+            && size.depths.iter().any(|depth| !depth.intervals.is_empty())
+    });
+    sizes.sort();
+    sizes.reverse();
     finalize_libcamera_size_intervals(&mut sizes);
 
     if !sizes.is_empty() {
@@ -727,22 +803,35 @@ fn live_libcamerasrc_blocks_format_probe() -> bool {
     !matches!(try_any_live_libcamerasrc(), LiveSourceLookup::NotStreaming)
 }
 
-/// Capture the StreamFormats filter `libcamerasrc` sends during negotiate when
-/// the pad role is `raw` (actual sensor sizes, not the ISP scaler menu).
+/// Capture StreamFormats during negotiate. `raw` first; `still-capture` when Raw
+/// fails to negotiate (PiSP imx708 returns not-negotiated for `Role::Raw`).
 #[instrument(level = "debug")]
-fn probe_libcamera_raw_stream_formats(camera_name: &str) -> Option<gst::Caps> {
+fn probe_libcamera_native_stream_formats(camera_name: &str) -> Option<gst::Caps> {
     if live_libcamerasrc_blocks_format_probe() {
         debug!(
-            "Skipping libcamera raw-formats probe for {camera_name:?}; a live libcamerasrc is running"
+            "Skipping libcamera native-formats probe for {camera_name:?}; a live libcamerasrc is running"
         );
         return None;
     }
+    for stream_role in LIBCAMERA_NATIVE_STREAM_ROLES {
+        if let Some(caps) = probe_libcamera_stream_formats_for_role(camera_name, stream_role) {
+            return Some(caps);
+        }
+    }
+    None
+}
+
+#[instrument(level = "debug")]
+fn probe_libcamera_stream_formats_for_role(
+    camera_name: &str,
+    stream_role: &str,
+) -> Option<gst::Caps> {
     let pipeline = match gst::parse::launch(
         "libcamerasrc name=probe-source ! fakesink name=probe-sink sync=false",
     ) {
         Ok(element) => element,
         Err(error) => {
-            warn!("libcamera raw-formats probe pipeline failed to parse: {error}");
+            warn!("libcamera {stream_role} formats probe pipeline failed to parse: {error}");
             return None;
         }
     };
@@ -754,39 +843,37 @@ fn probe_libcamera_raw_stream_formats(camera_name: &str) -> Option<gst::Caps> {
         stop_libcamera_probe_pipeline(&pipeline);
         return None;
     }
-    src_pad.set_property_from_str("stream-role", "raw");
+    src_pad.set_property_from_str("stream-role", stream_role);
     try_set_property(&source, "camera-name", camera_name);
 
     let captured = Arc::new(Mutex::new(None::<gst::Caps>));
     let sink_pad = sink.static_pad("sink")?;
-    let captured_for_probe = captured.clone();
+    let captured_for_query = captured.clone();
     sink_pad.add_probe(gst::PadProbeType::QUERY_BOTH, move |_pad, info| {
         if let Some(query) = info.query()
             && let gst::QueryView::Caps(caps_query) = query.view()
             && let Some(filter) = caps_query.filter_owned()
             && !filter.is_any()
-            && filter.iter().any(|structure| {
-                is_libcamera_bayer_structure(structure)
-                    && !structure_discrete_dimension(structure, "width").is_empty()
-            })
         {
-            let mut guard = captured_for_probe
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            let replace = match guard.as_ref() {
-                None => true,
-                Some(current) => filter.size() > current.size(),
-            };
-            if replace {
-                *guard = Some(filter);
-            }
+            consider_native_stream_formats(&captured_for_query, filter);
+        }
+        gst::PadProbeReturn::Ok
+    });
+    let captured_for_event = captured.clone();
+    src_pad.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_pad, info| {
+        if let Some(event) = info.event()
+            && let gst::EventView::Caps(caps_event) = event.view()
+        {
+            consider_native_stream_formats(&captured_for_event, caps_event.caps().to_owned());
         }
         gst::PadProbeReturn::Ok
     });
 
     let bus = pipeline.bus()?;
     if let Err(error) = pipeline.set_state(gst::State::Playing) {
-        debug!("libcamera raw-formats probe set_state(Playing) failed: {error}");
+        debug!(
+            "libcamera {stream_role} formats probe set_state(Playing) failed for {camera_name:?}: {error}"
+        );
         stop_libcamera_probe_pipeline(&pipeline);
         return None;
     }
@@ -811,7 +898,10 @@ fn probe_libcamera_raw_stream_formats(camera_name: &str) -> Option<gst::Caps> {
         if let Some(message) = bus.timed_pop(timeout)
             && let gst::MessageView::Error(error) = message.view()
         {
-            debug!("libcamera raw-formats probe bus error: {}", error.error());
+            debug!(
+                "libcamera {stream_role} formats probe bus error for {camera_name:?}: {}",
+                error.error()
+            );
             break;
         }
     }
@@ -823,11 +913,13 @@ fn probe_libcamera_raw_stream_formats(camera_name: &str) -> Option<gst::Caps> {
     stop_libcamera_probe_pipeline(&pipeline);
     if let Some(ref caps) = caps {
         debug!(
-            "libcamera raw StreamFormats for {camera_name:?}: {} structure(s)",
+            "libcamera {stream_role} StreamFormats for {camera_name:?}: {} structure(s)",
             caps.size()
         );
     } else {
-        debug!("libcamera raw StreamFormats probe got no Bayer filter for {camera_name:?}");
+        debug!(
+            "libcamera {stream_role} StreamFormats probe got no sensor-mode Bayer for {camera_name:?}"
+        );
     }
     caps
 }
@@ -2246,6 +2338,59 @@ mod libcamera_mode_fps_tests {
             )
             .build();
         assert_eq!(libcamera_pixel_array_size(&properties), Some((3280, 2464)));
+    }
+
+    #[test]
+    fn push_pixel_array_mode_sizes_adds_full_half_and_third() {
+        let mut sizes = Vec::new();
+        push_pixel_array_mode_sizes(&mut sizes, 4608, 2592);
+        let listed: Vec<(u32, u32)> = sizes.iter().map(|size| (size.width, size.height)).collect();
+        assert_eq!(listed, vec![(4608, 2592), (2304, 1296), (1536, 864)]);
+        push_pixel_array_mode_sizes(&mut sizes, 4608, 2592);
+        assert_eq!(sizes.len(), 3);
+    }
+
+    #[test]
+    fn push_pixel_array_mode_sizes_skips_non_divisible_factors() {
+        let mut sizes = Vec::new();
+        push_pixel_array_mode_sizes(&mut sizes, 3280, 2464);
+        let listed: Vec<(u32, u32)> = sizes.iter().map(|size| (size.width, size.height)).collect();
+        assert_eq!(listed, vec![(3280, 2464), (1640, 1232)]);
+    }
+
+    #[test]
+    fn stream_formats_are_sensor_modes_rejects_isp_size_menu() {
+        gst::init().unwrap();
+        let native = gst::Caps::from_str(concat!(
+            "video/x-bayer, format=(string)rggb10le, width=(int)4608, height=(int)2592; ",
+            "video/x-bayer, format=(string)rggb10le, width=(int)2304, height=(int)1296; ",
+            "video/x-bayer, format=(string)rggb10le, width=(int)1536, height=(int)864"
+        ))
+        .unwrap();
+        assert!(libcamera_stream_formats_are_sensor_modes(&native));
+
+        let mut isp_menu =
+            String::from("video/x-bayer, format=(string)rggb10le, width=(int)160, height=(int)120");
+        for (width, height) in [
+            (320, 240),
+            (640, 480),
+            (800, 600),
+            (1024, 768),
+            (1280, 720),
+            (1280, 1024),
+            (1600, 1200),
+            (1920, 1080),
+            (2048, 1536),
+            (2560, 1440),
+            (3840, 2160),
+            (4096, 2160),
+        ] {
+            isp_menu.push_str(&format!(
+                "; video/x-bayer, format=(string)rggb10le, width=(int){width}, height=(int){height}"
+            ));
+        }
+        let isp_menu = gst::Caps::from_str(&isp_menu).unwrap();
+        assert!(!libcamera_stream_formats_are_sensor_modes(&isp_menu));
     }
 
     #[test]
