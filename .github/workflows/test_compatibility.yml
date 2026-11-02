@@ -2,6 +2,10 @@ name: GStreamer Compatibility
 
 on: [push, pull_request]
 
+env:
+  # Only master should write caches. Other branches can read.
+  CACHE_SAVE: ${{ github.ref == 'refs/heads/master' }}
+
 jobs:
   test:
     runs-on: ubuntu-22.04
@@ -93,6 +97,7 @@ jobs:
       uses: Swatinem/rust-cache@v2
       with:
         key: "compat-gst-${{ matrix.gst }}"
+        save-if: ${{ env.CACHE_SAVE }}
 
     - name: Generate bindings
       run: cargo run --package=bindings --verbose --locked
