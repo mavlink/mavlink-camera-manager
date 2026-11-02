@@ -34,7 +34,7 @@ use crate::{
 };
 
 use self::{
-    gst::utils::wait_for_element_state,
+    gst::utils::set_element_state_null,
     lifecycle::{LifecycleHandle, Phase},
     rtsp::{rtsp_scheme::RTSPScheme, rtsp_server::RTSPServer},
 };
@@ -896,29 +896,25 @@ impl StreamState {
 impl Drop for StreamState {
     #[instrument(level = "debug", skip(self), fields(pipeline_id = self.pipeline_id.to_string()))]
     fn drop(&mut self) {
-        let Some(pipeline) = self
-            .pipeline
-            .as_ref()
-            .map(|p| &p.inner_state_as_ref().pipeline)
-        else {
+        let Some(pipeline) = self.pipeline.as_mut() else {
             return;
         };
+        let pipeline_state = pipeline.inner_state_mut();
 
-        // Post EOS so elements can flush gracefully.
-        let eos_handle = std::thread::Builder::new()
-            .name("PipelineEos".into())
-            .spawn({
-                let pipeline_weak = pipeline.downgrade();
+        pipeline_state.pipeline_runner.stop();
 
-                move || {
-                    if let Some(pipeline) = pipeline_weak.upgrade()
-                        && let Err(error) = pipeline.post_message(::gst::message::Eos::new())
-                    {
-                        error!("Failed posting Eos message into Pipeline bus. Reason: {error:?}");
-                    }
-                }
-            })
-            .ok();
+        let sink_ids = pipeline_state
+            .sinks
+            .keys()
+            .cloned()
+            .collect::<Vec<uuid::Uuid>>();
+        for sink_id in sink_ids {
+            if let Err(error) = pipeline_state.remove_sink(&sink_id) {
+                warn!("Failed unlinking Sink {sink_id:?} from Pipeline. Reason: {error:?}");
+            }
+        }
+
+        let gst_pipeline = pipeline_state.pipeline.clone();
 
         // Run set_state(Null) in a separate thread so we can bound the wait.
         // rtspsrc can block here indefinitely when the remote RTSP server is
@@ -926,7 +922,7 @@ impl Drop for StreamState {
         let null_handle = std::thread::Builder::new()
             .name("PipelineSetNull".into())
             .spawn({
-                let pipeline_weak = pipeline.downgrade();
+                let pipeline_weak = gst_pipeline.downgrade();
 
                 move || {
                     if let Some(pipeline) = pipeline_weak.upgrade()
@@ -957,35 +953,7 @@ impl Drop for StreamState {
             }
         }
 
-        if pipeline.current_state() != ::gst::State::Null
-            && let Err(error) =
-                wait_for_element_state(pipeline.downgrade(), ::gst::State::Null, 100, 5)
-        {
-            warn!("Pipeline did not reach Null state: {error:?}");
-        }
-
-        if let Some(join_handle) = eos_handle
-            && let Err(error) = join_handle.join()
-        {
-            warn!("Failed joining EOS task: {error:?}");
-        }
-
-        // Remove all Sinks after the pipeline is stopped
-        let pipeline_state = self
-            .pipeline
-            .as_mut()
-            .expect("No Pipeline")
-            .inner_state_mut();
-        let sink_ids = &pipeline_state
-            .sinks
-            .keys()
-            .cloned()
-            .collect::<Vec<uuid::Uuid>>();
-        for sink_id in sink_ids {
-            if let Err(error) = pipeline_state.remove_sink(sink_id) {
-                warn!("Failed unlinking Sink {sink_id:?} from Pipeline. Reason: {error:?}");
-            }
-        }
+        set_element_state_null(gst_pipeline.upcast_ref());
     }
 }
 
@@ -1155,6 +1123,23 @@ mod tests {
         }
     }
 
+    fn idle_redirect_stream(name: &str, endpoint: &str) -> Stream {
+        let video_and_stream_information = redirect_stream(name, endpoint);
+        let stream_id = generate_pipeline_id(&video_and_stream_information);
+        Stream {
+            state: Arc::new(RwLock::new(None)),
+            pipeline_id: Arc::new(stream_id),
+            video_and_stream_information: Arc::new(RwLock::new(video_and_stream_information)),
+            error: Arc::new(RwLock::new(Ok(()))),
+            terminated: Arc::new(RwLock::new(false)),
+            watcher_handle: None,
+            lifecycle: LifecycleHandle::lazy(),
+            thumbnail_cooldown: Arc::new(Mutex::new(None)),
+            mavlink_camera: Arc::new(RwLock::new(None)),
+            active_webrtc_sessions: Arc::new(Mutex::new(std::collections::HashSet::new())),
+        }
+    }
+
     fn settings_file() -> String {
         format!("/tmp/stream-tests-{}.json", uuid::Uuid::new_v4())
     }
@@ -1224,15 +1209,14 @@ mod tests {
         crate::settings::manager::clear_blocked_sources();
         crate::stream::manager::remove_all_streams().await.unwrap();
 
-        let first = redirect_stream("yard-east", "rtsp://127.0.0.1:8554/yard-east");
-        let second = redirect_stream("yard-west", "rtsp://127.0.0.1:8554/yard-west");
+        let first = idle_redirect_stream("yard-east", "rtsp://127.0.0.1:8554/yard-east");
+        let second = idle_redirect_stream("yard-west", "rtsp://127.0.0.1:8554/yard-west");
+        let first_id = *first.pipeline_id;
+        let second_id = *second.pipeline_id;
+        assert_ne!(first_id, second_id);
 
-        crate::stream::manager::add_stream_and_start(first)
-            .await
-            .unwrap();
-        crate::stream::manager::add_stream_and_start(second)
-            .await
-            .unwrap();
+        manager::Manager::add_stream(first).await.unwrap();
+        manager::Manager::add_stream(second).await.unwrap();
 
         let streams = crate::stream::manager::streams().await.unwrap();
         let stream_ids: std::collections::HashSet<_> =
@@ -1240,13 +1224,10 @@ mod tests {
 
         assert_eq!(streams.len(), 2);
         assert_eq!(stream_ids.len(), 2);
+        assert!(stream_ids.contains(&first_id));
+        assert!(stream_ids.contains(&second_id));
 
-        crate::stream::manager::remove_stream_by_name("yard-east")
-            .await
-            .unwrap();
-        crate::stream::manager::remove_stream_by_name("yard-west")
-            .await
-            .unwrap();
+        crate::stream::manager::remove_all_streams().await.unwrap();
     }
 
     #[tokio::test]
