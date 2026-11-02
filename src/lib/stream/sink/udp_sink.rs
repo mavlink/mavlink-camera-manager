@@ -1,11 +1,15 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use anyhow::{Context, Result, anyhow};
 use gst::prelude::*;
 use tracing::*;
 
 use crate::{
-    stream::pipeline::runner::PipelineRunner, video_stream::types::VideoAndStreamInformation,
+    stream::{gst::utils::set_element_state_null, pipeline::runner::PipelineRunner},
+    video_stream::types::VideoAndStreamInformation,
 };
 
 use super::{SinkInterface, link_sink_to_tee, make_proxy_bridge, unlink_sink_from_tee};
@@ -21,6 +25,7 @@ pub struct UdpSink {
     tee_src_pad: Option<gst::Pad>,
     addresses: Vec<url::Url>,
     pipeline_runner: PipelineRunner,
+    session_shutdown: AtomicBool,
 }
 impl SinkInterface for UdpSink {
     #[instrument(level = "debug", skip(self, pipeline))]
@@ -54,12 +59,10 @@ impl SinkInterface for UdpSink {
             return Ok(());
         };
 
+        self.shutdown_session();
+
         let elements = &[&self.proxysink];
         unlink_sink_from_tee(tee_src_pad, pipeline, elements)?;
-
-        if let Err(error) = self.pipeline.set_state(::gst::State::Null) {
-            warn!("Failed setting sink Pipeline state to Null: {error:?}");
-        }
 
         Ok(())
     }
@@ -114,28 +117,29 @@ impl SinkInterface for UdpSink {
     }
 
     #[instrument(level = "debug", skip(self))]
-    fn eos(&self) {
-        let pipeline_weak = self.pipeline.downgrade();
-        if let Err(error) = std::thread::Builder::new()
-            .name("EOS".to_string())
-            .spawn(move || {
-                let pipeline = pipeline_weak.upgrade().unwrap();
-                if let Err(error) = pipeline.post_message(gst::message::Eos::new()) {
-                    error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
-                }
-            })
-            .expect("Failed spawning EOS thread")
-            .join()
-        {
-            error!(
-                "EOS Thread Panicked with: {:?}",
-                error.downcast_ref::<String>()
-            );
+    fn shutdown_session(&self) {
+        if self.session_shutdown.swap(true, Ordering::AcqRel) {
+            return;
         }
+        self.pipeline_runner.stop();
+        set_element_state_null(self.pipeline.upcast_ref());
+    }
+
+    #[instrument(level = "debug", skip(self))]
+    fn eos(&self) {
+        // Intentionally a no-op. Posting Eos::new() to the session bus made
+        // the bus watcher treat it as pipeline-level EOS and kill the runner
+        // before `shutdown_session` could install the drop handler.
     }
 
     fn pipeline(&self) -> Option<&gst::Pipeline> {
         Some(&self.pipeline)
+    }
+}
+
+impl Drop for UdpSink {
+    fn drop(&mut self) {
+        self.shutdown_session();
     }
 }
 
@@ -208,6 +212,7 @@ impl UdpSink {
             addresses,
             tee_src_pad: Default::default(),
             pipeline_runner,
+            session_shutdown: AtomicBool::new(false),
         })
     }
 }

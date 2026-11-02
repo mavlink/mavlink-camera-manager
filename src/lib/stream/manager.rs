@@ -5,7 +5,7 @@ use cached::proc_macro::cached;
 use futures::stream::StreamExt;
 use gst::{
     DebugGraphDetails,
-    prelude::{ElementExtManual, GstBinExtManual},
+    prelude::{ElementExt, ElementExtManual, GstBinExt, GstBinExtManual, GstObjectExt},
 };
 use tokio::sync::RwLock;
 use tracing::*;
@@ -121,6 +121,10 @@ pub async fn start_default() -> Result<()> {
     let mut candidates = video_source::cameras_available().await;
     update_devices(&mut streams, &mut candidates, true).await;
 
+    if crate::cli::manager::is_onvif_disabled() {
+        streams.retain(|stream| !matches!(&stream.video_source, VideoSourceType::Onvif(_)));
+    }
+
     // Remove all invalid video_sources
     let streams: Vec<VideoAndStreamInformation> = streams
         .into_iter()
@@ -212,6 +216,72 @@ pub async fn update_devices(
 #[instrument(level = "debug")]
 pub async fn streams() -> Result<Vec<StreamStatus>> {
     Manager::streams_information().await
+}
+
+/// Result of a non-blocking lookup of the live pipeline source element.
+pub enum LiveSourceLookup {
+    /// Live `libcamerasrc` element for the requested device.
+    Found(gst::Element),
+    /// No active stream for this device, or source is not `libcamerasrc`.
+    NotStreaming,
+    /// Manager lock is contended; caller should retry.
+    Busy,
+}
+
+/// Non-blocking lookup of the live pipeline source element for `device_path`.
+///
+/// Used by sync camera-control code paths that cannot `.await` the manager lock.
+#[instrument(level = "debug")]
+pub fn try_live_source_element(device_path: &str) -> LiveSourceLookup {
+    try_live_libcamerasrc_source(Some(device_path))
+}
+
+/// Non-blocking lookup of any live `libcamerasrc` pipeline source element.
+///
+/// Used when listing controls for a camera that is not currently streaming but
+/// another libcamera stream already owns the process-wide CameraManager.
+#[instrument(level = "debug")]
+pub fn try_any_live_libcamerasrc() -> LiveSourceLookup {
+    try_live_libcamerasrc_source(None)
+}
+
+fn try_live_libcamerasrc_source(device_path: Option<&str>) -> LiveSourceLookup {
+    let Ok(manager) = MANAGER.try_read() else {
+        return LiveSourceLookup::Busy;
+    };
+
+    for stream in manager.streams.values() {
+        let Ok(info) = stream.video_and_stream_information.try_read() else {
+            continue;
+        };
+        if let Some(device_path) = device_path
+            && info.video_source.inner().source_string() != device_path
+        {
+            continue;
+        }
+
+        let Ok(state_guard) = stream.state.try_read() else {
+            continue;
+        };
+        let Some(state) = state_guard.as_ref() else {
+            continue;
+        };
+        let Some(pipeline) = state.pipeline.as_ref() else {
+            continue;
+        };
+        let Some(element) = pipeline.inner_state_as_ref().pipeline.by_name("source") else {
+            continue;
+        };
+        let Some(factory) = element.factory() else {
+            continue;
+        };
+        if factory.name() != "libcamerasrc" {
+            continue;
+        }
+        return LiveSourceLookup::Found(element);
+    }
+
+    LiveSourceLookup::NotStreaming
 }
 
 #[instrument(level = "debug")]
@@ -483,6 +553,18 @@ pub async fn add_stream_and_start(
         .video_source
         .inner()
         .source_string();
+
+    if crate::cli::manager::is_onvif_disabled()
+        && matches!(
+            &video_and_stream_information.video_source,
+            VideoSourceType::Onvif(_)
+        )
+    {
+        return Err(anyhow!(
+            "Source {source_string:?} cannot be used while --disable-onvif is set"
+        ));
+    }
+
     if is_source_blocked(source_string) {
         return Err(anyhow!(
             "Source {source_string:?} needs to be unblocked to be used"

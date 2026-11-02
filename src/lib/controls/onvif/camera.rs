@@ -269,6 +269,7 @@ impl OnvifCamera {
                 width: video_encoder_configuration.resolution.width.max(0) as u32,
                 height: video_encoder_configuration.resolution.height.max(0) as u32,
                 intervals,
+                depths: Vec::new(),
             }];
 
             let format = Format { encode, sizes };
