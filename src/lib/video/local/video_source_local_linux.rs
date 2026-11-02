@@ -1,7 +1,6 @@
 use std::{
     cmp::max,
     collections::{HashMap, HashSet},
-    str::FromStr,
 };
 
 use anyhow::{Result, anyhow};
@@ -42,6 +41,7 @@ pub enum VideoSourceLocalType {
     Unknown(String),
     Usb(String),
     LegacyRpiCam(String),
+    Libcamera(String),
 }
 
 #[derive(Apiv2Schema, Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -288,7 +288,7 @@ fn get_device_formats_using_gstreamer(
     device_path: &str,
     _typ: &VideoSourceLocalType,
 ) -> Result<Vec<Format>> {
-    let device = gst_device_monitor::v4l_device_with_path(device_path)?;
+    let device = gst_device_monitor::local_device_with_path(device_path)?;
 
     let caps = gst_device_monitor::device_caps(&device)?;
 
@@ -300,7 +300,7 @@ fn get_device_formats_using_gstreamer(
                 Ok(sendvalue) => match sendvalue.type_().name() {
                     "gchararray" => match sendvalue.get::<String>() {
                         Ok(fourcc) => {
-                            vec![VideoEncodeType::from_str(&fourcc).expect("irrefutable")]
+                            vec![VideoEncodeType::from_fourcc(&fourcc)]
                         }
                         Err(error) => {
                             warn!(
@@ -313,7 +313,7 @@ fn get_device_formats_using_gstreamer(
                         Ok(list) => list
                             .iter()
                             .filter_map(|v| v.get::<String>().ok())
-                            .map(|fourcc| VideoEncodeType::from_str(&fourcc).expect("irrefutable"))
+                            .map(|fourcc| VideoEncodeType::from_fourcc(&fourcc))
                             .collect(),
                         Err(error) => {
                             warn!(
@@ -496,8 +496,16 @@ fn get_device_formats_using_gstreamer(
                 }
             },
             Err(error) => {
-                info!("No framerate: {structure:#?}: {error:?}");
-                return;
+                trace!(
+                    "Caps without framerate, using defaults: {structure:#?}: {error:?}"
+                );
+                DEFAULT_FRAME_INTERVALS
+                    .iter()
+                    .map(|&denominator| FrameInterval {
+                        numerator: 1,
+                        denominator,
+                    })
+                    .collect()
             }
         };
 
@@ -540,6 +548,7 @@ fn get_device_formats_using_gstreamer(
 
     Ok(formats)
 }
+
 #[instrument(level = "debug")]
 fn validate_control(control: &Control, value: i64) -> Result<(), String> {
     if control.state.is_inactive {
@@ -575,6 +584,18 @@ fn validate_control(control: &Control, value: i64) -> Result<(), String> {
             if !values.contains(&value) {
                 return Err(format!(
                     "Value {value:?} is not one of the Control accepted values: {values:?}"
+                ));
+            }
+        }
+        ControlType::Flags(control) => {
+            let allowed = control
+                .flags
+                .iter()
+                .fold(0i64, |mask, flag| mask | flag.value);
+            if value & !allowed != 0 {
+                return Err(format!(
+                    "Value {value:?} uses undefined flag bits for control {:?}",
+                    control.flags
                 ));
             }
         }
@@ -633,6 +654,31 @@ impl VideoSource for VideoSourceLocal {
 
     #[instrument(level = "debug")]
     fn set_control_by_id(&self, control_id: u64, value: i64) -> std::io::Result<()> {
+        if matches!(self.typ, VideoSourceLocalType::Libcamera(_)) {
+            let Some(control) =
+                super::libcamera_controls::find_control(&self.device_path, control_id)
+            else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!(
+                        "Control ID {control_id:?} was not found for libcamera device {:?}",
+                        self.device_path
+                    ),
+                ));
+            };
+            if let Err(error) = validate_control(&control, value) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Unsupported,
+                    format!("Failed setting {control_id:?} to {value:?}: {error}"),
+                ));
+            }
+            return super::libcamera_controls::set_control_by_name(
+                &self.device_path,
+                &control.name,
+                value,
+            );
+        }
+
         let Some(control) = self
             .controls()
             .into_iter()
@@ -693,6 +739,10 @@ impl VideoSource for VideoSourceLocal {
 
     #[instrument(level = "debug")]
     fn control_value_by_id(&self, control_id: u64) -> std::io::Result<i64> {
+        if matches!(self.typ, VideoSourceLocalType::Libcamera(_)) {
+            return super::libcamera_controls::control_value_by_id(&self.device_path, control_id);
+        }
+
         let device_path = self.device_path.clone();
 
         let v4l_device = unpanic(move || v4l::Device::with_path(device_path))?;
@@ -711,6 +761,10 @@ impl VideoSource for VideoSourceLocal {
     #[instrument(level = "debug")]
     fn controls(&self) -> Vec<Control> {
         let mut controls: Vec<Control> = vec![];
+
+        if matches!(self.typ, VideoSourceLocalType::Libcamera(_)) {
+            return super::libcamera_controls::list_controls(&self.device_path);
+        }
 
         //TODO: create function to encapsulate device
         let device_path = self.device_path.clone();
@@ -821,17 +875,47 @@ impl VideoSource for VideoSourceLocal {
 impl VideoSourceAvailable for VideoSourceLocal {
     #[instrument(level = "debug")]
     async fn cameras_available() -> Vec<VideoSourceType> {
-        gst_device_monitor::v4l_devices()
+        gst_device_monitor::local_devices()
             .unwrap_or_default()
             .iter()
             .filter_map(|device_weak| {
                 let device = device_weak.upgrade()?;
-                let name = device.display_name().to_string();
-                let properties = device.properties()?;
-                let device_path = properties.get::<String>("device.path").ok()?;
-                let bus = properties.get::<String>("v4l2.device.bus_info").ok()?;
+                let display_name = device.display_name().to_string();
+                let properties = device.properties();
 
-                let typ = VideoSourceLocalType::from_str(&bus);
+                let factory_name = gst_device_monitor::source_factory_name(&device)?;
+
+                let (name, device_path, typ) = match factory_name {
+                    "v4l2src" => {
+                        let properties = properties?;
+                        let device_path = properties.get::<String>("device.path").ok()?;
+                        let bus = properties.get::<String>("v4l2.device.bus_info").ok()?;
+                        (
+                            display_name,
+                            device_path,
+                            VideoSourceLocalType::from_str(&bus),
+                        )
+                    }
+                    "libcamerasrc" => {
+                        // libcamera-gst exposes the camera id as the device's display name
+                        // (e.g. "/base/soc/i2c0mux/i2c@1/imx708@1a"); that same string is
+                        // what `libcamerasrc camera-name=...` expects. Prefer the friendlier
+                        // libcamera Model property for the user-visible name when present.
+                        let friendly_name = properties
+                            .and_then(|p| p.get::<String>("api.libcamera.Model").ok())
+                            .unwrap_or_else(|| display_name.clone());
+                        (
+                            friendly_name,
+                            display_name.clone(),
+                            VideoSourceLocalType::Libcamera(display_name),
+                        )
+                    }
+                    other => {
+                        debug!("Ignoring device with unsupported source factory: {other:?}");
+                        return None;
+                    }
+                };
+
                 Some(VideoSourceType::Local(VideoSourceLocal {
                     name,
                     device_path,

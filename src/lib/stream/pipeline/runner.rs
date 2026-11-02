@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 
 use anyhow::{Context, Result, anyhow};
 use gst::prelude::*;
@@ -12,27 +15,17 @@ use crate::{
 #[derive(Debug)]
 pub struct PipelineRunner {
     start: tokio::sync::mpsc::Sender<()>,
-    handle: Option<tokio::task::JoinHandle<()>>,
+    handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    pipeline: gst::glib::WeakRef<gst::Pipeline>,
     pipeline_id: Arc<uuid::Uuid>,
+    stopped: Arc<AtomicBool>,
 }
 
 impl Drop for PipelineRunner {
     #[instrument(level = "debug", skip(self), fields(pipeline_id = self.pipeline_id.to_string()))]
     fn drop(&mut self) {
         debug!("Dropping PipelineRunner...");
-
-        if let Some(handle) = self.handle.take() {
-            if !handle.is_finished() {
-                handle.abort();
-                tokio::spawn(async move {
-                    let _ = handle.await;
-                    debug!("PipelineRunner task aborted");
-                });
-            } else {
-                debug!("PipelineRunner task nicely finished!");
-            }
-        }
-
+        self.stop();
         debug!("PipelineRunner Dropped!");
     }
 }
@@ -83,6 +76,7 @@ impl PipelineRunner {
         let pipeline_weak = pipeline.downgrade();
 
         let (start_tx, start_rx) = tokio::sync::mpsc::channel(1);
+        let stopped = Arc::new(AtomicBool::new(false));
 
         debug!("Starting PipelineRunner task...");
 
@@ -90,6 +84,7 @@ impl PipelineRunner {
         let task_handle = tokio::spawn({
             let video_and_stream_information = video_and_stream_information.clone();
             let pipeline_id = pipeline_id.clone();
+            let stopped = stopped.clone();
             async move {
                 debug!("task started!");
                 match Self::runner(
@@ -98,6 +93,7 @@ impl PipelineRunner {
                     start_rx,
                     allow_block,
                     realtime_threads,
+                    stopped,
                     &video_and_stream_information,
                 )
                 .await
@@ -111,8 +107,10 @@ impl PipelineRunner {
 
         Ok(Self {
             start: start_tx,
-            handle: Some(task_handle),
+            handle: Mutex::new(Some(task_handle)),
+            pipeline: pipeline.downgrade(),
             pipeline_id: pipeline_id.clone(),
+            stopped,
         })
     }
 
@@ -130,9 +128,40 @@ impl PipelineRunner {
         Ok(())
     }
 
+    /// Stop watching the pipeline bus before any `set_state(Null)`.
+    ///
+    /// The forwarding bus sync handler and the watcher task must not run
+    /// while elements (especially `webrtcbin`) are being finalized. Joining
+    /// the tokio task from `Drop` on the runtime would deadlock, so this
+    /// installs a drop-only handler and aborts the task without awaiting it.
+    #[instrument(level = "debug", skip(self), fields(pipeline_id = self.pipeline_id.to_string()))]
+    pub fn stop(&self) {
+        self.stopped.store(true, Ordering::SeqCst);
+        if let Some(pipeline) = self.pipeline.upgrade()
+            && let Some(bus) = pipeline.bus()
+        {
+            drop_bus_messages(&bus);
+        }
+
+        let mut handle_guard = self
+            .handle
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(handle) = handle_guard.take() {
+            handle.abort();
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn stop_flag(&self) -> Arc<AtomicBool> {
+        self.stopped.clone()
+    }
+
     #[instrument(level = "debug", skip(self))]
     pub fn is_running(&self) -> bool {
         self.handle
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .as_ref()
             .map(|handle| !handle.is_finished())
             .unwrap_or(false)
@@ -140,7 +169,13 @@ impl PipelineRunner {
 
     #[instrument(
         level = "debug",
-        skip(pipeline_weak, pipeline_id, start, video_and_stream_information),
+        skip(
+            pipeline_weak,
+            pipeline_id,
+            start,
+            stopped,
+            video_and_stream_information
+        ),
         fields(realtime_threads)
     )]
     async fn runner(
@@ -149,6 +184,7 @@ impl PipelineRunner {
         mut start: tokio::sync::mpsc::Receiver<()>,
         allow_block: bool,
         realtime_threads: bool,
+        stopped: Arc<AtomicBool>,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<()> {
         let (finish_tx, mut finish) = tokio::sync::mpsc::channel(1);
@@ -163,10 +199,18 @@ impl PipelineRunner {
         let bus = pipeline
             .bus()
             .context("Unable to access the pipeline bus")?;
+        if stopped.load(Ordering::Acquire) {
+            drop_bus_messages(&bus);
+            return Ok(());
+        }
         bus.set_sync_handler({
             let pipeline_name = pipeline_name.clone();
+            let stopped = stopped.clone();
 
             move |_, msg| {
+                if stopped.load(Ordering::Acquire) {
+                    return gst::BusSyncReply::Drop;
+                }
                 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
                 if let gst::MessageView::StreamStatus(status) = msg.view() {
                     let (status_type, element) = status.get();
@@ -200,6 +244,10 @@ impl PipelineRunner {
                 gst::BusSyncReply::Drop
             }
         });
+        if stopped.load(Ordering::Acquire) {
+            drop_bus_messages(&bus);
+            return Ok(());
+        }
 
         /* Iterate messages on the bus until an error or EOS occurs,
          * although in this example the only error we'll hopefully
@@ -679,4 +727,9 @@ async fn bus_watcher_task(
     }
 
     debug!("BusWatcher task ended for Pipeline {pipeline_name:?}!");
+}
+
+fn drop_bus_messages(bus: &gst::Bus) {
+    bus.set_sync_handler(|_, _| gst::BusSyncReply::Drop);
+    while bus.pop().is_some() {}
 }
