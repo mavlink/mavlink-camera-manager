@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 
 use anyhow::{Context, Result, anyhow};
 use gst::prelude::*;
@@ -8,7 +11,7 @@ use tracing::*;
 use crate::{
     cli,
     stream::{
-        gst::utils::{excise_single_element, wait_for_element_state},
+        gst::utils::{excise_single_element, set_element_state_null, try_set_property},
         pipeline::runner::PipelineRunner,
         webrtc::{
             signalling_protocol::{
@@ -42,7 +45,7 @@ pub struct WebRTCSink {
     proxysink: gst::Element,
     proxysrc: gst::Element,
     webrtcbin: gst::Element,
-    webrtcbin_sink_pad: Option<gst::Pad>,
+    webrtcbin_sink_pad: Mutex<Option<gst::Pad>>,
     tee_src_pad: Option<gst::Pad>,
     bind: BindAnswer,
     /// MPSC channel's sender to send messages to the respective Websocket from Signaller server. Err can be used to end the WebSocket.
@@ -50,38 +53,13 @@ pub struct WebRTCSink {
     block_probe_id: Arc<Mutex<Option<gst::PadProbeId>>>,
     block_pad: Arc<Mutex<Option<glib::WeakRef<gst::Pad>>>>,
     pipeline_runner: PipelineRunner,
+    session_shutdown: AtomicBool,
 }
 
 impl Drop for WebRTCSink {
+    #[instrument(level = "debug", skip(self))]
     fn drop(&mut self) {
-        if let Some(pad) = self.webrtcbin_sink_pad.take() {
-            self.webrtcbin.release_request_pad(&pad);
-        }
-        let _ = self.webrtcbin.set_state(gst::State::Null);
-        if let Err(error) =
-            wait_for_element_state(self.webrtcbin.downgrade(), gst::State::Null, 100, 5)
-        {
-            warn!("webrtcbin did not reach Null within 5 s on drop: {error:?}");
-        }
-
-        // `READY_TO_NULL` only quits the WebRTCBin GMainLoop; the joining
-        // `g_thread_join` runs later, from `gst_webrtc_bin_finalize`, when
-        // the GObject refcount reaches zero. The session sub-pipeline still
-        // holds a child-strong ref on webrtcbin here, so without explicitly
-        // detaching, the finalize never fires and we leak exactly one
-        // "WebRTCBin" thread per session. Drop the parent ref synchronously
-        // so that when `self.webrtcbin` is dropped on field-drop, refcount
-        // hits zero and the thread is joined.
-        if let Err(error) = self.pipeline.remove(&self.webrtcbin) {
-            warn!("Failed removing webrtcbin from session sub-pipeline on drop: {error:?}");
-        }
-
-        let _ = self.pipeline.set_state(gst::State::Null);
-        if let Err(error) =
-            wait_for_element_state(self.pipeline.downgrade(), gst::State::Null, 100, 5)
-        {
-            warn!("session sub-pipeline did not reach Null within 5 s on drop: {error:?}");
-        }
+        self.shutdown_session();
     }
 }
 impl SinkInterface for WebRTCSink {
@@ -100,18 +78,28 @@ impl SinkInterface for WebRTCSink {
         }
 
         // Configure transceiver https://gstreamer.freedesktop.org/documentation/webrtclib/gstwebrtc-transceiver.html?gi-language=c
-        let webrtcbin_sink_pad = self
-            .webrtcbin_sink_pad
-            .as_ref()
-            .context("webrtcbin_sink_pad already consumed")?;
-        let transceiver =
-            webrtcbin_sink_pad.property::<gst_webrtc::WebRTCRTPTransceiver>("transceiver");
-        transceiver.set_property(
-            "direction",
-            gst_webrtc::WebRTCRTPTransceiverDirection::Sendonly,
-        );
-        transceiver.set_property("do-nack", true); // Enable retransmission (RFC4588)
-        transceiver.set_property("fec-type", gst_webrtc::WebRTCFECType::None);
+        let transceiver = {
+            let webrtcbin_sink_pad_guard = self
+                .webrtcbin_sink_pad
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let webrtcbin_sink_pad = webrtcbin_sink_pad_guard
+                .as_ref()
+                .context("webrtcbin_sink_pad already consumed")?;
+            webrtcbin_sink_pad.property::<gst_webrtc::WebRTCRTPTransceiver>("transceiver")
+        };
+        if transceiver.find_property("direction").is_some() {
+            transceiver.set_property(
+                "direction",
+                gst_webrtc::WebRTCRTPTransceiverDirection::Sendonly,
+            );
+        }
+        if transceiver.find_property("do-nack").is_some() {
+            transceiver.set_property("do-nack", true); // Enable retransmission (RFC4588)
+        }
+        if transceiver.find_property("fec-type").is_some() {
+            transceiver.set_property("fec-type", gst_webrtc::WebRTCFECType::None);
+        }
 
         // Provide codec-preferences so webrtcbin can create an SDP offer
         // without waiting for buffer caps on the sink pad.  The queue src
@@ -152,7 +140,9 @@ impl SinkInterface for WebRTCSink {
             });
         if let Some(caps) = codec_caps {
             debug!("Setting codec-preferences: {caps}");
-            transceiver.set_property("codec-preferences", &caps);
+            if transceiver.find_property("codec-preferences").is_some() {
+                transceiver.set_property("codec-preferences", &caps);
+            }
         } else {
             warn!("No caps available upstream of tee for codec-preferences");
         }
@@ -254,6 +244,10 @@ impl SinkInterface for WebRTCSink {
             return Ok(());
         };
 
+        // Null the session (proxysrc + webrtcbin) before detaching proxysink.
+        // The reverse order double-frees GST mini-objects on GStreamer >= 1.28.
+        self.shutdown_session();
+
         let elements = &[&self.proxysink];
         unlink_sink_from_tee(tee_src_pad, pipeline, elements)?;
 
@@ -278,13 +272,56 @@ impl SinkInterface for WebRTCSink {
     }
 
     #[instrument(level = "debug", skip(self))]
+    fn shutdown_session(&self) {
+        if self.session_shutdown.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        self.pipeline_runner.stop();
+        if let Some(pad) = self
+            .webrtcbin_sink_pad
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+        {
+            self.webrtcbin.release_request_pad(&pad);
+        }
+        let leftover_block_probe_id = self
+            .block_probe_id
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+        if let Some(probe_id) = leftover_block_probe_id {
+            let pad = self
+                .block_pad
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .as_ref()
+                .and_then(|weak_pad| weak_pad.upgrade());
+            if let Some(pad) = pad {
+                pad.remove_probe(probe_id);
+            }
+        }
+
+        set_element_state_null(&self.webrtcbin);
+
+        // `READY_TO_NULL` only quits the WebRTCBin GMainLoop; the joining
+        // `g_thread_join` runs later, from `gst_webrtc_bin_finalize`, when
+        // the GObject refcount reaches zero. The session sub-pipeline still
+        // holds a child-strong ref on webrtcbin here, so without explicitly
+        // detaching, the finalize never fires and we leak exactly one
+        // "WebRTCBin" thread per session.
+        if let Err(error) = self.pipeline.remove(&self.webrtcbin) {
+            warn!("Failed removing webrtcbin from session sub-pipeline: {error:?}");
+        }
+
+        set_element_state_null(self.pipeline.upcast_ref());
+    }
+
+    #[instrument(level = "debug", skip(self))]
     fn eos(&self) {
-        // Intentionally a no-op.  `unlink_sink_from_tee` already sends
-        // an EOS *event* directly to the webrtcbin element, and the
-        // WebRTCSink Drop handler sets it to Null.  The previous
-        // implementation used `post_message(Eos::new())` which posted
-        // an EOS *message* to the pipeline bus, causing the bus watcher
-        // to interpret it as a pipeline-level EOS and kill the runner.
+        // Intentionally a no-op. Posting Eos::new() to the pipeline bus made
+        // the bus watcher treat it as pipeline-level EOS and kill the runner.
+        // Session teardown is `shutdown_session` from unlink/Drop.
     }
 
     fn pipeline(&self) -> Option<&gst::Pipeline> {
@@ -307,15 +344,23 @@ impl WebRTCSink {
             .spawn(move || {
                 gst::ElementFactory::make("webrtcbin")
                     .property_from_str("name", format!("webrtcbin-{}", bind.session_id).as_str())
-                    .property("async-handling", true)
-                    .property("bundle-policy", gst_webrtc::WebRTCBundlePolicy::MaxBundle) // https://webrtcstandards.info/sdp-bundle/
-                    .property("latency", 0u32)
-                    .property_from_str("stun-server", cli::manager::stun_server_address().as_str())
                     .build()
             })
             .expect("Failed spawning WebRTCBin thread")
             .join()
             .map_err(|e| anyhow!("{:?}", e.downcast_ref::<String>()))??;
+        try_set_property(&webrtcbin, "async-handling", true);
+        try_set_property(
+            &webrtcbin,
+            "bundle-policy",
+            gst_webrtc::WebRTCBundlePolicy::MaxBundle, // https://webrtcstandards.info/sdp-bundle/
+        );
+        try_set_property(&webrtcbin, "latency", 0u32);
+        try_set_property(
+            &webrtcbin,
+            "stun-server",
+            cli::manager::stun_server_address().as_str(),
+        );
 
         cli::manager::turn_server_addresses()
             .iter()
@@ -336,15 +381,13 @@ impl WebRTCSink {
         //   threads spawned for SSDP discovery have long network timeouts
         //   and linger after the NiceAgent is destroyed, causing thread
         //   leaks visible in stress tests.  STUN/TURN is used instead.
-        {
+        if webrtcbin.find_property("ice-agent").is_some() {
             let ice: glib::Object = webrtcbin.property("ice-agent");
             if ice.find_property("agent").is_some() {
                 let agent: glib::Object = ice.property("agent");
                 if agent.find_property("keepalive-conncheck").is_some() {
                     agent.set_property("keepalive-conncheck", true);
                     debug!("Enabled ICE keepalive-conncheck for faster peer-loss detection");
-                } else {
-                    debug!("NiceAgent does not support keepalive-conncheck property");
                 }
                 if agent.find_property("upnp").is_some() {
                     agent.set_property("upnp", false);
@@ -363,16 +406,18 @@ impl WebRTCSink {
                 let Ok(rtp_bin) = res else { return };
 
                 // Use the pipeline clock time. This will ensure that the timestamps from the source are correct.
-                rtp_bin.set_property_from_str("ntp-time-source", "clock-time");
+                try_set_property(&rtp_bin, "ntp-time-source", "clock-time");
 
                 rtp_bin.connect("new-storage", false, move |values| {
                     let _rtp_bin = values[0].get::<gst::Element>().expect("Invalid argument");
                     let storage = values[1].get::<gst::Element>().expect("Invalid argument");
                     let _session = values[2].get::<u32>().expect("Invalid argument");
 
-                    let current_time_ns = storage.property::<u64>("size-time");
-                    debug!("Disabling RTP storage (was {current_time_ns} ns)");
-                    storage.set_property("size-time", 0u64);
+                    if storage.find_property("size-time").is_some() {
+                        let current_time_ns = storage.property::<u64>("size-time");
+                        debug!("Disabling RTP storage (was {current_time_ns} ns)");
+                        try_set_property(&storage, "size-time", 0u64);
+                    }
 
                     None
                 });
@@ -418,13 +463,14 @@ impl WebRTCSink {
             proxysink,
             proxysrc,
             webrtcbin,
-            webrtcbin_sink_pad: Some(webrtcbin_sink_pad),
+            webrtcbin_sink_pad: Mutex::new(Some(webrtcbin_sink_pad)),
             tee_src_pad: None,
             bind,
             sender,
             block_probe_id: Arc::new(Mutex::new(None)),
             block_pad: Arc::new(Mutex::new(None)),
             pipeline_runner,
+            session_shutdown: AtomicBool::new(false),
         };
 
         let (peer_connected_tx, peer_connected_rx) = std::sync::mpsc::channel::<()>();
@@ -555,6 +601,11 @@ impl WebRTCSink {
     pub fn handle_ice(&self, sdp_m_line_index: &u32, candidate: &str) -> Result<()> {
         self.downgrade()
             .handle_ice(&self.webrtcbin, sdp_m_line_index, candidate)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn runner_stop_flag(&self) -> Arc<AtomicBool> {
+        self.pipeline_runner.stop_flag()
     }
 }
 

@@ -116,19 +116,30 @@ jobs:
         run: sudo apt-get update
 
       - name: Install runtime dependencies
-        uses: awalsh128/cache-apt-pkgs-action@v1
-        with:
-          packages: |
+        run: |
+          sudo apt-get install -y --no-install-recommends \
             gstreamer1.0-tools \
-            gstreamer1.0-x \
-            gstreamer1.0-nice \
-            gstreamer1.0-libav \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
             gstreamer1.0-plugins-ugly \
             gstreamer1.0-plugins-bad \
+            gstreamer1.0-libav \
+            gstreamer1.0-x \
+            gstreamer1.0-nice \
             libblas3
+          gst-inspect-1.0 avdec_h264 >/dev/null
+          gst-inspect-1.0 avdec_h265 >/dev/null
+          gst-inspect-1.0 x264enc >/dev/null
+          gst-inspect-1.0 videotestsrc >/dev/null
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
 
       - name: Run tests
-        run: cargo test --verbose --locked
+        env:
+          GST_DEBUG: "2"
+          GST_DEBUG_NO_COLOR: "1"
+        run: cargo nextest run --verbose --no-fail-fast --success-output final --failure-output final --locked
 
   build:
     needs: frontend

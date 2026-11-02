@@ -96,6 +96,10 @@ impl RtspFlowHandle {
 pub struct RtspSink {
     sink_id: Arc<uuid::Uuid>,
     appsink: gst_app::AppSink,
+    /// Valve this sink linked onto the tee. Must not be read from
+    /// `flow_handle`, which is swapped to the new pipeline's valve on lazy
+    /// recreate.
+    valve: gst::Element,
     tee_src_pad: Option<gst::Pad>,
     scheme: RTSPScheme,
     path: String,
@@ -105,7 +109,16 @@ pub struct RtspSink {
     /// When true, `remove_sink` will NOT call `stop_pipeline` so the RTSP
     /// factory survives across lazy pipeline recreations.
     preserve_factory: AtomicBool,
+    session_shutdown: AtomicBool,
 }
+
+impl Drop for RtspSink {
+    #[instrument(level = "debug", skip(self))]
+    fn drop(&mut self) {
+        self.shutdown_session();
+    }
+}
+
 impl SinkInterface for RtspSink {
     #[instrument(level = "debug", skip(self, pipeline))]
     fn link(
@@ -125,8 +138,7 @@ impl SinkInterface for RtspSink {
             unreachable!()
         };
 
-        let valve = self.flow_handle.valve();
-        let elements = &[&valve, self.appsink.upcast_ref()];
+        let elements = &[&self.valve, self.appsink.upcast_ref()];
         link_sink_to_tee(tee_src_pad, pipeline, elements)?;
 
         Ok(())
@@ -139,8 +151,8 @@ impl SinkInterface for RtspSink {
             return Ok(());
         };
 
-        let valve = self.flow_handle.valve();
-        let elements = &[&valve, self.appsink.upcast_ref()];
+        self.shutdown_session();
+        let elements = &[&self.valve, self.appsink.upcast_ref()];
         unlink_sink_from_tee(tee_src_pad, pipeline, elements)?;
 
         Ok(())
@@ -161,6 +173,14 @@ impl SinkInterface for RtspSink {
     #[instrument(level = "debug", skip(self))]
     fn start(&self) -> Result<()> {
         Ok(())
+    }
+
+    #[instrument(level = "debug", skip(self))]
+    fn shutdown_session(&self) {
+        if self.session_shutdown.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        self.valve.set_property("drop", true);
     }
 
     #[instrument(level = "debug", skip(self))]
@@ -279,15 +299,16 @@ impl RtspSink {
         try_set_property(appsink.upcast_ref(), "silent", true);
 
         let flow_handle = if let Some(persistent) = persistent.and_then(|p| p.flow_handle) {
-            persistent.update_valve(valve);
+            persistent.update_valve(valve.clone());
             persistent
         } else {
-            RtspFlowHandle::new(valve, lifecycle)
+            RtspFlowHandle::new(valve.clone(), lifecycle)
         };
 
         Ok(Self {
             sink_id: id.clone(),
             appsink,
+            valve,
             scheme,
             path,
             tee_src_pad: Default::default(),
@@ -295,6 +316,7 @@ impl RtspSink {
             pts_offset,
             flow_handle,
             preserve_factory: AtomicBool::new(false),
+            session_shutdown: AtomicBool::new(false),
         })
     }
 
