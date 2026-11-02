@@ -67,7 +67,7 @@ impl FakePipeline {
         // We are choosing "UYVY" because it is compatible with the
         // application-rtp template capabilities.
         // For more information: https://gstreamer.freedesktop.org/documentation/additional/design/mediatype-video-raw.html?gi-language=c#formats
-        let description = match &configuration.encode {
+        let description = match &configuration.source_encode {
             VideoEncodeType::H264 => {
                 #[cfg(not(target_os = "windows"))]
                 let format = "I420";
