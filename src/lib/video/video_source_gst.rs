@@ -55,6 +55,7 @@ impl VideoSourceFormats for VideoSourceGst {
                     width,
                     height,
                     intervals: intervals.clone(),
+                    depths: Vec::new(),
                 })
                 .collect();
 
@@ -103,6 +104,7 @@ impl VideoSourceFormats for VideoSourceGst {
                     width,
                     height,
                     intervals: intervals.clone(),
+                    depths: Vec::new(),
                 })
                 .collect();
 

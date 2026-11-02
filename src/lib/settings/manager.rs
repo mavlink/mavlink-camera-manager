@@ -298,7 +298,7 @@ mod tests {
 
     use super::*;
     use crate::stream::types::{
-        CaptureConfiguration, StreamInformation, VideoCaptureConfiguration,
+        CaptureConfiguration, SourceConfiguration, StreamInformation, VideoCaptureConfiguration,
     };
     use crate::video::{
         types::{FrameInterval, VideoEncodeType, VideoSourceType},
@@ -349,13 +349,17 @@ mod tests {
             stream_information: StreamInformation {
                 endpoints: vec![Url::parse("udp://potatohost:4242").unwrap()],
                 configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
-                    encode: VideoEncodeType::H264,
+                    source_encode: VideoEncodeType::H264,
+                    sink_encode: VideoEncodeType::H264,
                     height: 666,
                     width: 444,
                     frame_interval: FrameInterval {
                         numerator: 17,
                         denominator: 47,
                     },
+                    bit_depth: None,
+                    source_configuration: SourceConfiguration::Classic,
+                    auto_restart_on_config_change: false,
                 }),
                 extended_configuration: None,
             },

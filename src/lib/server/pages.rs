@@ -44,6 +44,12 @@ pub struct V4lControl {
 }
 
 #[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
+pub struct StreamControl {
+    id: u64,
+    value: i64,
+}
+
+#[derive(Apiv2Schema, Debug, Deserialize, Serialize)]
 pub struct PostStream {
     name: String,
     source: String,
@@ -52,6 +58,11 @@ pub struct PostStream {
 
 #[derive(Apiv2Schema, Debug, Deserialize)]
 pub struct RemoveStream {
+    name: String,
+}
+
+#[derive(Apiv2Schema, Debug, Deserialize)]
+pub struct RestartStream {
     name: String,
 }
 
@@ -153,6 +164,16 @@ use include_dir::{Dir, include_dir};
 
 static DIST: Dir<'_> = include_dir!("frontend/dist");
 
+fn ensure_onvif_enabled() -> Result<()> {
+    if crate::cli::manager::is_onvif_disabled() {
+        return Err(Error::NotFound(
+            "ONVIF endpoints are disabled. Start without --disable-onvif to enable them.".into(),
+        ));
+    }
+
+    Ok(())
+}
+
 fn load_file(file_name: &str) -> Option<&'static str> {
     DIST.get_file(file_name)
         .and_then(|file| file.contents_utf8())
@@ -253,6 +274,37 @@ pub async fn v4l() -> Result<Json<Vec<ApiVideoSource>>> {
 }
 
 #[api_v2_operation]
+/// List merged source and pipeline controls for a stream
+pub async fn stream_controls_get(name: web::Path<String>) -> Result<Json<Vec<Control>>> {
+    let controls = stream_manager::stream_controls(&name.into_inner())
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+    Ok(Json(controls))
+}
+
+#[api_v2_operation]
+/// Set a source or pipeline control on a stream
+pub async fn stream_controls_post(
+    name: web::Path<String>,
+    json: web::Json<StreamControl>,
+) -> Result<HttpResponse> {
+    let control = json.into_inner();
+    stream_manager::set_stream_control(&name.into_inner(), control.id, control.value)
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[api_v2_operation]
+/// Reset pipeline controls for a stream
+pub async fn stream_controls_reset(name: web::Path<String>) -> Result<HttpResponse> {
+    stream_manager::reset_stream_pipeline_controls(&name.into_inner())
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+    Ok(HttpResponse::Ok().finish())
+}
+
+#[api_v2_operation]
 /// Change video control for a specific source
 pub async fn v4l_post(json: web::Json<V4lControl>) -> Result<HttpResponse> {
     let control = json.into_inner();
@@ -298,6 +350,16 @@ pub async fn restart_streams(query: web::Query<ResetSettings>) -> Result<HttpRes
     Err(Error::Internal(
         "Missing argument for restart_streams.".to_string(),
     ))
+}
+
+#[api_v2_operation]
+/// Restart a single stream pipeline in place
+pub async fn restart_stream(query: web::Query<RestartStream>) -> Result<HttpResponse> {
+    stream_manager::restart_stream_by_name(&query.name)
+        .await
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    Ok(HttpResponse::Ok().finish())
 }
 
 #[api_v2_operation]
@@ -544,6 +606,18 @@ pub async fn gst_info() -> Result<HttpResponse> {
 }
 
 #[api_v2_operation]
+/// Lists installed GStreamer encoder factories per compressed encoding
+pub async fn gst_encoders() -> Result<Json<gst_stream::encoders::Encoders>> {
+    Ok(Json(gst_stream::encoders::encoders()))
+}
+
+#[api_v2_operation]
+/// Lists installed GStreamer decoder factories per compressed source format
+pub async fn gst_decoders() -> Result<Json<gst_stream::decoders::Decoders>> {
+    Ok(Json(gst_stream::decoders::decoders()))
+}
+
+#[api_v2_operation]
 /// Provides a access point for the service log
 pub async fn log(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse> {
     let (response, mut session, _stream) =
@@ -570,6 +644,8 @@ pub async fn log(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse>
 
 #[api_v2_operation]
 pub async fn onvif_devices() -> Result<HttpResponse> {
+    ensure_onvif_enabled()?;
+
     let onvif_devices = crate::controls::onvif::manager::Manager::onvif_devices().await;
 
     let json = serde_json::to_string_pretty(&onvif_devices)
@@ -584,6 +660,8 @@ pub async fn onvif_devices() -> Result<HttpResponse> {
 pub async fn authenticate_onvif_device(
     query: web::Query<AuthenticateOnvifDeviceRequest>,
 ) -> Result<HttpResponse> {
+    ensure_onvif_enabled()?;
+
     crate::controls::onvif::manager::Manager::register_credentials(
         query.device_uuid,
         Some(onvif::soap::client::Credentials {
@@ -601,6 +679,8 @@ pub async fn authenticate_onvif_device(
 pub async fn unauthenticate_onvif_device(
     query: web::Query<UnauthenticateOnvifDeviceRequest>,
 ) -> Result<HttpResponse> {
+    ensure_onvif_enabled()?;
+
     crate::controls::onvif::manager::Manager::register_credentials(query.device_uuid, None)
         .await
         .map_err(|error| Error::Internal(format!("{error:?}")))?;

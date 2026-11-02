@@ -4,10 +4,18 @@ use serde::Serialize;
 #[derive(Apiv2Schema, Clone, Debug, Default, Serialize)]
 pub struct Control {
     pub name: String,
+    pub element: String,
     pub cpp_type: String,
     pub id: u64,
     pub state: ControlState,
     pub configuration: ControlType,
+    pub mutable_in_playing: bool,
+    pub requires_restart: bool,
+    pub nick: String,
+    pub blurb: Option<String>,
+    pub docs_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin_name: Option<String>,
 }
 
 #[derive(Apiv2Schema, Clone, Debug, Serialize)]
@@ -15,6 +23,7 @@ pub enum ControlType {
     Bool(ControlBool),
     Slider(ControlSlider),
     Menu(ControlMenu),
+    Flags(ControlFlags),
 }
 
 #[derive(Apiv2Schema, Clone, Debug, Default, Serialize)]
@@ -43,6 +52,13 @@ pub struct ControlMenu {
     pub default: i64,
     pub value: i64,
     pub options: Vec<ControlOption>,
+}
+
+#[derive(Apiv2Schema, Clone, Debug, Serialize)]
+pub struct ControlFlags {
+    pub default: i64,
+    pub value: i64,
+    pub flags: Vec<ControlOption>,
 }
 
 #[derive(Apiv2Schema, Clone, Debug, Serialize)]

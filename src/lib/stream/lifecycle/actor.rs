@@ -65,6 +65,11 @@ impl LifecycleActor {
                 self.publish();
                 let _ = reply.send(());
             }
+            LifecycleCommand::ForceRestart { reply } => {
+                let restarted = self.state.force_restart();
+                self.publish();
+                let _ = reply.send(restarted);
+            }
             LifecycleCommand::Shutdown => return true,
         }
         false
