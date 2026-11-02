@@ -1,6 +1,11 @@
 name: GStreamer Compatibility
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  schedule:
+    # Run every 6 days to keep our caches alive
+    - cron: '0 0 */6 * *'
 
 env:
   # Only master should write caches. Other branches can read.
