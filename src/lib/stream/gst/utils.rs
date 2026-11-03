@@ -8,6 +8,8 @@ use crate::{
     video::types::{FrameInterval, VideoEncodeType},
 };
 
+const TEARDOWN_NULL_POLL_MILLIS: u64 = 100;
+
 #[derive(Debug)]
 pub struct PluginRankConfig {
     pub name: String,
@@ -111,8 +113,8 @@ pub fn check_all_plugins() -> Result<()> {
                 missing_required.push(requirement_display);
             }
             (false, false) => {
-                warn!(
-                    "Optional GStreamer plugin requirement {requirement_display} is not met: Some features may not be available"
+                debug!(
+                    "Optional GStreamer plugin {requirement_display} is not present: related features will be unavailable"
                 );
             }
             _ => (),
@@ -170,6 +172,36 @@ pub fn set_plugin_rank(plugin_name: &str, rank: gst::Rank) -> Result<()> {
     Ok(())
 }
 
+/// Set `element` to [`gst::State::Null`] without polling for seconds.
+///
+/// `gst_element_set_state(NULL)` is synchronous for almost every element, so
+/// a successful change is already Null when this returns. If the element is
+/// still not Null (an async-handling bin, or a wedged `rtspsrc`), wait at
+/// most [`TEARDOWN_NULL_POLL_MILLIS`] and continue: a 5 s wait here is held
+/// under `MANAGER.write()` and stalls every HTTP and MAVLink handler.
+#[instrument(level = "debug", skip_all)]
+pub fn set_element_state_null(element: &gst::Element) {
+    if element.current_state() == gst::State::Null {
+        return;
+    }
+    if let Err(error) = element.set_state(gst::State::Null) {
+        warn!(
+            "Failed setting element {} to Null: {error:?}",
+            element.name()
+        );
+    }
+    if element.current_state() == gst::State::Null {
+        return;
+    }
+    std::thread::sleep(std::time::Duration::from_millis(TEARDOWN_NULL_POLL_MILLIS));
+    if element.current_state() != gst::State::Null {
+        warn!(
+            "Element {} still not Null after set_state; continuing teardown",
+            element.name()
+        );
+    }
+}
+
 pub fn wait_for_element_state<T: IsA<gst::Element>>(
     element_weak: gst::glib::WeakRef<T>,
     state: gst::State,
@@ -179,25 +211,22 @@ pub fn wait_for_element_state<T: IsA<gst::Element>>(
     let mut trials = 1000 * timeout_time_secs / polling_time_millis;
 
     loop {
-        std::thread::sleep(std::time::Duration::from_millis(polling_time_millis));
-
         let Some(element) = element_weak.upgrade() else {
             return Err(anyhow!("Cannot access Element"));
         };
 
         if element.current_state() == state {
-            break;
+            return Ok(());
         }
 
-        trials = trials.saturating_sub(1);
         if trials == 0 {
             return Err(anyhow!(
                 "set state timed-out ({timeout_time_secs:?} seconds)"
             ));
         }
+        trials = trials.saturating_sub(1);
+        std::thread::sleep(std::time::Duration::from_millis(polling_time_millis));
     }
-
-    Ok(())
 }
 
 pub fn wait_for_element_state_sync(
@@ -209,21 +238,18 @@ pub fn wait_for_element_state_sync(
     let mut trials = 1000 * timeout_time_secs / polling_time_millis;
 
     loop {
-        std::thread::sleep(std::time::Duration::from_millis(polling_time_millis));
-
         if element.current_state() == state {
-            break;
+            return Ok(());
         }
 
-        trials = trials.saturating_sub(1);
         if trials == 0 {
             return Err(anyhow!(
                 "set state timed-out ({timeout_time_secs:?} seconds)"
             ));
         }
+        trials = trials.saturating_sub(1);
+        std::thread::sleep(std::time::Duration::from_millis(polling_time_millis));
     }
-
-    Ok(())
 }
 
 pub async fn wait_for_element_state_async(
@@ -237,25 +263,22 @@ pub async fn wait_for_element_state_async(
     let mut period = tokio::time::interval(tokio::time::Duration::from_millis(polling_time_millis));
 
     loop {
-        period.tick().await;
-
         let Some(element) = element_weak.upgrade() else {
             return Err(anyhow!("Cannot access Element"));
         };
 
         if element.current_state() == state {
-            break;
+            return Ok(());
         }
 
-        trials = trials.saturating_sub(1);
         if trials == 0 {
             return Err(anyhow!(
                 "set state timed-out ({timeout_time_secs:?} seconds)"
             ));
         }
+        trials = trials.saturating_sub(1);
+        period.tick().await;
     }
-
-    Ok(())
 }
 
 fn make_source_description_from_stream_uri(stream_uri: &url::Url) -> Result<String> {
@@ -636,24 +659,24 @@ pub fn excise_single_element(element: &gst::Element) -> Result<()> {
         .unwrap_or_default();
 
     debug!(
-        "Excising {name}: unlinking {upstream_elem}:{} → {name} → {downstream_elem}:{}",
+        "Excising {name}: unlinking {upstream_elem}:{} -> {name} -> {downstream_elem}:{}",
         upstream_pad.name(),
         downstream_pad.name(),
     );
 
     upstream_pad
         .unlink(&sink_pad)
-        .map_err(|e| anyhow!("unlink upstream→element: {e}"))?;
+        .map_err(|e| anyhow!("unlink upstream->element: {e}"))?;
     src_pad
         .unlink(&downstream_pad)
-        .map_err(|e| anyhow!("unlink element→downstream: {e}"))?;
+        .map_err(|e| anyhow!("unlink element->downstream: {e}"))?;
 
     upstream_pad
         .link(&downstream_pad)
-        .map_err(|e| anyhow!("relink upstream→downstream: {e:?}"))?;
+        .map_err(|e| anyhow!("relink upstream->downstream: {e:?}"))?;
 
     debug!(
-        "Excising {name}: relinked {upstream_elem}:{} → {downstream_elem}:{}",
+        "Excising {name}: relinked {upstream_elem}:{} -> {downstream_elem}:{}",
         upstream_pad.name(),
         downstream_pad.name(),
     );

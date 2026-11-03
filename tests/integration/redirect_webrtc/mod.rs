@@ -1,3 +1,5 @@
+mod h264_profile;
+mod h265_profile;
 mod thumbnail;
 mod webrtc;
 mod zenoh;
@@ -122,4 +124,41 @@ pub(super) async fn setup_fake_h265_rtsp_and_redirect(path: &str) -> (McmProcess
         .expect("redirect should complete initial lifecycle");
 
     (mcm, client)
+}
+
+/// Wait for the server's `Negotiation` message on `ws_stream` and return
+/// the offer SDP text. Panics if no offer is received within [`TIMEOUT`].
+/// Shared by the profile-preservation tests, which all need the same
+/// extraction after `start_webrtc_session_for_producer`.
+pub(super) async fn read_offer_sdp_text(
+    ws_stream: &mut futures::stream::SplitStream<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    >,
+) -> String {
+    use futures::StreamExt;
+    use stream_clients::protocol::{Message, Negotiation, Protocol, RTCSessionDescription};
+
+    let sdp_offer = tokio::time::timeout(TIMEOUT, async {
+        while let Some(Ok(msg)) = ws_stream.next().await {
+            let text = match msg.into_text() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            let proto: Result<Protocol, _> = serde_json::from_str(&text);
+            let Ok(proto) = proto else { continue };
+            if let Message::Negotiation(Negotiation::MediaNegotiation(media)) = proto.message {
+                if let RTCSessionDescription::Offer(sdp) = media.sdp {
+                    return Some(sdp.sdp);
+                }
+            }
+        }
+        None
+    })
+    .await;
+
+    sdp_offer
+        .expect("should receive negotiation message")
+        .expect("ws stream should not close before SDP offer")
 }

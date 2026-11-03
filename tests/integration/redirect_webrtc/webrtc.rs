@@ -48,7 +48,7 @@ async fn test_redirect_webrtc_session_and_sdp_offer() {
     // Wait for an SDP offer (Negotiation message) from the server.
     // The server sends the offer asynchronously after session creation.
     use futures::StreamExt;
-    let sdp_offer = tokio::time::timeout(Duration::from_secs(10), async {
+    let sdp_offer = tokio::time::timeout(TIMEOUT, async {
         while let Some(Ok(msg)) = ws_stream.next().await {
             let text = match msg.into_text() {
                 Ok(t) => t,
@@ -65,7 +65,7 @@ async fn test_redirect_webrtc_session_and_sdp_offer() {
     .await;
 
     let sdp_text = sdp_offer
-        .expect("should receive negotiation message within 10s")
+        .expect("should receive negotiation message")
         .expect("ws stream should not close before SDP offer");
 
     // The negotiation message should contain an SDP offer with H264
@@ -107,7 +107,7 @@ async fn test_rtsp_redirect_webrtc_session_and_sdp_offer() {
     );
 
     use futures::StreamExt;
-    let sdp_offer = tokio::time::timeout(Duration::from_secs(10), async {
+    let sdp_offer = tokio::time::timeout(TIMEOUT, async {
         while let Some(Ok(msg)) = ws_stream.next().await {
             let text = match msg.into_text() {
                 Ok(t) => t,
@@ -124,7 +124,7 @@ async fn test_rtsp_redirect_webrtc_session_and_sdp_offer() {
     .await;
 
     let sdp_text = sdp_offer
-        .expect("should receive negotiation message within 10s")
+        .expect("should receive negotiation message")
         .expect("ws stream should not close before SDP offer");
 
     assert!(
@@ -162,7 +162,7 @@ async fn test_h265_redirect_webrtc_session_and_sdp_offer() {
     );
 
     use futures::StreamExt;
-    let sdp_offer = tokio::time::timeout(Duration::from_secs(10), async {
+    let sdp_offer = tokio::time::timeout(TIMEOUT, async {
         while let Some(Ok(msg)) = ws_stream.next().await {
             let text = match msg.into_text() {
                 Ok(t) => t,
@@ -179,7 +179,7 @@ async fn test_h265_redirect_webrtc_session_and_sdp_offer() {
     .await;
 
     let sdp_text = sdp_offer
-        .expect("should receive negotiation message within 10s")
+        .expect("should receive negotiation message")
         .expect("ws stream should not close before SDP offer");
 
     assert!(
@@ -218,7 +218,7 @@ async fn test_h265_rtsp_redirect_webrtc_session_and_sdp_offer() {
     );
 
     use futures::StreamExt;
-    let sdp_offer = tokio::time::timeout(Duration::from_secs(10), async {
+    let sdp_offer = tokio::time::timeout(TIMEOUT, async {
         while let Some(Ok(msg)) = ws_stream.next().await {
             let text = match msg.into_text() {
                 Ok(t) => t,
@@ -235,7 +235,7 @@ async fn test_h265_rtsp_redirect_webrtc_session_and_sdp_offer() {
     .await;
 
     let sdp_text = sdp_offer
-        .expect("should receive negotiation message within 10s")
+        .expect("should receive negotiation message")
         .expect("ws stream should not close before SDP offer");
 
     assert!(
