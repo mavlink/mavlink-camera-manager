@@ -5,7 +5,10 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-22.04
-    container: ${{ matrix.container }}
+    container:
+      image: ${{ matrix.container }}
+      # Privileged so the job can point kernel.core_pattern at a path inside the container.
+      options: --privileged --ulimit core=-1
     name: "GStreamer ${{ matrix.gst }} (${{ matrix.container }})"
     env:
       DEBIAN_FRONTEND: noninteractive
@@ -103,9 +106,31 @@ jobs:
     - name: Install nextest
       uses: taiki-e/install-action@nextest
 
+    - name: Enable core dumps
+      run: |
+        mkdir -p /tmp/cores
+        echo '/tmp/cores/core.%e.%p' > /proc/sys/kernel/core_pattern
+
     - name: Run tests
       env:
         GST_DEBUG: "2"
         GST_DEBUG_NO_COLOR: "1"
         RUST_BACKTRACE: "1"
-      run: cargo nextest run --verbose --no-fail-fast --success-output final --failure-output final --locked
+      run: |
+        ulimit -c unlimited
+        cargo nextest run --verbose --no-fail-fast --success-output final --failure-output final --locked
+
+    - name: Print backtraces of crashed tests
+      if: failure()
+      shell: bash
+      run: |
+        shopt -s nullglob
+        cores=(/tmp/cores/core.*)
+        if [ ${#cores[@]} -eq 0 ]; then echo "No core dumps"; exit 0; fi
+        apt-get install -y --no-install-recommends gdb >/dev/null
+        for core in "${cores[@]}"; do
+          exe=$(gdb -batch -c "$core" -ex "info auxv" 2>/dev/null | sed -n 's/.*AT_EXECFN.*"\(.*\)"$/\1/p')
+          echo "::group::$core ($exe)"
+          gdb -batch -ex 'set pagination off' -ex 'bt full 30' -ex 'thread apply all bt 25' "$exe" "$core"
+          echo "::endgroup::"
+        done
