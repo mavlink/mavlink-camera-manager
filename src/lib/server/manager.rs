@@ -66,6 +66,8 @@ pub async fn run(server_address: &str) -> Result<(), std::io::Error> {
             .route("/streams", web::post().to(pages::streams_post))
             .route("/v4l", web::get().to(pages::v4l))
             .route("/v4l", web::post().to(pages::v4l_post))
+            .route("/file_sources", web::post().to(pages::file_source_post))
+            .route("/file_sources", web::delete().to(pages::file_source_delete))
             .route(
                 "/camera/reset_controls",
                 web::post().to(pages::camera_reset_controls),
