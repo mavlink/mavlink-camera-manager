@@ -52,6 +52,9 @@ pub fn check_all_plugins() -> Result<()> {
         // Parsers
         PluginRequirement::new("h264parse"),
         PluginRequirement::new("h265parse"),
+        // Demuxers
+        PluginRequirement::new("qtdemux"),
+        PluginRequirement::new("matroskademux"),
         // RTP
         PluginRequirement::new("rtph264pay"),
         PluginRequirement::new("rtph265pay"),
@@ -74,6 +77,7 @@ pub fn check_all_plugins() -> Result<()> {
         PluginRequirement::new("avdec_h265"),
         PluginRequirement::new("jpegdec"),
         // Sources
+        PluginRequirement::new("filesrc"),
         PluginRequirement::new("proxysrc"),
         PluginRequirement::new("shmsrc"),
         PluginRequirement::new("v4l2src"),
