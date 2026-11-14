@@ -261,3 +261,87 @@ impl PipelineGstreamerInterface for FilePipeline {
         self.state.pipeline_runner.is_running()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::video::{
+        types::FrameInterval,
+        video_source_gst::{probe_file, tests::encode_file},
+    };
+
+    #[test]
+    fn loop_file_keeps_timestamps_growing() {
+        gst::init().unwrap();
+
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder
+            .path()
+            .join("video.mp4")
+            .to_string_lossy()
+            .to_string();
+
+        // One second of video
+        encode_file(&path, 0);
+
+        let format = probe_file(&path).unwrap();
+        assert_eq!(format.encode, VideoEncodeType::H264);
+        assert_eq!(format.sizes[0].width, 320);
+        assert_eq!(format.sizes[0].height, 240);
+        assert_eq!(
+            format.sizes[0].intervals,
+            vec![FrameInterval {
+                numerator: 1,
+                denominator: 30
+            }]
+        );
+
+        let pipeline = gst::parse::launch(
+            "filesrc name=source ! qtdemux name=demux ! identity name=sync sync=true ! h264parse ! identity single-segment=true ! fakesink name=sink sync=true",
+        )
+        .unwrap()
+        .downcast::<gst::Pipeline>()
+        .unwrap();
+        pipeline
+            .by_name("source")
+            .unwrap()
+            .set_property("location", &path);
+        loop_file(
+            &pipeline.by_name("demux").unwrap(),
+            &pipeline.by_name("sync").unwrap(),
+        )
+        .unwrap();
+
+        let timestamps = Arc::new(Mutex::new(Vec::new()));
+        pipeline
+            .by_name("sink")
+            .unwrap()
+            .static_pad("sink")
+            .unwrap()
+            .add_probe(gst::PadProbeType::BUFFER, {
+                let timestamps = timestamps.clone();
+                move |_pad, info| {
+                    if let Some(buffer) = info.buffer() {
+                        timestamps.lock().unwrap().push(buffer.pts().unwrap());
+                    }
+                    gst::PadProbeReturn::Ok
+                }
+            });
+
+        pipeline.set_state(gst::State::Playing).unwrap();
+        let message = pipeline.bus().unwrap().timed_pop_filtered(
+            gst::ClockTime::from_mseconds(3500),
+            &[gst::MessageType::Eos, gst::MessageType::Error],
+        );
+        pipeline.set_state(gst::State::Null).unwrap();
+        assert!(message.is_none(), "{message:?}");
+
+        let timestamps = timestamps.lock().unwrap();
+        // More than two loops of 30 frames
+        assert!(timestamps.len() > 60, "Only {} frames", timestamps.len());
+        assert!(
+            timestamps.windows(2).all(|pair| pair[0] < pair[1]),
+            "{timestamps:?}"
+        );
+    }
+}
