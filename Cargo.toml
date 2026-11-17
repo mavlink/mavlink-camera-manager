@@ -98,8 +98,8 @@ thread-priority = "3.0.0"
 tracing-appender = { git = "https://github.com/joaoantoniocardoso/tracing", branch = "tracing-appender-0.2.2-with-filename-suffix" }
 
 # Onvif
-onvif = { git = "https://github.com/lumeohq/onvif-rs", rev = "8e2408db" }
-onvif-schema = { git = "https://github.com/lumeohq/onvif-rs", rev = "8e2408db", package = "schema", features = ["analytics", "devicemgmt", "event", "media", "ptz"] }
+onvif = { git = "https://github.com/joaoantoniocardoso/onvif-rs", rev = "0285811c" }
+onvif-schema = { git = "https://github.com/joaoantoniocardoso/onvif-rs", rev = "0285811c", package = "schema", features = ["analytics", "devicemgmt", "event", "media", "ptz"] }
 
 anyhow = "1"
 tokio = { version = "1.37", features = ["full"] }
