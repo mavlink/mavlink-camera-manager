@@ -335,6 +335,8 @@ impl Manager {
 
         let devices_stream = onvif::discovery::DiscoveryBuilder::default()
             .listen_address(listen_ip)
+            // Some cameras (4K Cam on V19) ignore a probe that doesn't name their type
+            .probe_types("dn:NetworkVideoTransmitter")
             .duration(scan_duration)
             .run()
             .await?;
