@@ -946,6 +946,46 @@ async fn webrtc_shutdown_session_stops_runner_before_releasing_request_pad() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial]
+async fn webrtc_offer_created_after_shutdown_is_dropped() {
+    gst::init().unwrap();
+    let stream = stream_information(&["udp://127.0.0.1:9"], VideoEncodeType::H264);
+    let session_id = Uuid::new_v4();
+    // Keep the receiver alive: the sender must not be what stops the offer.
+    let (sender, _receiver) = mpsc::unbounded_channel();
+    let bind = BindAnswer {
+        consumer_id: Uuid::new_v4(),
+        producer_id: Uuid::new_v4(),
+        session_id,
+    };
+    let sink = WebRTCSink::try_new(bind, sender, &stream).unwrap();
+    let offer = gst_webrtc::WebRTCSessionDescription::new(
+        gst_webrtc::WebRTCSDPType::Offer,
+        gst_sdp::SDPMessage::parse_buffer(
+            b"v=0\r\n\
+              o=- 0 0 IN IP4 127.0.0.1\r\n\
+              s=-\r\n\
+              t=0 0\r\n\
+              m=video 9 UDP/TLS/RTP/SAVPF 96\r\n\
+              c=IN IP4 0.0.0.0\r\n\
+              a=rtpmap:96 H264/90000\r\n",
+        )
+        .unwrap(),
+    );
+    assert!(
+        sink.on_offer_created_for_test(&offer).is_ok(),
+        "a live session must still send its offer"
+    );
+
+    sink.shutdown_session();
+
+    assert!(
+        sink.on_offer_created_for_test(&offer).is_err(),
+        "a create-offer promise landing after shutdown must not re-enter webrtcbin"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial]
 async fn udp_eos_does_not_post_teardown_eos() {
     gst::init().unwrap();
     let port = {
