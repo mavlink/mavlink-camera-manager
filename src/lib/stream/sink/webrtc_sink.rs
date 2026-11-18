@@ -37,6 +37,7 @@ pub struct WebRTCSinkWeakProxy {
     bind: BindAnswer,
     sender: WeakUnboundedSender<Result<Message>>,
     stats: Arc<Mutex<SessionStats>>,
+    session_shutdown: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -55,7 +56,7 @@ pub struct WebRTCSink {
     block_probe_id: Arc<Mutex<Option<gst::PadProbeId>>>,
     block_pad: Arc<Mutex<Option<glib::WeakRef<gst::Pad>>>>,
     pipeline_runner: PipelineRunner,
-    session_shutdown: AtomicBool,
+    session_shutdown: Arc<AtomicBool>,
     /// Per-session observability counters updated by the various WebRTC
     /// callbacks. Summarised in `Drop` for a single end-of-session log
     /// line and consulted by the FailSafeKiller to explain timeouts.
@@ -585,7 +586,7 @@ impl WebRTCSink {
             block_probe_id: Arc::new(Mutex::new(None)),
             block_pad: Arc::new(Mutex::new(None)),
             pipeline_runner,
-            session_shutdown: AtomicBool::new(false),
+            session_shutdown: Arc::new(AtomicBool::new(false)),
             stats: Arc::new(Mutex::new(SessionStats::new())),
             end_reason: None,
         };
@@ -780,6 +781,7 @@ impl WebRTCSink {
             bind: self.bind.clone(),
             sender: self.sender.downgrade(),
             stats: Arc::clone(&self.stats),
+            session_shutdown: Arc::clone(&self.session_shutdown),
         }
     }
 
@@ -801,6 +803,16 @@ impl WebRTCSink {
     #[cfg(test)]
     pub(crate) fn runner_stop_flag(&self) -> Arc<AtomicBool> {
         self.pipeline_runner.stop_flag()
+    }
+
+    /// Replays what the `create-offer` promise callback does, to exercise the
+    /// late-offer path without racing a real negotiation.
+    #[cfg(test)]
+    pub(crate) fn on_offer_created_for_test(
+        &self,
+        offer: &gst_webrtc::WebRTCSessionDescription,
+    ) -> Result<()> {
+        self.downgrade().on_offer_created(&self.webrtcbin, offer)
     }
 }
 
@@ -882,6 +894,19 @@ impl WebRTCBinInterface for WebRTCSinkWeakProxy {
         webrtcbin: &gst::Element,
         offer: &gst_webrtc::WebRTCSessionDescription,
     ) -> Result<()> {
+        // A create-offer promise can land after the session was torn down.
+        // `set-local-description` would then rebuild webrtcbin's transport
+        // elements (transportsendbin, rtpbin, nicesink) on a pipeline already
+        // set to Null, and they get disposed while PLAYING, crashing us.
+        // shortcut: the flag narrows the window but cannot close it; upgrade
+        // to teardown holding a lock the signal thread takes if it ever bites.
+        if self.session_shutdown.load(Ordering::Acquire) {
+            return Err(anyhow!(
+                "Session {} is shut down, dropping the late SDP offer",
+                self.bind.session_id
+            ));
+        }
+
         // Recreate the SDP offer with our customized SDP
         let offer = gst_webrtc::WebRTCSessionDescription::new(
             offer.type_(),
