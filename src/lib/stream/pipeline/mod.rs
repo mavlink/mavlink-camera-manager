@@ -1,4 +1,5 @@
 pub mod fake_pipeline;
+pub mod file_pipeline;
 pub mod onvif_pipeline;
 pub mod qr_pipeline;
 pub mod redirect_pipeline;
@@ -24,6 +25,7 @@ use crate::{
 };
 
 use fake_pipeline::FakePipeline;
+use file_pipeline::FilePipeline;
 use onvif_pipeline::OnvifPipeline;
 use qr_pipeline::QrPipeline;
 use redirect_pipeline::RedirectPipeline;
@@ -44,6 +46,7 @@ pub enum Pipeline {
     V4l(V4lPipeline),
     Fake(FakePipeline),
     QR(QrPipeline),
+    File(FilePipeline),
     Onvif(OnvifPipeline),
     Redirect(RedirectPipeline),
 }
@@ -55,6 +58,7 @@ impl Pipeline {
             Pipeline::V4l(pipeline) => &mut pipeline.state,
             Pipeline::Fake(pipeline) => &mut pipeline.state,
             Pipeline::QR(pipeline) => &mut pipeline.state,
+            Pipeline::File(pipeline) => &mut pipeline.state,
             Pipeline::Onvif(pipeline) => &mut pipeline.state,
             Pipeline::Redirect(pipeline) => &mut pipeline.state,
         }
@@ -66,6 +70,7 @@ impl Pipeline {
             Pipeline::V4l(pipeline) => &pipeline.state,
             Pipeline::Fake(pipeline) => &pipeline.state,
             Pipeline::QR(pipeline) => &pipeline.state,
+            Pipeline::File(pipeline) => &pipeline.state,
             Pipeline::Onvif(pipeline) => &pipeline.state,
             Pipeline::Redirect(pipeline) => &pipeline.state,
         }
@@ -88,6 +93,11 @@ impl Pipeline {
                 }
                 crate::video::video_source_gst::VideoSourceGstType::QR(_) => {
                     Pipeline::QR(QrPipeline {
+                        state: pipeline_state,
+                    })
+                }
+                crate::video::video_source_gst::VideoSourceGstType::File(_) => {
+                    Pipeline::File(FilePipeline {
                         state: pipeline_state,
                     })
                 }
@@ -146,6 +156,9 @@ impl PipelineState {
                 }
                 crate::video::video_source_gst::VideoSourceGstType::QR(_) => {
                     QrPipeline::try_new(pipeline_id, video_and_stream_information)
+                }
+                crate::video::video_source_gst::VideoSourceGstType::File(_) => {
+                    FilePipeline::try_new(pipeline_id, video_and_stream_information)
                 }
             },
             #[cfg(target_os = "linux")]
