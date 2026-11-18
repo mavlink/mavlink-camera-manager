@@ -1,0 +1,28 @@
+{
+  "name": "Mavlink Camera Manager (dev)",
+  "build": {
+    "dockerfile": "../docker/Dockerfile-full",
+    "target": "vscode",
+    "context": ".."
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "ms-azuretools.vscode-docker",
+        "esbenp.prettier-vscode",
+        "ms-azuretools.vscode-containers",
+        "fill-labs.dependi",
+        "tamasfe.even-better-toml",
+        "Vue.volar"
+      ],
+      "settings": {
+        "terminal.integrated.shell.linux": "/bin/bash",
+        "rust-analyzer.checkOnSave": true,
+        "editor.formatOnSave": true
+      }
+    }
+  },
+  "postCreateCommand": 
+    "rustup default stable && rustup component add clippy rustfmt && cargo run --package=bindings --release"
+}
