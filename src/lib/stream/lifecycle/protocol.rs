@@ -26,5 +26,8 @@ pub(super) enum LifecycleCommand {
     ResetErrorBackoff {
         reply: oneshot::Sender<()>,
     },
+    ForceRestart {
+        reply: oneshot::Sender<bool>,
+    },
     Shutdown,
 }

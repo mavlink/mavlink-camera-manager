@@ -2,6 +2,8 @@ use tracing::*;
 
 use crate::controls::types::{Control, ControlType};
 
+#[cfg(target_os = "linux")]
+use super::video_source_local::VideoSourceLocalType;
 use super::{
     types::*, video_source_gst::VideoSourceGst, video_source_local::VideoSourceLocal,
     video_source_onvif::VideoSourceOnvif, video_source_redirect::VideoSourceRedirect,
@@ -75,6 +77,13 @@ pub async fn reset_controls(source_string: &str) -> Result<(), Vec<std::io::Erro
 
     debug!("Resetting all controls of camera ({source_string}).",);
 
+    #[cfg(target_os = "linux")]
+    if let VideoSourceType::Local(local) = &camera
+        && matches!(local.typ, VideoSourceLocalType::Libcamera(_))
+    {
+        return crate::video::local::libcamera_controls::reset_controls(&local.device_path);
+    }
+
     let mut errors: Vec<std::io::Error> = Default::default();
     for control in camera.inner().controls() {
         if control.state.is_inactive {
@@ -85,6 +94,7 @@ pub async fn reset_controls(source_string: &str) -> Result<(), Vec<std::io::Erro
             ControlType::Bool(bool) => bool.default,
             ControlType::Slider(slider) => slider.default,
             ControlType::Menu(menu) => menu.default,
+            ControlType::Flags(flags) => flags.default,
         };
 
         if let Err(error) = camera.inner().set_control_by_id(control.id, default_value) {

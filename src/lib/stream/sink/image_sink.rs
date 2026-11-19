@@ -1,6 +1,9 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use anyhow::{Error, Result, anyhow};
@@ -9,7 +12,9 @@ use tracing::*;
 
 use crate::{
     stream::{
-        gst::utils::try_set_property, pipeline::runner::PipelineRunner, types::CaptureConfiguration,
+        gst::utils::{set_element_state_null, try_set_property},
+        pipeline::{runner::PipelineRunner, tee_registry::TeeMedia},
+        types::CaptureConfiguration,
     },
     video::types::VideoEncodeType,
     video_stream::types::VideoAndStreamInformation,
@@ -96,6 +101,7 @@ pub struct ImageSink {
     // Level 2 cache (JPEG per settings)
     encode_mutex: Arc<tokio::sync::Mutex<()>>,
     thumbnails: Arc<Mutex<CachedThumbnails>>,
+    session_shutdown: AtomicBool,
 }
 
 impl SinkInterface for ImageSink {
@@ -125,22 +131,19 @@ impl SinkInterface for ImageSink {
 
     #[instrument(level = "debug", skip(self, pipeline))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &Arc<uuid::Uuid>) -> Result<()> {
-        let guard = self.tee_src_pad.lock().unwrap();
-        let Some(tee_src_pad) = guard.as_ref() else {
-            warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
-            return Ok(());
+        let tee_src_pad = {
+            let guard = self.tee_src_pad.lock().unwrap();
+            let Some(tee_src_pad) = guard.as_ref() else {
+                warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
+                return Ok(());
+            };
+            tee_src_pad.clone()
         };
 
+        self.shutdown_session();
+
         let elements = &[&self.queue, &self.valve, &self.proxysink];
-        unlink_sink_from_tee(tee_src_pad, pipeline, elements)?;
-
-        if let Err(error) = self.pipeline.set_state(::gst::State::Null) {
-            warn!("Failed setting sink Pipeline state to Null: {error:?}");
-        }
-
-        if let Err(error) = self.encode_pipeline.set_state(::gst::State::Null) {
-            warn!("Failed setting encode pipeline state to Null: {error:?}");
-        }
+        unlink_sink_from_tee(&tee_src_pad, pipeline, elements)?;
 
         Ok(())
     }
@@ -163,37 +166,32 @@ impl SinkInterface for ImageSink {
     }
 
     #[instrument(level = "debug", skip(self))]
-    fn eos(&self) {
-        let pipeline_weak = self.pipeline.downgrade();
-        let encode_pipeline_weak = self.encode_pipeline.downgrade();
-        if let Err(error) = std::thread::Builder::new()
-            .name("EOS".to_string())
-            .spawn(move || {
-                if let Some(pipeline) = pipeline_weak.upgrade()
-                    && let Err(error) = pipeline.post_message(gst::message::Eos::new())
-                {
-                    error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
-                }
-                if let Some(pipeline) = encode_pipeline_weak.upgrade()
-                    && let Err(error) = pipeline.post_message(gst::message::Eos::new())
-                {
-                    error!(
-                        "Failed posting Eos message into encode pipeline bus. Reason: {error:?}"
-                    );
-                }
-            })
-            .expect("Failed spawning EOS thread")
-            .join()
-        {
-            error!(
-                "EOS Thread Panicked with: {:?}",
-                error.downcast_ref::<String>()
-            );
+    fn shutdown_session(&self) {
+        if self.session_shutdown.swap(true, Ordering::AcqRel) {
+            return;
         }
+        self.appsink.set_property("enable-last-sample", false);
+        self.valve.set_property("drop", true);
+        self.pipeline_runner.stop();
+        set_element_state_null(self.pipeline.upcast_ref());
+        set_element_state_null(self.encode_pipeline.upcast_ref());
+    }
+
+    #[instrument(level = "debug", skip(self))]
+    fn eos(&self) {
+        // Intentionally a no-op. Posting Eos::new() to the session bus made
+        // the bus watcher treat it as pipeline-level EOS and kill the runner
+        // before `shutdown_session` could install the drop handler.
     }
 
     fn pipeline(&self) -> Option<&gst::Pipeline> {
         Some(&self.pipeline)
+    }
+}
+
+impl Drop for ImageSink {
+    fn drop(&mut self) {
+        self.shutdown_session();
     }
 }
 
@@ -252,15 +250,13 @@ impl ImageSink {
             }
         }
 
-        let (encoding, source_width, source_height) = match &video_and_stream_information
+        let (source_width, source_height) = match &video_and_stream_information
             .stream_information
             .configuration
         {
-            CaptureConfiguration::Video(video_configuraiton) => (
-                video_configuraiton.encode.clone(),
-                video_configuraiton.width,
-                video_configuraiton.height,
-            ),
+            CaptureConfiguration::Video(video_configuration) => {
+                (video_configuration.width, video_configuration.height)
+            }
             CaptureConfiguration::Redirect(_) => {
                 return Err(anyhow!(
                     "PipelineRunner aborted: Redirect CaptureConfiguration means the stream was not initialized yet"
@@ -268,64 +264,8 @@ impl ImageSink {
             }
         };
 
-        // Depending of the sources' format we need different elements to transform it into a raw format
-        let mut _transcoding_elements: Vec<gst::Element> = Default::default();
-        let needs_keyframe = matches!(
-            encoding,
-            VideoEncodeType::H264 | VideoEncodeType::H265 | VideoEncodeType::Mjpg
-        );
-        match encoding {
-            VideoEncodeType::H264 => {
-                // For h264, we need to filter-out unwanted non-key frames here, before decoding it.
-                let filter = gst::ElementFactory::make("identity")
-                    .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
-                    .property("sync", false)
-                    .build()?;
-                let decoder = gst::ElementFactory::make("avdec_h264").build()?;
-                try_set_property(&decoder, "lowres", 2); // (0) is 'full'; (1) is '1/2-size'; (2) is '1/4-size'
-                try_set_property(&decoder, "skip-frame", 32); // (0) is 'default'; (8) is 'non-ref'; (16) is 'bidir'; (24) is 'non-intra'; (32) is 'non-key'; (48) is 'all'
-                try_set_property(&decoder, "max-threads", 1);
-                try_set_property(&decoder, "min-force-key-unit-interval", 100_000_000u64);
-                try_set_property(&decoder, "qos", false);
-                try_set_property(&decoder, "discard-corrupted-frames", true);
-                try_set_property(&decoder, "output-corrupt", false);
-                try_set_property(&decoder, "std-compliance", 0); // (2147483647) is 'auto'; (2) is 'very-strict'; (1) is 'strict'; (0) is 'normal'; (-1) is 'unofficial'; (-2) is 'experimental'
-                _transcoding_elements.push(filter);
-                _transcoding_elements.push(decoder);
-            }
-            VideoEncodeType::H265 => {
-                // For h265, we need to filter-out unwanted non-key frames here, before decoding it.
-                let filter = gst::ElementFactory::make("identity")
-                    .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
-                    .property("sync", false)
-                    .build()?;
-                let decoder = gst::ElementFactory::make("avdec_h265").build()?;
-                try_set_property(&decoder, "lowres", 2); // (0) is 'full'; (1) is '1/2-size'; (2) is '1/4-size'
-                try_set_property(&decoder, "skip-frame", 32); // (0) is 'default'; (8) is 'non-ref'; (16) is 'bidir'; (24) is 'non-intra'; (32) is 'non-key'; (48) is 'all'
-                try_set_property(&decoder, "max-threads", 1);
-                try_set_property(&decoder, "min-force-key-unit-interval", 100_000_000u64);
-                try_set_property(&decoder, "qos", false);
-                try_set_property(&decoder, "discard-corrupted-frames", true);
-                try_set_property(&decoder, "output-corrupt", false);
-                try_set_property(&decoder, "std-compliance", 0); // (2147483647) is 'auto'; (2) is 'very-strict'; (1) is 'strict'; (0) is 'normal'; (-1) is 'unofficial'; (-2) is 'experimental'
-                _transcoding_elements.push(filter);
-                _transcoding_elements.push(decoder);
-            }
-            VideoEncodeType::Mjpg => {
-                let decoder = gst::ElementFactory::make("jpegdec").build()?;
-                try_set_property(&decoder, "idct-method", 2); // (0) is 'islow'; (1) is 'ifast'; (2) is 'float'
-                try_set_property(&decoder, "min-force-key-unit-interval", 100_000_000u64);
-                try_set_property(&decoder, "qos", false);
-                try_set_property(&decoder, "discard-corrupted-frames", true);
-                _transcoding_elements.push(decoder);
-            }
-            VideoEncodeType::Rgb | VideoEncodeType::Yuyv => {}
-            _ => {
-                return Err(anyhow!(
-                    "Unsupported video encoding for ImageSink: {encoding:?}. The supported are: H264, H265, MJPG, RGB and YUYV"
-                ));
-            }
-        };
+        let _transcoding_elements: Vec<gst::Element> = Default::default();
+        let needs_keyframe = false;
 
         let tee_src_pad: Arc<Mutex<Option<gst::Pad>>> = Default::default();
         let valve_for_callback = valve.clone();
@@ -374,10 +314,7 @@ impl ImageSink {
             .build();
 
         // Add Sink elements to the Sink's Pipeline
-        let mut elements = vec![&_proxysrc];
-        elements.extend(_transcoding_elements.iter().collect::<Vec<&gst::Element>>());
-        elements.push(appsink.upcast_ref());
-        let elements = &elements;
+        let elements = &[&_proxysrc, appsink.upcast_ref()];
         if let Err(add_err) = pipeline.add_many(elements) {
             return Err(anyhow!(
                 "Failed adding ImageSink's elements to Sink Pipeline: {add_err:?}"
@@ -514,7 +451,112 @@ impl ImageSink {
             last_capture_instant: Default::default(),
             encode_mutex: Default::default(),
             thumbnails: Default::default(),
+            session_shutdown: AtomicBool::new(false),
         })
+    }
+
+    /// Builds the capture decoder chain from tee media when the sink is added.
+    /// Raw formats need no decoder and return immediately.
+    #[instrument(level = "debug", skip_all)]
+    pub fn configure_capture_decoder(&mut self, tee_media: &TeeMedia) -> Result<()> {
+        let transcoding_elements = match tee_media {
+            TeeMedia::Raw(VideoEncodeType::Nv12)
+            | TeeMedia::Raw(VideoEncodeType::Yuyv)
+            | TeeMedia::Raw(VideoEncodeType::Rgb) => {
+                self.needs_keyframe = false;
+                return Ok(());
+            }
+            TeeMedia::Rtp => {
+                return Err(anyhow!("ImageSink cannot capture from RTP tee media"));
+            }
+            TeeMedia::Raw(unsupported) => {
+                return Err(anyhow!(
+                    "Unsupported raw tee media for ImageSink: {unsupported:?}"
+                ));
+            }
+            TeeMedia::Compressed(VideoEncodeType::H264) => {
+                // Parse first so avdec_h264 sees codec_data / access units.
+                // GStreamer 1.20 errors with "decoder not initialized" on raw
+                // byte-stream without h264parse.
+                let parser = gst::ElementFactory::make("h264parse")
+                    .property("config-interval", -1i32)
+                    .build()?;
+                // For h264, we need to filter-out unwanted non-key frames here, before decoding it.
+                let filter = gst::ElementFactory::make("identity")
+                    .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
+                    .property("sync", false)
+                    .build()?;
+                let decoder = gst::ElementFactory::make("avdec_h264").build()?;
+                try_set_property(&decoder, "lowres", 2); // (0) is 'full'; (1) is '1/2-size'; (2) is '1/4-size'
+                try_set_property(&decoder, "skip-frame", 32); // (0) is 'default'; (8) is 'non-ref'; (16) is 'bidir'; (24) is 'non-intra'; (32) is 'non-key'; (48) is 'all'
+                try_set_property(&decoder, "max-threads", 1);
+                try_set_property(&decoder, "min-force-key-unit-interval", 100_000_000u64);
+                try_set_property(&decoder, "qos", false);
+                try_set_property(&decoder, "discard-corrupted-frames", true);
+                try_set_property(&decoder, "output-corrupt", false);
+                try_set_property(&decoder, "std-compliance", 0); // (2147483647) is 'auto'; (2) is 'very-strict'; (1) is 'strict'; (0) is 'normal'; (-1) is 'unofficial'; (-2) is 'experimental'
+                vec![parser, filter, decoder]
+            }
+            TeeMedia::Compressed(VideoEncodeType::H265) => {
+                let parser = gst::ElementFactory::make("h265parse")
+                    .property("config-interval", -1i32)
+                    .build()?;
+                // For h265, we need to filter-out unwanted non-key frames here, before decoding it.
+                let filter = gst::ElementFactory::make("identity")
+                    .property("drop-buffer-flags", gst::BufferFlags::DELTA_UNIT)
+                    .property("sync", false)
+                    .build()?;
+                let decoder = gst::ElementFactory::make("avdec_h265").build()?;
+                try_set_property(&decoder, "lowres", 2); // (0) is 'full'; (1) is '1/2-size'; (2) is '1/4-size'
+                try_set_property(&decoder, "skip-frame", 32); // (0) is 'default'; (8) is 'non-ref'; (16) is 'bidir'; (24) is 'non-intra'; (32) is 'non-key'; (48) is 'all'
+                try_set_property(&decoder, "max-threads", 1);
+                try_set_property(&decoder, "min-force-key-unit-interval", 100_000_000u64);
+                try_set_property(&decoder, "qos", false);
+                try_set_property(&decoder, "discard-corrupted-frames", true);
+                try_set_property(&decoder, "output-corrupt", false);
+                try_set_property(&decoder, "std-compliance", 0); // (2147483647) is 'auto'; (2) is 'very-strict'; (1) is 'strict'; (0) is 'normal'; (-1) is 'unofficial'; (-2) is 'experimental'
+                vec![parser, filter, decoder]
+            }
+            TeeMedia::Compressed(VideoEncodeType::Mjpg) => {
+                let decoder = gst::ElementFactory::make("jpegdec").build()?;
+                try_set_property(&decoder, "idct-method", 2); // (0) is 'islow'; (1) is 'ifast'; (2) is 'float'
+                try_set_property(&decoder, "min-force-key-unit-interval", 100_000_000u64);
+                try_set_property(&decoder, "qos", false);
+                try_set_property(&decoder, "discard-corrupted-frames", true);
+                vec![decoder]
+            }
+            TeeMedia::Compressed(unsupported) => {
+                return Err(anyhow!(
+                    "Unsupported compressed tee media for ImageSink: {unsupported:?}"
+                ));
+            }
+        };
+
+        self._proxysrc.unlink(&self.appsink);
+
+        if let Err(add_error) = self.pipeline.add_many(transcoding_elements.iter()) {
+            return Err(anyhow!(
+                "Failed adding ImageSink transcoding elements to capture pipeline: {add_error:?}"
+            ));
+        }
+
+        let mut elements: Vec<&gst::Element> = vec![&self._proxysrc];
+        elements.extend(transcoding_elements.iter());
+        elements.push(self.appsink.upcast_ref());
+        if let Err(link_error) = gst::Element::link_many(&elements) {
+            if let Err(remove_error) = self.pipeline.remove_many(transcoding_elements.iter()) {
+                warn!(
+                    "Failed removing transcoding elements from ImageSink capture pipeline: {remove_error:?}"
+                );
+            }
+            return Err(anyhow!(
+                "Failed linking ImageSink transcoding elements: {link_error:?}"
+            ));
+        }
+
+        self._transcoding_elements = transcoding_elements;
+        self.needs_keyframe = true;
+        Ok(())
     }
 
     /// Open the valve, wait for a single raw frame to arrive at `appsink`

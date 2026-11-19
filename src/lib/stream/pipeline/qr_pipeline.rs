@@ -63,7 +63,7 @@ impl QrPipeline {
         let video_tee_name = format!("{PIPELINE_VIDEO_TEE_NAME}-{pipeline_id}");
         let rtp_tee_name = format!("{PIPELINE_RTP_TEE_NAME}-{pipeline_id}");
 
-        let description = match &configuration.encode {
+        let description = match &configuration.source_encode {
             VideoEncodeType::H264 => {
                 format!(
                     concat!(

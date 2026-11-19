@@ -144,6 +144,7 @@ impl McmClient {
             stream_information: StreamInformation {
                 endpoints: vec![Url::parse(endpoint).unwrap()],
                 configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
+                    source_encode: None,
                     encode: serde_json::Value::String(encode.to_string()),
                     height,
                     width,
@@ -151,6 +152,7 @@ impl McmClient {
                         numerator: 1,
                         denominator: fps,
                     },
+                    source_configuration: None,
                 }),
                 extended_configuration: ext,
             },
@@ -228,6 +230,126 @@ impl McmClient {
         rtsp_port: u16,
     ) -> PostStream {
         Self::build_fake_rtsp(Codec::H264, name, width, height, fps, path, ext, rtsp_port)
+    }
+
+    pub fn build_fake_auto_rtsp(
+        source_encode: &str,
+        sink_encode: &str,
+        name: &str,
+        width: u32,
+        height: u32,
+        fps: u32,
+        path: &str,
+        ext: Option<ExtendedConfiguration>,
+        rtsp_port: u16,
+    ) -> PostStream {
+        Self::build_transcoding_rtsp(
+            source_encode,
+            sink_encode,
+            Some(SourceConfiguration::Auto {}),
+            name,
+            width,
+            height,
+            fps,
+            path,
+            ext,
+            rtsp_port,
+        )
+    }
+
+    pub fn build_fake_manual_rtsp(
+        source_encode: &str,
+        sink_encode: &str,
+        encoder: &str,
+        decoder: &str,
+        name: &str,
+        width: u32,
+        height: u32,
+        fps: u32,
+        path: &str,
+        ext: Option<ExtendedConfiguration>,
+        rtsp_port: u16,
+    ) -> PostStream {
+        Self::build_transcoding_rtsp(
+            source_encode,
+            sink_encode,
+            Some(SourceConfiguration::Manual {
+                encoder: encoder.to_string(),
+                decoder: decoder.to_string(),
+            }),
+            name,
+            width,
+            height,
+            fps,
+            path,
+            ext,
+            rtsp_port,
+        )
+    }
+
+    fn build_transcoding_rtsp(
+        source_encode: &str,
+        sink_encode: &str,
+        source_configuration: Option<SourceConfiguration>,
+        name: &str,
+        width: u32,
+        height: u32,
+        fps: u32,
+        path: &str,
+        ext: Option<ExtendedConfiguration>,
+        rtsp_port: u16,
+    ) -> PostStream {
+        PostStream {
+            name: name.to_string(),
+            source: "ball".to_string(),
+            stream_information: StreamInformation {
+                endpoints: vec![Url::parse(&format!("rtsp://0.0.0.0:{rtsp_port}/{path}")).unwrap()],
+                configuration: CaptureConfiguration::Video(VideoCaptureConfiguration {
+                    source_encode: Some(source_encode.to_string()),
+                    encode: serde_json::Value::String(sink_encode.to_string()),
+                    height,
+                    width,
+                    frame_interval: FrameInterval {
+                        numerator: 1,
+                        denominator: fps,
+                    },
+                    source_configuration,
+                }),
+                extended_configuration: ext,
+            },
+        }
+    }
+
+    pub async fn list_gst_encoders(&self) -> Result<GstEncoders> {
+        self.client
+            .get(format!("{}/gst/encoders", self.base_url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await
+            .context("deserializing GET /gst/encoders")
+    }
+
+    pub async fn list_gst_decoders(&self) -> Result<GstDecoders> {
+        self.client
+            .get(format!("{}/gst/decoders", self.base_url))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await
+            .context("deserializing GET /gst/decoders")
+    }
+
+    pub async fn create_stream_status(&self, post: &PostStream) -> Result<reqwest::StatusCode> {
+        Ok(self
+            .client
+            .post(format!("{}/streams", self.base_url))
+            .json(post)
+            .send()
+            .await?
+            .status())
     }
 
     pub fn build_fake_h264_udp(

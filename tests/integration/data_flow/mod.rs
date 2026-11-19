@@ -2,6 +2,7 @@ mod qr;
 mod redirect;
 mod rtsp;
 mod thumbnail;
+mod transcoding;
 mod udp;
 mod webrtc;
 mod zenoh;
