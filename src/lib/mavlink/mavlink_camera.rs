@@ -7,9 +7,13 @@ use tracing::*;
 use url::Url;
 
 use crate::{
-    cli, mavlink::mavlink_camera_component::MavlinkCameraComponent,
-    network::utils::get_visible_qgc_address, stream::types::MavlinkComponent,
-    video::types::VideoSourceType, video_stream::types::VideoAndStreamInformation,
+    cli,
+    controls::{gst_element_controls::PIPELINE_CONTROL_ID_OFFSET, types::ControlType},
+    mavlink::mavlink_camera_component::MavlinkCameraComponent,
+    network::utils::get_visible_qgc_address,
+    stream::{manager as stream_manager, types::MavlinkComponent},
+    video::types::VideoSourceType,
+    video_stream::types::VideoAndStreamInformation,
 };
 
 use super::{manager::Message, utils::*};
@@ -388,6 +392,30 @@ impl MavlinkCameraInner {
             stream_id_param == (camera.component.stream_id as f32) || stream_id_param == ALL_STREAMS
         }
 
+        // Vendor-specific pipeline restart (MAV_CMD_USER_1 = 31010) until a camera-protocol id exists.
+        const RESTART_PIPELINE_COMMAND: u32 = 31010;
+        if data.command as u32 == RESTART_PIPELINE_COMMAND {
+            let result = if data.param1 == 1.0 {
+                match crate::stream::manager::restart_stream_by_name(&camera.video_stream_name)
+                    .await
+                {
+                    Ok(()) => mavlink::common::MavResult::MAV_RESULT_ACCEPTED,
+                    Err(error) => {
+                        error!(
+                            "Failed to restart pipeline for stream {stream_name:?}: {error:?}",
+                            stream_name = camera.video_stream_name
+                        );
+                        mavlink::common::MavResult::MAV_RESULT_DENIED
+                    }
+                }
+            } else {
+                mavlink::common::MavResult::MAV_RESULT_DENIED
+            };
+
+            send_ack(camera, &sender, their_header, data.command, result);
+            return;
+        }
+
         match data.command {
             mavlink::common::MavCmd::MAV_CMD_REQUEST_CAMERA_INFORMATION => {
                 send_ack(
@@ -689,18 +717,37 @@ impl MavlinkCameraInner {
             return;
         };
 
-        let result = match camera
-            .video_source_type
-            .inner()
-            .set_control_by_id(control_id, control_value)
-        {
-            Ok(_) => mavlink::common::ParamAck::PARAM_ACK_ACCEPTED,
-            Err(error) => {
-                error!(
-                    "Failed to set parameter {control_id:?} with value {control_value:?} for {:#?}. Reason: {error:?}",
-                    camera.component.component_id
-                );
-                mavlink::common::ParamAck::PARAM_ACK_FAILED
+        let result = if control_id >= PIPELINE_CONTROL_ID_OFFSET {
+            match stream_manager::set_stream_control(
+                &camera.video_stream_name,
+                control_id,
+                control_value,
+            )
+            .await
+            {
+                Ok(()) => mavlink::common::ParamAck::PARAM_ACK_ACCEPTED,
+                Err(error) => {
+                    error!(
+                        "Failed to set pipeline parameter {control_id:?} with value {control_value:?} for {:#?}. Reason: {error:?}",
+                        camera.component.component_id
+                    );
+                    mavlink::common::ParamAck::PARAM_ACK_FAILED
+                }
+            }
+        } else {
+            match camera
+                .video_source_type
+                .inner()
+                .set_control_by_id(control_id, control_value)
+            {
+                Ok(_) => mavlink::common::ParamAck::PARAM_ACK_ACCEPTED,
+                Err(error) => {
+                    error!(
+                        "Failed to set parameter {control_id:?} with value {control_value:?} for {:#?}. Reason: {error:?}",
+                        camera.component.component_id
+                    );
+                    mavlink::common::ParamAck::PARAM_ACK_FAILED
+                }
             }
         };
 
@@ -725,18 +772,27 @@ impl MavlinkCameraInner {
             return;
         }
 
-        let controls = camera.video_source_type.inner().controls();
+        let controls: Vec<_> =
+            match stream_manager::stream_controls(&camera.video_stream_name).await {
+                Ok(controls) => controls
+                    .into_iter()
+                    .filter(|control| control.cpp_type != "string")
+                    .collect(),
+                Err(error) => {
+                    error!(
+                        "Failed to list controls for stream {stream_name:?}: {error:?}",
+                        stream_name = camera.video_stream_name
+                    );
+                    return;
+                }
+            };
         let Some((param_index, control_id)) = get_param_index_and_control_id(data, &controls)
         else {
             return;
         };
 
         let param_id = param_id_from_control_id(control_id);
-        let control_value = match camera
-            .video_source_type
-            .inner()
-            .control_value_by_id(control_id)
-        {
+        let control_value = match control_value_from_merged_controls(&controls, control_id) {
             Ok(value) => value,
             Err(error) => {
                 error!("Failed to get parameter {control_id:?}: {error:?}");
@@ -779,17 +835,27 @@ impl MavlinkCameraInner {
             return;
         }
 
-        let controls = camera.video_source_type.inner().controls();
+        let controls: Vec<_> =
+            match stream_manager::stream_controls(&camera.video_stream_name).await {
+                Ok(controls) => controls
+                    .into_iter()
+                    .filter(|control| control.cpp_type != "string")
+                    .collect(),
+                Err(error) => {
+                    error!(
+                        "Failed to list controls for stream {stream_name:?}: {error:?}",
+                        stream_name = camera.video_stream_name
+                    );
+                    return;
+                }
+            };
 
         controls
             .iter()
             .enumerate()
             .for_each(|(param_index, control)| {
                 let param_id = param_id_from_control_id(control.id);
-                let control_value = match camera
-                    .video_source_type
-                    .inner()
-                    .control_value_by_id(control.id)
+                let control_value = match control_value_from_merged_controls(&controls, control.id)
                 {
                     Ok(value) => value,
                     Err(error) => {
@@ -813,6 +879,22 @@ impl MavlinkCameraInner {
                 }
             });
     }
+}
+
+fn control_value_from_merged_controls(
+    controls: &[crate::controls::types::Control],
+    control_id: u64,
+) -> Result<i64, String> {
+    let control = controls
+        .iter()
+        .find(|control| control.id == control_id)
+        .ok_or_else(|| format!("Control {control_id} not found"))?;
+    Ok(match &control.configuration {
+        ControlType::Bool(control) => control.value,
+        ControlType::Slider(control) => control.value,
+        ControlType::Menu(control) => control.value,
+        ControlType::Flags(control) => control.value,
+    })
 }
 
 impl Drop for MavlinkCamera {

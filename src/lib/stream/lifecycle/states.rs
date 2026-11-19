@@ -110,6 +110,17 @@ impl LifecycleState {
         self.error_count = 0;
     }
 
+    pub fn force_restart(&mut self) -> bool {
+        match self.phase {
+            Phase::Idle | Phase::Draining => false,
+            Phase::Running => {
+                self.phase = Phase::Waking;
+                true
+            }
+            Phase::Waking => true,
+        }
+    }
+
     pub fn snapshot(&self) -> LifecycleSnapshot {
         let consumers = match self.phase {
             Phase::Idle | Phase::Draining => 0,
