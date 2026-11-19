@@ -22,8 +22,14 @@ pub struct Manager {
 
 struct Connection {
     address: String,
-    connection: Option<Box<dyn MavConnection<MavMessage> + Sync + Send>>,
+    state: ConnectionState,
     sender: broadcast::Sender<Message>,
+}
+
+enum ConnectionState {
+    Disconnected,
+    Connecting,
+    Connected(Box<dyn MavConnection<MavMessage> + Sync + Send>),
 }
 
 #[derive(Debug, Clone)]
@@ -42,7 +48,7 @@ impl Default for Manager {
         let this = Self {
             connection: Arc::new(RwLock::new(Connection {
                 address,
-                connection: None,
+                state: ConnectionState::Disconnected,
                 sender,
             })),
             ids: Arc::new(RwLock::new(vec![])),
@@ -78,7 +84,7 @@ impl Manager {
                 let Ok(inner_guard) = inner.read() else {
                     break; // Break to trigger reconnection
                 };
-                let Some(mavlink) = inner_guard.connection.as_deref() else {
+                let ConnectionState::Connected(mavlink) = &inner_guard.state else {
                     break; // Break to trigger reconnection
                 };
 
@@ -160,7 +166,7 @@ impl Manager {
                 let Ok(inner_guard) = inner.read() else {
                     break; // Break to trigger reconnection
                 };
-                let Some(mavlink) = inner_guard.connection.as_deref() else {
+                let ConnectionState::Connected(mavlink) = &inner_guard.state else {
                     break; // Break to trigger reconnection
                 };
 
@@ -180,11 +186,34 @@ impl Manager {
         }
     }
 
+    /// Rebinds the shared connection, unless the other loop is already doing it.
+    ///
+    /// The old connection is dropped before connecting because it still owns the socket: binding
+    /// the same `udpin` address twice fails with EADDRINUSE, retrying forever. The lock is
+    /// released while connecting so that API callers reading the sender don't block on it.
     #[instrument(level = "debug", skip(inner))]
     fn reconnect(inner: &Arc<RwLock<Connection>>) {
+        let address = {
+            let mut inner = inner.write().unwrap();
+
+            if matches!(inner.state, ConnectionState::Connecting) {
+                return;
+            }
+
+            inner.state = ConnectionState::Connecting;
+            inner.address.clone()
+        };
+
+        let connection = std::panic::catch_unwind(|| Connection::connect(&address));
+
         let mut inner = inner.write().unwrap();
-        let address = inner.address.clone();
-        inner.connection.replace(Connection::connect(&address));
+        match connection {
+            Ok(connection) => inner.state = ConnectionState::Connected(connection),
+            Err(_) => {
+                error!("Panicked while connecting, the connection will be retried");
+                inner.state = ConnectionState::Disconnected;
+            }
+        }
     }
 
     #[instrument(level = "debug")]
@@ -252,7 +281,7 @@ mod tests {
     use super::*;
 
     /// A reconnection has to rebind the same address. Dropping the old connection only after
-    /// connecting leaves the socket bound, making every retry fail with EADDRINUSE.
+    /// connecting used to leave the socket bound, making every retry fail with EADDRINUSE.
     #[test]
     fn reconnect_rebinds_the_same_address() {
         let port = std::net::UdpSocket::bind("127.0.0.1:0")
@@ -263,7 +292,7 @@ mod tests {
 
         let inner = Arc::new(RwLock::new(Connection {
             address: format!("udpin:127.0.0.1:{port}"),
-            connection: None,
+            state: ConnectionState::Disconnected,
             sender: broadcast::channel(1).0,
         }));
 
@@ -279,6 +308,9 @@ mod tests {
         done.recv_timeout(std::time::Duration::from_secs(30))
             .expect("Reconnection should rebind the address instead of retrying forever");
 
-        assert!(inner.read().unwrap().connection.is_some());
+        assert!(matches!(
+            inner.read().unwrap().state,
+            ConnectionState::Connected(_)
+        ));
     }
 }
