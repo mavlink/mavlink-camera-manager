@@ -1,4 +1,4 @@
-mod local;
+pub(crate) mod local;
 
 pub mod types;
 pub mod video_source;
