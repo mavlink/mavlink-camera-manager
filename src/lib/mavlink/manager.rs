@@ -246,3 +246,39 @@ impl Connection {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A reconnection has to rebind the same address. Dropping the old connection only after
+    /// connecting leaves the socket bound, making every retry fail with EADDRINUSE.
+    #[test]
+    fn reconnect_rebinds_the_same_address() {
+        let port = std::net::UdpSocket::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+
+        let inner = Arc::new(RwLock::new(Connection {
+            address: format!("udpin:127.0.0.1:{port}"),
+            connection: None,
+            sender: broadcast::channel(1).0,
+        }));
+
+        // Reconnect on another thread, because a failure retries forever instead of returning
+        let (done_sender, done) = std::sync::mpsc::channel();
+        let connecting = inner.clone();
+        std::thread::spawn(move || {
+            Manager::reconnect(&connecting);
+            Manager::reconnect(&connecting);
+            let _ = done_sender.send(());
+        });
+
+        done.recv_timeout(std::time::Duration::from_secs(30))
+            .expect("Reconnection should rebind the address instead of retrying forever");
+
+        assert!(inner.read().unwrap().connection.is_some());
+    }
+}
