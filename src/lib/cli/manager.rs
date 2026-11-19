@@ -99,6 +99,14 @@ struct Args {
     #[arg(long)]
     enable_thread_counter: bool,
 
+    /// Sets the default path for video recordings.
+    #[arg(long, value_name = "PATH", default_value = "./recordings")]
+    recording_path: String,
+
+    /// Minimum percentage of disk space that must remain free to allow recording (0 to disable).
+    #[arg(long, value_name = "PERCENT", default_value = "10")]
+    min_free_disk_percent: u8,
+
     /// Sets the MAVLink System ID.
     #[arg(long, value_name = "SYSTEM_ID", default_value = "1")]
     mavlink_system_id: u8,
@@ -161,16 +169,23 @@ struct Args {
     )]
     stream_recreation_failure_timeout: StreamRecreationFailureTimeoutArg,
 
-    /// Video recording backend. With `external`, recording capability is
+    /// Video recording backend. With `internal` (default), recording is handled
+    /// by mavlink-camera-manager. With `external`, recording capability is
     /// advertised via MAVLink but handled by an external service (e.g. BlueOS
-    /// Recorder).
-    #[arg(long, value_name = "external")]
-    recorder: Option<RecorderMode>,
+    /// Recorder). With `disabled`, recording is not advertised or handled.
+    #[arg(
+        long,
+        value_name = "internal|external|disabled",
+        default_value = "internal"
+    )]
+    recorder: RecorderMode,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum RecorderMode {
+    Internal,
     External,
+    Disabled,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -294,6 +309,18 @@ pub fn default_settings() -> Option<custom::CustomEnvironment> {
 
 pub fn enable_thread_counter() -> bool {
     MANAGER.clap_matches.enable_thread_counter
+}
+
+pub fn recording_path() -> String {
+    let recording_path = MANAGER.clap_matches.recording_path.clone();
+
+    shellexpand::full(&recording_path)
+        .expect("Failed to expand path")
+        .to_string()
+}
+
+pub fn min_free_disk_percent() -> u8 {
+    MANAGER.clap_matches.min_free_disk_percent
 }
 
 pub fn mavlink_system_id() -> u8 {
@@ -475,7 +502,7 @@ pub fn stream_recreation_failure_timeout() -> Option<Duration> {
     }
 }
 
-pub fn recorder_mode() -> Option<RecorderMode> {
+pub fn recorder_mode() -> RecorderMode {
     MANAGER.clap_matches.recorder
 }
 

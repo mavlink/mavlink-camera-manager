@@ -39,6 +39,7 @@ pub struct ExtendedConfiguration {
     pub disable_zenoh: bool,
     pub disable_thumbnails: bool,
     pub disable_lazy: bool,
+    pub disable_recording: bool,
 }
 
 /// Fake H265 RTSP senders cannot use the 5s lazy idle grace: `x265enc` often
@@ -50,6 +51,7 @@ pub const FAKE_H265_RTSP_SENDER: ExtendedConfiguration = ExtendedConfiguration {
     disable_zenoh: true,
     disable_thumbnails: false,
     disable_lazy: true,
+    disable_recording: false,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
