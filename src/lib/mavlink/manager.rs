@@ -128,12 +128,7 @@ impl Manager {
                 }
             }
 
-            // Reconnects
-            {
-                let mut inner = inner.write().unwrap();
-                let address = inner.address.clone();
-                inner.connection.replace(Connection::connect(&address));
-            }
+            Self::reconnect(&inner);
 
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
@@ -179,15 +174,17 @@ impl Manager {
                 debug!("Message sent: {header:?}, {message:?}");
             }
 
-            // Reconnects
-            {
-                let mut inner = inner.write().unwrap();
-                let address = inner.address.clone();
-                inner.connection.replace(Connection::connect(&address));
-            }
+            Self::reconnect(&inner);
 
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
+    }
+
+    #[instrument(level = "debug", skip(inner))]
+    fn reconnect(inner: &Arc<RwLock<Connection>>) {
+        let mut inner = inner.write().unwrap();
+        let address = inner.address.clone();
+        inner.connection.replace(Connection::connect(&address));
     }
 
     #[instrument(level = "debug")]
