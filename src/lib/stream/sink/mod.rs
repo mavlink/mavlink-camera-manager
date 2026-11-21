@@ -12,10 +12,9 @@ use enum_dispatch::enum_dispatch;
 use gst::prelude::*;
 use tracing::*;
 
-use crate::{
-    stream::{gst::utils::wait_for_element_state, lifecycle::LifecycleHandle},
-    video_stream::types::VideoAndStreamInformation,
-};
+use mcm_api::v1::stream::VideoAndStreamInformation;
+
+use crate::stream::{gst::utils::wait_for_element_state, lifecycle::LifecycleHandle};
 
 use image_sink::ImageSink;
 use rtsp_sink::RtspSink;
