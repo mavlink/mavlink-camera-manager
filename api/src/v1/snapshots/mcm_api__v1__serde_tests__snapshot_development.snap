@@ -1,0 +1,7 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: "Development { number_of_tasks: 42, }"
+---
+{
+  "number_of_tasks": 42
+}

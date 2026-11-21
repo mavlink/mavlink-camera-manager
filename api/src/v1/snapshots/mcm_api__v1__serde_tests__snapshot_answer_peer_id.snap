@@ -1,0 +1,10 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: "Answer::PeerId(answer)"
+---
+{
+  "type": "peerId",
+  "content": {
+    "id": "00000000-0000-0000-0000-000000000000"
+  }
+}

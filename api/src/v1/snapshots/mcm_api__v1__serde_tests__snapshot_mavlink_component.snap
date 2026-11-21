@@ -1,0 +1,8 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: "MavlinkComponent { system_id: 1, component_id: 100, }"
+---
+{
+  "system_id": 1,
+  "component_id": 100
+}

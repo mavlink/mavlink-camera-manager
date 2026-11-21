@@ -1,0 +1,7 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: "VideoEncodeType::Unknown(\"AV1\".into())"
+---
+{
+  "UNKNOWN": "AV1"
+}

@@ -1,0 +1,8 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: "ControlBool { default: 0, value: 1, }"
+---
+{
+  "default": 0,
+  "value": 1
+}

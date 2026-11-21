@@ -16,7 +16,7 @@
           <StreamForm
             :device="item"
             :streams="streams"
-            @onconfigure="(value: any) => configureStream(value)"
+            @onconfigure="(value: Record<string, unknown>) => configureStream(value)"
           />
         </div>
         <h4>Controls:</h4>
@@ -27,20 +27,20 @@
         </div>
         <div v-for="control in item.controls" :key="control.id">
           <h5>Name: {{ control.name }}</h5>
-          <div v-if="control.configuration.Slider">
+          <div v-if="controlVariant(control.configuration, 'Slider')">
             <V4lSlider
-              :slider="control.configuration.Slider"
+              :slider="controlVariant(control.configuration, 'Slider')"
               :name="control.id.toString()"
               @onchange="
-                (value: any) => setControl(item.source, control.id, value)
+                (value: number) => setControl(item.source, control.id, value)
               "
             />
           </div>
 
-          <div v-if="control.configuration.Bool">
+          <div v-if="controlVariant(control.configuration, 'Bool')">
             <input
               type="checkbox"
-              :checked="control.configuration.Bool.value == 1"
+              :checked="controlVariant(control.configuration, 'Bool')?.value == 1"
               @change="
                 (event: Event) =>
                   setControl(
@@ -53,7 +53,7 @@
             <label>On</label>
           </div>
 
-          <div v-if="control.configuration.Menu">
+          <div v-if="controlVariant(control.configuration, 'Menu')">
             <select
               @change="
                 (event: Event) =>
@@ -65,10 +65,10 @@
               "
             >
               <option
-                v-for="option in control.configuration.Menu.options"
+                v-for="option in controlVariant(control.configuration, 'Menu')?.options"
                 :key="option.value"
                 :value="option.value"
-                :selected="option.value == control.configuration.Menu.value"
+                :selected="option.value == controlVariant(control.configuration, 'Menu')?.value"
               >
                 {{ option.name }}
               </option>
@@ -137,6 +137,12 @@
 import { defineComponent } from "vue";
 import V4lSlider from "./components/V4lSlider.vue";
 import StreamForm from "./components/StreamForm.vue";
+import type {
+  ApiVideoSource,
+  ControlType,
+  StreamStatus,
+  VideoAndStreamInformation,
+} from "@/api";
 
 declare class Viz {
   renderString(src: string): Promise<string>;
@@ -313,6 +319,12 @@ export default defineComponent({
         target.appendChild(errorContainer);
       }
     },
+    controlVariant(
+      configuration: ControlType,
+      variant: "Bool" | "Slider" | "Menu",
+    ): any {
+      return (configuration as Record<string, unknown>)[variant];
+    },
     openWebsiteInTab(url: string) {
       window.open(url, "_blank");
     },
@@ -382,7 +394,7 @@ export default defineComponent({
       url.searchParams.set("target_height", "240");
       return url.toString();
     },
-    getVideoDescription(video_and_stream: any): string {
+    getVideoDescription(video_and_stream: VideoAndStreamInformation): string {
       let response = "";
       switch (video_and_stream.stream_information.configuration.type) {
         case "redirect":
@@ -503,7 +515,7 @@ export default defineComponent({
       }
       return undefined;
     },
-    async configureStream(stream: any) {
+    async configureStream(stream: Record<string, any>) {
       const configuration = (() => {
         switch (stream.source) {
           case "Redirect":
@@ -791,8 +803,8 @@ export default defineComponent({
   },
   data() {
     return {
-      content: [] as any[],
-      streams: [] as any[],
+      content: [] as ApiVideoSource[],
+      streams: [] as StreamStatus[],
     };
   },
 });

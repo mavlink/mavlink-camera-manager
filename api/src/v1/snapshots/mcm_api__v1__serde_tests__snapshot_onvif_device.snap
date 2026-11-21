@@ -1,0 +1,16 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: val
+---
+{
+  "uuid": "00000000-0000-0000-0000-000000000000",
+  "ip": "192.168.1.100",
+  "types": [
+    "NetworkVideoTransmitter"
+  ],
+  "hardware": "HW-1234",
+  "name": "ONVIF Camera",
+  "urls": [
+    "http://192.168.1.100/onvif/device_service"
+  ]
+}

@@ -1,23 +1,6 @@
-use paperclip::actix::Apiv2Schema;
-use serde::{Deserialize, Serialize};
+use mcm_api::v1::{controls::Control, video::*};
 
-use crate::controls::types::Control;
-
-use super::{
-    types::*,
-    video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats},
-};
-
-#[derive(Apiv2Schema, Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum VideoSourceRedirectType {
-    Redirect(String),
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct VideoSourceRedirect {
-    pub name: String,
-    pub source: VideoSourceRedirectType,
-}
+use super::video_source::{VideoSource, VideoSourceAvailable, VideoSourceFormats};
 
 impl VideoSourceFormats for VideoSourceRedirect {
     async fn formats(&self) -> Vec<Format> {
@@ -25,6 +8,7 @@ impl VideoSourceFormats for VideoSourceRedirect {
             VideoSourceRedirectType::Redirect(_) => {
                 vec![]
             }
+            _ => unreachable!("unexpected VideoSourceRedirectType variant"),
         }
     }
 }
@@ -37,6 +21,7 @@ impl VideoSource for VideoSourceRedirect {
     fn source_string(&self) -> &str {
         match &self.source {
             VideoSourceRedirectType::Redirect(string) => string,
+            _ => unreachable!("unexpected VideoSourceRedirectType variant"),
         }
     }
 
@@ -75,6 +60,7 @@ impl VideoSource for VideoSourceRedirect {
     fn is_valid(&self) -> bool {
         match &self.source {
             VideoSourceRedirectType::Redirect(_) => true,
+            _ => unreachable!("unexpected VideoSourceRedirectType variant"),
         }
     }
 

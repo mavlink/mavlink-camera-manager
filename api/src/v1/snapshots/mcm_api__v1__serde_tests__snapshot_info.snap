@@ -1,0 +1,14 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: val
+---
+{
+  "name": "mavlink-camera-manager",
+  "version": "0.1.0",
+  "sha": "abc1234",
+  "build_date": "2024-01-01",
+  "authors": "BlueRobotics",
+  "development": {
+    "number_of_tasks": 42
+  }
+}

@@ -38,12 +38,13 @@ fn build_web() {
     println!("cargo:rerun-if-changed=./frontend/tsconfig.json");
     println!("cargo:rerun-if-changed=./frontend/tsconfig.config.json");
     println!("cargo:rerun-if-changed=./frontend/src");
-    println!("cargo:rerun-if-changed=./frontend/bindings/signalling_protocol.d.ts");
+    println!("cargo:rerun-if-changed=./frontend/bindings/v1/signalling_protocol.d.ts");
+    println!("cargo:rerun-if-changed=./frontend/bindings/v1/api.d.ts");
 
     let frontend_dir = Path::new("./frontend");
     frontend_dir.try_exists().unwrap();
 
-    let bindings_file = Path::new("./frontend/bindings/signalling_protocol.d.ts");
+    let bindings_file = Path::new("./frontend/bindings/v1/signalling_protocol.d.ts");
     if !bindings_file.exists() {
         panic!(
             "\n\n\
@@ -52,6 +53,18 @@ fn build_web() {
             \tcargo run --package=bindings\n\n\
             Or use `build.sh` which handles this automatically.\n",
             bindings_file.display()
+        );
+    }
+
+    let api_bindings_file = Path::new("./frontend/bindings/v1/api.d.ts");
+    if !api_bindings_file.exists() {
+        panic!(
+            "\n\n\
+            Frontend TypeScript bindings not found at: {}\n\n\
+            Please generate them first by running:\n\n\
+            \tcargo run --package=bindings\n\n\
+            Or use `build.sh` which handles this automatically.\n",
+            api_bindings_file.display()
         );
     }
 

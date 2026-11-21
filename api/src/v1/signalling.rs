@@ -5,13 +5,13 @@ use uuid::Uuid;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Protocol {
-    // version: String, // https://stackoverflow.com/a/70367795/3850957
     #[serde(flatten)]
     pub message: Message,
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "content", rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum Message {
     Question(Question),
     Answer(Answer),
@@ -20,6 +20,7 @@ pub enum Message {
 
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "content", rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum Question {
     PeerId,
     AvailableStreams,
@@ -46,6 +47,7 @@ pub struct BindAnswer {
 }
 
 pub type PeerId = Uuid;
+pub type SessionId = Uuid;
 
 #[derive(Debug, Serialize, Deserialize, TS)]
 pub struct EndSessionQuestion {
@@ -56,6 +58,7 @@ pub struct EndSessionQuestion {
 
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "content", rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum Answer {
     PeerId(PeerIdAnswer),
     AvailableStreams(Vec<Stream>),
@@ -81,6 +84,7 @@ pub struct Stream {
 
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "content", rename_all = "camelCase")]
+#[non_exhaustive]
 pub enum Negotiation {
     MediaNegotiation(MediaNegotiation),
     IceNegotiation(IceNegotiation),
@@ -95,10 +99,9 @@ pub struct MediaNegotiation {
     pub sdp: RTCSessionDescription,
 }
 
-pub type SessionId = Uuid;
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
+#[non_exhaustive]
 /// [RTCSessionDescription](https://developer.mozilla.org/en-US/docs/Web/API/RTCSessionDescription) as expected by browsers.
 /// Note: `pranswer` and `rollback` are not supported here.
 pub enum RTCSessionDescription {
@@ -125,7 +128,7 @@ pub struct IceNegotiation {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-// [RTCIceCandidateInit](https://docs.w3cub.com/dom/rtcicecandidateinit) as expected by browsers.
+/// [RTCIceCandidateInit](https://docs.w3cub.com/dom/rtcicecandidateinit) as expected by browsers.
 pub struct RTCIceCandidateInit {
     /// The ICE candidate-attribute.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -140,6 +143,8 @@ pub struct RTCIceCandidateInit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub username_fragment: Option<String>,
 }
+
+// -- From impls --
 
 impl From<Message> for Protocol {
     fn from(message: Message) -> Self {

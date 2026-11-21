@@ -1,0 +1,10 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: sample_video_source_redirect()
+---
+{
+  "name": "RTSP Redirect",
+  "source": {
+    "Redirect": "rtsp://192.168.1.200:554/stream"
+  }
+}

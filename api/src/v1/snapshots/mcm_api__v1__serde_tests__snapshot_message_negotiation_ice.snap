@@ -1,0 +1,20 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: "Message::Negotiation(Negotiation::IceNegotiation(negotiation))"
+---
+{
+  "type": "negotiation",
+  "content": {
+    "type": "iceNegotiation",
+    "content": {
+      "consumer_id": "00000000-0000-0000-0000-000000000001",
+      "producer_id": "00000000-0000-0000-0000-000000000002",
+      "session_id": "00000000-0000-0000-0000-000000000003",
+      "ice": {
+        "candidate": "candidate:1 1 UDP 2130706431 10.0.0.1 1234 typ host",
+        "sdpMid": "0",
+        "sdpMLineIndex": 0
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+---
+source: api/src/v1/serde_tests.rs
+expression: "VideoSourceType::Gst(sample_video_source_gst())"
+---
+{
+  "Gst": {
+    "name": "Fake source",
+    "source": {
+      "Fake": "videotestsrc"
+    }
+  }
+}
