@@ -7,13 +7,12 @@ use anyhow::{Error, Result, anyhow};
 use gst::prelude::*;
 use tracing::*;
 
-use crate::{
-    stream::{
-        gst::utils::try_set_property, pipeline::runner::PipelineRunner, types::CaptureConfiguration,
-    },
-    video::types::VideoEncodeType,
-    video_stream::types::VideoAndStreamInformation,
+use mcm_api::v1::{
+    stream::{CaptureConfiguration, VideoAndStreamInformation},
+    video::VideoEncodeType,
 };
+
+use crate::stream::{gst::utils::try_set_property, pipeline::runner::PipelineRunner};
 
 use super::{SinkInterface, link_sink_to_tee, unlink_sink_from_tee};
 
@@ -201,6 +200,7 @@ impl ImageSink {
     #[instrument(level = "debug", skip_all)]
     pub fn try_new(
         sink_id: Arc<uuid::Uuid>,
+        stream_id: &Arc<uuid::Uuid>,
         video_and_stream_information: &VideoAndStreamInformation,
     ) -> Result<Self> {
         let queue = gst::ElementFactory::make("queue")
@@ -396,6 +396,7 @@ impl ImageSink {
         let pipeline_runner = PipelineRunner::try_new_background(
             &pipeline,
             &sink_id,
+            stream_id,
             true,
             video_and_stream_information,
         )?;

@@ -12,10 +12,9 @@ use enum_dispatch::enum_dispatch;
 use gst::prelude::*;
 use tracing::*;
 
-use crate::{
-    stream::{gst::utils::wait_for_element_state, lifecycle::LifecycleHandle},
-    video_stream::types::VideoAndStreamInformation,
-};
+use mcm_api::v1::stream::VideoAndStreamInformation;
+
+use crate::stream::{gst::utils::wait_for_element_state, lifecycle::LifecycleHandle};
 
 use image_sink::ImageSink;
 use rtsp_sink::RtspSink;
@@ -83,10 +82,12 @@ impl std::fmt::Display for Sink {
 #[instrument(level = "debug", skip_all)]
 pub fn create_udp_sink(
     id: Arc<uuid::Uuid>,
+    stream_id: &Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
     Ok(Sink::Udp(UdpSink::try_new(
         id,
+        stream_id,
         video_and_stream_information,
     )?))
 }
@@ -111,10 +112,12 @@ pub fn create_rtsp_sink(
 #[instrument(level = "debug", skip_all)]
 pub fn create_image_sink(
     id: Arc<uuid::Uuid>,
+    stream_id: &Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
     Ok(Sink::Image(ImageSink::try_new(
         id,
+        stream_id,
         video_and_stream_information,
     )?))
 }
@@ -122,10 +125,11 @@ pub fn create_image_sink(
 #[instrument(level = "debug", skip_all)]
 pub async fn create_zenoh_sink(
     id: Arc<uuid::Uuid>,
+    stream_id: &Arc<uuid::Uuid>,
     video_and_stream_information: &VideoAndStreamInformation,
 ) -> Result<Sink> {
     Ok(Sink::Zenoh(
-        ZenohSink::try_new(id, video_and_stream_information).await?,
+        ZenohSink::try_new(id, stream_id, video_and_stream_information).await?,
     ))
 }
 

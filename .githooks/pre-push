@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Git pre-push hook: ensure TypeScript bindings are up to date before pushing.
+#
+# Install with:
+#   git config core.hooksPath .githooks
+#
+# Also called directly by CI.
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+echo "Regenerating TypeScript bindings..."
+cargo run --package=bindings --locked
+
+if ! git diff --exit-code frontend/bindings/; then
+    echo ""
+    echo "ERROR: Generated bindings differ from committed files."
+    echo "This may indicate a breaking API change. Please review the diff above,"
+    echo "run 'cargo run --package=bindings', and commit the result."
+    exit 1
+fi
+
+echo "Bindings are up to date."
+exit 0

@@ -1,7 +1,15 @@
-#[cfg(target_os = "linux")]
-use super::local::video_source_local_linux as source;
-#[cfg(not(target_os = "linux"))]
-use super::local::video_source_local_none as source;
+use mcm_api::v1::{
+    stream::VideoCaptureConfiguration,
+    video::{Format, VideoSourceType},
+};
 
-pub type VideoSourceLocal = source::VideoSourceLocal;
-pub type VideoSourceLocalType = source::VideoSourceLocalType;
+use anyhow::Result;
+
+pub trait VideoSourceLocalExt {
+    fn try_identify_device(
+        &mut self,
+        capture_configuration: &VideoCaptureConfiguration,
+        candidates: &[VideoSourceType],
+        formats: &std::collections::HashMap<String, Vec<Format>>,
+    ) -> impl std::future::Future<Output = Result<Option<String>>> + Send;
+}

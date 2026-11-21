@@ -4,7 +4,7 @@ pub mod manager;
 pub mod pipeline;
 pub mod rtsp;
 pub mod sink;
-pub mod types;
+pub mod stats;
 pub mod webrtc;
 
 use std::{
@@ -15,28 +15,30 @@ use std::{
 
 use ::gst::prelude::*;
 use anyhow::{Context, Result, anyhow};
-use gst::utils::get_capture_configuration_from_stream_uri;
-use manager::Manager;
-use pipeline::{Pipeline, PipelineGstreamerInterface};
-use sink::{create_image_sink, create_rtsp_sink, create_udp_sink, create_zenoh_sink};
 use tokio::sync::RwLock;
 use tracing::*;
-use types::*;
-use webrtc::signalling_protocol::{PeerId, SessionId};
+
+use mcm_api::v1::{
+    signalling::{PeerId, SessionId},
+    stream::*,
+    video::{FrameInterval, VideoEncodeType, VideoSourceType},
+};
 
 use crate::{
     mavlink::mavlink_camera::MavlinkCamera,
     video::{
-        types::{FrameInterval, VideoEncodeType, VideoSourceType},
+        types::VideoSourceTypeExt,
         video_source::{VideoSource, cameras_available},
     },
-    video_stream::types::VideoAndStreamInformation,
 };
 
 use self::{
-    gst::utils::wait_for_element_state,
+    gst::utils::{get_capture_configuration_from_stream_uri, wait_for_element_state},
     lifecycle::{LifecycleHandle, Phase},
+    manager::Manager,
+    pipeline::{Pipeline, PipelineGstreamerInterface},
     rtsp::{rtsp_scheme::RTSPScheme, rtsp_server::RTSPServer},
+    sink::{create_image_sink, create_rtsp_sink, create_udp_sink, create_zenoh_sink},
 };
 
 pub struct Stream {
@@ -390,7 +392,7 @@ impl Stream {
                             .unwrap()
                             .iter()
                             .filter_map(|status| {
-                                use crate::stream::types::StreamStatusState;
+                                use mcm_api::v1::stream::StreamStatusState;
 
                                 matches!(
                                     status.state,
@@ -746,7 +748,8 @@ impl StreamState {
                 .any(|endpoint| matches!(endpoint.scheme(), "udp" | "udp265"))
             {
                 let sink_id = Arc::new(Manager::generate_uuid(None));
-                match create_udp_sink(sink_id.clone(), &video_and_stream_information) {
+                match create_udp_sink(sink_id.clone(), &pipeline_id, &video_and_stream_information)
+                {
                     Ok(sink) => {
                         if let Some(pipeline) = stream.pipeline.as_mut() {
                             if let Err(reason) = pipeline.add_sink(sink).await {
@@ -808,7 +811,7 @@ impl StreamState {
             .map(|e| e.disable_thumbnails)
             .unwrap_or_default()
         {
-            match create_image_sink(sink_id.clone(), &video_and_stream_information) {
+            match create_image_sink(sink_id.clone(), &pipeline_id, &video_and_stream_information) {
                 Ok(sink) => {
                     if let Some(pipeline) = stream.pipeline.as_mut() {
                         if let Err(reason) = pipeline.add_sink(sink).await {
@@ -852,7 +855,13 @@ impl StreamState {
 
             if matches!(encoding, VideoEncodeType::H264 | VideoEncodeType::H265) {
                 let sink_id = Arc::new(Manager::generate_uuid(None));
-                match create_zenoh_sink(sink_id.clone(), &video_and_stream_information).await {
+                match create_zenoh_sink(
+                    sink_id.clone(),
+                    &pipeline_id,
+                    &video_and_stream_information,
+                )
+                .await
+                {
                     Ok(sink) => {
                         if let Some(pipeline) = stream.pipeline.as_mut() {
                             if let Err(reason) = pipeline.add_sink(sink).await {
@@ -1116,8 +1125,8 @@ mod tests {
 
     use super::*;
     #[cfg(target_os = "linux")]
-    use crate::video::video_source_local::{VideoSourceLocal, VideoSourceLocalType};
-    use crate::video::video_source_redirect::{VideoSourceRedirect, VideoSourceRedirectType};
+    use mcm_api::v1::video::{VideoSourceLocal, VideoSourceLocalType};
+    use mcm_api::v1::video::{VideoSourceRedirect, VideoSourceRedirectType};
 
     fn default_video_capture_configuration(encode: VideoEncodeType) -> VideoCaptureConfiguration {
         VideoCaptureConfiguration {
@@ -1348,8 +1357,7 @@ mod tests {
         assert_eq!(generate_pipeline_id(&first), generate_pipeline_id(&second));
     }
 
-    use crate::controls::onvif::camera::OnvifDeviceInformation;
-    use crate::video::video_source_onvif::{VideoSourceOnvif, VideoSourceOnvifType};
+    use mcm_api::v1::video::{OnvifDeviceInformation, VideoSourceOnvif, VideoSourceOnvifType};
 
     fn allocate_udp_port() -> u16 {
         let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
