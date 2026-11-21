@@ -3,9 +3,9 @@ use gst::prelude::*;
 use tokio::sync::mpsc;
 use tracing::*;
 
-use crate::{
-    stream::types::{CaptureConfiguration, VideoCaptureConfiguration},
-    video::types::{FrameInterval, VideoEncodeType},
+use mcm_api::v1::{
+    stream::{CaptureConfiguration, VideoCaptureConfiguration},
+    video::{FrameInterval, VideoEncodeType},
 };
 
 #[derive(Debug)]

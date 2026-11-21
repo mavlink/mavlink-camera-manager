@@ -5,20 +5,21 @@ use gst::prelude::*;
 use tokio::sync::mpsc::{self, WeakUnboundedSender};
 use tracing::*;
 
+use mcm_api::v1::{
+    signalling::{
+        Answer, BindAnswer, EndSessionQuestion, IceNegotiation, MediaNegotiation, Message,
+        Question, RTCIceCandidateInit, RTCSessionDescription, Sdp,
+    },
+    stream::VideoAndStreamInformation,
+};
+
 use crate::{
     cli,
     stream::{
         gst::utils::{excise_single_element, wait_for_element_state},
         pipeline::runner::PipelineRunner,
-        webrtc::{
-            signalling_protocol::{
-                Answer, BindAnswer, EndSessionQuestion, IceNegotiation, MediaNegotiation, Message,
-                Question, RTCIceCandidateInit, RTCSessionDescription, Sdp,
-            },
-            webrtcbin_interface::WebRTCBinInterface,
-        },
+        webrtc::webrtcbin_interface::WebRTCBinInterface,
     },
-    video_stream::types::VideoAndStreamInformation,
 };
 
 use super::{
