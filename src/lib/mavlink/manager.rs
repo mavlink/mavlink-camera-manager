@@ -23,6 +23,7 @@ pub struct Manager {
 struct Connection {
     address: String,
     state: ConnectionState,
+    generation: u64,
     sender: broadcast::Sender<Message>,
 }
 
@@ -49,6 +50,7 @@ impl Default for Manager {
             connection: Arc::new(RwLock::new(Connection {
                 address,
                 state: ConnectionState::Disconnected,
+                generation: 0,
                 sender,
             })),
             ids: Arc::new(RwLock::new(vec![])),
@@ -79,11 +81,14 @@ impl Manager {
 
     #[instrument(level = "debug", skip(inner))]
     fn receiver_loop(inner: Arc<RwLock<Connection>>) {
+        let mut generation = 0;
+
         loop {
             loop {
                 let Ok(inner_guard) = inner.read() else {
                     break; // Break to trigger reconnection
                 };
+                generation = inner_guard.generation;
                 let ConnectionState::Connected(mavlink) = &inner_guard.state else {
                     break; // Break to trigger reconnection
                 };
@@ -134,7 +139,7 @@ impl Manager {
                 }
             }
 
-            Self::reconnect(&inner);
+            Self::reconnect(&inner, generation);
 
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
@@ -143,6 +148,7 @@ impl Manager {
     #[instrument(level = "debug", skip(inner))]
     fn sender_loop(inner: Arc<RwLock<Connection>>) {
         let mut receiver = { inner.read().unwrap().sender.subscribe() };
+        let mut generation = 0;
 
         loop {
             loop {
@@ -166,6 +172,7 @@ impl Manager {
                 let Ok(inner_guard) = inner.read() else {
                     break; // Break to trigger reconnection
                 };
+                generation = inner_guard.generation;
                 let ConnectionState::Connected(mavlink) = &inner_guard.state else {
                     break; // Break to trigger reconnection
                 };
@@ -180,24 +187,27 @@ impl Manager {
                 debug!("Message sent: {header:?}, {message:?}");
             }
 
-            Self::reconnect(&inner);
+            Self::reconnect(&inner, generation);
 
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
     }
 
-    /// Rebinds the shared connection, unless the other loop is already doing it.
+    /// Rebinds the shared connection, unless the other loop is already doing it or has already
+    /// replaced the `failed_generation` connection.
     ///
     /// The old connection is dropped before connecting because it still owns the socket: binding
     /// the same `udpin` address twice fails with EADDRINUSE, retrying forever. The lock is
     /// released while connecting so that API callers reading the sender don't block on it.
     #[instrument(level = "debug", skip(inner))]
-    fn reconnect(inner: &Arc<RwLock<Connection>>) {
+    fn reconnect(inner: &Arc<RwLock<Connection>>, failed_generation: u64) {
         let address = {
             let mut inner = inner.write().unwrap();
 
-            if matches!(inner.state, ConnectionState::Connecting) {
-                return;
+            match inner.state {
+                ConnectionState::Connecting => return,
+                ConnectionState::Connected(_) if inner.generation != failed_generation => return,
+                _ => (),
             }
 
             inner.state = ConnectionState::Connecting;
@@ -208,7 +218,10 @@ impl Manager {
 
         let mut inner = inner.write().unwrap();
         match connection {
-            Ok(connection) => inner.state = ConnectionState::Connected(connection),
+            Ok(connection) => {
+                inner.generation += 1;
+                inner.state = ConnectionState::Connected(connection);
+            }
             Err(_) => {
                 error!("Panicked while connecting, the connection will be retried");
                 inner.state = ConnectionState::Disconnected;
@@ -293,6 +306,7 @@ mod tests {
         let inner = Arc::new(RwLock::new(Connection {
             address: format!("udpin:127.0.0.1:{port}"),
             state: ConnectionState::Disconnected,
+            generation: 0,
             sender: broadcast::channel(1).0,
         }));
 
@@ -300,8 +314,8 @@ mod tests {
         let (done_sender, done) = std::sync::mpsc::channel();
         let connecting = inner.clone();
         std::thread::spawn(move || {
-            Manager::reconnect(&connecting);
-            Manager::reconnect(&connecting);
+            Manager::reconnect(&connecting, 0);
+            Manager::reconnect(&connecting, 1);
             let _ = done_sender.send(());
         });
 
@@ -312,5 +326,9 @@ mod tests {
             inner.read().unwrap().state,
             ConnectionState::Connected(_)
         ));
+        assert_eq!(inner.read().unwrap().generation, 2);
+
+        Manager::reconnect(&inner, 1);
+        assert_eq!(inner.read().unwrap().generation, 2);
     }
 }
