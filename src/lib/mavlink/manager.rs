@@ -149,25 +149,30 @@ impl Manager {
     fn sender_loop(inner: Arc<RwLock<Connection>>) {
         let mut receiver = { inner.read().unwrap().sender.subscribe() };
         let mut generation = 0;
+        let mut pending = None;
 
         loop {
             loop {
                 // Receive answer from the cameras
-                let (header, message) = match receiver.blocking_recv() {
-                    Ok(Message::ToBeSent(message)) => message,
-                    Ok(Message::Received(_)) => continue,
-                    Err(broadcast::error::RecvError::Closed) => {
-                        unreachable!(
-                            "Closed channel: This should never happen, this channel is static!"
-                        );
-                    }
-                    Err(broadcast::error::RecvError::Lagged(samples)) => {
-                        warn!(
-                            "Channel is lagged behind by {samples} messages. Expect degraded performance on the mavlink responsiviness."
-                        );
-                        continue;
-                    }
+                let message = match pending.take() {
+                    Some(message) => message,
+                    None => match receiver.blocking_recv() {
+                        Ok(Message::ToBeSent(message)) => message,
+                        Ok(Message::Received(_)) => continue,
+                        Err(broadcast::error::RecvError::Closed) => {
+                            unreachable!(
+                                "Closed channel: This should never happen, this channel is static!"
+                            );
+                        }
+                        Err(broadcast::error::RecvError::Lagged(samples)) => {
+                            warn!(
+                                "Channel is lagged behind by {samples} messages. Expect degraded performance on the mavlink responsiviness."
+                            );
+                            continue;
+                        }
+                    },
                 };
+                let (header, message) = pending.insert(message);
 
                 let Ok(inner_guard) = inner.read() else {
                     break; // Break to trigger reconnection
@@ -178,13 +183,15 @@ impl Manager {
                 };
 
                 // Send the response from the cameras to the Mavlink network
-                if let Err(error) = mavlink.send(&header, &message) {
+                if let Err(error) = mavlink.send(header, message) {
                     error!("Failed sending message to Mavlink Connection: {error:?}");
 
+                    pending = None;
                     break; // Break to trigger reconnection
                 }
 
                 debug!("Message sent: {header:?}, {message:?}");
+                pending = None;
             }
 
             Self::reconnect(&inner, generation);
