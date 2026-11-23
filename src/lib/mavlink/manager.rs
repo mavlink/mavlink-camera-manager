@@ -338,4 +338,42 @@ mod tests {
         Manager::reconnect(&inner, 1);
         assert_eq!(inner.read().unwrap().generation, 2);
     }
+
+    #[test]
+    fn sender_keeps_the_message_across_a_reconnection() {
+        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        socket
+            .set_read_timeout(Some(std::time::Duration::from_secs(30)))
+            .unwrap();
+
+        let (sender, _receiver) = broadcast::channel(1);
+        let inner = Arc::new(RwLock::new(Connection {
+            address: format!("udpout:{}", socket.local_addr().unwrap()),
+            state: ConnectionState::Disconnected,
+            generation: 0,
+            sender: sender.clone(),
+        }));
+
+        let looping = inner.clone();
+        std::thread::spawn(move || Manager::sender_loop(looping));
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while sender.receiver_count() < 2 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "The loop never subscribed"
+            );
+            std::thread::yield_now();
+        }
+        sender
+            .send(Message::ToBeSent((
+                MavHeader::default(),
+                MavMessage::HEARTBEAT(Default::default()),
+            )))
+            .unwrap();
+
+        socket
+            .recv(&mut [0; 280])
+            .expect("The message should be sent after reconnecting");
+    }
 }
