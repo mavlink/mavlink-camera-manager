@@ -18,6 +18,7 @@ lazy_static! {
 pub struct Manager {
     connection: Arc<RwLock<Connection>>,
     ids: Arc<RwLock<Vec<u8>>>,
+    sender: broadcast::Sender<Message>,
 }
 
 struct Connection {
@@ -51,9 +52,10 @@ impl Default for Manager {
                 address,
                 state: ConnectionState::Disconnected,
                 generation: 0,
-                sender,
+                sender: sender.clone(),
             })),
             ids: Arc::new(RwLock::new(vec![])),
+            sender,
         };
 
         let connection = this.connection.clone();
@@ -267,11 +269,7 @@ impl Manager {
 
     #[instrument(level = "debug")]
     pub fn get_sender() -> broadcast::Sender<Message> {
-        let manager = MANAGER.lock().unwrap();
-
-        let connection = manager.connection.read().unwrap();
-
-        connection.sender.clone()
+        MANAGER.lock().unwrap().sender.clone()
     }
 }
 
