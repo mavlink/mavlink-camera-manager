@@ -18,12 +18,20 @@ lazy_static! {
 pub struct Manager {
     connection: Arc<RwLock<Connection>>,
     ids: Arc<RwLock<Vec<u8>>>,
+    sender: broadcast::Sender<Message>,
 }
 
 struct Connection {
     address: String,
-    connection: Option<Box<dyn MavConnection<MavMessage> + Sync + Send>>,
+    state: ConnectionState,
+    generation: u64,
     sender: broadcast::Sender<Message>,
+}
+
+enum ConnectionState {
+    Disconnected,
+    Connecting,
+    Connected(Box<dyn MavConnection<MavMessage> + Sync + Send>),
 }
 
 #[derive(Debug, Clone)]
@@ -42,10 +50,12 @@ impl Default for Manager {
         let this = Self {
             connection: Arc::new(RwLock::new(Connection {
                 address,
-                connection: None,
-                sender,
+                state: ConnectionState::Disconnected,
+                generation: 0,
+                sender: sender.clone(),
             })),
             ids: Arc::new(RwLock::new(vec![])),
+            sender,
         };
 
         let connection = this.connection.clone();
@@ -73,12 +83,15 @@ impl Manager {
 
     #[instrument(level = "debug", skip(inner))]
     fn receiver_loop(inner: Arc<RwLock<Connection>>) {
+        let mut generation = 0;
+
         loop {
             loop {
                 let Ok(inner_guard) = inner.read() else {
                     break; // Break to trigger reconnection
                 };
-                let Some(mavlink) = inner_guard.connection.as_deref() else {
+                generation = inner_guard.generation;
+                let ConnectionState::Connected(mavlink) = &inner_guard.state else {
                     break; // Break to trigger reconnection
                 };
 
@@ -128,12 +141,7 @@ impl Manager {
                 }
             }
 
-            // Reconnects
-            {
-                let mut inner = inner.write().unwrap();
-                let address = inner.address.clone();
-                inner.connection.replace(Connection::connect(&address));
-            }
+            Self::reconnect(&inner, generation);
 
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
@@ -142,51 +150,91 @@ impl Manager {
     #[instrument(level = "debug", skip(inner))]
     fn sender_loop(inner: Arc<RwLock<Connection>>) {
         let mut receiver = { inner.read().unwrap().sender.subscribe() };
+        let mut generation = 0;
+        let mut pending = None;
 
         loop {
             loop {
                 // Receive answer from the cameras
-                let (header, message) = match receiver.blocking_recv() {
-                    Ok(Message::ToBeSent(message)) => message,
-                    Ok(Message::Received(_)) => continue,
-                    Err(broadcast::error::RecvError::Closed) => {
-                        unreachable!(
-                            "Closed channel: This should never happen, this channel is static!"
-                        );
-                    }
-                    Err(broadcast::error::RecvError::Lagged(samples)) => {
-                        warn!(
-                            "Channel is lagged behind by {samples} messages. Expect degraded performance on the mavlink responsiviness."
-                        );
-                        continue;
-                    }
+                let message = match pending.take() {
+                    Some(message) => message,
+                    None => match receiver.blocking_recv() {
+                        Ok(Message::ToBeSent(message)) => message,
+                        Ok(Message::Received(_)) => continue,
+                        Err(broadcast::error::RecvError::Closed) => {
+                            unreachable!(
+                                "Closed channel: This should never happen, this channel is static!"
+                            );
+                        }
+                        Err(broadcast::error::RecvError::Lagged(samples)) => {
+                            warn!(
+                                "Channel is lagged behind by {samples} messages. Expect degraded performance on the mavlink responsiviness."
+                            );
+                            continue;
+                        }
+                    },
                 };
+                let (header, message) = pending.insert(message);
 
                 let Ok(inner_guard) = inner.read() else {
                     break; // Break to trigger reconnection
                 };
-                let Some(mavlink) = inner_guard.connection.as_deref() else {
+                generation = inner_guard.generation;
+                let ConnectionState::Connected(mavlink) = &inner_guard.state else {
                     break; // Break to trigger reconnection
                 };
 
                 // Send the response from the cameras to the Mavlink network
-                if let Err(error) = mavlink.send(&header, &message) {
+                if let Err(error) = mavlink.send(header, message) {
                     error!("Failed sending message to Mavlink Connection: {error:?}");
 
+                    pending = None;
                     break; // Break to trigger reconnection
                 }
 
                 debug!("Message sent: {header:?}, {message:?}");
+                pending = None;
             }
 
-            // Reconnects
-            {
-                let mut inner = inner.write().unwrap();
-                let address = inner.address.clone();
-                inner.connection.replace(Connection::connect(&address));
-            }
+            Self::reconnect(&inner, generation);
 
             std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+    }
+
+    /// Rebinds the shared connection, unless the other loop is already doing it or has already
+    /// replaced the `failed_generation` connection.
+    ///
+    /// The old connection is dropped before connecting because it still owns the socket: binding
+    /// the same `udpin` address twice fails with EADDRINUSE, retrying forever. The lock is
+    /// released while connecting so that API callers reading the sender don't block on it.
+    #[instrument(level = "debug", skip(inner))]
+    fn reconnect(inner: &Arc<RwLock<Connection>>, failed_generation: u64) {
+        let address = {
+            let mut inner = inner.write().unwrap();
+
+            match inner.state {
+                ConnectionState::Connecting => return,
+                ConnectionState::Connected(_) if inner.generation != failed_generation => return,
+                _ => (),
+            }
+
+            inner.state = ConnectionState::Connecting;
+            inner.address.clone()
+        };
+
+        let connection = std::panic::catch_unwind(|| Connection::connect(&address));
+
+        let mut inner = inner.write().unwrap();
+        match connection {
+            Ok(connection) => {
+                inner.generation += 1;
+                inner.state = ConnectionState::Connected(connection);
+            }
+            Err(_) => {
+                error!("Panicked while connecting, the connection will be retried");
+                inner.state = ConnectionState::Disconnected;
+            }
         }
     }
 
@@ -221,11 +269,7 @@ impl Manager {
 
     #[instrument(level = "debug")]
     pub fn get_sender() -> broadcast::Sender<Message> {
-        let manager = MANAGER.lock().unwrap();
-
-        let connection = manager.connection.read().unwrap();
-
-        connection.sender.clone()
+        MANAGER.lock().unwrap().sender.clone()
     }
 }
 
@@ -247,5 +291,87 @@ impl Connection {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A reconnection has to rebind the same address. Dropping the old connection only after
+    /// connecting used to leave the socket bound, making every retry fail with EADDRINUSE.
+    #[test]
+    fn reconnect_rebinds_the_same_address() {
+        let port = std::net::UdpSocket::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+
+        let inner = Arc::new(RwLock::new(Connection {
+            address: format!("udpin:127.0.0.1:{port}"),
+            state: ConnectionState::Disconnected,
+            generation: 0,
+            sender: broadcast::channel(1).0,
+        }));
+
+        // Reconnect on another thread, because a failure retries forever instead of returning
+        let (done_sender, done) = std::sync::mpsc::channel();
+        let connecting = inner.clone();
+        std::thread::spawn(move || {
+            Manager::reconnect(&connecting, 0);
+            Manager::reconnect(&connecting, 1);
+            let _ = done_sender.send(());
+        });
+
+        done.recv_timeout(std::time::Duration::from_secs(30))
+            .expect("Reconnection should rebind the address instead of retrying forever");
+
+        assert!(matches!(
+            inner.read().unwrap().state,
+            ConnectionState::Connected(_)
+        ));
+        assert_eq!(inner.read().unwrap().generation, 2);
+
+        Manager::reconnect(&inner, 1);
+        assert_eq!(inner.read().unwrap().generation, 2);
+    }
+
+    #[test]
+    fn sender_keeps_the_message_across_a_reconnection() {
+        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        socket
+            .set_read_timeout(Some(std::time::Duration::from_secs(30)))
+            .unwrap();
+
+        let (sender, _receiver) = broadcast::channel(1);
+        let inner = Arc::new(RwLock::new(Connection {
+            address: format!("udpout:{}", socket.local_addr().unwrap()),
+            state: ConnectionState::Disconnected,
+            generation: 0,
+            sender: sender.clone(),
+        }));
+
+        let looping = inner.clone();
+        std::thread::spawn(move || Manager::sender_loop(looping));
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while sender.receiver_count() < 2 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "The loop never subscribed"
+            );
+            std::thread::yield_now();
+        }
+        sender
+            .send(Message::ToBeSent((
+                MavHeader::default(),
+                MavMessage::HEARTBEAT(Default::default()),
+            )))
+            .unwrap();
+
+        socket
+            .recv(&mut [0; 280])
+            .expect("The message should be sent after reconnecting");
     }
 }
