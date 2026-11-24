@@ -47,12 +47,26 @@ pub struct Size {
     pub intervals: Vec<FrameInterval>,
 }
 
-#[derive(
-    Apiv2Schema, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Hash,
-)]
+#[derive(Apiv2Schema, Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
 pub struct FrameInterval {
     pub numerator: u32,
     pub denominator: u32,
+}
+
+impl Ord for FrameInterval {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Sort frame intervals by their decimal value in ascending order, falling back to numerator and denominator
+        (self.numerator as u64 * other.denominator as u64)
+            .cmp(&(other.numerator as u64 * self.denominator as u64))
+            .then(self.numerator.cmp(&other.numerator))
+            .then(self.denominator.cmp(&other.denominator))
+    }
+}
+
+impl PartialOrd for FrameInterval {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl VideoSourceType {

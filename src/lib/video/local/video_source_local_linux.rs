@@ -509,7 +509,6 @@ fn get_device_formats_using_gstreamer(
 
         intervals.sort();
         intervals.dedup();
-        intervals.reverse();
 
         widths.into_iter().zip(heights).for_each(|(width, height)| {
             let size = Size {
