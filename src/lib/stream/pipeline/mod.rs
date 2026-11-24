@@ -311,10 +311,9 @@ impl PipelineState {
             "Sink {sink_id} not found in Pipeline {pipeline_id}"
         ))?;
 
-        // Terminate the Sink
-        sink.eos();
-
-        // Unlink the Sink
+        // Unlink Nulls the session. Do not post EOS first: that is forwarded
+        // to the session bus watcher and kills the runner an instant before
+        // `shutdown_session` would have stopped it.
         sink.unlink(pipeline, pipeline_id)?;
 
         if let Sink::Rtsp(sink) = &sink {
