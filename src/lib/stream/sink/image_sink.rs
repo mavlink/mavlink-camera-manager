@@ -1,6 +1,9 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use anyhow::{Error, Result, anyhow};
@@ -9,7 +12,9 @@ use tracing::*;
 
 use crate::{
     stream::{
-        gst::utils::try_set_property, pipeline::runner::PipelineRunner, types::CaptureConfiguration,
+        gst::utils::{set_element_state_null, try_set_property},
+        pipeline::runner::PipelineRunner,
+        types::CaptureConfiguration,
     },
     video::types::VideoEncodeType,
     video_stream::types::VideoAndStreamInformation,
@@ -96,6 +101,7 @@ pub struct ImageSink {
     // Level 2 cache (JPEG per settings)
     encode_mutex: Arc<tokio::sync::Mutex<()>>,
     thumbnails: Arc<Mutex<CachedThumbnails>>,
+    session_shutdown: AtomicBool,
 }
 
 impl SinkInterface for ImageSink {
@@ -125,22 +131,19 @@ impl SinkInterface for ImageSink {
 
     #[instrument(level = "debug", skip(self, pipeline))]
     fn unlink(&self, pipeline: &gst::Pipeline, pipeline_id: &Arc<uuid::Uuid>) -> Result<()> {
-        let guard = self.tee_src_pad.lock().unwrap();
-        let Some(tee_src_pad) = guard.as_ref() else {
-            warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
-            return Ok(());
+        let tee_src_pad = {
+            let guard = self.tee_src_pad.lock().unwrap();
+            let Some(tee_src_pad) = guard.as_ref() else {
+                warn!("Tried to unlink Sink from a pipeline without a Tee src pad.");
+                return Ok(());
+            };
+            tee_src_pad.clone()
         };
 
+        self.shutdown_session();
+
         let elements = &[&self.queue, &self.valve, &self.proxysink];
-        unlink_sink_from_tee(tee_src_pad, pipeline, elements)?;
-
-        if let Err(error) = self.pipeline.set_state(::gst::State::Null) {
-            warn!("Failed setting sink Pipeline state to Null: {error:?}");
-        }
-
-        if let Err(error) = self.encode_pipeline.set_state(::gst::State::Null) {
-            warn!("Failed setting encode pipeline state to Null: {error:?}");
-        }
+        unlink_sink_from_tee(&tee_src_pad, pipeline, elements)?;
 
         Ok(())
     }
@@ -163,37 +166,32 @@ impl SinkInterface for ImageSink {
     }
 
     #[instrument(level = "debug", skip(self))]
-    fn eos(&self) {
-        let pipeline_weak = self.pipeline.downgrade();
-        let encode_pipeline_weak = self.encode_pipeline.downgrade();
-        if let Err(error) = std::thread::Builder::new()
-            .name("EOS".to_string())
-            .spawn(move || {
-                if let Some(pipeline) = pipeline_weak.upgrade()
-                    && let Err(error) = pipeline.post_message(gst::message::Eos::new())
-                {
-                    error!("Failed posting Eos message into Sink bus. Reason: {error:?}");
-                }
-                if let Some(pipeline) = encode_pipeline_weak.upgrade()
-                    && let Err(error) = pipeline.post_message(gst::message::Eos::new())
-                {
-                    error!(
-                        "Failed posting Eos message into encode pipeline bus. Reason: {error:?}"
-                    );
-                }
-            })
-            .expect("Failed spawning EOS thread")
-            .join()
-        {
-            error!(
-                "EOS Thread Panicked with: {:?}",
-                error.downcast_ref::<String>()
-            );
+    fn shutdown_session(&self) {
+        if self.session_shutdown.swap(true, Ordering::AcqRel) {
+            return;
         }
+        self.appsink.set_property("enable-last-sample", false);
+        self.valve.set_property("drop", true);
+        self.pipeline_runner.stop();
+        set_element_state_null(self.pipeline.upcast_ref());
+        set_element_state_null(self.encode_pipeline.upcast_ref());
+    }
+
+    #[instrument(level = "debug", skip(self))]
+    fn eos(&self) {
+        // Intentionally a no-op. Posting Eos::new() to the session bus made
+        // the bus watcher treat it as pipeline-level EOS and kill the runner
+        // before `shutdown_session` could install the drop handler.
     }
 
     fn pipeline(&self) -> Option<&gst::Pipeline> {
         Some(&self.pipeline)
+    }
+}
+
+impl Drop for ImageSink {
+    fn drop(&mut self) {
+        self.shutdown_session();
     }
 }
 
@@ -514,6 +512,7 @@ impl ImageSink {
             last_capture_instant: Default::default(),
             encode_mutex: Default::default(),
             thumbnails: Default::default(),
+            session_shutdown: AtomicBool::new(false),
         })
     }
 
