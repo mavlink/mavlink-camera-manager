@@ -9,7 +9,7 @@ use futures::StreamExt;
 use paperclip::actix::{Apiv2Schema, CreatedJson, api_v2_operation};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio::time::Duration;
+use tokio::{io::AsyncWriteExt, time::Duration};
 use tracing::*;
 use validator::Validate;
 
@@ -22,7 +22,7 @@ use crate::{
     video::{
         types::{Format, VideoSourceType},
         video_source::{self, VideoSource, VideoSourceFormats},
-        xml,
+        video_source_gst, xml,
     },
     video_stream::types::VideoAndStreamInformation,
 };
@@ -63,6 +63,12 @@ pub struct BlockSource {
 #[derive(Apiv2Schema, Debug, Deserialize)]
 pub struct UnblockSource {
     source_string: String,
+}
+
+#[derive(Apiv2Schema, Debug, Deserialize)]
+pub struct FileSourceRequest {
+    /// Name of the video file, like `video.mp4`
+    filename: String,
 }
 
 #[derive(Apiv2Schema, Debug, Deserialize)]
@@ -269,6 +275,86 @@ pub async fn v4l_post(json: web::Json<V4lControl>) -> Result<HttpResponse> {
     video_source::set_control(&control.device, control.v4l_id, control.value)
         .await
         .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    Ok(HttpResponse::Ok().finish())
+}
+
+const FILE_SOURCE_MAX_SIZE_BYTES: usize = 512 * 1024 * 1024;
+
+fn file_source_path(filename: &str) -> Result<std::path::PathBuf> {
+    if filename.is_empty() || filename.starts_with('.') || filename.contains(['/', '\\']) {
+        return Err(Error::BadRequest(format!("Invalid file name {filename:?}")));
+    }
+
+    let path = video_source_gst::file_sources_dir().join(filename);
+    video_source_gst::file_demuxer(&path.to_string_lossy())
+        .map_err(|error| Error::BadRequest(error.to_string()))?;
+
+    Ok(path)
+}
+
+#[api_v2_operation]
+/// Upload a H.264 or H.265 video file (mp4, mov or mkv) as the request body.
+/// The file shows up as a looping video source in `/v4l`.
+pub async fn file_source_post(
+    query: web::Query<FileSourceRequest>,
+    mut payload: web::Payload,
+) -> Result<HttpResponse> {
+    let path = file_source_path(&query.filename)?;
+    let partial_path = path.with_extension("part");
+
+    let upload = async {
+        tokio::fs::create_dir_all(video_source_gst::file_sources_dir()).await?;
+        let mut file = tokio::fs::File::create(&partial_path).await?;
+        let mut size = 0;
+        while let Some(chunk) = payload.next().await {
+            let chunk = chunk.map_err(std::io::Error::other)?;
+            size += chunk.len();
+            if size > FILE_SOURCE_MAX_SIZE_BYTES {
+                return Err(std::io::Error::other(format!(
+                    "File is bigger than {FILE_SOURCE_MAX_SIZE_BYTES} bytes"
+                )));
+            }
+            file.write_all(&chunk).await?;
+        }
+        file.flush().await?;
+        tokio::fs::rename(&partial_path, &path).await
+    };
+
+    if let Err(error) = upload.await {
+        let _ = tokio::fs::remove_file(&partial_path).await;
+        return Err(Error::BadRequest(format!("Failed to upload file: {error}")));
+    }
+
+    // Probing runs a GStreamer pipeline, keep it out of the async runtime
+    let probe_path = path.to_string_lossy().to_string();
+    let format =
+        match tokio::task::spawn_blocking(move || video_source_gst::probe_file(&probe_path))
+            .await
+            .map_err(|error| Error::Internal(format!("{error:?}")))?
+        {
+            Ok(format) => format,
+            Err(error) => {
+                let _ = tokio::fs::remove_file(&path).await;
+                return Err(Error::BadRequest(format!("{error:#}")));
+            }
+        };
+
+    let json = serde_json::to_string_pretty(&format)
+        .map_err(|error| Error::Internal(format!("{error:?}")))?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(json))
+}
+
+#[api_v2_operation]
+/// Remove an uploaded video file
+pub async fn file_source_delete(query: web::Query<FileSourceRequest>) -> Result<HttpResponse> {
+    let path = file_source_path(&query.filename)?;
+    tokio::fs::remove_file(&path)
+        .await
+        .map_err(|error| Error::NotFound(format!("{path:?}: {error}")))?;
 
     Ok(HttpResponse::Ok().finish())
 }
