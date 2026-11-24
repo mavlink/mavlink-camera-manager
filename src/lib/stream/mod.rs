@@ -2,6 +2,7 @@ pub mod gst;
 pub mod lifecycle;
 pub mod manager;
 pub mod pipeline;
+pub mod recording;
 pub mod rtsp;
 pub mod sink;
 pub mod types;

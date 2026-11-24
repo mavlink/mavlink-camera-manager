@@ -1,3 +1,4 @@
+pub mod file_sink;
 pub mod image_sink;
 pub mod rtsp_sink;
 pub mod types;
@@ -17,6 +18,7 @@ use crate::{
     video_stream::types::VideoAndStreamInformation,
 };
 
+use file_sink::FileSink;
 use image_sink::ImageSink;
 use rtsp_sink::RtspSink;
 use udp_sink::UdpSink;
@@ -64,6 +66,7 @@ pub enum Sink {
     WebRTC(WebRTCSink),
     Image(ImageSink),
     Zenoh(ZenohSink),
+    File(FileSink),
 }
 
 impl std::fmt::Display for Sink {
@@ -76,6 +79,7 @@ impl std::fmt::Display for Sink {
             Sink::WebRTC(_) => write!(f, "WebRTCSink sink_id={sink_id}"),
             Sink::Image(_) => write!(f, "ImageSink sink_id={sink_id}"),
             Sink::Zenoh(_) => write!(f, "ZenohSink sink_id={sink_id}"),
+            Sink::File(_) => write!(f, "FileSink sink_id={sink_id}"),
         }
     }
 }
@@ -152,6 +156,19 @@ pub fn make_proxy_bridge() -> Result<[gst::Element; 2]> {
     queue.set_property("max-size-time", gst::ClockTime::from_seconds(5).nseconds());
 
     Ok([proxysink, proxysrc])
+}
+
+#[instrument(level = "debug", skip_all)]
+pub fn create_file_sink(
+    id: Arc<uuid::Uuid>,
+    video_and_stream_information: &VideoAndStreamInformation,
+    recording_path: Option<String>,
+) -> Result<Sink> {
+    Ok(Sink::File(FileSink::try_new(
+        id,
+        video_and_stream_information,
+        recording_path,
+    )?))
 }
 
 #[instrument(level = "debug", skip_all)]
